@@ -10,6 +10,7 @@ from PyQt5.QtWidgets import (
     QRadioButton,
     QLineEdit,
     QMessageBox,
+    QGroupBox,
 )
 
 import firebase_admin
@@ -26,6 +27,12 @@ COLLECTION_ACCOUNT = "account"
 COLLECTION_DATA = "data"
 BAES_ADB_SHELL_COMMAND = "am broadcast -a "
 INTENT_ACTION_DEV_CHARGE = "INTENT_ACTION_DEV_CHARGE"
+INTENT_ACTION_DEV_EMERGENCY = "INTENT_ACTION_DEV_EMERGENCY"
+INTENT_ACTION_DEV_ROBOT_STATUS_ERROR = "INTENT_ACTION_DEV_ROBOT_STATUS_ERROR"
+INTENT_ACTION_DEV_NAVI_ERROR = "INTENT_ACTION_DEV_NAVI_ERROR"
+INTENT_ACTION_DEV_MISSION = "INTENT_ACTION_DEV_MISSION"
+INTENT_ACTION_DEV_BARCODE = "INTENT_ACTION_DEV_BARCODE"
+INTENT_ACTION_DEV_MOVE = "INTENT_ACTION_DEV_MOVE"
 
 
 class TestApp(QWidget):
@@ -37,7 +44,6 @@ class TestApp(QWidget):
         print("initUI")
         width = size.width()
         height = size.height()
-
         # base
         self.setWindowTitle("Logistics App Tester")
         self.move(width // 4, height // 4)
@@ -45,6 +51,20 @@ class TestApp(QWidget):
 
         self.setLayout(self.getInitLayout())
         self.show()
+
+    def initDevice(self):
+        try:
+            client = AdbClient(host="127.0.0.1", port=5037)
+            devices = client.devices()
+            for device in devices:
+                self.device = device
+                if hasattr(self, "deviceField"):
+                    self.deviceField.setText(self.device.serial)
+        except:
+            print("adb error")
+            self.device = None
+            if hasattr(self, "deviceField"):
+                self.deviceField.setText("not connected")
 
     def getInitLayout(self):
         self.rootLayout = QVBoxLayout()
@@ -68,8 +88,10 @@ class TestApp(QWidget):
         return self.rootLayout
 
     def onIdChanged(self, text):
-        print("text", text)
         self.id = text
+
+    def onBarcodeChanged(self, text):
+        self.barcode = text
 
     def onPasswordChanged(self, text):
         print("onPasswordChanged", text)
@@ -87,11 +109,17 @@ class TestApp(QWidget):
         else:
             QMessageBox.information(self, "로그인 실패", "로그인 실패")
 
+    def onBarcodeEventSendClick(self):
+        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_DEV_BARCODE
+        command += " --es value " + self.barcode
+        self.doCommand(command)
+
     def loginCompleted(self):
         self.clearLoginLayout()
         self.addUserInfoLayout()
         self.addBaseCommandLayout()
         self.rootLayout.addStretch(2)
+        self.initDevice()
 
     def addUserInfoLayout(self):
         self.userInfoLayout = QHBoxLayout()
@@ -103,24 +131,21 @@ class TestApp(QWidget):
         self.userInfoLayout.addStretch(2)
         self.rootLayout.addLayout(self.userInfoLayout)
 
-    def addBaseCommandLayout(self):
-        self.baseCommandLayout = QVBoxLayout()
-        # devices
+    def addDeviceLayout(self):
         self.deviceLabel = QLabel("device")
         self.deviceField = QLineEdit(self)
         self.deviceField.setFixedWidth(200)
+        self.deviceRefreshBtn = QPushButton("REFRESH")
+        self.deviceRefreshBtn.clicked.connect(self.onDeviceRefreshBtnClicked)
         self.deviceLayout = QHBoxLayout()
         self.deviceLayout.addWidget(self.deviceLabel)
         self.deviceLayout.addWidget(self.deviceField)
+        self.deviceLayout.addWidget(self.deviceRefreshBtn)
         self.deviceLayout.addStretch()
+        return self.deviceLayout
 
-        client = AdbClient(host="127.0.0.1", port=5037)
-        devices = client.devices()
-        for device in devices:
-            self.device = device
-            self.deviceField.setText(device.serial)
-
-        # battery - 충전, 최소충전값, 충전중
+    def addChargeLayout(self):
+        self.chargingLayout = QHBoxLayout()
         self.chargeLevelLabel = QLabel("충전값")
         self.chargeLevelField = QLineEdit(self)
         self.chargeLevelField.textChanged[str].connect(self.onChargeLevelFieldChange)
@@ -130,23 +155,28 @@ class TestApp(QWidget):
             self.onAutoChargeLevelFieldChange
         )
         self.isChargingLabel = QLabel("충전중")
+        chareBtnGroup = QGroupBox()
+        chargeBtnLayout = QHBoxLayout()
         self.isChargingTrueBtn = QRadioButton("true", self)
         self.isChargingFalseBtn = QRadioButton("false", self)
+        chargeBtnLayout.addWidget(self.isChargingTrueBtn)
+        chargeBtnLayout.addWidget(self.isChargingFalseBtn)
+        chareBtnGroup.setLayout(chargeBtnLayout)
+
         self.updateBtn = QPushButton("UPDATE")
         self.updateBtn.clicked.connect(self.onChargeEventUpdateClick)
-        self.sendBtn = QPushButton("SEND")
-        self.sendBtn.clicked.connect(self.onChargeEventSendClick)
-        self.chargingLayout = QHBoxLayout()
+        sendBtn = QPushButton("SEND")
+        sendBtn.clicked.connect(self.onChargeEventSendClick)
+
+        self.chargingLayout.addStretch()
         self.chargingLayout.addStretch()
         self.chargingLayout.addWidget(self.chargeLevelLabel)
         self.chargingLayout.addWidget(self.chargeLevelField)
         self.chargingLayout.addWidget(self.autoChargeLevelLabel)
         self.chargingLayout.addWidget(self.autoChargeLevelField)
         self.chargingLayout.addWidget(self.isChargingLabel)
-        self.chargingLayout.addWidget(self.isChargingTrueBtn)
-        self.chargingLayout.addWidget(self.isChargingFalseBtn)
-        self.chargingLayout.addWidget(self.updateBtn)
-        self.chargingLayout.addWidget(self.sendBtn)
+        self.chargingLayout.addWidget(chareBtnGroup)
+        self.chargingLayout.addWidget(sendBtn)
 
         # init value
         print(self.data)
@@ -157,15 +187,107 @@ class TestApp(QWidget):
         else:
             self.isChargingFalseBtn.setChecked(True)
 
+        return self.chargingLayout
+
+    def addEmergencyLayout(self):
+        self.emergencyGroup = QGroupBox(self)
+        self.emergencyLayout = QHBoxLayout()
+        self.emergency = QLabel("비상 정지")
+
+        emergencyBtnGroup = QGroupBox()
+        emergencyBtnLayout = QHBoxLayout()
+        self.emergencyStopBtn = QRadioButton("발생", self)
+        self.emergencyReleaseBtn = QRadioButton("해제", self)
+        self.emergencyStopBtn.setChecked(True)
+        emergencyBtnLayout.addWidget(self.emergencyStopBtn)
+        emergencyBtnLayout.addWidget(self.emergencyReleaseBtn)
+        emergencyBtnGroup.setLayout(emergencyBtnLayout)
+
+        sendBtn = QPushButton("SEND")
+        sendBtn.clicked.connect(self.onEmergencyEventSendClick)
+        self.emergencyLayout.addStretch()
+        self.emergencyLayout.addWidget(self.emergency)
+        self.emergencyLayout.addWidget(emergencyBtnGroup)
+        self.emergencyLayout.addWidget(sendBtn)
+
+        return self.emergencyLayout
+
+    def addNaviErrorLayout(self):
+        self.naviErrorLayout = QHBoxLayout()
+        self.naviError = QLabel("주행 에러")
+        naviErrorBtnGroup = QGroupBox()
+        naviErrorBtnLayout = QHBoxLayout()
+        self.naviErrorBtn = QRadioButton("발생", self)
+        self.naviErrorReleaseBtn = QRadioButton("해제", self)
+        self.naviErrorBtn.setChecked(True)
+        naviErrorBtnLayout.addWidget(self.naviErrorBtn)
+        naviErrorBtnLayout.addWidget(self.naviErrorReleaseBtn)
+        naviErrorBtnGroup.setLayout(naviErrorBtnLayout)
+
+        sendBtn = QPushButton("SEND")
+        sendBtn.clicked.connect(self.onNaviErrorEventSendClick)
+        self.naviErrorLayout.addStretch()
+        self.naviErrorLayout.addWidget(self.naviError)
+        self.naviErrorLayout.addWidget(naviErrorBtnGroup)
+        self.naviErrorLayout.addWidget(sendBtn)
+
+        return self.naviErrorLayout
+
+    def addRobotStatusLayout(self):
+        self.robotStatusLayout = QHBoxLayout()
+        self.robotStatus = QLabel("로봇 상태")
+
+        robotStatusBtnGrouop = QGroupBox()
+        robotStatusBtnLayout = QHBoxLayout()
+        self.robotStatusOffBtn = QRadioButton("OFF", self)
+        self.robotStatusOnBtn = QRadioButton("ON", self)
+        self.robotStatusOffBtn.setChecked(True)
+        robotStatusBtnLayout.addWidget(self.robotStatusOffBtn)
+        robotStatusBtnLayout.addWidget(self.robotStatusOnBtn)
+        robotStatusBtnGrouop.setLayout(robotStatusBtnLayout)
+
+        sendBtn = QPushButton("SEND")
+        sendBtn.clicked.connect(self.onRobotStatusEventSendClick)
+        self.robotStatusLayout.addStretch()
+        self.robotStatusLayout.addWidget(self.robotStatus)
+        self.robotStatusLayout.addWidget(robotStatusBtnGrouop)
+        self.robotStatusLayout.addWidget(sendBtn)
+
+        return self.robotStatusLayout
+
+    def addBarcodeLayout(self):
+        self.barcodeLayout = QHBoxLayout()
+        self.barcode = QLabel("바코드")
+        self.barcodeField = QLineEdit(self)
+        self.barcodeField.textChanged[str].connect(self.onBarcodeChanged)
+
+        sendBtn = QPushButton("SEND")
+        sendBtn.clicked.connect(self.onBarcodeEventSendClick)
+        self.barcodeLayout.addStretch()
+        self.barcodeLayout.addStretch()
+        self.barcodeLayout.addStretch()
+        self.barcodeLayout.addWidget(self.barcode)
+        self.barcodeLayout.addWidget(self.barcodeField)
+        self.barcodeLayout.addWidget(sendBtn)
+
+        return self.barcodeLayout
+
+    def addBaseCommandLayout(self):
+        self.baseCommandLayout = QVBoxLayout()
+        # devices
+        self.baseCommandLayout.addLayout(self.addDeviceLayout())
+        # battery - 충전, 최소충전값, 충전중
+        self.baseCommandLayout.addLayout(self.addChargeLayout())
         # emergency stop
+        self.baseCommandLayout.addLayout(self.addEmergencyLayout())
         # navi error
+        self.baseCommandLayout.addLayout(self.addNaviErrorLayout())
         # robot status
+        self.baseCommandLayout.addLayout(self.addRobotStatusLayout())
         # barcode
+        self.baseCommandLayout.addLayout(self.addBarcodeLayout())
         # mission
         # move
-
-        self.baseCommandLayout.addLayout(self.deviceLayout)
-        self.baseCommandLayout.addLayout(self.chargingLayout)
         self.baseCommandLayout.addStretch()
         self.baseCommandLayout.addStretch()
         self.rootLayout.addLayout(self.baseCommandLayout)
@@ -194,14 +316,59 @@ class TestApp(QWidget):
         if self.isChargingTrueBtn.isChecked():
             isCharging = "true"
         command += " --ez is_charging " + isCharging
-        print(command)
-        self.device.shell(command)
+        self.doCommand(command)
+
+    def onEmergencyEventSendClick(self):
+        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_DEV_EMERGENCY
+        command += " --es errCode 9999"
+        command += " --ez fixed " + str(self.emergencyReleaseBtn.isChecked())
+        self.doCommand(command)
+
+    def onNaviErrorEventSendClick(self):
+        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_DEV_NAVI_ERROR
+        command += " --es errCode 9999"
+        command += " --ez fixed " + str(self.naviErrorReleaseBtn.isChecked())
+        self.doCommand(command)
+
+    def onRobotStatusEventSendClick(self):
+        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_DEV_ROBOT_STATUS_ERROR
+        command += " --es errCode 9999"
+        command += " --ez fixed " + str(self.robotStatusOnBtn.isChecked())
+        self.doCommand(command)
 
     def clearLoginLayout(self):
         for i in reversed(range(self.loginBoxLayout.count())):
             item = self.loginBoxLayout.itemAt(i).widget()
             if (type(item)) != NoneType:
                 item.setParent(None)
+
+    def onDeviceRefreshBtnClicked(self):
+        self.initDevice()
+
+    def doCommand(self, command):
+        print("command", command)
+        if self.device != None:
+            self.device.shell(command)
+        else:
+            QMessageBox.information(self, "Error", "adb가 연결되지 않았습니다.")
+
+    def chargeBtnUpdate(self):
+        if self.isChargingTrueBtn.isChecked():
+            self.isChargingFalseBtn.setChecked(False)
+        if self.isChargingFalseBtn.isChecked():
+            self.isChargingTrueBtn.setChecked(False)
+
+    def emergencyBtnUpdate(self):
+        if self.emergencyStopBtn.isChecked():
+            self.emergencyReleaseBtn.setChecked(False)
+        if self.emergencyReleaseBtn.isChecked():
+            self.emergencyStopBtn.setChecked(False)
+
+    def naviErrorBtnUpdate(self):
+        if self.naviErrorBtn.isChecked():
+            self.naviErrorReleaseBtn.setChecked(False)
+        if self.emergencyReleaseBtn.isChecked():
+            self.naviErrorReleaseBtn.setChecked(False)
 
 
 if __name__ == "__main__":
