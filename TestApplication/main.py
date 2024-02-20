@@ -114,6 +114,27 @@ class TestApp(QWidget):
         command += " --es value " + self.barcode
         self.doCommand(command)
 
+    def onMissionEventSendClick(self):
+        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_DEV_MISSION
+        self.doCommand(command)
+
+    def onSendNaviToMountingClick(self):
+        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_DEV_MOVE
+        command += " --ei moveStatus -1"
+        pass
+
+    def onSendNaviToPickingClick(self):
+        pass
+
+    def onSendNaviToPackingClick(self):
+        pass
+
+    def onSendNaviToChargerClick(self):
+        pass
+
+    def onSendArriveClick(self):
+        pass
+
     def loginCompleted(self):
         self.clearLoginLayout()
         self.addUserInfoLayout()
@@ -272,6 +293,52 @@ class TestApp(QWidget):
 
         return self.barcodeLayout
 
+    def addMissionLayout(self):
+        self.missionLayout = QHBoxLayout()
+        self.mission = QLabel("미션 할당")
+        sendBtn = QPushButton("SEND")
+        sendBtn.clicked.connect(self.onMissionEventSendClick)
+        self.missionLayout.addStretch()
+        self.missionLayout.addStretch()
+        self.missionLayout.addStretch()
+        self.missionLayout.addWidget(self.mission)
+        self.missionLayout.addWidget(sendBtn)
+        return self.missionLayout
+
+    def addNaviLayout(self):
+        # 장착 장소 이동
+        # 피킹 장소 이동
+        # 하역 장소 이동
+        # 충전대 이동
+        self.naviLayout = QHBoxLayout()
+        self.navi = QLabel("로봇 이동")
+        sendNaviToMounting = QPushButton("장착 장소 이동")
+        sendNaviToMounting.clicked.connect(self.onSendNaviToMountingClick)
+
+        sendNaviToPicking = QPushButton("피킹 장소 이동")
+        sendNaviToPicking.clicked.connect(self.onSendNaviToPickingClick)
+
+        sendNaviToPacking = QPushButton("하역 장소 이동")
+        sendNaviToPacking.clicked.connect(self.onSendNaviToPackingClick)
+
+        sendNaviToCharger = QPushButton("충전 장소 이동")
+        sendNaviToCharger.clicked.connect(self.onSendNaviToChargerClick)
+
+        sendArrive = QPushButton("도착")
+        sendArrive.clicked.connect(self.onSendArriveClick)
+
+        self.naviLayout.addStretch()
+        self.naviLayout.addStretch()
+        self.naviLayout.addStretch()
+        self.naviLayout.addWidget(self.navi)
+        self.naviLayout.addWidget(sendNaviToMounting)
+        self.naviLayout.addWidget(sendNaviToPicking)
+        self.naviLayout.addWidget(sendNaviToPacking)
+        self.naviLayout.addWidget(sendNaviToCharger)
+        self.naviLayout.addWidget(sendArrive)
+
+        return self.naviLayout
+
     def addBaseCommandLayout(self):
         self.baseCommandLayout = QVBoxLayout()
         # devices
@@ -287,7 +354,9 @@ class TestApp(QWidget):
         # barcode
         self.baseCommandLayout.addLayout(self.addBarcodeLayout())
         # mission
-        # move
+        self.baseCommandLayout.addLayout(self.addMissionLayout())
+        # navi
+        self.baseCommandLayout.addLayout(self.addNaviLayout())
         self.baseCommandLayout.addStretch()
         self.baseCommandLayout.addStretch()
         self.rootLayout.addLayout(self.baseCommandLayout)
