@@ -32,7 +32,11 @@ INTENT_ACTION_DEV_ROBOT_STATUS_ERROR = "INTENT_ACTION_DEV_ROBOT_STATUS_ERROR"
 INTENT_ACTION_DEV_NAVI_ERROR = "INTENT_ACTION_DEV_NAVI_ERROR"
 INTENT_ACTION_DEV_MISSION = "INTENT_ACTION_DEV_MISSION"
 INTENT_ACTION_DEV_BARCODE = "INTENT_ACTION_DEV_BARCODE"
-INTENT_ACTION_DEV_MOVE = "INTENT_ACTION_DEV_MOVE"
+INTENT_ACTION_MOVE_TO_MOUNTING = "INTENT_ACTION_MOVE_TO_MOUNTING"
+INTENT_ACTION_MOVE_TO_PICKING = "INTENT_ACTION_MOVE_TO_PICKING"
+INTENT_ACTION_MOVE_TO_PACKING = "INTENT_ACTION_MOVE_TO_PACKING"
+INTENT_ACTION_MOVE_TO_CHARGER = "INTENT_ACTION_MOVE_TO_CHARGER"
+INTENT_ACTION_ARRIVE = "INTENT_ACTION_ARRIVE"
 
 
 class TestApp(QWidget):
@@ -119,21 +123,24 @@ class TestApp(QWidget):
         self.doCommand(command)
 
     def onSendNaviToMountingClick(self):
-        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_DEV_MOVE
-        command += " --ei moveStatus -1"
-        pass
+        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_MOVE_TO_MOUNTING
+        self.doCommand(command)
 
     def onSendNaviToPickingClick(self):
-        pass
+        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_MOVE_TO_PICKING
+        self.doCommand(command)
 
     def onSendNaviToPackingClick(self):
-        pass
+        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_MOVE_TO_PACKING
+        self.doCommand(command)
 
     def onSendNaviToChargerClick(self):
-        pass
+        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_MOVE_TO_CHARGER
+        self.doCommand(command)
 
     def onSendArriveClick(self):
-        pass
+        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_ARRIVE
+        self.doCommand(command)
 
     def loginCompleted(self):
         self.clearLoginLayout()
@@ -256,7 +263,7 @@ class TestApp(QWidget):
 
     def addRobotStatusLayout(self):
         self.robotStatusLayout = QHBoxLayout()
-        self.robotStatus = QLabel("로봇 상태")
+        self.robotStatus = QLabel("MQTT")
 
         robotStatusBtnGrouop = QGroupBox()
         robotStatusBtnLayout = QHBoxLayout()
