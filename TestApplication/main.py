@@ -2,6 +2,7 @@ import sys
 from types import NoneType
 from PyQt5.QtWidgets import (
     QApplication,
+    QMainWindow,
     QWidget,
     QHBoxLayout,
     QVBoxLayout,
@@ -11,6 +12,7 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QGroupBox,
+    QTabWidget,
 )
 
 import firebase_admin
@@ -19,13 +21,16 @@ from firebase_admin import firestore
 
 from ppadb.client import Client as AdbClient
 
+import time
+
 cred = credentials.Certificate("lg-logisticsmanager-firebase-adminsdk.json")
 app = firebase_admin.initialize_app(cred)
 db = firestore.client()
 
 COLLECTION_ACCOUNT = "account"
 COLLECTION_DATA = "data"
-BAES_ADB_SHELL_COMMAND = "am broadcast -a "
+ADB_SHELL_BROADCAST_COMMAND = "am broadcast -a "
+ADB_SHELL_INPUT_COMMAND = "input tap "
 INTENT_ACTION_DEV_CHARGE = "INTENT_ACTION_DEV_CHARGE"
 INTENT_ACTION_DEV_EMERGENCY = "INTENT_ACTION_DEV_EMERGENCY"
 INTENT_ACTION_DEV_ROBOT_STATUS_ERROR = "INTENT_ACTION_DEV_ROBOT_STATUS_ERROR"
@@ -43,22 +48,29 @@ INTENT_ACTION_ARRIVE_TO_PICKING = "INTENT_ACTION_ARRIVE_TO_PICKING"
 INTENT_ACTION_ARRIVE_TO_PACKING = "INTENT_ACTION_ARRIVE_TO_PACKING"
 
 
-class TestApp(QWidget):
+class TestApp(QMainWindow):
     def __init__(self, size):
         super().__init__()
-        self.initUI(size)
 
-    def initUI(self, size):
-        print("initUI")
-        width = size.width()
-        height = size.height()
-        # base
-        self.setWindowTitle("Logistics App Tester")
-        self.move(width // 4, height // 4)
-        self.resize(width // 2, height // 2)
+        self.setWindowTitle("물류 태블릿 앱 Test Application")
+        tabs = QTabWidget()
+        tabs.addTab(self.BasicWidget(), "Basic")
+        tabs.addTab(self.TestCaseWidget(), "TestCase")
+        tabs.addTab(QWidget(), "Random")
 
-        self.setLayout(self.getInitLayout())
-        self.show()
+        self.setCentralWidget(tabs)
+
+        # self.initUI(size)
+
+    def BasicWidget(self):
+        widget = QWidget()
+        widget.setLayout(self.getBaseicLayout())
+        return widget
+
+    def TestCaseWidget(self):
+        widget = QWidget()
+        widget.setLayout(self.getTestCaseLayout())
+        return widget
 
     def initDevice(self):
         try:
@@ -74,7 +86,27 @@ class TestApp(QWidget):
             if hasattr(self, "deviceField"):
                 self.deviceField.setText("not connected")
 
-    def getInitLayout(self):
+    def onTestCase1Click(self):
+        # initial setup
+        # 1. 언어 선택
+        command = ADB_SHELL_INPUT_COMMAND + "600 400 "
+        self.doCommand(command)
+        time.sleep(5)
+        # 2. 다음 버튼
+        command = ADB_SHELL_INPUT_COMMAND + "600 1870 "
+        self.doCommand(command)
+
+    def getTestCaseLayout(self):
+        rootLayout = QVBoxLayout()
+        testCaseLayout1 = QVBoxLayout()
+        sendButton1 = QPushButton("TestCase1 Run")
+        sendButton1.clicked.connect(self.onTestCase1Click)
+
+        testCaseLayout1.addWidget(sendButton1)
+        rootLayout.addLayout(testCaseLayout1)
+        return rootLayout
+
+    def getBaseicLayout(self):
         self.rootLayout = QVBoxLayout()
         self.loginLayout = QHBoxLayout()
         self.loginBoxLayout = QVBoxLayout()
@@ -118,48 +150,48 @@ class TestApp(QWidget):
             QMessageBox.information(self, "로그인 실패", "로그인 실패")
 
     def onBarcodeEventSendClick(self):
-        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_DEV_BARCODE
+        command = ADB_SHELL_BROADCAST_COMMAND + INTENT_ACTION_DEV_BARCODE
         command += " --es value " + self.barcode
         self.doCommand(command)
 
     def onMissionEventSendClick(self):
-        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_DEV_MISSION
+        command = ADB_SHELL_BROADCAST_COMMAND + INTENT_ACTION_DEV_MISSION
         self.doCommand(command)
 
     def onSendNaviToMountingClick(self):
-        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_MOVE_TO_MOUNTING
+        command = ADB_SHELL_BROADCAST_COMMAND + INTENT_ACTION_MOVE_TO_MOUNTING
         self.doCommand(command)
 
     def onSendNaviToPickingClick(self):
-        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_MOVE_TO_PICKING
+        command = ADB_SHELL_BROADCAST_COMMAND + INTENT_ACTION_MOVE_TO_PICKING
         self.doCommand(command)
 
     def onSendNaviToPackingClick(self):
-        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_MOVE_TO_PACKING
+        command = ADB_SHELL_BROADCAST_COMMAND + INTENT_ACTION_MOVE_TO_PACKING
         self.doCommand(command)
 
     def onSendNaviToChargerClick(self):
-        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_MOVE_TO_CHARGER
+        command = ADB_SHELL_BROADCAST_COMMAND + INTENT_ACTION_MOVE_TO_CHARGER
         self.doCommand(command)
 
     def onSendArriveClick(self):
-        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_ARRIVE
+        command = ADB_SHELL_BROADCAST_COMMAND + INTENT_ACTION_ARRIVE
         self.doCommand(command)
 
     def onSendArriveToWaitingClick(self):
-        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_ARRIVE_TO_WAITING
+        command = ADB_SHELL_BROADCAST_COMMAND + INTENT_ACTION_ARRIVE_TO_WAITING
         self.doCommand(command)
 
     def onSendArriveToMountingClick(self):
-        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_ARRIVE_TO_MOUNTING
+        command = ADB_SHELL_BROADCAST_COMMAND + INTENT_ACTION_ARRIVE_TO_MOUNTING
         self.doCommand(command)
 
     def onSendArriveToPickingClick(self):
-        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_ARRIVE_TO_PICKING
+        command = ADB_SHELL_BROADCAST_COMMAND + INTENT_ACTION_ARRIVE_TO_PICKING
         self.doCommand(command)
 
     def onSendArriveToPackingClick(self):
-        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_ARRIVE_TO_PACKING
+        command = ADB_SHELL_BROADCAST_COMMAND + INTENT_ACTION_ARRIVE_TO_PACKING
         self.doCommand(command)
 
     def loginCompleted(self):
@@ -437,7 +469,7 @@ class TestApp(QWidget):
         )
 
     def onChargeEventSendClick(self):
-        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_DEV_CHARGE
+        command = ADB_SHELL_BROADCAST_COMMAND + INTENT_ACTION_DEV_CHARGE
         command += " --ei battery_level " + self.chargeLevel
         command += " --ei auto_charge_level " + self.autoChargeLevel
         isCharging = "false"
@@ -447,19 +479,19 @@ class TestApp(QWidget):
         self.doCommand(command)
 
     def onEmergencyEventSendClick(self):
-        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_DEV_EMERGENCY
+        command = ADB_SHELL_BROADCAST_COMMAND + INTENT_ACTION_DEV_EMERGENCY
         command += " --es errCode 9999"
         command += " --ez fixed " + str(self.emergencyReleaseBtn.isChecked())
         self.doCommand(command)
 
     def onNaviErrorEventSendClick(self):
-        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_DEV_NAVI_ERROR
+        command = ADB_SHELL_BROADCAST_COMMAND + INTENT_ACTION_DEV_NAVI_ERROR
         command += " --es errCode 9999"
         command += " --ez fixed " + str(self.naviErrorReleaseBtn.isChecked())
         self.doCommand(command)
 
     def onRobotStatusEventSendClick(self):
-        command = BAES_ADB_SHELL_COMMAND + INTENT_ACTION_DEV_ROBOT_STATUS_ERROR
+        command = ADB_SHELL_BROADCAST_COMMAND + INTENT_ACTION_DEV_ROBOT_STATUS_ERROR
         command += " --es errCode 9999"
         command += " --ez fixed " + str(self.robotStatusOnBtn.isChecked())
         self.doCommand(command)
@@ -503,5 +535,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     screen = app.primaryScreen()
     size = screen.size()
-    ex = TestApp(size)
+    mainWindow = TestApp(size)
+    mainWindow.show()
+    # ex = TestApp(size)
     sys.exit(app.exec_())
