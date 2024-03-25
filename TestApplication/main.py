@@ -1,4 +1,5 @@
 import sys
+import os
 from types import NoneType
 from PyQt5.QtWidgets import (
     QApplication,
@@ -13,8 +14,10 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QGroupBox,
     QTabWidget,
+    QScrollArea
 )
-
+from PyQt5.QtGui import QPixmap
+from PyQt5.QtCore import Qt
 import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import firestore
@@ -31,6 +34,7 @@ COLLECTION_ACCOUNT = "account"
 COLLECTION_DATA = "data"
 ADB_SHELL_BROADCAST_COMMAND = "am broadcast -a "
 ADB_SHELL_INPUT_COMMAND = "input tap "
+ADB_SHELL_INPUT_SWIPE_COMMAND = "input swipe "
 INTENT_ACTION_DEV_CHARGE = "INTENT_ACTION_DEV_CHARGE"
 INTENT_ACTION_DEV_EMERGENCY = "INTENT_ACTION_DEV_EMERGENCY"
 INTENT_ACTION_DEV_ROBOT_STATUS_ERROR = "INTENT_ACTION_DEV_ROBOT_STATUS_ERROR"
@@ -86,25 +90,235 @@ class TestApp(QMainWindow):
             if hasattr(self, "deviceField"):
                 self.deviceField.setText("not connected")
 
+    def loadScreenshot(self, title):
+        pixmap = QPixmap(title + ".png")
+        pixmap = pixmap.scaledToWidth(400)
+        img_label = QLabel()
+        img_label.setPixmap(pixmap)
+        img_title = QLabel(title)
+        vBox = QVBoxLayout()
+        vBox.addWidget(img_label)
+        vBox.addWidget(img_title)
+        return vBox
+
     def onTestCase1Click(self):
         # initial setup
         # 1. 언어 선택
+        self.screencaptureAndPull("test1-start")
         command = ADB_SHELL_INPUT_COMMAND + "600 400 "
         self.doCommand(command)
-        time.sleep(5)
+        self.screencaptureAndPull("test1-1")
         # 2. 다음 버튼
         command = ADB_SHELL_INPUT_COMMAND + "600 1870 "
         self.doCommand(command)
+        self.screencaptureAndPull("test1-end")
+
+        hBox = QHBoxLayout()
+        hBox.addLayout(self.loadScreenshot("test1-start"))
+        hBox.addLayout(self.loadScreenshot("test1-1"))
+        hBox.addLayout(self.loadScreenshot("test1-end"))
+        self.testCase1Layout.addLayout(hBox)
+
+    def onTestCase2Click(self):
+        # initial setup
+        # 1. clear 버튼
+        self.screencaptureAndPull("test2-start")
+        command = ADB_SHELL_INPUT_COMMAND + "1100 530 "
+        self.doCommand(command)
+        self.screencaptureAndPull("test2-1")
+        # 2. 입력 뷰 선택
+        command = ADB_SHELL_INPUT_COMMAND + "100 530 "
+        self.doCommand(command)
+        # 3-1. 지점코드 입력 C
+        command = ADB_SHELL_INPUT_COMMAND + "442 1789 "
+        self.doCommand(command)
+        # 3-2. 지점코드 입력 0
+        command = ADB_SHELL_INPUT_COMMAND + "49 1872"  # ABC전환키
+        self.doCommand(command)
+        command = ADB_SHELL_INPUT_COMMAND + "1031 1588"
+        self.doCommand(command)
+        # 3-3. 지점코드 입력 9
+        command = ADB_SHELL_INPUT_COMMAND + "938 1588 "
+        self.doCommand(command)
+        # 3-4. 지점코드 입력 1
+        command = ADB_SHELL_INPUT_COMMAND + "171 1588 "
+        self.doCommand(command)
+        # 3-5. 지점코드 입력 I
+        command = ADB_SHELL_INPUT_COMMAND + "49 1872"
+        self.doCommand(command)
+        command = ADB_SHELL_INPUT_COMMAND + "833 1569 "
+        self.doCommand(command)
+        # 3-6. 지점코드 입력 T
+        command = ADB_SHELL_INPUT_COMMAND + "546 1569 "
+        self.doCommand(command)
+        # 3-7. 지점코드 입력 X
+        command = ADB_SHELL_INPUT_COMMAND + "328 1781 "
+        self.doCommand(command)
+        # 3-8. 지점코드 입력 F
+        command = ADB_SHELL_INPUT_COMMAND + "478 1685 "
+        self.doCommand(command)
+        self.screencaptureAndPull("test2-2")
+        # 4. 완료 버튼
+        command = ADB_SHELL_INPUT_COMMAND + "1098 1677 "
+        self.doCommand(command)
+        self.screencaptureAndPull("test2-3")
+        time.sleep(10)
+        self.screencaptureAndPull("test2-4")
+        # 5. 다음 버튼
+        command = ADB_SHELL_INPUT_COMMAND + "889 1870 "
+        self.doCommand(command)
+        self.screencaptureAndPull("test2-end")
+        scrollArea = QScrollArea()
+        hBox = QHBoxLayout()
+        hBox.addLayout(self.loadScreenshot("test2-start"))
+        hBox.addLayout(self.loadScreenshot("test2-1"))
+        hBox.addLayout(self.loadScreenshot("test2-2"))
+        hBox.addLayout(self.loadScreenshot("test2-3"))
+        hBox.addLayout(self.loadScreenshot("test2-4"))
+        hBox.addLayout(self.loadScreenshot("test2-end"))
+        scrollArea.setLayout(hBox)
+        self.testCase2Layout.addWidget(scrollArea)
+
+    def onTestCase3Click(self):
+        # initial setup
+        # 1-1. 연동할 로봇을 선택해 주세요. 10회 터치
+        self.screencaptureAndPull("test3-start")
+        for i in range(10):
+            command = ADB_SHELL_INPUT_COMMAND + "616 248 "
+            self.doCommand(command)
+        # 1-2. 입력 창 선택
+        command = ADB_SHELL_INPUT_COMMAND + "250 956 "
+        self.doCommand(command)
+        # 1-3. 2580
+        command = ADB_SHELL_INPUT_COMMAND + "267 1483 "
+        self.doCommand(command)
+        command = ADB_SHELL_INPUT_COMMAND + "541 1483 "
+        self.doCommand(command)
+        command = ADB_SHELL_INPUT_COMMAND + "827 1483 "
+        self.doCommand(command)
+        command = ADB_SHELL_INPUT_COMMAND + "1048 1503 "
+        self.doCommand(command)
+        # 1-4. 히든 모드 설정
+        command = ADB_SHELL_INPUT_COMMAND + "707 1068 "
+        self.doCommand(command)
+        self.screencaptureAndPull("test3-1")
+        # 2. Fake 로봇 선택
+        command = ADB_SHELL_INPUT_SWIPE_COMMAND + "616 248 616 248 1000"
+        self.doCommand(command)
+        self.screencaptureAndPull("test3-end")
+
+        hBox = QHBoxLayout()
+        hBox.addLayout(self.loadScreenshot("test3-start"))
+        hBox.addLayout(self.loadScreenshot("test3-1"))
+        hBox.addLayout(self.loadScreenshot("test3-end"))
+        self.testCase3Layout.addLayout(hBox)
+
+    def onTestCase4Click(self):
+        # initial setup
+        self.screencaptureAndPull("test4-start")
+        # 1. 서비스 이용 약관
+        command = ADB_SHELL_INPUT_COMMAND + "100 425 "
+        self.doCommand(command)
+        self.screencaptureAndPull("test4-1")
+        command = ADB_SHELL_INPUT_COMMAND + "112 409 "
+        self.doCommand(command)
+        self.screencaptureAndPull("test4-2")
+        # 2. 소프트웨어 사용 계약
+        command = ADB_SHELL_INPUT_COMMAND + "100 565 "
+        self.doCommand(command)
+        self.screencaptureAndPull("test4-3")
+        command = ADB_SHELL_INPUT_COMMAND + "112 409 "
+        self.doCommand(command)
+        self.screencaptureAndPull("test4-4")
+        # 3. 다음 버튼
+        command = ADB_SHELL_INPUT_COMMAND + "889 1870 "
+        self.doCommand(command)
+        self.screencaptureAndPull("test4-5")
+        time.sleep(15)
+        self.screencaptureAndPull("test4-6")
+        # # 4. 완료 버튼
+        # command = ADB_SHELL_INPUT_COMMAND + "600 1870 "
+        # self.doCommand(command)
+        # self.screencaptureAndPull("test4-end")
+
+
+        scrollArea = QScrollArea()
+
+        hBox = QHBoxLayout()
+        hBox.addLayout(self.loadScreenshot("test4-start"))
+        hBox.addLayout(self.loadScreenshot("test4-1"))
+        hBox.addLayout(self.loadScreenshot("test4-2"))
+        hBox.addLayout(self.loadScreenshot("test4-3"))
+        hBox.addLayout(self.loadScreenshot("test4-4"))
+        hBox.addLayout(self.loadScreenshot("test4-5"))
+        hBox.addLayout(self.loadScreenshot("test4-6"))
+        hBox.addLayout(self.loadScreenshot("test4-end"))
+        scrollArea.setWidgetResizable(True)
+        scrollArea.setLayout(hBox)
+        self.testCase3Layout.addWidget(scrollArea)
 
     def getTestCaseLayout(self):
         rootLayout = QVBoxLayout()
-        testCaseLayout1 = QVBoxLayout()
-        sendButton1 = QPushButton("TestCase1 Run")
-        sendButton1.clicked.connect(self.onTestCase1Click)
-
-        testCaseLayout1.addWidget(sendButton1)
-        rootLayout.addLayout(testCaseLayout1)
+        self.testCase1Layout = QVBoxLayout()
+        self.testCase1Layout.addLayout(
+            self.getTestCaseRow(
+                "TC_물류_타사_옴론_CONTROL_APP_Initial Setup_2.1.언어",
+                "TestCase1",
+                self.onTestCase1Click,
+            )
+        )
+        self.testCase2Layout = QVBoxLayout()
+        self.testCase2Layout.addLayout(
+            self.getTestCaseRow(
+                "TC_물류_타사_옴론_CONTROL_APP_Initial Setup_2.2.지점코드 로그인",
+                "TestCase2",
+                self.onTestCase2Click,
+            )
+        )
+        self.testCase3Layout = QVBoxLayout()
+        self.testCase3Layout.addLayout(
+            self.getTestCaseRow(
+                "TC_물류_타사_옴론_CONTROL_APP_Initial Setup_2.3.로봇 연동",
+                "TestCase3",
+                self.onTestCase3Click,
+            )
+        )
+        self.testCase4Layout = QVBoxLayout()
+        self.testCase4Layout.addLayout(
+            self.getTestCaseRow(
+                "TC_물류_타사_옴론_CONTROL_APP_Initial Setup_2.4.약관 및 정책",
+                "TestCase4",
+                self.onTestCase4Click,
+            )
+        )
+        rootLayout.addLayout(self.testCase1Layout)
+        rootLayout.addLayout(self.testCase2Layout)
+        rootLayout.addLayout(self.testCase3Layout)
+        rootLayout.addLayout(self.testCase4Layout)
+        scrollArea = QScrollArea()
+        hBox = QHBoxLayout()
+        hBox.addLayout(self.loadScreenshot("test4-start"))
+        hBox.addLayout(self.loadScreenshot("test4-1"))
+        hBox.addLayout(self.loadScreenshot("test4-2"))
+        hBox.addLayout(self.loadScreenshot("test4-3"))
+        hBox.addLayout(self.loadScreenshot("test4-4"))
+        hBox.addLayout(self.loadScreenshot("test4-5"))
+        hBox.addLayout(self.loadScreenshot("test4-6"))
+        hBox.addLayout(self.loadScreenshot("test4-end"))
+        scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        scrollArea.setWidgetResizable(True)
+        scrollArea.setLayout(hBox)
+        self.testCase4Layout.addWidget(scrollArea)
         return rootLayout
+
+    def getTestCaseRow(self, title, button, clickEvent):
+        testCaseLayout = QHBoxLayout()
+        testCaseTitle = QLabel(title)
+        testCaseButton = QPushButton(button)
+        testCaseButton.clicked.connect(clickEvent)
+        testCaseLayout.addWidget(testCaseButton)
+        testCaseLayout.addWidget(testCaseTitle)
+        return testCaseLayout
 
     def getBaseicLayout(self):
         self.rootLayout = QVBoxLayout()
@@ -507,10 +721,22 @@ class TestApp(QMainWindow):
 
     def doCommand(self, command):
         print("command", command)
+        time.sleep(2)
         if self.device != None:
             self.device.shell(command)
         else:
             QMessageBox.information(self, "Error", "adb가 연결되지 않았습니다.")
+
+    def screencaptureAndPull(self, name):
+        print("screencapture ", name)
+        time.sleep(2)
+        command = (
+            "adb shell screencap -p /sdcard/shot.png && adb pull /sdcard/shot.png "
+            + name
+            + ".png"
+        )
+        os.system(command)
+        time.sleep(2)
 
     def chargeBtnUpdate(self):
         if self.isChargingTrueBtn.isChecked():
