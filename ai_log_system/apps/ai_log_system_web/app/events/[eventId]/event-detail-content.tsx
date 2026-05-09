@@ -1,19 +1,15 @@
 import Link from 'next/link';
-import type { EventItem, ReportItem, AnalyzerSummaryResponse, SolutionFetchResponse } from '@ai-log/shared-contracts';
+import type { EventItem, AnalyzerSummaryResponse } from '@ai-log/shared-contracts';
 import { STATUS_LABEL_MAP, STATUS_COLOR_MAP } from './constants';
 
 type EventDetailContentProps = {
   event: EventItem;
-  report: ReportItem | null;
   analysisResult: AnalyzerSummaryResponse | null;
-  solutionResult: SolutionFetchResponse | null;
 };
 
 export function EventDetailContent({
   event,
-  report,
   analysisResult,
-  solutionResult,
 }: EventDetailContentProps) {
   const statusKey = String(event.status)
     .trim()
@@ -22,16 +18,14 @@ export function EventDetailContent({
     .toLowerCase();
   const statusLabel = STATUS_LABEL_MAP[statusKey] ?? statusKey.toUpperCase();
   const statusClasses = STATUS_COLOR_MAP[statusKey] ?? STATUS_COLOR_MAP.unknown;
-  const isSpinning = [
-    'analyzing',
-    'solution_generating',
-    'report_generating',
-  ].includes(statusKey);
+  const isSpinning = ['analyzing'].includes(statusKey);
 
   const summaryText = analysisResult?.summary?.trim() || '요약 데이터가 없습니다.';
   const reasonText = analysisResult?.reason?.trim() || '원인 데이터가 없습니다.';
-  const solutions = Array.isArray(solutionResult?.solutions)
-    ? solutionResult.solutions.filter((value) => Boolean(String(value).trim()))
+  const func = analysisResult?.func?.trim() || '이슈 기능 데이터가 없습니다.';
+  const severity = analysisResult?.severity?.trim() || '이슈 심각도 데이터가 없습니다.';
+  const solutions = Array.isArray(analysisResult?.solutions)
+    ? analysisResult.solutions.filter((value) => Boolean(String(value).trim()))
     : [];
 
   return (
@@ -129,24 +123,27 @@ export function EventDetailContent({
                 </p>
               )}
             </div>
-          </div>
 
-          {report ? (
-            <div className="mt-6 space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="rounded-3xl bg-zinc-50 p-6 dark:bg-slate-950">
                 <p className="text-sm font-semibold text-zinc-500 dark:text-zinc-400">
-                  리포트 내용
+                  이슈 기능
                 </p>
-                <pre className="mt-3 whitespace-pre-wrap rounded-3xl bg-white p-5 text-sm leading-7 text-zinc-800 dark:bg-slate-900 dark:text-zinc-100">
-                  {report.report}
-                </pre>
+                <p className="mt-3 rounded-3xl bg-white p-5 text-sm leading-7 text-zinc-800 dark:bg-slate-900 dark:text-zinc-100">
+                  {func}
+                </p>
+              </div>
+
+              <div className="rounded-3xl bg-zinc-50 p-6 dark:bg-slate-950">
+                <p className="text-sm font-semibold text-zinc-500 dark:text-zinc-400">
+                  이슈 심각도
+                </p>
+                <p className="mt-3 rounded-3xl bg-white p-5 text-sm leading-7 text-zinc-800 dark:bg-slate-900 dark:text-zinc-100">
+                  {severity}
+                </p>
               </div>
             </div>
-          ) : (
-            <div className="mt-6 rounded-3xl bg-zinc-50 p-6 text-sm text-zinc-500 dark:bg-slate-950 dark:text-zinc-400">
-              해당 이벤트에 연결된 리포트가 없습니다.
-            </div>
-          )}
+          </div>
           {Array.isArray(event.errorLogBundle) && event.errorLogBundle.length > 0 ? (
             <div className="mt-6 rounded-3xl bg-zinc-50 p-6 dark:bg-slate-950">
               <p className="text-sm font-semibold text-zinc-500 dark:text-zinc-400">

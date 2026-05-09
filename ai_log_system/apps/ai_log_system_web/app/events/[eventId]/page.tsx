@@ -2,8 +2,6 @@ import type { EventItem } from '@ai-log/shared-contracts';
 import {
   getAnalysisSummary,
   getEventById,
-  getReportByEventId,
-  getSolutions,
 } from '../../lib/api';
 import { EventDetailContent } from './event-detail-content';
 
@@ -47,11 +45,9 @@ export default async function EventDetailPage({
   }
 
   const eventResult = await getEventById(validation.id!);
-  const reportResult = await getReportByEventId(validation.id!);
   const event = eventResult.data;
   const isServiceUnavailable = !eventResult.ok && eventResult.status !== 404;
   console.log(`eventResult`, eventResult)
-  console.log(`reportResult`, reportResult)
 
   if (!event) {
     return (
@@ -71,14 +67,11 @@ export default async function EventDetailPage({
   }
 
   const analysisResult = await getAnalysisSummary(event.id);
-  const solutionResult = await getSolutions(event.id);
 
   return (
     <EventDetailContent
       event={event}
-      report={reportResult.data}
       analysisResult={analysisResult}
-      solutionResult={solutionResult}
     />
   );
 }

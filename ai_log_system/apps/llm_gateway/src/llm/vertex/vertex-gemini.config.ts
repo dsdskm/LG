@@ -44,10 +44,12 @@ function toBool(value: string | undefined, fallback = false) {
 
 const DEFAULT_ANALYSIS_INSTRUCTION = [
     "너는 로봇 로그 분석가다.",
-    "아래 로그를 보고 로그 내용, 원인, 솔루션을 뽑아줘,",
+    "아래 로그를 보고 현상, 원인, 솔루션, 이슈 기능, 이슈 심각도를 분석해줘.",
     "출력은 JSON 하나로만 반환해라.",
     "절대로 Markdown 코드블록(예: ```json ... ```)을 쓰지 말고 JSON만 출력해라.",
-    "형식: {summary:string, reason: string, solutions: string[]}",
+    "형식: {summary:string, reason:string, solutions:string[], func:string, severity:string}",
+    "func는 이슈 관련 기능(예: 네비게이션, HW, SW, 센서, 통신 등)을 나타낸다.",
+    "severity는 이슈 심각도로 '상', '중', '하' 중 하나만 출력한다.",
 ].join("\n");
 
 export function loadVertexGeminiConfig(): VertexGeminiConfig {

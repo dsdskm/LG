@@ -7,7 +7,6 @@ import { AnalyzerService } from "./analyzer/analyzer.service";
 import { ApiClient } from "@ai-log/http-api";
 import { LlmGatewayApi } from "./api/llm.api";
 import { ReceiverApi } from "./api/receiver.api";
-import { SolutionApi } from "./api/solution.api";
 
 import { DbService } from "./db/db.service";
 import { AnalyzerEntity } from "./db/analyzer.entity";
@@ -24,6 +23,6 @@ import { AnalyzerEntity } from "./db/analyzer.entity";
     TypeOrmModule.forFeature([AnalyzerEntity]),
   ],
   controllers: [AnalyzerController],
-  providers: [ApiClient, ReceiverApi, LlmGatewayApi, SolutionApi, DbService, AnalyzerService],
+  providers: [ApiClient, ReceiverApi, LlmGatewayApi, DbService, AnalyzerService],
 })
 export class AppModule { }

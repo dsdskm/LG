@@ -35,25 +35,9 @@ const EVENT_ANALYZER_BASE = pickBaseUrl({
   containerFallback: "http://event_analyzer_service:3002",
 });
 
-const SOLUTION_GENERATOR_BASE = pickBaseUrl({
-  localEnv: process.env.URL_SOLUTION_GENERATOR,
-  containerEnv: process.env.URL_SOLUTION_GENERATOR_CONTAINER,
-  localFallback: "http://localhost:3004",
-  containerFallback: "http://solution_generator_service:3004",
-});
-
-const REPORT_GENERATOR_BASE = pickBaseUrl({
-  localEnv: process.env.URL_REPORT_GENERATOR,
-  containerEnv: process.env.URL_REPORT_GENERATOR_CONTAINER,
-  localFallback: "http://localhost:3005",
-  containerFallback: "http://report_generator_service:3005",
-});
-
 export const INTERNAL_SERVICE_BASES = {
   eventReceiver: EVENT_RECEIVER_BASE,
   eventAnalyzer: EVENT_ANALYZER_BASE,
-  solutionGenerator: SOLUTION_GENERATOR_BASE,
-  reportGenerator: REPORT_GENERATOR_BASE,
 } as const;
 
 export async function proxyGetJson(url: string) {

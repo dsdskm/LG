@@ -36,6 +36,29 @@ export class DbService {
     await this.repo.update({ id }, patch);
   }
 
+  async updateAnalyzerFullResult(
+    id: number,
+    fields: {
+      summary?: string | null;
+      reason?: string | null;
+      solutions?: string[] | null;
+      func?: string | null;
+      severity?: string | null;
+    },
+  ): Promise<void> {
+    if (id === undefined || id === null) throw new Error("Analyzer ID is empty");
+
+    const patch = {} as QueryDeepPartialEntity<AnalyzerEntity>;
+    if (fields.summary !== undefined) patch.summary = fields.summary as any;
+    if (fields.reason !== undefined) patch.reason = fields.reason as any;
+    if (fields.solutions !== undefined) patch.solutions = fields.solutions as any;
+    if (fields.func !== undefined) patch.func = fields.func as any;
+    if (fields.severity !== undefined) patch.severity = fields.severity as any;
+    if (Object.keys(patch).length === 0) return;
+
+    await this.repo.update({ id }, patch);
+  }
+
   async findByEventId(eventId: number): Promise<AnalyzerEntity | null> {
     const entity = await this.repo.findOne({ where: { eventId } });
     return entity ?? null;

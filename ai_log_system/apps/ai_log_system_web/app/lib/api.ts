@@ -1,8 +1,6 @@
 import type {
   AnalyzerSummaryResponse,
   EventItem,
-  ReportItem,
-  SolutionFetchResponse,
 } from "@ai-log/shared-contracts";
 
 type FetchResult<T> = {
@@ -39,10 +37,6 @@ async function fetchJson<T>(url: string): Promise<FetchResult<T>> {
   }
 }
 
-export async function getReports(): Promise<ReportItem[] | null> {
-  return (await fetchJson<ReportItem[]>("/api/reports")).data;
-}
-
 export async function getEvents(): Promise<EventItem[] | null> {
   return (await fetchJson<EventItem[]>("/api/events")).data;
 }
@@ -57,28 +51,10 @@ export async function getAnalysisSummary(
   ).data;
 }
 
-export async function getSolutions(
-  eventId: number,
-): Promise<SolutionFetchResponse | null> {
-  return (
-    await fetchJson<SolutionFetchResponse>(
-      `/api/solutions/${eventId}`,
-    )
-  ).data;
-}
-
 export async function getEventById(
   eventId: string,
 ): Promise<FetchResult<EventItem>> {
   return await fetchJson<EventItem>(
     `/api/events/${encodeURIComponent(eventId)}`,
-  );
-}
-
-export async function getReportByEventId(
-  eventId: string,
-): Promise<FetchResult<ReportItem>> {
-  return await fetchJson<ReportItem>(
-    `/api/reports/event/${encodeURIComponent(eventId)}`,
   );
 }

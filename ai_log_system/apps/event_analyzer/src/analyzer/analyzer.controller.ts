@@ -1,8 +1,8 @@
 // apps/event_analyzer/src/analyzer/analyzer.controller.ts
-import { Body, Controller, Get, Param, Patch, Post, Req, Res, Logger } from "@nestjs/common";
-import type { Response, Request } from "express";
+import { Body, Controller, Get, Param, Post, Res, Logger } from "@nestjs/common";
+import type { Response } from "express";
 
-import type { AnalyzerPayload } from "@ai-log/shared-contracts";
+import type { AnalyzerPayload, AnalyzerSummaryResponse } from "@ai-log/shared-contracts";
 import { AnalyzerService } from "./analyzer.service";
 
 @Controller()
@@ -32,7 +32,7 @@ export class AnalyzerController {
     }
 
     @Get("analysis/:eventId")
-    async getAnalysisSummary(@Param("eventId") eventId: string): Promise<{ summary?: string; reason?: string }> {
+    async getAnalysisSummary(@Param("eventId") eventId: string): Promise<AnalyzerSummaryResponse> {
         const numericEventId = Number(eventId);
         if (!Number.isInteger(numericEventId) || numericEventId <= 0) {
             return { summary: undefined, reason: undefined };

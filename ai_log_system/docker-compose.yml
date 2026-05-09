@@ -13,8 +13,6 @@ x-app-common: &app-common
     PORT_EVENT_RECEIVER: 3001
     PORT_EVENT_ANALYZER: 3002
     PORT_LLM_GATEWAY: 3003
-    PORT_SOLUTION_GENERATOR: 3004
-    PORT_REPORT_GENERATOR: 3005
     PORT_WEB: 3006
 
     # Docker 환경 감지 플래그
@@ -27,20 +25,13 @@ x-app-common: &app-common
     EVENT_ANALYZER_URL: http://event_analyzer_service:3002
     URL_LLM_GATEWAY: http://llm_gateway_service:3003
     LLM_GATEWAY_URL: http://llm_gateway_service:3003
-    URL_SOLUTION_GENERATOR: http://solution_generator_service:3004
-    URL_REPORT_GENERATOR: http://report_generator_service:3005
 
     DB_URL_EVENT_RECEIVER: postgresql://root:root@event_receiver_db:5432/event_receiver_db
     DB_URL_EVENT_ANALYZER: postgresql://root:root@event_analyzer_db:5432/event_analyzer_db
-    DB_URL_SOLUTION_GENERATOR: postgresql://root:root@solution_generator_db:5432/solution_generator_db
-    DB_URL_REPORT_GENERATOR: postgresql://root:root@report_generator_db:5432/report_generator_db
 
     # 브라우저(클라이언트)용 주소만 유지
     NEXT_PUBLIC_EVENT_RECEIVER_URL: http://localhost:3001
     NEXT_PUBLIC_EVENT_GENERATOR_URL: http://localhost:9001
-
-    # ✅ Ollama 미사용 → 제거
-    # OLLAMA_URL: http://ollama:11434
 
     GOOGLE_APPLICATION_CREDENTIALS: /app/apps/llm_gateway/src/key/ailogsystem-service-account.json
 
@@ -84,40 +75,6 @@ services:
       timeout: 5s
       retries: 5
 
-  solution_generator_db:
-    image: postgres:16-alpine
-    container_name: solution_generator_db
-    environment:
-      POSTGRES_DB: solution_generator_db
-      POSTGRES_USER: root
-      POSTGRES_PASSWORD: root
-    ports:
-      - "5435:5432"
-    volumes:
-      - solution_db_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U root -d solution_generator_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  report_generator_db:
-    image: postgres:16-alpine
-    container_name: report_generator_db
-    environment:
-      POSTGRES_DB: report_generator_db
-      POSTGRES_USER: root
-      POSTGRES_PASSWORD: root
-    ports:
-      - "5436:5432"
-    volumes:
-      - report_db_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U root -d report_generator_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # -------------------------
   # Apps
   # -------------------------
@@ -152,33 +109,12 @@ services:
     <<: *app-common
     container_name: llm_gateway_service
     command: sh -c "pnpm turbo run dev --filter=llm_gateway"
-    # ✅ Ollama 의존 완전 제거
     ports:
       - "3003:3003"
     extra_hosts:
       - "eu-prd-task-dea-oai.openai.azure.com:10.182.184.151"
       - "eu-prd-task-dea-ai.cognitiveservices.azure.com:10.182.184.253"
       - "eu-prd-task-dea-ai.openai.azure.com:10.182.184.254"
-
-  solution_generator_service:
-    <<: *app-common
-    container_name: solution_generator_service
-    command: sh -c "pnpm turbo run dev --filter=solution_generator"
-    depends_on:
-      solution_generator_db:
-        condition: service_healthy
-    ports:
-      - "3004:3004"
-
-  report_generator_service:
-    <<: *app-common
-    container_name: report_generator_service
-    command: sh -c "pnpm turbo run dev --filter=report_generator"
-    depends_on:
-      report_generator_db:
-        condition: service_healthy
-    ports:
-      - "3005:3005"
 
   ai_log_system_web:
     <<: *app-common
@@ -199,5 +135,3 @@ services:
 volumes:
   event_receiver_db_data:
   event_analyzer_db_data:
-  solution_db_data:
-  report_db_data:

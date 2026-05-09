@@ -14,12 +14,6 @@ const STATUS_STYLE_MAP: Record<string, string> = {
   analyzing: "text-amber-900 bg-amber-100 dark:bg-amber-900/20 dark:text-amber-100",
   analyzed: "text-amber-900 bg-amber-100 dark:bg-amber-900/20 dark:text-amber-100",
   analyze_failed: "text-rose-900 bg-rose-100 dark:bg-rose-900/20 dark:text-rose-100",
-  solution_generating: "text-violet-900 bg-violet-100 dark:bg-violet-900/20 dark:text-violet-100",
-  solution_created: "text-violet-900 bg-violet-100 dark:bg-violet-900/20 dark:text-violet-100",
-  solution_failed: "text-rose-900 bg-rose-100 dark:bg-rose-900/20 dark:text-rose-100",
-  report_generating: "text-fuchsia-900 bg-fuchsia-100 dark:bg-fuchsia-900/20 dark:text-fuchsia-100",
-  report_created: "text-fuchsia-900 bg-fuchsia-100 dark:bg-fuchsia-900/20 dark:text-fuchsia-100",
-  report_failed: "text-rose-900 bg-rose-100 dark:bg-rose-900/20 dark:text-rose-100",
   completed: "text-emerald-900 bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-100",
   failed: "text-rose-900 bg-rose-100 dark:bg-rose-900/20 dark:text-rose-100",
   unknown: "text-zinc-900 bg-zinc-100 dark:bg-zinc-800 dark:text-zinc-100",
@@ -32,12 +26,6 @@ const STATUS_LABEL_MAP: Record<string, string> = {
   analyzing: "분석중",
   analyzed: "분석 완료",
   analyze_failed: "분석 실패",
-  solution_generating: "솔루션 생성중",
-  solution_created: "솔루션 생성 완료",
-  solution_failed: "솔루션 생성 실패",
-  report_generating: "리포트 생성중",
-  report_created: "리포트 생성 완료",
-  report_failed: "리포트 생성 실패",
   completed: "수행 완료",
   failed: "오류 발생",
 };
@@ -68,8 +56,6 @@ function StatusBubble({ status }: { status: string }) {
 
   const isSpinning = [
     "analyzing",
-    "solution_generating",
-    "report_generating",
   ].includes(normalized);
 
   return (

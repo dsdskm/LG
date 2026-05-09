@@ -5,7 +5,6 @@ import {
     Entity,
     PrimaryGeneratedColumn,
     UpdateDateColumn,
-    Index,
 } from "typeorm";
 
 @Entity({ name: "analysis" })
@@ -21,6 +20,15 @@ export class AnalyzerEntity {
 
     @Column({ type: "text", name: "reason", nullable: true })
     reason?: string;
+
+    @Column({ type: "jsonb", name: "solutions", nullable: true, default: () => "'[]'::jsonb" })
+    solutions?: string[];
+
+    @Column({ type: "text", name: "func", nullable: true })
+    func?: string;
+
+    @Column({ type: "text", name: "severity", nullable: true })
+    severity?: string;
 
     // ✅ 자동 입력/업데이트
     @CreateDateColumn({ type: "timestamptz", name: "created_at" })

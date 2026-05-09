@@ -7,12 +7,6 @@ export enum EventStatus {
     ANALYZING = "analyzing",
     ANALYZED = "analyzed",
     ANALYZE_FAILED = "analyze_failed",
-    SOLUTION_GENERATING = "solution_generating",
-    SOLUTION_CREATED = "solution_created",
-    SOLUTION_FAILED = "solution_failed",
-    REPORT_GENERATING= "report_generating",
-    REPORT_CREATED = "report_created",
-    REPORT_FAILED = "report_failed",
     COMPLETED = "completed",
     FAILED = "failed",
 }

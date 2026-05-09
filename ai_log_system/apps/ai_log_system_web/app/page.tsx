@@ -1,59 +1,34 @@
 import EventTableClient from "./components/event-table";
 import type { AnalyzerSummaryResponse } from "@ai-log/shared-contracts";
 import type { EventItem } from "@ai-log/shared-contracts";
-import type { ReportItem } from "@ai-log/shared-contracts";
-import type { SolutionFetchResponse } from "@ai-log/shared-contracts";
 
 type EventRow = EventItem & {
   summary: string;
 };
 
-import { getAnalysisSummary, getEvents, getReports, getSolutions } from "./lib/api";
+import { getAnalysisSummary, getEvents } from "./lib/api";
 
 type DashboardData = {
-  reports: ReportItem[];
   eventItems: EventItem[];
   eventRows: EventRow[];
-  reportCount: number;
   eventCount: number;
   todayIssueCount: number;
   oneDayAverage: number;
   statusCounts: Record<string, number>;
   latestEventId: number | null;
-  issueCards: Array<{ reportId: number; eventId: number; createdAt: string; issue: string; report: string }>;
   latestAnalysis: AnalyzerSummaryResponse;
-  latestSolutions: string[];
 };
 
-function buildIssueCard(report: ReportItem) {
-  const lines = report.report.split(/\r?\n/).map((line: string) => line.trim()).filter(Boolean);
-  const issue = lines.find((line: string) => line.startsWith("*요약")) ?? lines[0] ?? report.report;
-  return {
-    reportId: report.reportId,
-    eventId: report.eventId,
-    createdAt: report.createdAt,
-    issue,
-    report: report.report,
-  };
-}
-
 async function getDashboardData(): Promise<DashboardData> {
-  const reportItems = (await getReports()) ?? [];
   const eventItems = (await getEvents()) ?? [];
   console.log(`eventItems`, eventItems)
-  const reportCount = reportItems.length;
   const eventCount = eventItems.length;
-  const issueCards = reportItems.slice(0, 5).map(buildIssueCard);
-  const latestEventId = reportItems[0]?.eventId ?? eventItems[0]?.id ?? null;
-  const issueSummaryMap = new Map<number, string>();
-  reportItems.forEach((report) => {
-    issueSummaryMap.set(report.eventId, buildIssueCard(report).issue);
-  });
+  const latestEventId = eventItems[0]?.id ?? null;
 
   const analyzerSummaryEntries = await Promise.all(
     eventItems.map(async (event) => {
       const summaryResponse = await getAnalysisSummary(event.id);
-      return [event.id, summaryResponse?.summary?.trim() ?? ""] as const;
+      return [event.id, summaryResponse?.summary?.trim() || ""] as const;
     }),
   );
 
@@ -63,8 +38,7 @@ async function getDashboardData(): Promise<DashboardData> {
 
   const eventRows: EventRow[] = eventItems.map((event) => ({
     ...event,
-    summary:
-      analyzerSummaryMap.get(event.id) ?? issueSummaryMap.get(event.id) ?? "분석중",
+    summary: analyzerSummaryMap.get(event.id) ?? "분석중",
   }));
 
   const todayKey = new Date().toLocaleDateString("ko-KR");
@@ -92,22 +66,14 @@ async function getDashboardData(): Promise<DashboardData> {
     ? await getAnalysisSummary(latestEventId)
     : null) ?? { summary: "데이터를 불러올 수 없습니다.", reason: "서비스가 실행 중인지 확인하세요." };
 
-  const latestSolutions = (latestEventId
-    ? await getSolutions(latestEventId)
-    : null)?.solutions ?? [];
-
   return {
-    reports: reportItems,
     eventItems,
     eventRows,
-    reportCount,
     eventCount,
     todayIssueCount,
     statusCounts,
     latestEventId,
-    issueCards,
     latestAnalysis,
-    latestSolutions,
     oneDayAverage,
   };
 }

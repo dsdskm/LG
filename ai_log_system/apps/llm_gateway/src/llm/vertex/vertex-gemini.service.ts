@@ -3,9 +3,8 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { assertVertexConfig, loadVertexGeminiConfig } from "./vertex-gemini.config";
 import { VertexGeminiClient } from "./vertex-gemini.client";
-import { type LlmPayload, type LlmLogLine, type ReportSummaryRequest, EventStatus } from "@ai-log/shared-contracts";
+import { type LlmPayload, type LlmLogLine } from "@ai-log/shared-contracts";
 import { safeStringify, truncate } from "src/utils/utils";
-import { ReceiverApi } from "src/api/receiver.api";
 
 @Injectable()
 export class VertexGeminiService {
@@ -26,7 +25,7 @@ export class VertexGeminiService {
         },
         this.cfg.googleAuthScope,
     );
-    constructor(private readonly receiverApi: ReceiverApi) { }
+    constructor() { }
     /**
      * LLM 로그 분석 요청 처리 (슬림 타입 기준)
      * - 입력: { logs: [{ index, level, message }] }
@@ -168,27 +167,4 @@ function buildPromptFromLlmPayload(logs: LlmLogLine[], instruction: string) {
     });
 
     return ["### SYSTEM", instruction, "", "### LOGS", ...lines].join("\n");
-}
-
-
-function buildReportPrompt(req: ReportSummaryRequest) {
-    const summary = req.summary.trim() || '없음';
-    const reason = req.reason.trim() || '없음';
-    const solutions = req.solutions.length > 0 ? req.solutions.map((s, idx) => `${idx + 1}. ${s}`).join('\n') : '없음';
-
-    return [
-        '다음 내용을 참고하여 100자 이내로 최종 리포트를 작성하세요.',
-        '출력 형식은 한 줄로 하고, 반드시 아래 항목을 포함하세요:',
-        '요약: ... | 원인: ... | 솔루션: ...',
-        '추가 설명이나 문맥은 최소화하고, 주어진 항목 외에 다른 라벨을 사용하지 마세요.',
-        '',
-        `SUMMARY:
-${summary}`,
-        '',
-        `REASON:
-${reason}`,
-        '',
-        `SOLUTIONS:
-${solutions}`,
-    ].join('\n');
 }

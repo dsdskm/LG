@@ -14,4 +14,7 @@ export type AnalyzerPayload = {
 export type AnalyzerSummaryResponse = {
     summary?: string;
     reason?: string;
+    solutions?: string[];
+    func?: string;
+    severity?: string;
 };
