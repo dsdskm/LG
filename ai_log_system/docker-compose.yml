@@ -35,11 +35,12 @@ x-app-common: &app-common
     DB_URL_SOLUTION_GENERATOR: postgresql://root:root@solution_generator_db:5432/solution_generator_db
     DB_URL_REPORT_GENERATOR: postgresql://root:root@report_generator_db:5432/report_generator_db
 
+    # 브라우저(클라이언트)용 주소만 유지
     NEXT_PUBLIC_EVENT_RECEIVER_URL: http://localhost:3001
     NEXT_PUBLIC_EVENT_GENERATOR_URL: http://localhost:9001
 
-    # docker-compose 내부 ollama 서비스로 연결
-    OLLAMA_URL: http://ollama:11434
+    # ✅ Ollama 미사용 → 제거
+    # OLLAMA_URL: http://ollama:11434
 
     GOOGLE_APPLICATION_CREDENTIALS: /app/apps/llm_gateway/src/key/ailogsystem-service-account.json
 
@@ -117,22 +118,20 @@ services:
       timeout: 5s
       retries: 5
 
-  
-  
   # -------------------------
   # Apps
   # -------------------------
   event_generator_service:
     <<: *app-common
     container_name: event_generator_service
-    command: sh -c "pnpm dotenv -- pnpm turbo run dev --filter=event_generator"
+    command: sh -c "pnpm turbo run dev --filter=event_generator"
     ports:
       - "9001:9001"
 
   event_receiver_service:
     <<: *app-common
     container_name: event_receiver_service
-    command: sh -c "pnpm dotenv -- pnpm turbo run dev --filter=event_receiver"
+    command: sh -c "pnpm turbo run dev --filter=event_receiver"
     depends_on:
       event_receiver_db:
         condition: service_healthy
@@ -142,7 +141,7 @@ services:
   event_analyzer_service:
     <<: *app-common
     container_name: event_analyzer_service
-    command: sh -c "pnpm dotenv -- pnpm turbo run dev --filter=event_analyzer"
+    command: sh -c "pnpm turbo run dev --filter=event_analyzer"
     depends_on:
       event_analyzer_db:
         condition: service_healthy
@@ -152,22 +151,19 @@ services:
   llm_gateway_service:
     <<: *app-common
     container_name: llm_gateway_service
-    command: sh -c "pnpm dotenv -- pnpm turbo run dev --filter=llm_gateway"
-    depends_on:
-      ollama:
-        condition: service_healthy
+    command: sh -c "pnpm turbo run dev --filter=llm_gateway"
+    # ✅ Ollama 의존 완전 제거
     ports:
-      - "3003:3003"    
+      - "3003:3003"
     extra_hosts:
       - "eu-prd-task-dea-oai.openai.azure.com:10.182.184.151"
       - "eu-prd-task-dea-ai.cognitiveservices.azure.com:10.182.184.253"
       - "eu-prd-task-dea-ai.openai.azure.com:10.182.184.254"
 
-
   solution_generator_service:
     <<: *app-common
     container_name: solution_generator_service
-    command: sh -c "pnpm dotenv -- pnpm turbo run dev --filter=solution_generator"
+    command: sh -c "pnpm turbo run dev --filter=solution_generator"
     depends_on:
       solution_generator_db:
         condition: service_healthy
@@ -177,7 +173,7 @@ services:
   report_generator_service:
     <<: *app-common
     container_name: report_generator_service
-    command: sh -c "pnpm dotenv -- pnpm turbo run dev --filter=report_generator"
+    command: sh -c "pnpm turbo run dev --filter=report_generator"
     depends_on:
       report_generator_db:
         condition: service_healthy
@@ -187,40 +183,21 @@ services:
   ai_log_system_web:
     <<: *app-common
     container_name: web
-    command: sh -c "pnpm dotenv -- pnpm turbo run dev --filter=ai_log_system_web"
+    command: sh -c "pnpm turbo run dev --filter=ai_log_system_web"
     ports:
       - "3006:3006"
 
   simulator:
     <<: *app-common
     container_name: simulator
-    command: sh -c "pnpm dotenv -- pnpm turbo run dev --filter=simulator"
+    command: sh -c "pnpm turbo run dev --filter=simulator"
     depends_on:
       - event_generator_service
     ports:
       - "9000:9000"
-  # -------------------------
-  # ✅ Ollama (서버만)
-  # -------------------------
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    restart: unless-stopped
-    command: ["serve"]
-    healthcheck:
-      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 60
-      start_period: 60s
-    
+
 volumes:
   event_receiver_db_data:
   event_analyzer_db_data:
   solution_db_data:
   report_db_data:
-  ollama_data:
