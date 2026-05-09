@@ -1,0 +1,1 @@
+pnpm dotenv -- pnpm turbo run dev --filter=report_generator

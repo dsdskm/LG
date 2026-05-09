@@ -1,0 +1,13 @@
+.git
+.gitignore
+.DS_Store
+node_modules
+**/node_modules
+.turbo
+**/.turbo
+**/dist
+**/.next
+**/coverage
+**/*.log
+.env
+pnpm-debug.log*

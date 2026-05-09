@@ -1,0 +1,1 @@
+pnpm dotenv -- pnpm turbo run dev --filter=event_receiver
