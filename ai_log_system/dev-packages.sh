@@ -1,1 +1,0 @@
- pnpm turbo run build --filter=./packages/*

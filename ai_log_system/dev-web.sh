@@ -1,1 +1,0 @@
-pnpm dotenv -- pnpm turbo run dev --filter=ai_log_system_web

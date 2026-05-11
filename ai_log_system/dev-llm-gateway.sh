@@ -1,1 +1,0 @@
-pnpm dotenv -- pnpm turbo run dev --filter=llm_gateway
