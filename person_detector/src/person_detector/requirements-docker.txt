@@ -1,0 +1,6 @@
+# 컨테이너용 의존성 (ros 토픽 구독 모드 기준)
+# pyrealsense2 제외: 카메라 노드는 컨테이너 밖(호스트/회사 스택)에서 토픽 발행.
+# aarch64(Jetson)에선 pyrealsense2 pip 휠이 없어 빌드 실패하므로 넣지 않는다.
+numpy
+ultralytics
+opencv-python

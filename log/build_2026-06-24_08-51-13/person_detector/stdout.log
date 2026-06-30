@@ -1,0 +1,46 @@
+running egg_info
+creating ../../../build/person_detector/person_detector.egg-info
+writing ../../../build/person_detector/person_detector.egg-info/PKG-INFO
+writing dependency_links to ../../../build/person_detector/person_detector.egg-info/dependency_links.txt
+writing entry points to ../../../build/person_detector/person_detector.egg-info/entry_points.txt
+writing requirements to ../../../build/person_detector/person_detector.egg-info/requires.txt
+writing top-level names to ../../../build/person_detector/person_detector.egg-info/top_level.txt
+writing manifest file '../../../build/person_detector/person_detector.egg-info/SOURCES.txt'
+reading manifest file '../../../build/person_detector/person_detector.egg-info/SOURCES.txt'
+writing manifest file '../../../build/person_detector/person_detector.egg-info/SOURCES.txt'
+running build
+running build_py
+creating /home/kkh/workspace/PersonDetector/build/person_detector/build/lib/person_detector
+copying person_detector/detector_node.py -> /home/kkh/workspace/PersonDetector/build/person_detector/build/lib/person_detector
+copying person_detector/stream_server.py -> /home/kkh/workspace/PersonDetector/build/person_detector/build/lib/person_detector
+copying person_detector/realsense_camera.py -> /home/kkh/workspace/PersonDetector/build/person_detector/build/lib/person_detector
+copying person_detector/pose_analysis.py -> /home/kkh/workspace/PersonDetector/build/person_detector/build/lib/person_detector
+copying person_detector/__init__.py -> /home/kkh/workspace/PersonDetector/build/person_detector/build/lib/person_detector
+copying person_detector/ros_camera.py -> /home/kkh/workspace/PersonDetector/build/person_detector/build/lib/person_detector
+running install
+running install_lib
+creating /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector
+copying /home/kkh/workspace/PersonDetector/build/person_detector/build/lib/person_detector/detector_node.py -> /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector
+copying /home/kkh/workspace/PersonDetector/build/person_detector/build/lib/person_detector/stream_server.py -> /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector
+copying /home/kkh/workspace/PersonDetector/build/person_detector/build/lib/person_detector/realsense_camera.py -> /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector
+copying /home/kkh/workspace/PersonDetector/build/person_detector/build/lib/person_detector/pose_analysis.py -> /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector
+copying /home/kkh/workspace/PersonDetector/build/person_detector/build/lib/person_detector/__init__.py -> /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector
+copying /home/kkh/workspace/PersonDetector/build/person_detector/build/lib/person_detector/ros_camera.py -> /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector
+byte-compiling /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector/detector_node.py to detector_node.cpython-310.pyc
+byte-compiling /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector/stream_server.py to stream_server.cpython-310.pyc
+byte-compiling /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector/realsense_camera.py to realsense_camera.cpython-310.pyc
+byte-compiling /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector/pose_analysis.py to pose_analysis.cpython-310.pyc
+byte-compiling /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector/__init__.py to __init__.cpython-310.pyc
+byte-compiling /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector/ros_camera.py to ros_camera.cpython-310.pyc
+running install_data
+creating /home/kkh/workspace/PersonDetector/install/person_detector/share/ament_index/resource_index/packages
+copying resource/person_detector -> /home/kkh/workspace/PersonDetector/install/person_detector/share/ament_index/resource_index/packages
+copying package.xml -> /home/kkh/workspace/PersonDetector/install/person_detector/share/person_detector
+creating /home/kkh/workspace/PersonDetector/install/person_detector/share/person_detector/launch
+copying launch/with_realsense_launch.py -> /home/kkh/workspace/PersonDetector/install/person_detector/share/person_detector/launch
+copying launch/person_detector_launch.py -> /home/kkh/workspace/PersonDetector/install/person_detector/share/person_detector/launch
+running install_egg_info
+Copying ../../../build/person_detector/person_detector.egg-info to /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector-0.0.0-py3.10.egg-info
+running install_scripts
+Installing person_detector script to /home/kkh/workspace/PersonDetector/install/person_detector/lib/person_detector
+writing list of installed files to '/home/kkh/workspace/PersonDetector/build/person_detector/install.log'

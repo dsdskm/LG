@@ -1,0 +1,6 @@
+# rosdep 으로 관리되지 않는 pip 의존성 (venv 또는 시스템에 설치)
+numpy
+pyrealsense2==2.56.5.9235
+ultralytics==8.3.232
+opencv-python==4.12.0.88
+mediapipe

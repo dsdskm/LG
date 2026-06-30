@@ -1,0 +1,22 @@
+# RealSense 카메라 노드 자동 실행 (systemd)
+# 설치:
+#   sudo cp scripts/person-detector-camera.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now person-detector-camera
+# 로그:   journalctl -u person-detector-camera -f
+# 중지:   sudo systemctl stop person-detector-camera
+[Unit]
+Description=RealSense camera node for person_detector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mantis
+WorkingDirectory=/home/mantis/workspace/person_detector
+ExecStart=/bin/bash /home/mantis/workspace/person_detector/scripts/camera.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

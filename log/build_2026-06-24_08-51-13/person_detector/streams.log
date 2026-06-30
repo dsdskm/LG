@@ -1,0 +1,48 @@
+[0.645s] Invoking command in '/home/kkh/workspace/PersonDetector/person_detector/src/person_detector': PYTHONPATH=/home/kkh/workspace/PersonDetector/build/person_detector/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/person_detector build --build-base /home/kkh/workspace/PersonDetector/build/person_detector/build install --record /home/kkh/workspace/PersonDetector/build/person_detector/install.log --single-version-externally-managed install_data
+[0.817s] running egg_info
+[0.828s] creating ../../../build/person_detector/person_detector.egg-info
+[0.828s] writing ../../../build/person_detector/person_detector.egg-info/PKG-INFO
+[0.828s] writing dependency_links to ../../../build/person_detector/person_detector.egg-info/dependency_links.txt
+[0.829s] writing entry points to ../../../build/person_detector/person_detector.egg-info/entry_points.txt
+[0.829s] writing requirements to ../../../build/person_detector/person_detector.egg-info/requires.txt
+[0.829s] writing top-level names to ../../../build/person_detector/person_detector.egg-info/top_level.txt
+[0.829s] writing manifest file '../../../build/person_detector/person_detector.egg-info/SOURCES.txt'
+[0.853s] reading manifest file '../../../build/person_detector/person_detector.egg-info/SOURCES.txt'
+[0.853s] writing manifest file '../../../build/person_detector/person_detector.egg-info/SOURCES.txt'
+[0.854s] running build
+[0.854s] running build_py
+[0.854s] creating /home/kkh/workspace/PersonDetector/build/person_detector/build/lib/person_detector
+[0.854s] copying person_detector/detector_node.py -> /home/kkh/workspace/PersonDetector/build/person_detector/build/lib/person_detector
+[0.854s] copying person_detector/stream_server.py -> /home/kkh/workspace/PersonDetector/build/person_detector/build/lib/person_detector
+[0.854s] copying person_detector/realsense_camera.py -> /home/kkh/workspace/PersonDetector/build/person_detector/build/lib/person_detector
+[0.854s] copying person_detector/pose_analysis.py -> /home/kkh/workspace/PersonDetector/build/person_detector/build/lib/person_detector
+[0.854s] copying person_detector/__init__.py -> /home/kkh/workspace/PersonDetector/build/person_detector/build/lib/person_detector
+[0.854s] copying person_detector/ros_camera.py -> /home/kkh/workspace/PersonDetector/build/person_detector/build/lib/person_detector
+[0.854s] running install
+[0.857s] running install_lib
+[0.869s] creating /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector
+[0.869s] copying /home/kkh/workspace/PersonDetector/build/person_detector/build/lib/person_detector/detector_node.py -> /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector
+[0.869s] copying /home/kkh/workspace/PersonDetector/build/person_detector/build/lib/person_detector/stream_server.py -> /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector
+[0.869s] copying /home/kkh/workspace/PersonDetector/build/person_detector/build/lib/person_detector/realsense_camera.py -> /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector
+[0.869s] copying /home/kkh/workspace/PersonDetector/build/person_detector/build/lib/person_detector/pose_analysis.py -> /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector
+[0.869s] copying /home/kkh/workspace/PersonDetector/build/person_detector/build/lib/person_detector/__init__.py -> /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector
+[0.869s] copying /home/kkh/workspace/PersonDetector/build/person_detector/build/lib/person_detector/ros_camera.py -> /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector
+[0.870s] byte-compiling /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector/detector_node.py to detector_node.cpython-310.pyc
+[0.872s] byte-compiling /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector/stream_server.py to stream_server.cpython-310.pyc
+[0.872s] byte-compiling /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector/realsense_camera.py to realsense_camera.cpython-310.pyc
+[0.873s] byte-compiling /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector/pose_analysis.py to pose_analysis.cpython-310.pyc
+[0.873s] byte-compiling /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector/__init__.py to __init__.cpython-310.pyc
+[0.873s] byte-compiling /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector/ros_camera.py to ros_camera.cpython-310.pyc
+[0.874s] running install_data
+[0.874s] creating /home/kkh/workspace/PersonDetector/install/person_detector/share/ament_index/resource_index/packages
+[0.874s] copying resource/person_detector -> /home/kkh/workspace/PersonDetector/install/person_detector/share/ament_index/resource_index/packages
+[0.874s] copying package.xml -> /home/kkh/workspace/PersonDetector/install/person_detector/share/person_detector
+[0.874s] creating /home/kkh/workspace/PersonDetector/install/person_detector/share/person_detector/launch
+[0.874s] copying launch/with_realsense_launch.py -> /home/kkh/workspace/PersonDetector/install/person_detector/share/person_detector/launch
+[0.874s] copying launch/person_detector_launch.py -> /home/kkh/workspace/PersonDetector/install/person_detector/share/person_detector/launch
+[0.874s] running install_egg_info
+[0.889s] Copying ../../../build/person_detector/person_detector.egg-info to /home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages/person_detector-0.0.0-py3.10.egg-info
+[0.889s] running install_scripts
+[0.986s] Installing person_detector script to /home/kkh/workspace/PersonDetector/install/person_detector/lib/person_detector
+[0.986s] writing list of installed files to '/home/kkh/workspace/PersonDetector/build/person_detector/install.log'
+[1.006s] Invoked command in '/home/kkh/workspace/PersonDetector/person_detector/src/person_detector' returned '0': PYTHONPATH=/home/kkh/workspace/PersonDetector/build/person_detector/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/kkh/workspace/PersonDetector/install/person_detector/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/person_detector build --build-base /home/kkh/workspace/PersonDetector/build/person_detector/build install --record /home/kkh/workspace/PersonDetector/build/person_detector/install.log --single-version-externally-managed install_data

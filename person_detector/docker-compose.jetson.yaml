@@ -1,0 +1,36 @@
+# Jetson Orin(GPU) 용 compose — 원본 docker-compose.yaml(x86/CPU) 과 별개.
+# 실행:
+#   docker compose -f docker-compose.jetson.yaml up --build
+# L4T 태그가 다르면:
+#   BASE_IMAGE=dustynv/ros:humble-pytorch-l4t-r35.4.1 docker compose -f docker-compose.jetson.yaml up --build
+services:
+  person_detector:
+    runtime: nvidia                 # Orin GPU (JetPack 의 nvidia-container-runtime)
+    platform: linux/arm64           # Orin(aarch64) 강제 — exec format error 방지
+    build:
+      context: .
+      dockerfile: Dockerfile.jetson
+      network: host
+      args:
+        BASE_IMAGE: ${BASE_IMAGE:-dustynv/l4t-pytorch:r36.4.0}
+    image: person-detector:jetson
+    container_name: person-detector
+    network_mode: host              # DDS + 웹 스트리밍(8081)
+    ipc: host
+    privileged: true                # RealSense USB 접근
+    devices:
+      - "/dev/bus/usb:/dev/bus/usb"  # RealSense USB
+    volumes:
+      - ./src:/ws/src
+    environment:
+      - LAUNCH_CAMERA=${LAUNCH_CAMERA:-true}        # 컨테이너 안에서 카메라 노드까지 실행
+      - CAMERA_ARGS=${CAMERA_ARGS:-rgb_camera.color_profile:=640x480x15 depth_module.depth_profile:=640x480x15}
+      - CAMERA_TYPE=${CAMERA_TYPE:-ros}            # 우리 노드는 그 토픽 구독
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-19}
+      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-}  # 로봇과 같게
+      - ROS_DISTRO=humble
+      - DEV_MODE=${DEV_MODE:-false}
+      - LAUNCH_ARGS=${LAUNCH_ARGS:-}
+    tty: true
+    stdin_open: true
+    restart: always                 # 부팅/크래시 시 자동 재시작

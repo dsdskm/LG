@@ -1,0 +1,14 @@
+# colcon
+build/
+install/
+log/
+
+# python venv
+venv/
+
+# python
+__pycache__/
+*.pyc
+
+# YOLO 가중치 (자동 다운로드)
+*.pt

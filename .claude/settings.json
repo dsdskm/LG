@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -m py_compile src/person_detector/person_detector/detector_node.py src/person_detector/person_detector/realsense_camera.py src/person_detector/launch/person_detector_launch.py src/person_detector/setup.py)",
+      "Bash(./install_deps.sh)",
+      "Bash(./build.sh)",
+      "Bash(lsusb)",
+      "Read(//etc/udev/rules.d/**)",
+      "Read(//usr/lib/udev/rules.d/**)"
+    ]
+  }
+}

@@ -1,0 +1,62 @@
+services:
+  # ---- RealSense 버전 (기본) ----
+  # 실행: docker compose --profile realsense up --build
+  realsense:
+    profiles: ["realsense"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      network: host          # 빌드 중 DNS/인터넷 (bridge DNS 문제 회피)
+      args:
+        ROS_DISTRO: humble
+    image: person-detector:v1.0
+    container_name: person-detector-realsense
+    devices:
+      - "/dev/bus/usb:/dev/bus/usb"   # RealSense USB
+      - "/dev/dri:/dev/dri"
+    network_mode: host                # DDS + 웹 스트리밍(8080)
+    ipc: host
+    privileged: true                  # RealSense USB 접근
+    volumes:
+      - ./src:/ws/src
+    environment:
+      - CAMERA_TYPE=${CAMERA_TYPE:-ros}   # 기본 ros(토픽 구독). USB 직접은 CAMERA_TYPE=realsense
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-19}
+      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-}   # 로봇과 같게(비우면 humble 기본 fastrtps)
+      - ROS_DISTRO=humble
+      - DEV_MODE=${DEV_MODE:-false}
+      - LAUNCH_ARGS=${LAUNCH_ARGS:-}
+    tty: true
+    stdin_open: true
+    restart: unless-stopped
+
+  # ---- 웹캠 버전 ----
+  # 실행: docker compose --profile webcam up --build
+  webcam:
+    profiles: ["webcam"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      network: host          # 빌드 중 DNS/인터넷 (bridge DNS 문제 회피)
+      args:
+        ROS_DISTRO: humble
+    image: person-detector:v1.0
+    container_name: person-detector-webcam
+    devices:
+      - "/dev/video0:/dev/video0"     # 노트북/USB 웹캠
+      - "/dev/dri:/dev/dri"
+    network_mode: host
+    ipc: host
+    privileged: true
+    volumes:
+      - ./src:/ws/src
+    environment:
+      - CAMERA_TYPE=webcam
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-19}
+      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-}   # 로봇과 같게(비우면 humble 기본 fastrtps)
+      - ROS_DISTRO=humble
+      - DEV_MODE=${DEV_MODE:-false}
+      - LAUNCH_ARGS=${LAUNCH_ARGS:-}
+    tty: true
+    stdin_open: true
+    restart: unless-stopped
