@@ -36,7 +36,7 @@ async function bootstrap() {
     jsonDocumentUrl: 'docs-json',
     yamlDocumentUrl: 'docs-yaml',
   });
-  app.enableCors({ origin: buildAllowedOrigins(9000, 3000, 8080, 5173) });
+  app.enableCors({ origin: true }); // 개발 환경: 모든 origin 허용
   const port = Number(process.env.PORT_LLM_GATEWAY ?? 3003);
   await app.listen(port, '0.0.0.0');
   logger.log(`llm_gateway listening on ${port}`);

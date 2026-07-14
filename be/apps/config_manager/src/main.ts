@@ -39,7 +39,7 @@ async function bootstrap() {
   });
 
   app.enableCors({
-    origin: buildAllowedOrigins(9000, 3000, 8080, 5173),
+    origin: true, // 개발 환경: 모든 origin 허용
   });
 
   const port = Number(process.env.PORT_CONFIG_MANAGER ?? 3008);

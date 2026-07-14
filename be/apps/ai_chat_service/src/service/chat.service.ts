@@ -111,12 +111,16 @@ export class ChatService {
     const currentApp = this.normalize(body.currentApp)
     const currentPath = this.normalize(body.currentPath)
     const message = this.normalize(body.message)
-    const key = this.normalize(body.key)
+    const key = this.resolveRouteKey(body, currentApp, currentPath)
     const author = this.resolveAuthor(body)
     const conversationId = this.resolveConversationId(body)
 
     if (!body?.conversationId && conversationId) {
       body.conversationId = conversationId
+    }
+
+    if (!body?.key && key) {
+      body.key = key
     }
 
     const history = await this.chatLog.buildHistoryContext({
@@ -148,6 +152,23 @@ export class ChatService {
 
   private normalize(value?: string) {
     return String(value ?? '').trim()
+  }
+
+  private resolveRouteKey(body: any, currentApp: string, currentPath: string): string {
+    const explicit = this.normalize(body?.key)
+    if (explicit) return explicit
+
+    const app = this.normalize(currentApp)
+    const path = this.normalize(currentPath).replace(/^\/+/, '')
+
+    if (app && path) {
+      if (path === app || path.startsWith(`${app}/`)) {
+        return path
+      }
+      return `${app}/${path}`.replace(/\/+/g, '/')
+    }
+
+    return path || app
   }
 
   private resolveAuthor(body: any): string {
@@ -399,10 +420,20 @@ export class ChatService {
     })
 
     const text = result?.text?.trim()
+    const fallbackText =
+      getPromptStore()?.getPromptContent(routeKey, 'fallback') ??
+      '요청을 확인했습니다. 필요한 조건을 조금 더 알려주시면 정확히 도와드릴게요.'
+    const finalText = text || fallbackText
+
+    if (!text) {
+      this.logger.warn(
+        `[chat] guidance-empty-text route=${routeKey || '-'} fallbackApplied=true`,
+      )
+    }
 
     const reply: ChatReply = {
       chat_action: routeKey || 'default',
-      text: text || '',
+      text: finalText,
     }
 
     await this.saveLog(ctx.body, reply, ctx)

@@ -34,16 +34,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.enableCors({
-    origin: buildAllowedOrigins(9000, 3000, 8080, 5173),
-    credentials: true,
-    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'Accept',
-      'Origin',
-      'X-Requested-With',
-    ],
+    origin: true, // 개발 환경: 모든 origin 허용
   });
 
   const swaggerConfig = new DocumentBuilder()

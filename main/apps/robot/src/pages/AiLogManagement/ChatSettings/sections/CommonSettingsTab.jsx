@@ -1,8 +1,9 @@
+import { useEffect, useMemo, useState } from 'react'
+
 import {
     SettingCard,
     CardHeader,
     CardTitle,
-    ComingSoonBadge,
     OptionList,
     OptionButton,
     ActiveBadge,
@@ -10,7 +11,6 @@ import {
     PrimaryButton,
     ManagementGrid,
     SectionTitleRow,
-    SmallBadge,
     PromptCard,
     PromptMeta,
     PromptTextarea,
@@ -20,9 +20,10 @@ import {
     PageDescription,
     FieldLabel,
     FieldHint,
+    SmallBadge,
 } from '../styles'
 
-import { formatDateTime, getPromptDraft } from '../chatSettings.utils'
+import { formatDateTime } from '../chatSettings.utils'
 
 export const CommonSettingsTab = ({
     providerItem,
@@ -32,20 +33,25 @@ export const CommonSettingsTab = ({
     isDirty,
     saving,
     onSaveProvider,
-    groupedPrompts,
-    management,
+    commonPromptItem,
+    commonPromptDraft,
+    savingCommonPrompt,
+    onCommonPromptChange,
+    onSaveCommonPrompt,
     commonRagDocs,
-    commonTools,
-    promptDrafts,
     ragDrafts,
-    toolDrafts,
-    savingPromptKey,
     savingRagKey,
-    savingToolKey,
-    onPromptChange,
-    onSavePrompt,
     onRagChange,
     onSaveRag,
+    newCommonRagDraft,
+    savingCreateCommonRag,
+    deletingCommonRagKey,
+    onNewCommonRagChange,
+    onCreateCommonRag,
+    onDeleteCommonRag,
+    commonTools,
+    toolDrafts,
+    savingToolKey,
     onToolChange,
     onSaveTool,
 }) => {
@@ -62,12 +68,11 @@ export const CommonSettingsTab = ({
             />
 
             <PromptManagementCard
-                groupedPrompts={groupedPrompts}
-                management={management}
-                promptDrafts={promptDrafts}
-                savingPromptKey={savingPromptKey}
-                onPromptChange={onPromptChange}
-                onSavePrompt={onSavePrompt}
+                commonPromptItem={commonPromptItem}
+                commonPromptDraft={commonPromptDraft}
+                savingCommonPrompt={savingCommonPrompt}
+                onCommonPromptChange={onCommonPromptChange}
+                onSaveCommonPrompt={onSaveCommonPrompt}
             />
 
             <CommonRagManagementCard
@@ -76,6 +81,12 @@ export const CommonSettingsTab = ({
                 savingRagKey={savingRagKey}
                 onRagChange={onRagChange}
                 onSaveRag={onSaveRag}
+                newCommonRagDraft={newCommonRagDraft}
+                savingCreateCommonRag={savingCreateCommonRag}
+                deletingCommonRagKey={deletingCommonRagKey}
+                onNewCommonRagChange={onNewCommonRagChange}
+                onCreateCommonRag={onCreateCommonRag}
+                onDeleteCommonRag={onDeleteCommonRag}
             />
 
             <CommonToolManagementCard
@@ -130,170 +141,358 @@ const ProviderSettingCard = ({
 }
 
 const PromptManagementCard = ({
-    groupedPrompts,
-    management,
-    promptDrafts,
-    savingPromptKey,
-    onPromptChange,
-    onSavePrompt,
+    commonPromptItem,
+    commonPromptDraft,
+    savingCommonPrompt,
+    onCommonPromptChange,
+    onSaveCommonPrompt,
 }) => {
+    const hasPrompt = Boolean(commonPromptItem?.id)
+
     return (
         <SettingCard>
-            <SectionTitleRow>
-                <CardHeader>
-                    <CardTitle>프롬프트 관리</CardTitle>
-                    <SmallBadge>{management.prompts.length}개</SmallBadge>
-                </CardHeader>
-            </SectionTitleRow>
+            <CardHeader>
+                <CardTitle>공통 프롬프트</CardTitle>
+            </CardHeader>
 
-            <PageDescription>DB에 저장된 프롬프트 문구를 여기서 바로 수정할 수 있습니다.</PageDescription>
+            <PageDescription>공통 답변 톤과 규칙을 관리합니다. 없으면 등록하고, 있으면 수정합니다.</PageDescription>
 
-            <OptionList>
-                {groupedPrompts.length > 0 ? (
-                    groupedPrompts.map((group) => (
-                        <div key={group.category} style={{ display: 'grid', gap: '12px' }}>
-                            <CardHeader>
-                                <CardTitle>{group.category}</CardTitle>
-                                <ComingSoonBadge>{group.items.length}개</ComingSoonBadge>
-                            </CardHeader>
+            <PromptCard>
+                <PromptMeta>
+                    <span>{commonPromptItem?.label || commonPromptDraft.label || '공통 프롬프트'}</span>
+                    <span>key: common</span>
+                    <span>type: system</span>
+                    {hasPrompt ? <span>updated: {formatDateTime(commonPromptItem?.updatedAt)}</span> : null}
+                </PromptMeta>
 
-                            {group.items.map((item) => {
-                                const draft = getPromptDraft(promptDrafts, item)
-                                const promptKey = String(item.id)
-                                const promptDisplayKey = String(item.key)
+                <PromptTextarea
+                    value={commonPromptDraft.content}
+                    onChange={(e) => onCommonPromptChange('content', e.target.value)}
+                />
 
-                                return (
-                                    <PromptCard key={promptKey}>
-                                        <PromptMeta>
-                                            <span>{item.label || promptDisplayKey}</span>
-                                            {item.routeKey ? <span>routeKey: {item.routeKey}</span> : null}
-                                            <span>key: {promptDisplayKey}</span>
-                                            <span>type: {item.promptType || item.category}</span>
-                                            <span>updated: {formatDateTime(item.updatedAt)}</span>
-                                        </PromptMeta>
+                <PromptFooter>
+                    <ToggleButton
+                        type="button"
+                        $active={Boolean(commonPromptDraft.enabled)}
+                        onClick={() => onCommonPromptChange('enabled', !commonPromptDraft.enabled)}
+                    >
+                        {commonPromptDraft.enabled ? '활성' : '비활성'}
+                    </ToggleButton>
 
-                                        <PromptTextarea
-                                            value={draft.content}
-                                            onChange={(e) => onPromptChange(promptKey, 'content', e.target.value)}
-                                        />
+                    {hasPrompt ? (
+                        <SecondaryTextButton
+                            type="button"
+                            onClick={() => {
+                                onCommonPromptChange('content', String(commonPromptItem?.content ?? ''))
+                                onCommonPromptChange('label', String(commonPromptItem?.label ?? '공통 프롬프트'))
+                                onCommonPromptChange('enabled', commonPromptItem?.enabled !== false)
+                            }}
+                        >
+                            원본 복원
+                        </SecondaryTextButton>
+                    ) : null}
 
-                                        <PromptFooter>
-                                            <ToggleButton
-                                                type="button"
-                                                $active={draft.enabled}
-                                                onClick={() => onPromptChange(promptKey, 'enabled', !draft.enabled)}
-                                            >
-                                                {draft.enabled ? '활성' : '비활성'}
-                                            </ToggleButton>
-
-                                            <SecondaryTextButton
-                                                type="button"
-                                                onClick={() => onPromptChange(promptKey, 'content', String(item.content ?? ''))}
-                                            >
-                                                원본 복원
-                                            </SecondaryTextButton>
-
-                                            <PrimaryButton
-                                                type="button"
-                                                onClick={() => onSavePrompt(item)}
-                                                disabled={savingPromptKey === promptKey}
-                                            >
-                                                {savingPromptKey === promptKey ? '저장 중...' : '저장'}
-                                            </PrimaryButton>
-                                        </PromptFooter>
-                                    </PromptCard>
-                                )
-                            })}
-                        </div>
-                    ))
-                ) : (
-                    <PageDescription>등록된 프롬프트가 없습니다.</PageDescription>
-                )}
-            </OptionList>
+                    <PrimaryButton type="button" onClick={onSaveCommonPrompt} disabled={savingCommonPrompt}>
+                        {savingCommonPrompt ? '저장 중...' : hasPrompt ? '저장' : '등록'}
+                    </PrimaryButton>
+                </PromptFooter>
+            </PromptCard>
         </SettingCard>
     )
 }
 
-const CommonRagManagementCard = ({ ragDocs, ragDrafts, savingRagKey, onRagChange, onSaveRag }) => {
+const CommonRagManagementCard = ({
+    ragDocs,
+    ragDrafts,
+    savingRagKey,
+    onRagChange,
+    onSaveRag,
+    newCommonRagDraft,
+    savingCreateCommonRag,
+    deletingCommonRagKey,
+    onNewCommonRagChange,
+    onCreateCommonRag,
+    onDeleteCommonRag,
+}) => {
+    const sortedRagDocs = useMemo(() => {
+        return [...ragDocs].sort((left, right) => {
+            const leftOrder = Number(left?.sortOrder ?? 0)
+            const rightOrder = Number(right?.sortOrder ?? 0)
+
+            if (leftOrder !== rightOrder) return leftOrder - rightOrder
+            return String(left?.chunkKey ?? '').localeCompare(String(right?.chunkKey ?? ''))
+        })
+    }, [ragDocs])
+
+    const [activeRagKey, setActiveRagKey] = useState('')
+    const [creatingOpen, setCreatingOpen] = useState(false)
+
+    useEffect(() => {
+        if (sortedRagDocs.length === 0) {
+            if (activeRagKey) setActiveRagKey('')
+            return
+        }
+
+        const exists = sortedRagDocs.some((item) => String(item.id) === activeRagKey)
+        if (!exists) {
+            setActiveRagKey(String(sortedRagDocs[0].id))
+        }
+    }, [sortedRagDocs, activeRagKey])
+
+    const activeRagDoc = sortedRagDocs.find((item) => String(item.id) === activeRagKey) ?? null
+    const activeRagDraft = activeRagDoc
+        ? ragDrafts[activeRagKey] ?? {
+            title: String(activeRagDoc.title ?? ''),
+            body: String(activeRagDoc.body ?? ''),
+            keywordsText: JSON.stringify(activeRagDoc.keywords ?? [], null, 2),
+            enabled: activeRagDoc.enabled !== false,
+        }
+        : null
+
     return (
         <SettingCard>
-            <SectionTitleRow>
-                <CardHeader>
-                    <CardTitle>공통 RAG 데이터</CardTitle>
-                    <SmallBadge>{ragDocs.length}개</SmallBadge>
-                </CardHeader>
-            </SectionTitleRow>
+            <CardHeader>
+                <CardTitle>공통 RAG 데이터</CardTitle>
+                <SmallBadge>{sortedRagDocs.length}개 청크</SmallBadge>
+            </CardHeader>
 
             <PageDescription>
-                각 화면에서 답을 찾지 못할 때 함께 참조되는 공통 지식 문서입니다.
+                공통 RAG는 단일 문서가 아니라 목차/단락 단위 청크 목록으로 관리하는 것이 권장됩니다.
             </PageDescription>
 
-            <OptionList>
-                {ragDocs.length > 0 ? (
-                    ragDocs.map((item) => {
-                        const ragKey = String(item.id)
-                        const draft = ragDrafts[ragKey] ?? {
-                            title: String(item.title ?? ''),
-                            body: String(item.body ?? ''),
-                            keywordsText: JSON.stringify(item.keywords ?? [], null, 2),
-                            enabled: item.enabled !== false,
-                        }
+            {sortedRagDocs.length > 0 ? (
+                <>
+                    <div style={{ display: 'grid', gap: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                            <strong style={{ fontSize: '13px', color: '#334155' }}>탭 구성</strong>
+                            <PrimaryButton
+                                type="button"
+                                onClick={() => setCreatingOpen((prev) => !prev)}
+                                disabled={savingCreateCommonRag}
+                                style={{ height: '36px' }}
+                            >
+                                {creatingOpen ? '등록 닫기' : '+ RAG 추가'}
+                            </PrimaryButton>
+                        </div>
 
-                        return (
-                            <PromptCard key={ragKey}>
-                                <PromptMeta>
-                                    <span>{item.title || item.chunkKey}</span>
-                                    <span>chunk: {item.chunkKey}</span>
-                                    <span>updated: {formatDateTime(item.updatedAt)}</span>
-                                </PromptMeta>
+                        <div
+                            style={{
+                                display: 'flex',
+                                gap: '10px',
+                                overflowX: 'auto',
+                                paddingBottom: '4px',
+                            }}
+                        >
+                            {sortedRagDocs.map((item) => {
+                                const ragKey = String(item.id)
+                                const active = ragKey === activeRagKey
 
-                                <PromptTextarea
-                                    value={draft.title}
-                                    onChange={(e) => onRagChange(ragKey, 'title', e.target.value)}
-                                    style={{ minHeight: '56px' }}
-                                />
-                                <FieldHint>검색 결과 카드에 표시할 제목입니다.</FieldHint>
-
-                                <FieldLabel>keywords (JSON 배열)</FieldLabel>
-                                <PromptTextarea
-                                    value={draft.keywordsText}
-                                    onChange={(e) => onRagChange(ragKey, 'keywordsText', e.target.value)}
-                                    style={{ minHeight: '96px' }}
-                                />
-                                <FieldHint>공통 검색 매칭에 사용하는 키워드 배열입니다.</FieldHint>
-
-                                <FieldLabel>body</FieldLabel>
-                                <PromptTextarea
-                                    value={draft.body}
-                                    onChange={(e) => onRagChange(ragKey, 'body', e.target.value)}
-                                    style={{ minHeight: '180px' }}
-                                />
-                                <FieldHint>실제 답변 근거로 사용하는 공통 본문입니다.</FieldHint>
-
-                                <PromptFooter>
-                                    <ToggleButton
+                                return (
+                                    <button
+                                        key={ragKey}
                                         type="button"
-                                        $active={draft.enabled}
-                                        onClick={() => onRagChange(ragKey, 'enabled', !draft.enabled)}
+                                        onClick={() => setActiveRagKey(ragKey)}
+                                        style={{
+                                            minWidth: '220px',
+                                            textAlign: 'left',
+                                            padding: '10px 12px',
+                                            borderRadius: '12px',
+                                            border: active ? '1px solid #2563eb' : '1px solid #dbe3ef',
+                                            background: active ? '#eff6ff' : '#ffffff',
+                                            color: active ? '#1d4ed8' : '#334155',
+                                            cursor: 'pointer',
+                                            display: 'grid',
+                                            gap: '4px',
+                                            flex: '0 0 auto',
+                                        }}
                                     >
-                                        {draft.enabled ? '활성' : '비활성'}
-                                    </ToggleButton>
+                                        <strong style={{ fontSize: '13px' }}>{item.title || item.chunkKey}</strong>
+                                        <span style={{ fontSize: '12px' }}>chunk: {item.chunkKey}</span>
+                                    </button>
+                                )
+                            })}
+                        </div>
+                    </div>
 
-                                    <PrimaryButton
-                                        type="button"
-                                        onClick={() => onSaveRag(item)}
-                                        disabled={savingRagKey === ragKey}
-                                    >
-                                        {savingRagKey === ragKey ? '저장 중...' : '저장'}
-                                    </PrimaryButton>
-                                </PromptFooter>
-                            </PromptCard>
-                        )
-                    })
-                ) : (
-                    <PageDescription>등록된 공통 RAG 데이터가 없습니다.</PageDescription>
-                )}
-            </OptionList>
+                    {creatingOpen ? (
+                        <PromptCard>
+                            <PromptMeta>
+                                <span>새 공통 RAG 청크 추가</span>
+                            </PromptMeta>
+
+                            <FieldLabel>chunk key (목차/단락 ID)</FieldLabel>
+                            <PromptTextarea
+                                value={newCommonRagDraft.chunkKey}
+                                onChange={(e) => onNewCommonRagChange('chunkKey', e.target.value)}
+                                style={{ minHeight: '56px' }}
+                            />
+                            <FieldHint>예: site-overview, menu-navigation, ailog-guide 처럼 의미가 드러나는 키를 사용하세요.</FieldHint>
+
+                            <FieldLabel>제목</FieldLabel>
+                            <PromptTextarea
+                                value={newCommonRagDraft.title}
+                                onChange={(e) => onNewCommonRagChange('title', e.target.value)}
+                                style={{ minHeight: '56px' }}
+                            />
+
+                            <FieldLabel>keywords (JSON 배열)</FieldLabel>
+                            <PromptTextarea
+                                value={newCommonRagDraft.keywordsText}
+                                onChange={(e) => onNewCommonRagChange('keywordsText', e.target.value)}
+                                style={{ minHeight: '96px' }}
+                            />
+
+                            <FieldLabel>body</FieldLabel>
+                            <PromptTextarea
+                                value={newCommonRagDraft.body}
+                                onChange={(e) => onNewCommonRagChange('body', e.target.value)}
+                                style={{ minHeight: '160px' }}
+                            />
+
+                            <PromptFooter>
+                                <ToggleButton
+                                    type="button"
+                                    $active={Boolean(newCommonRagDraft.enabled)}
+                                    onClick={() => onNewCommonRagChange('enabled', !newCommonRagDraft.enabled)}
+                                >
+                                    {newCommonRagDraft.enabled ? '활성' : '비활성'}
+                                </ToggleButton>
+
+                                <PrimaryButton type="button" onClick={onCreateCommonRag} disabled={savingCreateCommonRag}>
+                                    {savingCreateCommonRag ? '등록 중...' : '청크 등록'}
+                                </PrimaryButton>
+                            </PromptFooter>
+                        </PromptCard>
+                    ) : null}
+
+                    {activeRagDoc && activeRagDraft ? (
+                        <PromptCard>
+                            <PromptMeta>
+                                <span>{activeRagDoc.title || activeRagDoc.chunkKey}</span>
+                                <span>key: common</span>
+                                <span>chunk: {activeRagDoc.chunkKey}</span>
+                                <span>updated: {formatDateTime(activeRagDoc.updatedAt)}</span>
+                            </PromptMeta>
+
+                            <FieldLabel>제목</FieldLabel>
+                            <PromptTextarea
+                                value={activeRagDraft.title}
+                                onChange={(e) => onRagChange(activeRagKey, 'title', e.target.value)}
+                                style={{ minHeight: '56px' }}
+                            />
+                            <FieldHint>질문 의도와 바로 연결되는 제목으로 작성하세요.</FieldHint>
+
+                            <FieldLabel>keywords (JSON 배열)</FieldLabel>
+                            <PromptTextarea
+                                value={activeRagDraft.keywordsText}
+                                onChange={(e) => onRagChange(activeRagKey, 'keywordsText', e.target.value)}
+                                style={{ minHeight: '96px' }}
+                            />
+                            <FieldHint>동의어/사용자 표현까지 넣어야 조회 정확도가 올라갑니다.</FieldHint>
+
+                            <FieldLabel>body</FieldLabel>
+                            <PromptTextarea
+                                value={activeRagDraft.body}
+                                onChange={(e) => onRagChange(activeRagKey, 'body', e.target.value)}
+                                style={{ minHeight: '180px' }}
+                            />
+                            <FieldHint>한 청크는 한 주제만 다루는 것이 좋습니다(목차/단락 단위).</FieldHint>
+
+                            <PromptFooter>
+                                <ToggleButton
+                                    type="button"
+                                    $active={Boolean(activeRagDraft.enabled)}
+                                    onClick={() => onRagChange(activeRagKey, 'enabled', !activeRagDraft.enabled)}
+                                >
+                                    {activeRagDraft.enabled ? '활성' : '비활성'}
+                                </ToggleButton>
+
+                                <SecondaryTextButton
+                                    type="button"
+                                    onClick={() => onRagChange(activeRagKey, 'title', String(activeRagDoc.title ?? ''))}
+                                >
+                                    제목 원복
+                                </SecondaryTextButton>
+
+                                <SecondaryTextButton
+                                    type="button"
+                                    onClick={() => onDeleteCommonRag(activeRagDoc)}
+                                    disabled={deletingCommonRagKey === activeRagKey}
+                                >
+                                    {deletingCommonRagKey === activeRagKey ? '삭제 중...' : '삭제'}
+                                </SecondaryTextButton>
+
+                                <PrimaryButton
+                                    type="button"
+                                    onClick={() => onSaveRag(activeRagDoc)}
+                                    disabled={savingRagKey === activeRagKey}
+                                >
+                                    {savingRagKey === activeRagKey ? '저장 중...' : '저장'}
+                                </PrimaryButton>
+                            </PromptFooter>
+                        </PromptCard>
+                    ) : null}
+                </>
+            ) : (
+                <>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <PrimaryButton
+                            type="button"
+                            onClick={() => setCreatingOpen((prev) => !prev)}
+                            disabled={savingCreateCommonRag}
+                            style={{ height: '36px' }}
+                        >
+                            {creatingOpen ? '등록 닫기' : '+ RAG 추가'}
+                        </PrimaryButton>
+                    </div>
+                    {creatingOpen ? (
+                        <PromptCard>
+                            <FieldLabel>chunk key (목차/단락 ID)</FieldLabel>
+                            <PromptTextarea
+                                value={newCommonRagDraft.chunkKey}
+                                onChange={(e) => onNewCommonRagChange('chunkKey', e.target.value)}
+                                style={{ minHeight: '56px' }}
+                            />
+
+                            <FieldLabel>제목</FieldLabel>
+                            <PromptTextarea
+                                value={newCommonRagDraft.title}
+                                onChange={(e) => onNewCommonRagChange('title', e.target.value)}
+                                style={{ minHeight: '56px' }}
+                            />
+
+                            <FieldLabel>keywords (JSON 배열)</FieldLabel>
+                            <PromptTextarea
+                                value={newCommonRagDraft.keywordsText}
+                                onChange={(e) => onNewCommonRagChange('keywordsText', e.target.value)}
+                                style={{ minHeight: '96px' }}
+                            />
+
+                            <FieldLabel>body</FieldLabel>
+                            <PromptTextarea
+                                value={newCommonRagDraft.body}
+                                onChange={(e) => onNewCommonRagChange('body', e.target.value)}
+                                style={{ minHeight: '160px' }}
+                            />
+
+                            <PromptFooter>
+                                <ToggleButton
+                                    type="button"
+                                    $active={Boolean(newCommonRagDraft.enabled)}
+                                    onClick={() => onNewCommonRagChange('enabled', !newCommonRagDraft.enabled)}
+                                >
+                                    {newCommonRagDraft.enabled ? '활성' : '비활성'}
+                                </ToggleButton>
+                                <PrimaryButton type="button" onClick={onCreateCommonRag} disabled={savingCreateCommonRag}>
+                                    {savingCreateCommonRag ? '등록 중...' : '청크 등록'}
+                                </PrimaryButton>
+                            </PromptFooter>
+                        </PromptCard>
+                    ) : (
+                        <PageDescription>등록된 공통 RAG 청크가 없습니다. 우측의 + RAG 추가 버튼으로 등록해 주세요.</PageDescription>
+                    )}
+                </>
+            )}
         </SettingCard>
     )
 }

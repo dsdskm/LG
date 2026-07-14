@@ -10,6 +10,8 @@ const logger = new Logger('ScreenRegistry')
 export type ScreenConfig = {
   /** currentApp::currentPath. handleXxx 의 routeKey 와 동일. */
   key: string
+  /** 앱 키(예: robot, ota, cms, tms). */
+  appKey: string
   /** 화면 표시명(프롬프트/로그용). */
   screenName: string
   /** 인텐트 분류기에 주는 화면별 추가 힌트. */
@@ -44,6 +46,7 @@ function toChatAction(routeKey: string) {
 export function getScreenConfig(routeKey: string): ScreenConfig | undefined {
   const normalizedRouteKey = String(routeKey || '').replace(/^\//, '')
   if (!normalizedRouteKey) return undefined
+  const appKey = normalizedRouteKey.split('/').filter(Boolean)[0] || normalizedRouteKey
 
   const store = getPromptStore()
   const screen = store?.getScreen(normalizedRouteKey)
@@ -52,13 +55,13 @@ export function getScreenConfig(routeKey: string): ScreenConfig | undefined {
   }
 
   const commonSystem = store?.getPromptContent('common', 'system') ?? ''
-  const intentHints = store?.getPromptContent(normalizedRouteKey, 'intent-hint') ?? ''
-  const dataSystem = store?.getPromptContent(normalizedRouteKey, 'data-system') ?? ''
-  const actionSystem = store?.getPromptContent(normalizedRouteKey, 'action-system') ?? ''
-  const fallbackText = store?.getPromptContent(normalizedRouteKey, 'fallback') ?? ''
+  const appIntentHint = store?.getPromptContent(appKey, 'intent-hint') ?? ''
+  const appDataSystem = store?.getPromptContent(appKey, 'data-system') ?? ''
+  const appActionSystem = store?.getPromptContent(appKey, 'action-system') ?? ''
+  const appFallback = store?.getPromptContent(appKey, 'fallback') ?? ''
 
-  const mergedDataSystemPrompt = [commonSystem, dataSystem].filter(Boolean).join('\n\n')
-  const mergedActionSystemPrompt = [commonSystem, actionSystem].filter(Boolean).join('\n\n')
+  const mergedDataSystemPrompt = [commonSystem, appDataSystem].filter(Boolean).join('\n\n')
+  const mergedActionSystemPrompt = [commonSystem, appActionSystem].filter(Boolean).join('\n\n')
 
   const dataTools = (store?.getScreenTools(normalizedRouteKey, 'data') ?? [])
     .map((row) => TOOL_REGISTRY[row.toolName])
@@ -74,6 +77,7 @@ export function getScreenConfig(routeKey: string): ScreenConfig | undefined {
     [
       '[prompt-apply]',
       `route=${normalizedRouteKey}`,
+      `app=${appKey}`,
       `commonSystemApplied=${Boolean(commonSystem)}`,
       `dataPromptLen=${mergedDataSystemPrompt.length}`,
       `actionPromptLen=${mergedActionSystemPrompt.length}`,
@@ -85,9 +89,10 @@ export function getScreenConfig(routeKey: string): ScreenConfig | undefined {
 
   return {
     key: normalizedRouteKey,
+    appKey,
     screenName: screen.screenName,
-    intentHints,
-    ragCollection: normalizedRouteKey,
+    intentHints: appIntentHint,
+    ragCollection: appKey,
     dataTools,
     actionTools,
     dataSystemPrompt: mergedDataSystemPrompt,
@@ -97,6 +102,6 @@ export function getScreenConfig(routeKey: string): ScreenConfig | undefined {
       data: `${baseAction}/filter`,
       action: `${baseAction}/action`,
     },
-    fallbackText,
+    fallbackText: appFallback,
   }
 }

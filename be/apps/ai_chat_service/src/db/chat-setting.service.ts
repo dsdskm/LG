@@ -6,7 +6,16 @@ import { ChatSettingEntity } from './chat-setting.entity'
 
 export const CHAT_SETTING_KEYS = {
   llmProvider: 'llmProvider',
+  llmProviderSchema: 'llmProviderSchema',
 } as const
+
+export type ChatSettingSchemaItem = {
+  key: string
+  label: string
+  type: string
+  options?: Array<{ value: string; label: string }>
+  enabled?: boolean
+}
 
 const VALID_PROVIDERS = ['azure', 'vertex'] as const
 export type ChatLlmProvider = (typeof VALID_PROVIDERS)[number]
@@ -56,6 +65,11 @@ export class ChatSettingService {
     return Object.fromEntries(map.entries())
   }
 
+  async getSchema(): Promise<ChatSettingSchemaItem[]> {
+    const raw = await this.get(CHAT_SETTING_KEYS.llmProviderSchema)
+    return Array.isArray(raw) ? (raw as ChatSettingSchemaItem[]) : []
+  }
+
   async get(key: string): Promise<unknown> {
     const map = await this.load()
     return map.get(key)
@@ -73,16 +87,18 @@ export class ChatSettingService {
     this.logger.log(`[db] upsert chat_setting key=${key} value=${JSON.stringify(value)}`)
   }
 
-  /** 현재 활성 LLM provider. DB값 우선, 없으면 env(LLM_PROVIDER), 그다음 azure. */
+  /** 현재 활성 LLM provider. DB값만 사용한다. */
   async getLlmProvider(): Promise<ChatLlmProvider> {
     const raw = await this.get(CHAT_SETTING_KEYS.llmProvider)
-    return this.normalizeProvider(raw ?? process.env.LLM_PROVIDER)
+    return this.normalizeProvider(raw)
   }
 
   normalizeProvider(raw: unknown): ChatLlmProvider {
     const v = String(raw ?? '').trim().toLowerCase()
-    return (VALID_PROVIDERS as readonly string[]).includes(v)
-      ? (v as ChatLlmProvider)
-      : 'azure'
+    if ((VALID_PROVIDERS as readonly string[]).includes(v)) {
+      return v as ChatLlmProvider
+    }
+
+    throw new Error('chat_setting.llmProvider row is missing or invalid')
   }
 }

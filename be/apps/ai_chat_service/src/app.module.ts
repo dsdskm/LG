@@ -30,7 +30,7 @@ import { ChatSettingController } from './controller/chat-setting.controller';
         ChatRagDocEntity,
         ChatScreenToolEntity,
       ],
-      synchronize: false,
+      synchronize: true,
       logging: false,
     }),
     TypeOrmModule.forFeature([

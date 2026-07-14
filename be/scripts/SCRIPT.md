@@ -9,6 +9,7 @@
 | # | 스크립트 | 하는 일 | 사용 |
 |---|---|---|---|
 | 1 | `run/dev-db.sh` | 로컬 Postgres 컨테이너 기동 | `./scripts/run/dev-db.sh` (`stop`·`rm` 가능) |
+| - | `local/codespace-db-tunnel.sh` | Codespace 안 DB 를 로컬 PC 로 포워딩(pgAdmin 접속용) | `./scripts/local/codespace-db-tunnel.sh` |
 | 2 | `deploy/dev-build.sh` | 앱 빌드 | `./scripts/deploy/dev-build.sh [앱\|all]` |
 | 3 | `run/dev-run.sh` | 앱 실행(dev) | `./scripts/run/dev-run.sh [앱\|all]` |
 | - | `run/dev-kill-port.sh` | 포트 점유 프로세스 종료 | `./scripts/run/dev-kill-port.sh <port>` |

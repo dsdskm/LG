@@ -216,10 +216,12 @@ src/
 
 ### 8.1 `chat_setting`
 
+> `llmProviderSchema` row 에 LLM Provider UI 스키마를 JSONB 배열로 저장하고, `llmProvider` row 에 현재 활성 provider 값을 저장한다.
+
 | 컬럼 | 용도 | 사용 코드 |
 |---|---|---|
 | `id` | PK | TypeORM 내부 식별자 (`ChatSettingEntity`) |
-| `key` | 설정 키 (`llmProvider` 등) | `ChatSettingService.get/upsert/getAll` |
+| `key` | 설정 키 (`llmProvider`, `llmProviderSchema` 등) | `ChatSettingService.get/upsert/getAll` |
 | `value` | JSONB 설정 값 | `ChatSettingService.getLlmProvider`, `ChatSettingController.getAll/update` |
 | `created_at` | 생성시각 | DB 기본값 관리(코드 직접 사용 없음) |
 | `updated_at` | 수정시각 | `UpdateDateColumn` 자동 갱신 |

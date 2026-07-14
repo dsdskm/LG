@@ -36,3 +36,6 @@ CREATE SCHEMA public;
 GRANT ALL ON SCHEMA public TO postgres;
 GRANT ALL ON SCHEMA public TO public;
 
+# DB 터널링
+(로컬PC)
+codespace-db-tunnel.sh

@@ -183,6 +183,33 @@ export class PromptStoreService implements OnModuleInit {
     return row
   }
 
+  async upsertCommonPrompt(
+    patch: { content?: string; enabled?: boolean; label?: string },
+  ) {
+    const existing = await this.promptRepo.findOne({ where: { key: 'common', promptType: 'system' } })
+    const row =
+      existing ??
+      this.promptRepo.create({
+        key: 'common',
+        appKey: 'common',
+        routeKey: 'common',
+        category: 'common',
+        promptType: 'system',
+        label: '공통 프롬프트',
+        content: '',
+        sortOrder: 0,
+        enabled: true,
+      })
+
+    if (patch.content !== undefined) row.content = patch.content
+    if (patch.enabled !== undefined) row.enabled = patch.enabled
+    if (patch.label !== undefined) row.label = patch.label
+
+    await this.promptRepo.save(row)
+    await this.reload()
+    return row
+  }
+
   async listGuidance() {
     return this.guidanceRepo.find({ order: { appKey: 'ASC', routeKey: 'ASC', sortOrder: 'ASC', key: 'ASC' } })
   }
@@ -216,6 +243,77 @@ export class PromptStoreService implements OnModuleInit {
     await this.ragRepo.save(row)
     await this.reload()
     return row
+  }
+
+  async upsertCommonRagDoc(
+    patch: { title?: string; keywords?: string[]; body?: string; enabled?: boolean },
+  ) {
+    const existing = await this.ragRepo.findOne({ where: { key: 'common', chunkKey: 'common' } })
+    const row =
+      existing ??
+      this.ragRepo.create({
+        appKey: 'common',
+        key: 'common',
+        routeKey: 'common',
+        scope: '로봇 관제 사이트 공통',
+        chunkKey: 'common',
+        title: '공통 RAG',
+        keywords: [],
+        body: '',
+        sortOrder: 0,
+        enabled: true,
+      })
+
+    if (patch.title !== undefined) row.title = patch.title
+    if (patch.keywords !== undefined) row.keywords = patch.keywords
+    if (patch.body !== undefined) row.body = patch.body
+    if (patch.enabled !== undefined) row.enabled = patch.enabled
+
+    await this.ragRepo.save(row)
+    await this.reload()
+    return row
+  }
+
+  async createCommonRagChunk(input: {
+    chunkKey: string
+    title?: string
+    keywords?: string[]
+    body?: string
+    enabled?: boolean
+    sortOrder?: number
+  }) {
+    const chunkKey = String(input.chunkKey ?? '').trim()
+    if (!chunkKey) throw new Error('chunkKey is required')
+
+    const existing = await this.ragRepo.findOne({ where: { key: 'common', chunkKey } })
+    if (existing) throw new Error('common rag chunk already exists')
+
+    const row = this.ragRepo.create({
+      appKey: 'common',
+      key: 'common',
+      routeKey: 'common',
+      scope: '로봇 관제 사이트 공통',
+      chunkKey,
+      title: input.title ?? chunkKey,
+      keywords: input.keywords ?? [],
+      body: input.body ?? '',
+      sortOrder: Number(input.sortOrder ?? 0),
+      enabled: input.enabled !== false,
+    })
+
+    await this.ragRepo.save(row)
+    await this.reload()
+    return row
+  }
+
+  async deleteRagChunk(id: number) {
+    const row = await this.ragRepo.findOne({ where: { id } })
+    if (!row) throw new Error('rag chunk not found')
+
+    await this.ragRepo.remove(row)
+    await this.reload()
+
+    return { id }
   }
 
   async listScreenTools(key?: string) {

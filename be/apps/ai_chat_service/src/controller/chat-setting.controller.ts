@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Logger, Param, Put, Query } from '@nestjs/common'
+import { Body, Controller, Delete, Get, Logger, Param, Post, Put, Query } from '@nestjs/common'
 import { ok } from '@ai-log/shared-contracts'
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger'
 import { ChatLogService } from '../db/chat-log.service'
@@ -9,22 +9,9 @@ import {
 import { PromptStoreService } from '../db/prompt-store.service'
 
 /**
- * 설정 항목 정의(스키마). 프론트가 이 목록으로 UI를 렌더한다.
- * enabled=false 는 향후 지원 예정(자리표시).
+ * 채팅 설정 전체 + 스키마 조회.
+ * 스키마는 chat_setting.llmProviderSchema row에서 읽어서 프론트 UI를 렌더한다.
  */
-const SETTING_SCHEMA = [
-  {
-    key: CHAT_SETTING_KEYS.llmProvider,
-    label: 'LLM Provider',
-    type: 'select',
-    options: [
-      { value: 'azure', label: 'Azure OpenAI' },
-      { value: 'vertex', label: 'Google Vertex (Gemini)' },
-    ],
-    enabled: true,
-  },
-] as const
-
 type UpdateBody = {
   llmProvider?: string
   settings?: Array<{ key: string; value: unknown }>
@@ -32,6 +19,12 @@ type UpdateBody = {
 
 type UpdatePromptBody = {
   id?: number
+  content?: string
+  enabled?: boolean
+  label?: string
+}
+
+type UpsertCommonPromptBody = {
   content?: string
   enabled?: boolean
   label?: string
@@ -67,6 +60,22 @@ type UpdateRagDocBody = {
   enabled?: boolean
 }
 
+type UpsertCommonRagDocBody = {
+  title?: string
+  keywords?: string[]
+  body?: string
+  enabled?: boolean
+}
+
+type CreateCommonRagDocBody = {
+  chunkKey?: string
+  title?: string
+  keywords?: string[]
+  body?: string
+  enabled?: boolean
+  sortOrder?: number
+}
+
 @ApiTags('chat-settings')
 @Controller('chat/settings')
 export class ChatSettingController {
@@ -83,6 +92,7 @@ export class ChatSettingController {
   @ApiOkResponse({ description: '설정/스키마 반환' })
   async getAll() {
     const values = await this.settings.getAll()
+    const schema = await this.settings.getSchema()
     const llmProvider = await this.settings.getLlmProvider()
     const [screens, prompts, guidance, ragDocs, screenTools, history] = await Promise.all([
       this.promptStore.listScreens(),
@@ -94,7 +104,7 @@ export class ChatSettingController {
     ])
 
     return ok({
-      schema: SETTING_SCHEMA,
+      schema,
       values: { ...values, llmProvider },
       management: { screens, prompts, guidance, ragDocs, screenTools, history },
     })
@@ -132,6 +142,18 @@ export class ChatSettingController {
   @ApiOkResponse({ description: '갱신된 프롬프트 반환' })
   async updatePrompt(@Param('id') id: string, @Body() body: UpdatePromptBody) {
     const row = await this.promptStore.updatePrompt(Number(id), {
+      content: body?.content,
+      enabled: body?.enabled,
+      label: body?.label,
+    })
+    return ok(row)
+  }
+
+  @Put('prompts/common')
+  @ApiOperation({ summary: '공통 프롬프트 등록/수정' })
+  @ApiOkResponse({ description: '갱신된 공통 프롬프트 반환' })
+  async upsertCommonPrompt(@Body() body: UpsertCommonPromptBody) {
+    const row = await this.promptStore.upsertCommonPrompt({
       content: body?.content,
       enabled: body?.enabled,
       label: body?.label,
@@ -182,6 +204,42 @@ export class ChatSettingController {
       enabled: body?.enabled,
     })
     return ok(row)
+  }
+
+  @Put('rag-docs/common')
+  @ApiOperation({ summary: '공통 RAG 등록/수정' })
+  @ApiOkResponse({ description: '갱신된 공통 RAG 반환' })
+  async upsertCommonRagDoc(@Body() body: UpsertCommonRagDocBody) {
+    const row = await this.promptStore.upsertCommonRagDoc({
+      title: body?.title,
+      keywords: body?.keywords,
+      body: body?.body,
+      enabled: body?.enabled,
+    })
+    return ok(row)
+  }
+
+  @Post('rag-docs/common')
+  @ApiOperation({ summary: '공통 RAG 청크 등록' })
+  @ApiOkResponse({ description: '생성된 공통 RAG 청크 반환' })
+  async createCommonRagDoc(@Body() body: CreateCommonRagDocBody) {
+    const row = await this.promptStore.createCommonRagChunk({
+      chunkKey: String(body?.chunkKey ?? ''),
+      title: body?.title,
+      keywords: body?.keywords,
+      body: body?.body,
+      enabled: body?.enabled,
+      sortOrder: body?.sortOrder,
+    })
+    return ok(row)
+  }
+
+  @Delete('rag-docs/:id')
+  @ApiOperation({ summary: 'RAG 문서 청크 삭제' })
+  @ApiOkResponse({ description: '삭제된 RAG 청크 ID 반환' })
+  async deleteRagDoc(@Param('id') id: string) {
+    const out = await this.promptStore.deleteRagChunk(Number(id))
+    return ok(out)
   }
 
   @Get('history')

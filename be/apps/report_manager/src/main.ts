@@ -21,6 +21,8 @@ async function bootstrap() {
     yamlDocumentUrl: 'docs-yaml',
   });
 
+  app.enableCors({ origin: true }); // 개발 환경: 모든 origin 허용
+
   const port = process.env.PORT_REPORT_MANAGER || 3005;
   await app.listen(port, '0.0.0.0');
   logger.log(`event_receiver listening on ${port}`);

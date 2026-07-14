@@ -107,6 +107,56 @@ export class ChatOrchestrator {
     return text || undefined
   }
 
+  private decideFallbackIntent(message: string, canRunAction: boolean): ChatIntent {
+    const text = String(message ?? '').toLowerCase()
+    const actionKeywords = ['실행', '수행', '처리', '조치', '액션', '이동', '열어', 'navigate', 'action', 'run']
+    const actionRequested = actionKeywords.some((keyword) => text.includes(keyword))
+
+    if (canRunAction && actionRequested) {
+      return 'action'
+    }
+
+    return 'info'
+  }
+
+  private uniqueCollections(collections: string[]): string[] {
+    const seen = new Set<string>()
+    const result: string[] = []
+
+    for (const raw of collections) {
+      const key = String(raw ?? '').trim()
+      if (!key || seen.has(key)) continue
+      seen.add(key)
+      result.push(key)
+    }
+
+    return result
+  }
+
+  private async tryRagFallback(
+    collections: string[],
+    message: string,
+    history: ChatTurn[],
+  ): Promise<{ text?: string; usedCollection?: string; usedChunks: string[] }> {
+    const ordered = this.uniqueCollections(collections)
+    if (ordered.length === 0) {
+      return { text: undefined, usedCollection: undefined, usedChunks: [] }
+    }
+
+    const result = await this.rag.answer(ordered, message, '', history)
+    const text = (result.text ?? '').trim()
+
+    if (result.usedChunks.length === 0 || !text) {
+      return { text: undefined, usedCollection: undefined, usedChunks: [] }
+    }
+
+    return {
+      text,
+      usedCollection: result.usedCollection,
+      usedChunks: result.usedChunks,
+    }
+  }
+
   /**
    * 등록된 화면이면 처리하고, 아니면 handled:false로 반환한다.
    * handled:false는 ChatService에서 guidance fallback으로 이어진다.
@@ -135,10 +185,12 @@ export class ChatOrchestrator {
     this.logger.log(`[handle] pipelineIntentResult=${pipelineIntentResult}`)
 
     let pipelineIntent: ChatIntent = pipelineIntentResult.intent
+    let ragCollections = this.uniqueCollections([screen.ragCollection, COMMON_COLLECTION])
     this.logger.log(`[handle] pipelineIntent=${pipelineIntent}`)
-    // 저신뢰도이면 안전하게 info(RAG/문서 안내)로 처리한다.
+    // 의도 분석 실패(저신뢰도) 시 common action 또는 common RAG로 우선 복구한다.
     if (pipelineIntentResult.confidence < this.pipeline.intentMinConfidence) {
-      pipelineIntent = 'info'
+      pipelineIntent = this.decideFallbackIntent(message, screen.actionTools.length > 0)
+      ragCollections = this.uniqueCollections([COMMON_COLLECTION, screen.ragCollection])
     }
 
     // 해당 tool이 없는 화면이면 RAG(info)로 처리한다.
@@ -172,6 +224,7 @@ export class ChatOrchestrator {
           history,
           screenTask,
           previousFilters,
+          ragCollections,
         )
 
       case 'action':
@@ -182,6 +235,7 @@ export class ChatOrchestrator {
           pipelineIntentResult,
           history,
           screenTask,
+          ragCollections,
         )
 
       case 'info':
@@ -192,6 +246,7 @@ export class ChatOrchestrator {
           pipelineIntentResult,
           history,
           screenTask,
+          ragCollections,
         )
     }
   }
@@ -253,17 +308,18 @@ export class ChatOrchestrator {
     pipelineIntentResult: unknown,
     history: ChatTurn[],
     screenTask: ScreenTask,
+    ragCollections: string[],
   ): Promise<OrchestrationOutput> {
     this.logger.log(
-      `[prompt-apply] route=${screen.key} intent=info ragCollections=${screen.ragCollection},${COMMON_COLLECTION}`,
+      `[prompt-apply] route=${screen.key} intent=info ragCollections=${ragCollections.join(',')}`,
     )
 
     // fallback chain:
-    // 1. 화면별 RAG collection
-    // 2. 공통 RAG collection
-    // 3. 화면별 fallbackText
+    // 1. app/common RAG collection
+    // 2. app fallbackText
+    // 3. default LLM
     const { text, usedCollection, usedChunks } = await this.rag.answer(
-      [screen.ragCollection, COMMON_COLLECTION],
+      ragCollections,
       message,
       screen.fallbackText,
       history,
@@ -300,6 +356,7 @@ export class ChatOrchestrator {
     history: ChatTurn[],
     screenTask: ScreenTask,
     previousFilters?: Record<string, unknown>,
+    ragCollections?: string[],
   ): Promise<OrchestrationOutput> {
     // 직전 필터를 시스템 프롬프트에 실어,
     // 후속 발화가 이를 이어받아 병합하도록 한다.
@@ -324,10 +381,13 @@ export class ChatOrchestrator {
     )
 
     const noExecution = executed.length === 0 || executed.every((call) => Boolean(call.error))
+    const ragFallback = noExecution
+      ? await this.tryRagFallback(ragCollections ?? [COMMON_COLLECTION, screen.ragCollection], message, history)
+      : { text: undefined, usedCollection: undefined, usedChunks: [] }
     const defaultLlmText = noExecution
-      ? await this.generateDefaultLlmReply(screen, message, history, 'data-no-execution')
+      ? await this.generateDefaultLlmReply(screen, message, history, 'data-no-execution-and-no-rag-hit')
       : undefined
-    const finalText = text?.trim() || defaultLlmText || screen.fallbackText
+    const finalText = text?.trim() || ragFallback.text || defaultLlmText || screen.fallbackText
 
     const resolvedFilters = pickResolvedFilters(executed)
 
@@ -343,6 +403,9 @@ export class ChatOrchestrator {
         pipelineIntent: 'data',
         pipelineIntentResult,
         executed: summarizeCalls(executed),
+        ragFallbackUsed: Boolean(ragFallback.text),
+        ragFallbackCollection: ragFallback.usedCollection,
+        ragFallbackChunks: ragFallback.usedChunks,
         defaultLlmFallback: Boolean(defaultLlmText),
       },
     }
@@ -355,6 +418,7 @@ export class ChatOrchestrator {
     pipelineIntentResult: unknown,
     history: ChatTurn[],
     screenTask: ScreenTask,
+    ragCollections?: string[],
   ): Promise<OrchestrationOutput> {
     this.logger.log(
       `[prompt-apply] route=${screen.key} intent=action actionSystemPromptLen=${screen.actionSystemPrompt.length}`,
@@ -369,10 +433,13 @@ export class ChatOrchestrator {
     )
 
     const noExecution = executed.length === 0 || executed.every((call) => Boolean(call.error))
+    const ragFallback = noExecution
+      ? await this.tryRagFallback(ragCollections ?? [COMMON_COLLECTION, screen.ragCollection], message, history)
+      : { text: undefined, usedCollection: undefined, usedChunks: [] }
     const defaultLlmText = noExecution
-      ? await this.generateDefaultLlmReply(screen, message, history, 'action-no-execution')
+      ? await this.generateDefaultLlmReply(screen, message, history, 'action-no-execution-and-no-rag-hit')
       : undefined
-    const finalText = text?.trim() || defaultLlmText || screen.fallbackText
+    const finalText = text?.trim() || ragFallback.text || defaultLlmText || screen.fallbackText
 
     const ran = executed.find((c) => c.name === 'run_action')
     const navigation = this.findNavigationResult(executed)
@@ -393,6 +460,9 @@ export class ChatOrchestrator {
         pipelineIntent: 'action',
         pipelineIntentResult,
         executed: summarizeCalls(executed),
+        ragFallbackUsed: Boolean(ragFallback.text),
+        ragFallbackCollection: ragFallback.usedCollection,
+        ragFallbackChunks: ragFallback.usedChunks,
         defaultLlmFallback: Boolean(defaultLlmText),
       },
     }
