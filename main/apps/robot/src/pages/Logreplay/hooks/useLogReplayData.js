@@ -1,0 +1,1456 @@
+// hooks/useLogReplayData.js
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { fileApis } from '@/apis'
+import { extractFilenameFromContentDisposition, triggerAnchorDownload } from '../logReplayRender.js'
+import useLogSearch from './useLogSearch.js'
+import {
+  loadPosesFromMcapUrl,
+  loadRosoutFromMcapUrl,
+  loadPosesSparseFromMcapUrl,
+  loadCostmapWindowFromMcapUrl,
+  loadPathWindowFromMcapUrl,
+  loadGoalPoseWindowFromMcapUrl,
+  loadOccupancyGridFromMcapUrl
+} from '../mcap/mcapLoader.js'
+import { toUtcFromLocalDateTime } from '@/utils/dateUtils'
+import { format } from 'date-fns'
+const lichtblickURL = import.meta.env.VITE_LICHTBLICK_BASE_URL
+
+// ── 공통 헬퍼 (module-level) ─────────────────────────────
+/** tSec ≤ t 인 마지막 인덱스 (없으면 -1) */
+function bsearchLe(arr, t) {
+  let lo = 0,
+    hi = arr.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if ((arr[mid]?.tSec ?? 0) <= t) lo = mid + 1
+    else hi = mid
+  }
+  return lo - 1
+}
+
+/** 가장 가까운 인덱스 */
+function bsearchClosest(arr, t) {
+  let lo = 0,
+    hi = arr.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if ((arr[mid]?.tSec ?? 0) < t) lo = mid + 1
+    else hi = mid
+  }
+  if (lo >= arr.length) return arr.length - 1
+  if (lo === 0) return 0
+  return Math.abs(t - (arr[lo - 1]?.tSec ?? 0)) <= Math.abs((arr[lo]?.tSec ?? 0) - t) ? lo - 1 : lo
+}
+
+/** 정렬된 배열에서 동일 tSec 중복 제거(마지막 우선). 새 배열 반환 — O(n) */
+function dedupeSortedByTSec(arr) {
+  const out = []
+  for (let i = 0; i < arr.length; i++) {
+    const cur = arr[i]
+    if (out.length > 0 && out[out.length - 1].tSec === cur.tSec) out[out.length - 1] = cur
+    else out.push(cur)
+  }
+  return out
+}
+
+const EMPTY_OPTION = { id: '__empty__', label: '파일 없음' }
+const INITIAL_HINT = 'mcap 파일 선택 후 조회 버튼을 눌러주세요'
+
+export default function useLogReplayData({
+  setPathPoints,
+  setGridData,
+  setLocalCostmapData,
+  setLocalCostmapFrames,
+  setPlannedPathPoints,
+  setLidarScans,
+  setDwaGoals,
+  setLoadPhase,
+  setT0EpochMs,
+  setDurationMs, // ✅ ADD
+  updateBuffer,
+  renderNow,
+  resetView,
+  deviceId,
+  // ✅ [ADD] 플레이바 현재 재생 위치(초)를 가져오는 콜백 (0 ~ durationSec)
+  getPlayTimeSec,
+  // ✅ [ADD] 실제 재생 중 여부 — seek/재생 판정을 추측이 아닌 상태로 하기 위함
+  getIsPlaying
+}) {
+  // 스트리밍 상태 ref
+  const expectedDurationSecRef = useRef(0)
+  const decodedSpanSecRef = useRef(0)
+  const t0RawRef = useRef(null)
+  const tLastRawRef = useRef(-Infinity)
+
+  // ✅ [ADD] 현재 로드된 MCAP url / pose-window 요청 핸들러
+  const currentMcapUrlRef = useRef('')
+  const requestPoseWindowRef = useRef(null)
+  const activePoseWindowRef = useRef({ startSec: null, endSec: null })
+  const poseInflightRef = useRef(false) // pose 윈도우 로드 in-flight 가드(중복/파일업 방지 — finally에서 반드시 해제)
+  const poseWindowSeqRef = useRef(0)
+  const lastPollCenterRef = useRef(null) // ✅ 폴링 게이트: 사용자 seek 감지용
+  // ✅ [ADD][Option A] pose window 결과 캐시(플레이바 이동 시 네트워크 없이 여기서 선택)
+  const poseWindowCacheRef = useRef([]) // [{x,y,yaw,tSec}]  (tSec: playback-relative sec)
+  const lastPoseApplyIdxRef = useRef(-1)
+
+  // ✅ [ADD] odom(=pose) 기반 센서 차트 데이터 (uPlot용: {t[], x[], y[], z[]})
+  const [odomChart1, setOdomChart1] = useState(null) // vx/vy/speed
+  const [odomChart2, setOdomChart2] = useState(null) // x/y/yaw
+  const [chartLoading, setChartLoading] = useState(false)
+
+  // ✅ [ADD] pose window -> chart data 변환 유틸
+  const buildOdomChartsFromPoses = useCallback((poses) => {
+    if (!Array.isArray(poses) || poses.length < 2) return { c1: null, c2: null }
+
+    // chart2: x/y/yaw (그대로)
+    const t2 = []
+    const x2 = []
+    const y2 = []
+    const z2 = [] // yaw
+
+    for (const p of poses) {
+      const t = Number(p?.tSec)
+      const x = Number(p?.x)
+      const y = Number(p?.y)
+      const yaw = Number(p?.yaw) || 0
+      if (!Number.isFinite(t) || !Number.isFinite(x) || !Number.isFinite(y)) continue
+      t2.push(t)
+      x2.push(x)
+      y2.push(y)
+      z2.push(yaw)
+    }
+
+    // chart1: vx/vy/speed (차분으로 계산)
+    const t1 = []
+    const x1 = [] // vx
+    const y1 = [] // vy
+    const z1 = [] // speed
+    for (let i = 1; i < poses.length; i++) {
+      const p0 = poses[i - 1]
+      const p1 = poses[i]
+      const t0 = Number(p0?.tSec)
+      const t = Number(p1?.tSec)
+      const dt = t - t0
+      if (!(Number.isFinite(dt) && dt > 0)) continue
+      const x0 = Number(p0?.x),
+        y0 = Number(p0?.y)
+      const x = Number(p1?.x),
+        y = Number(p1?.y)
+      if (!Number.isFinite(x0) || !Number.isFinite(y0) || !Number.isFinite(x) || !Number.isFinite(y)) continue
+      const vx = (x - x0) / dt
+      const vy = (y - y0) / dt
+      t1.push(t)
+      x1.push(vx)
+      y1.push(vy)
+      z1.push(Math.hypot(vx, vy))
+    }
+
+    const c1 = t1.length ? { t: t1, x: x1, y: y1, z: z1 } : null
+    const c2 = t2.length ? { t: t2, x: x2, y: y2, z: z2 } : null
+    return { c1, c2 }
+  }, [])
+
+  // ✅ [ADD] rosout(window) 동기화용 refs (pose와 동일 패턴)
+  const requestLogWindowRef = useRef(null)
+  const activeLogWindowRef = useRef({ startSec: null, endSec: null })
+  const logWindowSeqRef = useRef(0)
+  const logWindowCacheRef = useRef([]) // [{tSec, epochMs, level, text}] sorted
+  const lastLogApplyIdxRef = useRef(-1)
+  const appliedKeywordRef = useRef('')
+
+  // ✅ [ADD] 누적/seek 모드 구분
+  const logAccModeRef = useRef('seek') // 'seek' | 'accumulate'
+  const accStartSecRef = useRef(0) // 누적 시작 시점(seek 시점)
+  const accEndCoveredRef = useRef(0) // 누적 캐시가 커버하는 최대 tSec
+
+  // ✅ [ADD] TDZ 회피: polling/useEffect에서 applyLogsByPlayhead를 deps로 직접 참조하지 않기 위한 ref
+  const applyLogsByPlayheadRef = useRef(null)
+  // ── 공통 overlay window refs (costmap / path / goalPose) ──
+  const overlayRef = useRef({
+    costmap: { seq: 0, cache: [], active: { s: null, e: null }, lastIdx: -1 },
+    path: { seq: 0, cache: [], active: { s: null, e: null }, lastIdx: -1 },
+    goalPose: { seq: 0, cache: [], active: { s: null, e: null }, lastIdx: -1 }
+  })
+  const requestOverlayWindowRef = useRef(null)
+  const requestChartOverviewRef = useRef(null)
+
+  const timebaseReadyRef = useRef(false)
+
+  const gridDoneRef = useRef({ v: false })
+  const posesDoneRef = useRef({ v: false })
+  const t0EpochMsRef = useRef(null) //ADD: playback 기준점(ms)
+
+  // ✅ ADD: replay session clear (날짜/로그 변경 시)
+  const clearReplaySession = useCallback(() => {
+    currentMcapUrlRef.current = ''
+
+    requestPoseWindowRef.current = null
+    requestLogWindowRef.current = null
+    requestOverlayWindowRef.current = null
+
+    activePoseWindowRef.current = { startSec: null, endSec: null }
+    poseInflightRef.current = false
+    activeLogWindowRef.current = { startSec: null, endSec: null }
+
+    poseWindowCacheRef.current = []
+    logWindowCacheRef.current = []
+
+    lastPollCenterRef.current = null
+    lastPoseApplyIdxRef.current = -1
+    lastLogApplyIdxRef.current = -1
+
+    // ✅ ADD: log UI state 초기화
+    setLogLines([])
+    setFilteredLines([])
+    setLogError(null)
+    setIsLoadingLogs(false)
+    setOdomChart1(null)
+    setOdomChart2(null)
+  }, [])
+
+  // 서버 옵션/상태
+  // 로컬(KST) 기준 오늘. toISOString(UTC)은 KST 새벽(자정~09시)에 전날로 밀려 기본 날짜가 하루 어긋난다.
+  const todayStr = format(new Date(), 'yyyy-MM-dd')
+  const [logOptions, setLogOptions] = useState([EMPTY_OPTION])
+  const [selectedDate, setSelectedDate] = useState(todayStr)
+  const [selectedLogId, setSelectedLogId] = useState(EMPTY_OPTION.id)
+
+  // 캘린더 가용 날짜 (yyyy-MM-dd 배열)
+  const [allowedDateKeys, setAllowedDateKeys] = useState(null)
+
+  // 텍스트 로그/검색
+  const [logLines, setLogLines] = useState([])
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false)
+
+  const [logError, setLogError] = useState(null)
+  const [filteredLines, setFilteredLines] = useState([])
+
+  const MAX_FILTER_VIEW = 12000 // UI 표시 한정, 전부 메모리에 복제하지 않음
+  const [hasAnyTarLogs] = useState(false)
+  const [levelFilter, setLevelFilter] = useState({ INFO: true, WARN: true, ERROR: true, DEBUG: true, FATAL: true })
+
+  const activeLevels = useMemo(
+    () =>
+      Object.entries(levelFilter)
+        .filter(([, v]) => v)
+        .map(([k]) => k),
+    [levelFilter]
+  )
+  const activeLevelsRef = useRef(activeLevels)
+  useEffect(() => {
+    activeLevelsRef.current = activeLevels
+  }, [activeLevels])
+
+  const [pendingKeyword, setPendingKeyword] = useState('')
+  const [appliedKeyword, setAppliedKeyword] = useState('')
+
+  const { ready: searchReady, add: searchAdd, clear: searchClear, query: searchQuery } = useLogSearch()
+  const logSeqRef = useRef(0)
+
+  // ✅ tick의 정상 재생 step(초) EMA
+  const stepEmaRef = useRef(0)
+  // ✅ tick wall-clock 간격 추정(옵션: 디버깅/안정화)
+  const lastTickWallMsRef = useRef(0)
+
+  const [isLoadingTar] = useState(false)
+  const [tarError] = useState(null)
+
+  const isLoadingLogsRef = useRef(false)
+  useEffect(() => {
+    isLoadingLogsRef.current = isLoadingLogs
+  }, [isLoadingLogs])
+  // 오버레이/게이팅
+  const [loadPhase, _setLoadPhase] = useState('init')
+  useEffect(() => {
+    setLoadPhase?.(loadPhase)
+  }, [loadPhase, setLoadPhase])
+  const rightOverlayVisible = useMemo(() => loadPhase === 'init' || loadPhase === 'error', [loadPhase])
+  const rightOverlayText = useMemo(
+    () => (loadPhase === 'init' ? INITIAL_HINT : loadPhase === 'error' ? '로딩 실패' : ''),
+    [loadPhase]
+  )
+  // presigned URL
+  const presignedCacheRef = useRef(new Map())
+  const getPresignedUrl = useCallback(async (fileId) => {
+    if (!fileId || fileId === EMPTY_OPTION.id) return ''
+    const cached = presignedCacheRef.current.get(fileId)
+    const now = Date.now()
+    if (cached && cached.expiresAt && cached.expiresAt - now > 10_000) return cached.url
+    const resp = await fileApis.getFilesDownloardurl(fileId)
+    const url = resp?.presignedUrl || ''
+    if (!url) return ''
+    try {
+      const u = new URL(url)
+      const expiresSec = Number(u.searchParams.get('X-Amz-Expires') || '0')
+      const expiresAt = now + Math.max(0, expiresSec - 30) * 1000
+      presignedCacheRef.current.set(fileId, { url, expiresAt })
+    } catch (e) {
+      console.warn('[Logreplay] presigned URL 파싱 실패:', e?.message || String(e))
+    }
+    return url
+  }, [])
+
+  const applyOverlayByPlayhead = useCallback(
+    (playSec) => {
+      const t = Number(playSec)
+      if (!Number.isFinite(t)) return
+      const ov = overlayRef.current
+
+      // ── costmap: 가장 가까운 프레임의 grid ──
+      const cm = ov.costmap
+      if (cm.cache.length > 0) {
+        const idx = bsearchClosest(cm.cache, t)
+        if (idx !== cm.lastIdx) {
+          cm.lastIdx = idx
+          const frame = cm.cache[idx]
+          if (frame?.grid) {
+            setLocalCostmapData?.(frame.grid)
+            setLocalCostmapFrames?.(cm.cache)
+          }
+          renderNow?.()
+        }
+      }
+
+      // ── path: playhead 시점의 최신 plan의 points ──
+      const pt = ov.path
+      if (pt.cache.length > 0) {
+        const idx = bsearchLe(pt.cache, t)
+        if (idx >= 0 && idx !== pt.lastIdx) {
+          pt.lastIdx = idx
+          setPlannedPathPoints?.(pt.cache[idx]?.points ?? [])
+          renderNow?.()
+        }
+      }
+
+      // ── goalPose: playhead 시점의 최신 goal ──
+      const gp = ov.goalPose
+      if (gp.cache.length > 0) {
+        const idx = bsearchLe(gp.cache, t)
+        if (idx >= 0 && idx !== gp.lastIdx) {
+          gp.lastIdx = idx
+          setDwaGoals?.([gp.cache[idx]])
+          renderNow?.()
+        }
+      }
+    },
+    [setLocalCostmapData, setLocalCostmapFrames, setPlannedPathPoints, setDwaGoals, renderNow]
+  )
+  useEffect(() => {
+    if (typeof getPlayTimeSec !== 'function') return
+
+    let lastLogApplySec = Number.NaN // 로그 apply 게이트(기존 유지)
+
+    const tick = () => {
+      if (!currentMcapUrlRef.current) return
+
+      const exp = Number(expectedDurationSecRef.current) || 0
+      if (!(exp > 0)) return
+
+      let center = Number.NaN
+      try {
+        center = Number(getPlayTimeSec())
+      } catch {}
+      if (!Number.isFinite(center)) return
+
+      // clamp
+      if (center < 0) center = 0
+      if (center > exp) center = exp
+
+      // 이전 center
+      const last = lastPollCenterRef.current
+
+      // ✅ 재생 중 소폭 backward jitter 방지: playhead 단조 증가로 clamp
+      let centerAdj = center
+      const backJitterThresh = Math.max(0.8, (stepEmaRef.current || 0.25) * 4) // ★ 포인트
+      if (Number.isFinite(last) && centerAdj < last && last - centerAdj < backJitterThresh) {
+        centerAdj = last
+      }
+      const diffSec = Number.isFinite(last) ? centerAdj - last : 0
+      lastPollCenterRef.current = centerAdj
+
+      // ✅ 1) "정지/idle" 게이트: center가 거의 안 움직이면 아무 것도 하지 않음
+      // - paused 상태에서 requestLogWindow가 계속 돌며 누적이 꼬이는 현상 방지
+      // - 콘솔 로그 무한 출력도 방지
+      if (Number.isFinite(last) && Math.abs(diffSec) < 0.02) {
+        return
+      }
+
+      // ✅ 실제 재생 여부 (추측 금지). 재생 중이 아닌데 playhead가 움직였다면 = 사용자 seek
+      let playing = true
+      try {
+        if (typeof getIsPlaying === 'function') playing = !!getIsPlaying()
+      } catch {}
+
+      // ✅ 2) tick wall-clock (옵션) — 브라우저 타이머 지연 상황을 EMA에 자연 반영
+      const nowMs = performance.now()
+      const lastMs = lastTickWallMsRef.current || nowMs
+      const dtWallSec = Math.max(0.001, (nowMs - lastMs) / 1000)
+      lastTickWallMsRef.current = nowMs
+
+      // ✅ 3) 정상 재생 step(초) EMA 업데이트 (forward 이동 + 실제 재생 중일 때만)
+      // - 고배속에서는 diffSec 자체가 커지므로 typicalStep도 같이 커짐
+      // - ⚠️ seek 점프(재생 아님)는 EMA에 반영하지 않는다 → 임계가 부풀어 seek를 재생으로 오판하는 피드백 루프 차단
+      if (playing && Number.isFinite(diffSec) && diffSec > 0.01 && diffSec < 60) {
+        const prev = stepEmaRef.current || diffSec
+        // tick이 밀린 경우도 포함해 현실적인 step을 따라가게 (완만하게)
+        const next = prev * 0.8 + diffSec * 0.2
+        stepEmaRef.current = next
+      }
+      const typicalStep = stepEmaRef.current || Math.max(0.25, dtWallSec) // fallback
+
+      // ✅ 4) wrapped(끝→0) 예외 (loop 모드일 경우 seek 오탐 방지)
+      const wrapped =
+        Number.isFinite(last) &&
+        exp > 0 &&
+        last > exp - Math.max(0.5, typicalStep * 0.5) &&
+        centerAdj < Math.max(0.5, typicalStep * 0.5)
+
+      // ✅ 5) seek 판정(핵심):
+      // - backward 점프는 강한 seek 신호
+      // - forward 점프는 "평소 step" 대비 과도할 때만 seek
+      //   (고배속에서 diffSec가 커지는 정상 재생을 seek으로 오인하지 않도록)
+      const forwardSeekThreshold = Math.max(3.0, typicalStep * 8) // ★ 핵심 파라미터
+      // ✅ backward seek 임계도 typicalStep 기반으로 상향(작은 jitter는 seek 아님)
+      const backwardSeekThreshold = Math.max(1.5, typicalStep * 6)
+
+      // ✅ 재생 중이 아닌데 playhead가 움직였다 = 사용자 seek (점프 크기 무관)
+      //    재생 중이면 기존 휴리스틱(큰 backward/forward 점프 = loop/수동 이동)을 유지
+      const heuristicSeek =
+        !wrapped && Number.isFinite(last) && (diffSec < -backwardSeekThreshold || diffSec > forwardSeekThreshold)
+      const isSeek = !playing ? Number.isFinite(last) : heuristicSeek
+
+      // pose window는 재생 중에도 계속 호출(커버되면 loader가 skip)
+      requestPoseWindowRef.current?.(center, isSeek ? 'seek' : 'playhead')
+      // ── overlay topics (공통 window) ──
+      requestOverlayWindowRef.current?.('costmap', center, isSeek ? 'seek' : 'playhead')
+      requestOverlayWindowRef.current?.('path', center, isSeek ? 'seek' : 'playhead')
+      requestOverlayWindowRef.current?.('goalPose', center, isSeek ? 'seek' : 'playhead')
+      // ✅ 6) log window 모드 전환
+      if (isSeek) {
+        // seek → 누적 리셋, 해당 시점 윈도우만 표시
+        logAccModeRef.current = 'seek'
+        logWindowCacheRef.current = []
+        lastLogApplyIdxRef.current = -1
+        accStartSecRef.current = center
+        accEndCoveredRef.current = 0
+        requestLogWindowRef.current?.(center, 'seek')
+      } else {
+        // 연속 재생 → 누적 모드
+        logAccModeRef.current = 'accumulate'
+        requestLogWindowRef.current?.(center, 'playhead')
+      }
+
+      // ✅ buffer = 로그 존재 영역 표시
+      const dur = Number(expectedDurationSecRef.current) || 1
+      if (dur > 0) {
+        if (isSeek) {
+          // ✅ seek는 "점 표시" → 음수로 전달
+          const r = Math.max(0, Math.min(1, centerAdj / dur))
+          updateBuffer?.(-r)
+        } else {
+          // ✅ 재생 중 → on-demand HTTP Range이므로 buffer는 항상 100%
+          updateBuffer?.(1)
+        }
+      }
+
+      // ✅ 7) applyLogs 게이트 (기존 0.05초 + 추가로 "실제 변화" 기반)
+      if (!Number.isFinite(lastLogApplySec) || Math.abs(center - lastLogApplySec) > 0.05) {
+        lastLogApplySec = center
+        applyLogsByPlayheadRef.current?.(center)
+        // overlay 적용은 RAF 루프(아래 useEffect)에서 단일 처리 — 중복 호출 제거
+      }
+    }
+
+    const id = setInterval(tick, 250)
+    return () => clearInterval(id)
+  }, [getPlayTimeSec, getIsPlaying])
+
+  const queryWindow = useCallback(
+    async ({ levels, keyword = '', fromMs, toMs, limit = 5000 } = {}) => {
+      if (!searchReady) return []
+      const timeRange =
+        Number.isFinite(fromMs) && Number.isFinite(toMs) ? { from: Math.round(fromMs), to: Math.round(toMs) } : null
+      const res = await searchQuery({
+        levels,
+        keyword,
+        sortBy: timeRange ? 'pbAsc' : 'tsAsc',
+        limit,
+        timeRange
+      })
+      const items = Array.isArray(res?.items) ? res.items : []
+      return items.map((it) => it?.text).filter(Boolean)
+    },
+    [searchReady, searchQuery]
+  )
+  //캘린더에 해당하는는 파일 목록 조회
+  const handleVisibleRangeChange = useCallback(
+    async ({ startDate, endDate }) => {
+      const toDateKey = (v) => {
+        if (!v) return ''
+        const d = typeof v === 'string' ? new Date(v) : v
+        // 로컬(KST) 기준 키. toISOString(UTC)은 그리드 경계 날짜를 하루 밀어 마지막 날 로그를 누락시킬 수 있음.
+        return isNaN(d) ? '' : format(d, 'yyyy-MM-dd')
+      }
+
+      const startKey = toDateKey(startDate)
+      const endKey = toDateKey(endDate)
+      if (!startKey || !endKey) return
+
+      const start = toUtcFromLocalDateTime(startKey, '00:00:00')
+      const end = toUtcFromLocalDateTime(endKey, '23:59:59')
+
+      try {
+        const size = 100
+        const params = deviceId ? { start, end, deviceId, size } : { start, end }
+        const items = (await fileApis.getFiles(params))?.content ?? []
+
+        const dates = Array.from(
+          new Set(
+            items
+              .map((it) => it?.createdAt && new Date(it.createdAt))
+              .filter((d) => d && !isNaN(d))
+              // 로컬(KST) 기준 키. toISOString(UTC)은 KST 오전 로그를 전날로 밀어 당일 클릭이 막히던 버그 방지.
+              .map((d) => format(d, 'yyyy-MM-dd'))
+          )
+        ).sort()
+
+        setAllowedDateKeys(dates)
+      } catch (e) {
+        console.error('[Logreplay] 가능 날짜 조회 실패:', e)
+        setAllowedDateKeys([])
+      }
+    },
+    [deviceId]
+  )
+
+  // 현재 달(캘린더 6주 그리드)의 가시 범위를 계산
+  const computeVisibleRangeForMonth = useCallback((yyyyMMdd) => {
+    const base = (() => {
+      const [y, m] = (yyyyMMdd || '').split('-').map(Number)
+      return Number.isFinite(y) && Number.isFinite(m)
+        ? new Date(y, m - 1, 1)
+        : new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+    })()
+
+    const start = new Date(base)
+    start.setDate(1 - start.getDay()) // 달력 첫 셀
+
+    const end = new Date(start)
+    end.setDate(start.getDate() + 41) // 6주
+
+    return { startDate: start, endDate: end }
+  }, [])
+
+  // [핵심] 첫 진입 시, Calendar가 자동 호출해주지 않으니 우리가 직접 1회 호출
+  useEffect(() => {
+    const { startDate, endDate } = computeVisibleRangeForMonth(selectedDate)
+    handleVisibleRangeChange({ startDate, endDate })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 파일 목록 조회
+  const handleFetchListClick = useCallback(async () => {
+    try {
+      const start = toUtcFromLocalDateTime(selectedDate, '00:00:00')
+      const end = toUtcFromLocalDateTime(selectedDate, '23:59:59')
+
+      // deviceId가 존재하면 옵션에 포함 (없으면 제외)
+      const size = 100 //temp code
+      const params = deviceId ? { start, end, deviceId, size } : { start, end }
+      const response = await fileApis.getFiles(params)
+      const items = Array.isArray(response?.content) ? response.content : []
+      const nextOptionsRaw = items.map((it) => ({
+        id: it.fileId,
+        label: it.fileOriginalName || it.fileId,
+        createdAt: it.createdAt,
+        size: it.fileSize
+      }))
+      const nextOptions = nextOptionsRaw.length > 0 ? nextOptionsRaw : [EMPTY_OPTION]
+      setLogOptions(nextOptions)
+      if (!nextOptions.some((o) => o.id === selectedLogId)) {
+        setSelectedLogId(nextOptions[0].id)
+      }
+    } catch (e) {
+      console.warn('[Logreplay] 로그 목록 조회 실패:', e?.message || String(e))
+      setLogOptions([EMPTY_OPTION])
+      setSelectedLogId(EMPTY_OPTION.id)
+    }
+  }, [selectedDate, selectedLogId, deviceId])
+
+  // 선택 변경 (초기화는 상위 훅에서)
+  const onDateChange = useCallback((date) => {
+    setSelectedDate(date)
+  }, [])
+  const onLogChange = useCallback((value) => {
+    setSelectedLogId(value)
+  }, [])
+
+  // 키워드 검색 버튼
+  const searchReadyRef = useRef(false)
+  useEffect(() => {
+    searchReadyRef.current = !!searchReady
+  }, [searchReady])
+  const pendingKeywordRef = useRef('')
+  useEffect(() => {
+    pendingKeywordRef.current = pendingKeyword
+  }, [pendingKeyword])
+
+  const logLinesRef = useRef(logLines)
+  useEffect(() => {
+    logLinesRef.current = logLines
+  }, [logLines])
+  // ✅ [Option A] playhead(tSec)에 맞는 pose를 캐시에서 골라 pathPoints를 "현재까지"로 갱신
+  // ✅ [REPLACE] applyPoseByPlayhead
+  const applyPoseByPlayhead = useCallback(
+    (playSec) => {
+      const poses = poseWindowCacheRef.current
+      if (!Array.isArray(poses) || poses.length === 0) {
+        return
+      }
+
+      const t = Number(playSec)
+      if (!Number.isFinite(t)) return
+
+      const minT = Number(poses[0]?.tSec)
+      const maxT = Number(poses[poses.length - 1]?.tSec)
+      // 캐시가 t를 충분히 못 덮으면 새 윈도우를 "요청만" 하고 return하지 않는다.
+      //   ⚠️ 과거 버그: 여기서 return하면 로봇이 아예 안 그려짐 — 특히 t=0인데 첫 포즈가 0.15s인 시작 시점.
+      //   아래 binary search가 idx를 0(또는 last)로 clamp하므로 로봇은 가장 가까운 포즈로 계속 표시된다.
+      //   pad(0.5s)는 시작 갭(t=0 vs minT=0.15) 같은 미세 차이로 윈도우 요청이 스팸되는 것을 막는다.
+      const OUT_PAD = 0.5
+      if (Number.isFinite(minT) && Number.isFinite(maxT) && (t < minT - OUT_PAD || t > maxT + OUT_PAD)) {
+        requestPoseWindowRef.current?.(t, 'seek')
+      }
+
+      let lo = 0
+      let hi = poses.length
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1
+        const mt = Number(poses[mid]?.tSec)
+        if (Number.isFinite(mt) && mt < t) lo = mid + 1
+        else hi = mid
+      }
+
+      let idx
+      if (lo <= 0) idx = 0
+      else if (lo >= poses.length) idx = poses.length - 1
+      else {
+        const p0 = poses[lo - 1]
+        const p1 = poses[lo]
+        const t0 = Number(p0?.tSec)
+        const t1 = Number(p1?.tSec)
+        const d0 = Math.abs(t - t0)
+        const d1 = Math.abs(t1 - t)
+        idx = d0 <= d1 ? lo - 1 : lo
+      }
+
+      if (!poses[idx]) {
+        return
+      }
+
+      if (idx === lastPoseApplyIdxRef.current) return
+      lastPoseApplyIdxRef.current = idx
+
+      if (poses.length === 1) {
+        const p = poses[0]
+        setPathPoints?.([p, { ...p, tSec: Number(p.tSec) + 1e-6 }])
+        renderNow?.()
+        return
+      }
+
+      const end = Math.min(poses.length, Math.max(2, idx + 1))
+      setPathPoints?.(poses.slice(0, end))
+      renderNow?.()
+    },
+    [setPathPoints, renderNow]
+  )
+
+  // ✅ [ADD] playhead 기준 로그 표시 (window cache에서 선택)
+  const applyLogsByPlayhead = useCallback(
+    (playSec) => {
+      const entries = logWindowCacheRef.current
+
+      if (!Array.isArray(entries) || entries.length === 0) return
+
+      const t = Number(playSec)
+      if (!Number.isFinite(t)) return
+
+      // binary search: tSec <= t 인 마지막 인덱스(+1)
+      let lo = 0
+      let hi = entries.length
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1
+        const mt = Number(entries[mid]?.tSec)
+        if (Number.isFinite(mt) && mt <= t) lo = mid + 1
+        else hi = mid
+      }
+      const endIdx = lo
+
+      if (endIdx === lastLogApplyIdxRef.current) return
+      lastLogApplyIdxRef.current = endIdx
+
+      const visible = endIdx <= 1 ? entries : entries.slice(0, endIdx)
+
+      // 레벨/키워드 필터(현재 상태 기준)
+      const levels = activeLevelsRef.current || []
+      const keyword = (appliedKeywordRef.current || '').toLowerCase()
+
+      let filtered = visible
+      if (levels.length && levels.length < 5) {
+        filtered = filtered.filter((e) => levels.includes(e.level))
+      }
+      if (keyword) {
+        filtered = filtered.filter((e) =>
+          String(e.text || '')
+            .toLowerCase()
+            .includes(keyword)
+        )
+      }
+
+      // ✅ 실제 표시 범위 계산
+      const baseSlice = visible.length > MAX_FILTER_VIEW ? visible.slice(-MAX_FILTER_VIEW) : visible
+      const filtSlice = filtered.length > MAX_FILTER_VIEW ? filtered.slice(-MAX_FILTER_VIEW) : filtered
+
+      // ✅ 이전과 길이가 같으면 setState 스킵 (새 배열 참조로 인한 불필요 리렌더 방지)
+      setLogLines((prev) => {
+        if (prev.length === baseSlice.length) return prev
+        return baseSlice.map((e) => e.text)
+      })
+      setFilteredLines((prev) => {
+        if (prev.length === filtSlice.length) return prev
+        return filtSlice.map((e) => e.text)
+      })
+    },
+    [setLogLines, setFilteredLines]
+  )
+
+  // ✅ [ADD] polling에서 호출할 수 있도록 ref에 연결 (TDZ 회피)
+  useEffect(() => {
+    applyLogsByPlayheadRef.current = applyLogsByPlayhead
+  }, [applyLogsByPlayhead])
+  // ── overlay playhead 적용 (costmap/path/goal 일괄) ──
+
+  const handleKeywordSearchClick = useCallback(async () => {
+    const keyword = (pendingKeywordRef.current || '').trim()
+
+    // ✅ [FIX] playhead 동기화(logWindowCache 기반)에서는 searchQuery로 덮어쓰지 말고 ref 필터로 처리
+    appliedKeywordRef.current = keyword
+    setAppliedKeyword(keyword)
+
+    // 현재 시점 즉시 반영 (다음 250ms tick 기다리지 않도록)
+    try {
+      const t = typeof getPlayTimeSec === 'function' ? Number(getPlayTimeSec()) : Number.NaN
+      if (Number.isFinite(t)) applyLogsByPlayheadRef.current?.(t)
+    } catch {}
+  }, [getPlayTimeSec])
+
+  useEffect(() => {
+    if (typeof getPlayTimeSec !== 'function') return
+    let raf = 0
+    const tick = () => {
+      try {
+        const t = Number(getPlayTimeSec())
+        if (Number.isFinite(t)) {
+          applyPoseByPlayhead(t)
+          applyOverlayByPlayhead(t) // ✅ ADD
+        }
+      } catch {}
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [getPlayTimeSec, applyPoseByPlayhead, applyOverlayByPlayhead])
+
+  // 다운로드
+  const [isPreparingDownload, setIsPreparingDownload] = useState(false)
+  const handleDownloadLog = useCallback(async () => {
+    if (!selectedLogId || selectedLogId === EMPTY_OPTION.id) return
+    const selected = logOptions.find((l) => l.id === selectedLogId)
+    if (!selected) return
+
+    setIsPreparingDownload(true)
+    const downloadUrl = await getPresignedUrl(selectedLogId)
+    if (!downloadUrl) {
+      setIsPreparingDownload(false)
+      alert('다운로드 URL이 설정되지 않았습니다.')
+      return
+    }
+
+    const fallbackFileName = selected?.label?.replace(/\s+/g, '_') || `${selected?.id || 'log'}.mcap`
+
+    try {
+      const resp = await fetch(downloadUrl, { mode: 'cors' })
+      if (!resp.ok) throw new Error(`다운로드 실패: HTTP ${resp.status}`)
+
+      const blob = await resp.blob()
+      const cd = resp.headers.get('Content-Disposition') || resp.headers.get('content-disposition')
+      const serverFileName = cd ? extractFilenameFromContentDisposition(cd) : null
+      const finalFileName = serverFileName || fallbackFileName
+
+      if (window.showSaveFilePicker) {
+        try {
+          setIsPreparingDownload(false)
+          const pickerHandle = await window.showSaveFilePicker({
+            suggestedName: finalFileName,
+            types: [
+              {
+                description: 'MCAP 로그 파일',
+                accept: { 'application/octet-stream': ['.mcap'], 'application/x-mcap': ['.mcap'] }
+              }
+            ]
+          })
+          const writable = await pickerHandle.createWritable()
+          await writable.write(blob)
+          await writable.close()
+          return
+        } catch (pickerErr) {
+          if (pickerErr && (pickerErr.name === 'AbortError' || pickerErr.name === 'NotAllowedError')) return
+          console.warn('[Logreplay] 다운로드: showSaveFilePicker 실패/취소 → <a download> 폴백', pickerErr)
+        }
+      }
+
+      const blobUrl = URL.createObjectURL(blob)
+      setIsPreparingDownload(false)
+      try {
+        triggerAnchorDownload(blobUrl, finalFileName)
+      } finally {
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10_000)
+      }
+    } catch (err) {
+      console.warn('[Logreplay] 다운로드: fetch 실패 → 원본 URL <a download>로 폴백', err)
+      setIsPreparingDownload(false)
+      triggerAnchorDownload(downloadUrl, fallbackFileName, true)
+    }
+  }, [selectedLogId, logOptions, getPresignedUrl])
+
+  // Lichtblick
+  const handleOpenLichtblick = useCallback(async () => {
+    if (!selectedLogId || selectedLogId === EMPTY_OPTION.id) return
+
+    const selected = logOptions.find((l) => l.id === selectedLogId)
+    if (!selected) return
+
+    const downloadUrl = await getPresignedUrl(selectedLogId)
+    if (!downloadUrl) {
+      alert('Logfile URL not found')
+      return
+    }
+    const ds = 'remote-file'
+    const u = new URL(lichtblickURL)
+    u.search = ''
+    u.searchParams.set('ds', ds)
+    u.searchParams.set('ds.url', downloadUrl)
+    u.searchParams.set('embed', 'true')
+    u.searchParams.set('ui', 'minimal')
+    const href = u.toString()
+    const popup = window.open(href, '_blank', 'noopener,noreferrer')
+    if (popup) popup.opener = null
+  }, [selectedLogId, logOptions, getPresignedUrl])
+
+  const TOPICS = {
+    grid: '/carto_service/occupancygrid',
+    trackedpose: '/carto_service/trackedpose',
+    path: '/master_service/path',
+    lidar: '/lidar_service/data',
+    localCostmap: '/debug/dwa_local_costmap'
+  }
+  // ──────────────────────────────────────────────────────────────
+  // 조회(스트리밍)
+  // ──────────────────────────────────────────────────────────────
+  const handleViewLog = useCallback(async () => {
+    if (!selectedLogId || selectedLogId === EMPTY_OPTION.id) return
+    const selected = logOptions.find((l) => l.id === selectedLogId)
+    if (!selected) return
+
+    const filename = (selected.label ?? '').toLowerCase()
+    if (!filename.includes('mcap')) {
+      alert('선택한 항목은 분석 가능한 파일이 아닙니다.')
+      return
+    }
+
+    const downloadUrl = await getPresignedUrl(selectedLogId)
+    if (!downloadUrl) {
+      alert('다운로드 URL이 설정되지 않았습니다.')
+      return
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // 초기화
+    // ──────────────────────────────────────────────────────────────
+
+    const resetStreamRefs = () => {
+      expectedDurationSecRef.current = 0
+      decodedSpanSecRef.current = 0
+      t0RawRef.current = null
+      tLastRawRef.current = -Infinity
+      gridDoneRef.current.v = false
+      posesDoneRef.current.v = false
+    }
+
+    const resetUiState = () => {
+      _setLoadPhase('loading')
+      updateBuffer?.(0.06)
+      setPathPoints?.([])
+      setGridData?.(null)
+      setLocalCostmapData?.(null)
+      setLocalCostmapFrames?.([])
+      setPlannedPathPoints?.([])
+      setLidarScans?.([])
+      setDwaGoals?.([])
+      setLogLines([])
+      setFilteredLines([])
+      // ✅ [ADD] 센서차트 초기화
+      setOdomChart1(null)
+      setOdomChart2(null)
+      // ✅ 조회 시작~첫 차트 데이터까지 로딩 상태 유지 → loadPhase=ready 직후 "빈 차트 박스"가 잠깐 보이는 현상 방지
+      setChartLoading(true)
+      searchClear?.()
+      logSeqRef.current = 0
+      setIsLoadingLogs(true)
+      setLogError(null)
+      setT0EpochMs?.(null)
+      setDurationMs?.(0) // ✅ ADD
+      t0EpochMsRef.current = null
+      t0RawRef.current = null
+      resetView?.()
+      renderNow?.()
+    }
+
+    resetStreamRefs()
+    resetUiState()
+
+    // ✅ [ADD] 현재 로드 중인 파일 URL 저장(슬라이딩 window에서 사용)
+    currentMcapUrlRef.current = downloadUrl
+    activePoseWindowRef.current = { startSec: null, endSec: null }
+    poseInflightRef.current = false
+    poseWindowSeqRef.current = 0
+    poseWindowCacheRef.current = []
+    lastPoseApplyIdxRef.current = -1
+    lastPollCenterRef.current = null
+
+    // ✅ [ADD] log window reset
+    activeLogWindowRef.current = { startSec: null, endSec: null }
+    logWindowSeqRef.current = 0
+    logWindowCacheRef.current = []
+    lastLogApplyIdxRef.current = -1
+
+    // ✅ [ADD] 누적 모드 리셋
+    logAccModeRef.current = 'seek'
+    accStartSecRef.current = 0
+    accEndCoveredRef.current = 0
+    // ── overlay window reset ──
+    const ov = overlayRef.current
+    for (const key of Object.keys(ov)) {
+      ov[key].seq = 0
+      ov[key].cache = []
+      ov[key].active = { s: null, e: null }
+      ov[key].lastIdx = -1
+    }
+    // [Step1] tar.gz 사전 로드 (병렬 시작: await 하지 않음)
+    // tar.gz 프리패치(비동기)
+    //void prefetchTarGzForSelected(selected, logOptions, 'view-start')
+
+    const maybeSetReady = () => {
+      if (gridDoneRef.current.v) {
+        _setLoadPhase('ready')
+        updateBuffer?.(1.0)
+      }
+    }
+
+    // ✅ [REPLACE] playhead 중심으로 pose window 다시 읽기 (Foxglove 방식)
+    // - mcapLoader.loadPosesFromMcapUrl()가 이미 playback-relative tSec(0~)를 반환하므로
+    //   pushBatchNormalized(절대 epoch 가정)를 타면 timebase가 2번 보정되어 tSec가 깨진다.
+    // - 따라서 window pose는 "그대로" 정규화(sort/dedupe)해서 cache & path에 반영한다.
+
+    const requestPoseWindow = async (centerSec, reason = 'unknown') => {
+      const url = currentMcapUrlRef.current
+      if (!url) return
+
+      const exp = Number(expectedDurationSecRef.current) || 0
+      if (!Number.isFinite(centerSec)) return
+
+      // ✅ 초기 로딩은 작은 윈도우(±3s)로 빠르게 표시, 이후 ±12s
+      const HALF = reason === 'grid-ready' ? 3 : reason === 'seek' ? 2 : 12
+      const isAcc = logAccModeRef.current === 'accumulate'
+      const startSec = Math.max(0, centerSec - HALF)
+      const endSec = exp > 0 ? Math.min(exp, centerSec + HALF) : centerSec + HALF
+
+      // timebase 준비 전 스킵(기존 로직 유지)
+      const baseMs = t0EpochMsRef.current
+      if (!(Number.isFinite(baseMs) && baseMs > 0)) {
+        return
+      }
+
+      // ✅ in-flight 가드: pose 로드는 한 번에 하나만.
+      //   ⚠️ 과거 버그: activePoseWindowRef "예약 구간"으로 스킵했는데, 로드가 seq 불일치로
+      //      폐기되거나 느려도 예약 구간이 롤백되지 않아 영구 커버리지 홀이 생기고 로봇이 고정됐다.
+      //      in-flight 플래그는 finally에서 반드시 해제되므로 홀이 생기지 않는다.
+      if (poseInflightRef.current) {
+        return
+      }
+
+      // ✅ 누적 모드: pose "자체 캐시"가 이미 center를 충분히 덮으면 skip
+      //   ⚠️ 과거 버그: log window 전용 accEndCoveredRef를 참조해 pose 요청이 막혀
+      //      재생 중 로봇 위치가 초기 윈도우(~12s)에 고정되던 문제 → pose 캐시 range 기준으로 수정.
+      if (isAcc) {
+        const pc = poseWindowCacheRef.current
+        const maxCachedT = Array.isArray(pc) && pc.length ? Number(pc[pc.length - 1]?.tSec) : NaN
+        if (Number.isFinite(maxCachedT) && centerSec <= maxCachedT - 2) {
+          return
+        }
+      }
+
+      activePoseWindowRef.current = { startSec, endSec }
+      poseInflightRef.current = true
+
+      const seq = ++poseWindowSeqRef.current
+
+      try {
+        const raw = await loadPosesFromMcapUrl(url, {
+          startSec,
+          endSec,
+          fullScan: true,
+          previewLimit: Infinity,
+          maxMillis: Infinity,
+          downsample: 1,
+          timeDownsampleMs: 50
+        })
+
+        if (!currentMcapUrlRef.current) return
+
+        // ✅ raw는 이미 playback-relative tSec이므로 그대로 정규화
+        let norm = []
+        if (Array.isArray(raw)) {
+          for (const r of raw) {
+            const t = Number(r?.tSec)
+            const x = Number(r?.x)
+            const y = Number(r?.y)
+            const yaw = Number(r?.yaw) || 0
+            if (!Number.isFinite(t) || !Number.isFinite(x) || !Number.isFinite(y)) continue
+            norm.push({ tSec: t, x, y, yaw })
+          }
+        }
+
+        // 정렬 + 동일 tSec dedupe(마지막 우선)
+        norm.sort((a, b) => a.tSec - b.tSec)
+        norm = dedupeSortedByTSec(norm)
+
+        // 최소 2점 보장(Player2D 가드 대응)
+        if (norm.length === 1) {
+          const p = norm[0]
+          norm = [p, { ...p, tSec: p.tSec + 1e-6 }]
+        }
+
+        // 최신 요청만 반영
+        if (seq !== poseWindowSeqRef.current) return
+
+        // ✅ cache + 화면 반영
+
+        if (logAccModeRef.current === 'accumulate') {
+          const merged = poseWindowCacheRef.current.concat(norm)
+          merged.sort((a, b) => a.tSec - b.tSec)
+          poseWindowCacheRef.current = dedupeSortedByTSec(merged)
+        } else {
+          // seek 모드
+          poseWindowCacheRef.current = norm
+        }
+
+        lastPoseApplyIdxRef.current = -1
+
+        // ✅ 경로는 applyPoseByPlayhead가 "누적 캐시" 기준 slice(0..playhead)로 설정한다.
+        //    (과거: 여기서 setPathPoints(norm)으로 방금 로드한 window만 넣어, 빠른 재생 시
+        //     playhead가 window를 앞지르면 "지나온 경로"가 reset되어 보이던 문제)
+        // 현재 playhead에 즉시 적용(로봇 위치 + 누적 경로 갱신)
+        let nowT = centerSec
+        try {
+          if (typeof getPlayTimeSec === 'function') {
+            const v = Number(getPlayTimeSec())
+            if (Number.isFinite(v)) nowT = v
+          }
+        } catch {}
+        applyPoseByPlayhead(nowT)
+      } catch (e) {
+        console.warn('[Logreplay] pose 윈도우 로드 실패:', e)
+      } finally {
+        poseInflightRef.current = false
+      }
+    }
+
+    // 외부(useEffect)에서 호출할 수 있도록 ref로 연결
+    requestPoseWindowRef.current = requestPoseWindow
+    // ✅ [ADD] rosout window 로딩 (pose와 동일 패턴)
+    const requestLogWindow = async (centerSec, reason = 'unknown') => {
+      const url = currentMcapUrlRef.current
+      if (!url) return
+
+      const exp = Number(expectedDurationSecRef.current) || 0
+      if (!Number.isFinite(centerSec)) return
+
+      const HALF = reason === 'grid-ready' ? 3 : reason === 'seek' ? 2 : 12
+      const isAcc = logAccModeRef.current === 'accumulate'
+
+      const startSec = isAcc && accEndCoveredRef.current > 0 ? accEndCoveredRef.current : Math.max(0, centerSec - HALF)
+
+      const endSec = exp > 0 ? Math.min(exp, centerSec + HALF) : centerSec + HALF
+
+      // ✅ 누적이 꼬여서 startSec가 endSec 이상이 되면 무의미한 요청이므로 스킵
+      if (Number.isFinite(startSec) && Number.isFinite(endSec) && startSec >= endSec - 1e-6) {
+        return
+      }
+
+      // timebase 준비 전 스킵
+      const baseMs = t0EpochMsRef.current
+      if (!(Number.isFinite(baseMs) && baseMs > 0)) {
+        return
+      }
+
+      // 이미 커버 중이면 skip
+
+      const cache = logWindowCacheRef.current
+      if (Array.isArray(cache) && cache.length > 0) {
+        const first = Number(cache[0]?.tSec)
+        const last = Number(cache[cache.length - 1]?.tSec)
+
+        if (Number.isFinite(first) && Number.isFinite(last) && centerSec >= first && centerSec <= last) {
+          return
+        }
+      }
+
+      activeLogWindowRef.current = { startSec, endSec }
+      const seq = ++logWindowSeqRef.current
+
+      setIsLoadingLogs(true)
+      try {
+        const res = await loadRosoutFromMcapUrl(url, {
+          startSec,
+          endSec,
+          maxLines: 50000,
+          batchSize: 500,
+          timeDownsampleMs: 0,
+          onBatch: (batch) => {
+            // ✅ 검색 인덱싱이 필요하면 유지(원치 않으면 이 블록 제거 가능)
+            try {
+              searchAdd?.(
+                batch.map((e) => ({
+                  ts: logSeqRef.current++,
+                  level: e.level,
+                  text: e.text,
+                  pbMs: Math.round(e.tSec * 1000)
+                }))
+              )
+            } catch {}
+          }
+        })
+
+        if (!currentMcapUrlRef.current) return // ✅ reset 이후 응답 무시
+
+        // 최신 요청만 반영
+        if (seq !== logWindowSeqRef.current) return
+
+        if (!res?.found) {
+          if (isAcc) {
+            accEndCoveredRef.current = endSec // 빈 구간도 커버 마킹
+          } else {
+            logWindowCacheRef.current = []
+            setLogLines([])
+            setFilteredLines(['표시할 로그가 없습니다.'])
+          }
+
+          return
+        }
+
+        let norm = Array.isArray(res.entries) ? res.entries : []
+
+        norm.sort((a, b) => a.tSec - b.tSec)
+        norm = dedupeSortedByTSec(norm)
+
+        if (isAcc) {
+          // 누적: 기존 캐시에 append → sort → dedupe
+          const merged = logWindowCacheRef.current.concat(norm)
+          merged.sort((a, b) => a.tSec - b.tSec)
+          logWindowCacheRef.current = dedupeSortedByTSec(merged)
+          accEndCoveredRef.current = endSec
+        } else {
+          // seek: 기존 로직 (REPLACE)
+          logWindowCacheRef.current = norm
+        }
+        lastLogApplyIdxRef.current = -1
+
+        // 즉시 현재 시점까지 반영
+
+        requestAnimationFrame(() => {
+          applyLogsByPlayhead(centerSec)
+        })
+      } catch (e) {
+        console.warn('[Logreplay] 로그 윈도우 로드 실패:', e)
+        logWindowCacheRef.current = []
+        setLogLines([])
+        setFilteredLines(['표시할 로그가 없습니다.'])
+      } finally {
+        setIsLoadingLogs(false)
+      }
+    }
+    // 외부(polling)에서 호출할 수 있게 ref 연결
+    requestLogWindowRef.current = requestLogWindow
+    // ── 공통 overlay window loader (costmap / path / goalPose) ──
+    const OVERLAY_LOADERS = {
+      costmap: {
+        load: loadCostmapWindowFromMcapUrl,
+        opts: { timeDownsampleMs: 250, maxFrames: 2000 },
+        extract: (res) => res?.frames ?? []
+      },
+      path: {
+        load: loadPathWindowFromMcapUrl,
+        opts: { timeDownsampleMs: 200, maxMsgs: 800 },
+        extract: (res) => res?.plans ?? []
+      },
+      goalPose: {
+        load: loadGoalPoseWindowFromMcapUrl,
+        opts: { maxGoals: 800 },
+        extract: (res) => res?.goals ?? []
+      }
+    }
+
+    const requestOverlayWindow = async (key, centerSec, reason) => {
+      const url = currentMcapUrlRef.current
+      if (!url) return
+
+      const cfg = OVERLAY_LOADERS[key]
+      if (!cfg) return
+
+      const state = overlayRef.current[key]
+      if (!state) return
+
+      const exp = Number(expectedDurationSecRef.current) || 0
+      if (!Number.isFinite(centerSec)) return
+
+      const baseMs = t0EpochMsRef.current
+      if (!(Number.isFinite(baseMs) && baseMs > 0)) return
+
+      const HALF = reason === 'grid-ready' ? 3 : reason === 'seek' ? 2 : 12
+      const startSec = Math.max(0, centerSec - HALF)
+      const endSec = exp > 0 ? Math.min(exp, centerSec + HALF) : centerSec + HALF
+
+      // skip if covered
+      const { s, e } = state.active
+      if (s != null && e != null && centerSec >= s && centerSec <= e) return
+
+      state.active = { s: startSec, e: endSec }
+      const seq = ++state.seq
+
+      try {
+        const loaderFn = cfg.load
+        if (typeof loaderFn !== 'function') {
+          console.warn(`[Logreplay] overlay 로더 없음(${key})`)
+          return
+        }
+
+        const raw = await loaderFn(url, { ...cfg.opts, startSec, endSec })
+
+        if (seq !== state.seq) return // stale
+
+        const arr = cfg.extract(raw)
+        arr.sort((a, b) => (a.tSec ?? 0) - (b.tSec ?? 0))
+
+        state.cache = arr
+        state.lastIdx = -1
+      } catch (err) {
+        console.warn(`[Logreplay] overlay 윈도우 로드 실패(${key}):`, err)
+      }
+    }
+
+    requestOverlayWindowRef.current = requestOverlayWindow
+
+    // ✅ Overview 차트 (전체 범위, 1회)
+    // - chartOverviewStarted: onTimeBounds/그리드 완료 양쪽에서 호출될 수 있어 중복 실행 방지
+    let chartOverviewStarted = false
+    const requestChartOverview = async () => {
+      const url = currentMcapUrlRef.current
+      if (!url) return
+      if (chartOverviewStarted) return
+      chartOverviewStarted = true
+      setChartLoading(true)
+      // ✅ 첫 배치가 도착하면 즉시 로딩 해제 → 부분 차트라도 바로 표시(점진 누적)
+      let firstBatch = true
+      try {
+        await loadPosesSparseFromMcapUrl(url, {
+          // 차트는 "전체 주행"을 한 번에 보여주는 overview(1회 로드).
+          // numSamples = 차트 점 개수(= 디코드할 청크 수). 클수록 디테일↑·로드 비용↑.
+          // 20: 디테일과 로드 속도의 절충(단일 노브 — 필요 시 조정).
+          // ※ 이 로드는 맵 표시 이후 백그라운드에서 점진적으로(파이프라인+양보) 진행되어 맵/재생을 막지 않는다.
+          numSamples: 20,
+          onBatch: (posesSoFar) => {
+            if (!currentMcapUrlRef.current) return
+            const { c1, c2 } = buildOdomChartsFromPoses(posesSoFar)
+            setOdomChart1(c1)
+            setOdomChart2(c2)
+            if (firstBatch) {
+              firstBatch = false
+              setChartLoading(false)
+            }
+          }
+        })
+      } catch (e) {
+        console.warn('[Logreplay] 차트 overview 로드 실패:', e)
+      } finally {
+        setChartLoading(false)
+      }
+    }
+    requestChartOverviewRef.current = requestChartOverview
+
+    try {
+      // ✅ pose는 사용자가 playbar를 조작할 때만 on-demand 로딩
+      posesDoneRef.current.v = true
+
+      const gridPromise = (async () => {
+        return await loadOccupancyGridFromMcapUrl(downloadUrl, {
+          topic: TOPICS.grid,
+
+          onTimeBounds: ({ startSec, durationSec }) => {
+            // ✅ 플레이바 절대 기준
+            if (t0EpochMsRef.current == null && Number.isFinite(startSec)) {
+              const baseMs = Math.round(startSec * 1000)
+              t0EpochMsRef.current = baseMs
+              setT0EpochMs?.(baseMs)
+
+              // ✅ grid 로더 내부에서 reader.readMessages()와 경쟁하지 않도록
+              //    최초 pose window 요청은 gridPromise.then()에서 수행
+              timebaseReadyRef.current = true
+
+              // ⚠️ 차트 overview를 여기서 병렬 시작하면 pose/log/overlay 로더와
+              //    메인스레드(동기 zstd 압축해제)를 두고 경쟁해 오히려 둘 다 느려진다.
+              //    → 차트는 gridPromise.then()에서 critical 로더 이후에 시작한다.
+            }
+
+            // ✅ 전체 길이
+            if (Number.isFinite(durationSec) && durationSec > 0) {
+              expectedDurationSecRef.current = durationSec
+              setDurationMs?.(Math.round(durationSec * 1000))
+            }
+          }
+        })
+      })()
+        .then((grid) => {
+          if (grid) setGridData?.(grid)
+
+          renderNow?.()
+          gridDoneRef.current.v = true
+
+          // ✅ grid가 끝난 뒤(=readMessages 종료 후) 최초 0초 pose window 요청
+
+          if (timebaseReadyRef.current) {
+            timebaseReadyRef.current = false
+
+            setTimeout(async () => {
+              // 1) 재생/표시에 즉시 필요한 critical 로더 먼저 (pose window는 단독 await)
+              await requestPoseWindowRef.current?.(0, 'grid-ready')
+              requestLogWindowRef.current?.(0, 'grid-ready')
+              // ── overlay topics ──
+              requestOverlayWindowRef.current?.('costmap', 0, 'grid-ready')
+              requestOverlayWindowRef.current?.('path', 0, 'grid-ready')
+              requestOverlayWindowRef.current?.('goalPose', 0, 'grid-ready')
+              // 2) 차트 overview는 마지막에 시작(critical 로더와 메인스레드 경쟁 최소화)
+              requestChartOverviewRef.current?.()
+            }, 0)
+          }
+
+          maybeSetReady()
+          return grid
+        })
+        .catch((e) => {
+          console.warn('[Logreplay] grid 로드 실패:', e)
+          gridDoneRef.current.v = true
+          // ✅ Step1(맵만 확인)에서는 grid가 들어오면 로딩 종료로 간주
+          posesDoneRef.current.v = true
+          setIsLoadingLogs(false)
+          // grid 실패 시엔 차트 overview가 호출되지 않으므로 로딩 상태를 직접 해제
+          setChartLoading(false)
+          _setLoadPhase('ready')
+          updateBuffer?.(1.0)
+
+          maybeSetReady()
+          return null
+        })
+
+      Promise.allSettled([gridPromise]).then(() => {})
+    } catch (err) {
+      console.error('[Logreplay] 로그 뷰 로드 실패:', err)
+      setLogError(err?.message || String(err))
+      _setLoadPhase('error')
+    } finally {
+    }
+  }, [
+    selectedLogId,
+    logOptions,
+    getPresignedUrl,
+    setPathPoints,
+    setGridData,
+    setLocalCostmapData,
+    setLocalCostmapFrames,
+    setPlannedPathPoints,
+    setLidarScans,
+    setDwaGoals,
+    setT0EpochMs,
+    resetView,
+    renderNow,
+    updateBuffer,
+    buildOdomChartsFromPoses
+  ])
+
+  const formatDate = useCallback(function (yyyyMMdd) {
+    if (!yyyyMMdd) return ''
+    const [y, m, d] = yyyyMMdd.split('-')
+    return `${y}.${m}.${d}`
+  }, [])
+
+  return {
+    // 서버/옵션
+    logOptions,
+    selectedDate,
+    selectedLogId,
+    onDateChange,
+    onLogChange,
+    handleFetchListClick,
+    handleVisibleRangeChange,
+    allowedDateKeys,
+
+    // 검색/로그
+    logLines,
+    filteredLines,
+    isLoadingLogs,
+    hasAnyTarLogs,
+    isLoadingTar,
+    tarError,
+    logError,
+    levelFilter,
+    setLevelFilter,
+    pendingKeyword,
+    setPendingKeyword,
+    appliedKeyword,
+    handleKeywordSearchClick,
+
+    // 다운로드/외부 오픈
+    isPreparingDownload,
+    handleDownloadLog,
+    handleOpenLichtblick,
+
+    // 오버레이
+    loadPhase,
+    rightOverlayVisible,
+    rightOverlayText,
+
+    // 유틸
+    formatDate,
+
+    // 조회
+    handleViewLog,
+    queryWindow,
+
+    odomChart1,
+    odomChart2,
+    chartLoading,
+
+    clearReplaySession
+  }
+}

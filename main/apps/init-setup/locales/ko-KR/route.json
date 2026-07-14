@@ -1,0 +1,18 @@
+{
+  "SideBar": {
+    "gnb": {
+      "map": "지도",
+      "language": "언어 설정",
+      "network": "네트워크 설정",
+      "siteCode": "사이트 코드",
+      "robotInfo": "로봇 정보",
+      "location": "위치 설정",
+      "terms": "서비스 이용약관",
+      "upload": "업로드",
+      "default": "기본",
+      "scan": "스캔",
+      "poi": "POI",
+      "zone": "구역"
+    }
+  }
+}

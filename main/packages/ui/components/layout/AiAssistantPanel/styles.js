@@ -1,0 +1,453 @@
+import styled, { keyframes } from 'styled-components'
+
+/* ─── Panel shell ─────────────────────────────────────────────── */
+export const StyledAiAssistantDock = styled.aside`
+  width: ${({ $isOpen }) => ($isOpen ? '36rem' : '0')};
+  min-width: ${({ $isOpen }) => ($isOpen ? '36rem' : '0')};
+  max-width: ${({ $isOpen }) => ($isOpen ? '36rem' : '0')};
+  height: 100%;
+  min-height: 0;
+  border-left: ${({ $isOpen }) => ($isOpen ? '1px solid var(--alpha-black-10)' : 'none')};
+  background: #ffffff;
+  box-shadow: ${({ $isOpen }) => ($isOpen ? '-4px 0 20px rgba(18,24,40,0.07)' : 'none')};
+  transition:
+    width 0.22s ease,
+    min-width 0.22s ease,
+    max-width 0.22s ease;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
+
+  @media all and (max-width: 1280px) {
+    width: ${({ $isOpen }) => ($isOpen ? '32rem' : '0')};
+    min-width: ${({ $isOpen }) => ($isOpen ? '32rem' : '0')};
+    max-width: ${({ $isOpen }) => ($isOpen ? '32rem' : '0')};
+  }
+
+  @media all and (max-width: 767px) {
+    display: none;
+  }
+`
+
+/* ─── Floating trigger (collapsed state) ─────────────────────── */
+export const StyledAiFloatingTrigger = styled.button`
+  position: fixed;
+  right: 0;
+  z-index: 900;
+  width: 4.4rem;
+  height: 4.4rem;
+  border-radius: 50% 0 0 50%;
+  background: linear-gradient(135deg, #7b5ef8 0%, #5b8dee 100%);
+  color: #fff;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+  box-shadow: -3px 3px 14px rgba(123, 94, 248, 0.45);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  transform: translateY(-50%);
+  transition: box-shadow 0.15s, opacity 0.15s;
+
+  &:hover {
+    box-shadow: -4px 4px 18px rgba(123, 94, 248, 0.6);
+    opacity: 0.95;
+  }
+
+  &:active {
+    cursor: grabbing;
+  }
+
+  @media all and (max-width: 767px) {
+    display: none;
+  }
+`
+
+/* ─── Header ──────────────────────────────────────────────────── */
+export const StyledAiAssistantDockHeader = styled.header`
+  height: 5.2rem;
+  padding: 0 1.4rem;
+  border-bottom: 1px solid var(--alpha-black-10);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-shrink: 0;
+  background: #ffffff;
+`
+
+export const StyledAiHeaderLeft = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  min-width: 0;
+`
+
+export const StyledAiBotAvatar = styled.div`
+  width: 2.8rem;
+  height: 2.8rem;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #7b5ef8 0%, #5b8dee 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 1.4rem;
+  color: #fff;
+`
+
+export const StyledAiAssistantPanelTitle = styled.strong`
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--color-secondary-90, #262f44);
+  white-space: nowrap;
+  overflow: hidden;
+`
+
+export const StyledAiHeaderActions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  flex-shrink: 0;
+`
+
+export const StyledAiAssistantDockToggle = styled.button`
+  width: 3rem;
+  height: 3rem;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-secondary-50, #848c9d);
+  cursor: pointer;
+  transition: background 0.15s;
+
+  &:hover {
+    background: var(--color-secondary-10, #f4f5f7);
+    color: var(--color-secondary-80, #3a4256);
+  }
+`
+
+/* ─── Body ────────────────────────────────────────────────────── */
+export const StyledAiAssistantDockBody = styled.div`
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+`
+
+/* ─── Collapsed state ─────────────────────────────────────────── */
+export const StyledAiCollapsed = styled.div`
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 2rem;
+  gap: 2rem;
+  cursor: pointer;
+  color: var(--color-secondary-50, #848c9d);
+
+  &:hover {
+    color: var(--color-secondary-80, #3a4256);
+  }
+`
+
+/* ─── Welcome / greeting ──────────────────────────────────────── */
+export const StyledAiGreeting = styled.div`
+  padding: 2rem 1.8rem 1.4rem;
+  flex-shrink: 0;
+`
+
+export const StyledAiGreetingLine = styled.p`
+  margin: 0 0 0.4rem;
+  font-size: 1.5rem;
+  color: var(--color-secondary-90, #262f44);
+  line-height: 1.5;
+
+  strong {
+    font-weight: 700;
+  }
+`
+
+export const StyledAiGreetingCta = styled.p`
+  margin: 1rem 0 0;
+  font-size: 1.3rem;
+  color: var(--color-secondary-60, #6b7280);
+  line-height: 1.5;
+`
+
+/* ─── Suggested questions ─────────────────────────────────────── */
+export const StyledAiSuggestions = styled.div`
+  padding: 0 1.8rem 1.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  flex-shrink: 0;
+`
+
+export const StyledAiSuggestLabel = styled.p`
+  margin: 0 0 0.4rem;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--color-secondary-50, #848c9d);
+`
+
+export const StyledAiSuggestChip = styled.button`
+  width: 100%;
+  padding: 1rem 1.2rem;
+  border-radius: 8px;
+  border: 1px solid var(--color-secondary-20, #dadde2);
+  background: #ffffff;
+  color: var(--color-secondary-80, #3a4256);
+  font-size: 1.25rem;
+  text-align: left;
+  cursor: pointer;
+  line-height: 1.45;
+  transition: background 0.15s, border-color 0.15s;
+
+  &:hover {
+    background: var(--color-secondary-10, #f4f5f7);
+    border-color: var(--color-secondary-30, #c0c4cc);
+  }
+`
+
+/* ─── Message list ────────────────────────────────────────────── */
+export const StyledAiAssistantMessageList = styled.div`
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+  padding: 1.4rem 1.6rem;
+`
+
+export const StyledAiAssistantMessage = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: ${({ $role }) => ($role === 'user' ? 'flex-end' : 'flex-start')};
+  gap: 0.4rem;
+`
+
+export const StyledAiAssistantMessageMeta = styled.span`
+  color: var(--color-secondary-40, #adb5bd);
+  font-size: 1.1rem;
+`
+
+export const StyledAiAssistantMessageBubble = styled.div`
+  max-width: 90%;
+  border-radius: ${({ $role }) => ($role === 'user' ? '1.6rem 1.6rem 0.4rem 1.6rem' : '1.6rem 1.6rem 1.6rem 0.4rem')};
+  padding: 1rem 1.3rem;
+  background: ${({ $role }) =>
+    $role === 'user' ? 'linear-gradient(135deg,#7b5ef8,#5b8dee)' : 'var(--color-secondary-10, #f4f5f7)'};
+  color: ${({ $role }) => ($role === 'user' ? '#ffffff' : 'var(--color-secondary-90, #262f44)')};
+  font-size: 1.3rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+`
+
+export const StyledAiAssistantEmpty = styled.div`
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-secondary-40, #adb5bd);
+  font-size: 1.3rem;
+`
+
+/* ─── Loading animation ───────────────────────────────────────── */
+const aiDotBounce = keyframes`
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.35; }
+  40%           { transform: translateY(-4px); opacity: 1; }
+`
+
+export const StyledAiAssistantLoadingBubble = styled.div`
+  max-width: 90%;
+  border-radius: 1.6rem 1.6rem 1.6rem 0.4rem;
+  padding: 1rem 1.3rem;
+  background: var(--color-secondary-10, #f4f5f7);
+`
+
+export const StyledAiAssistantLoadingRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+`
+
+export const StyledAiAssistantLoadingDots = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+
+  & > span {
+    width: 0.65rem;
+    height: 0.65rem;
+    border-radius: 50%;
+    background: var(--color-secondary-50, #848c9d);
+    animation: ${aiDotBounce} 1.2s infinite ease-in-out;
+  }
+
+  & > span:nth-child(1) { animation-delay: 0s; }
+  & > span:nth-child(2) { animation-delay: 0.2s; }
+  & > span:nth-child(3) { animation-delay: 0.4s; }
+`
+
+export const StyledAiAssistantLoadingText = styled.div`
+  font-size: 1.2rem;
+  color: var(--color-secondary-50, #848c9d);
+`
+
+/* ─── Composer ────────────────────────────────────────────────── */
+export const StyledAiAssistantComposer = styled.form`
+  flex-shrink: 0;
+  padding: 1rem 1.4rem;
+  border-top: 1px solid var(--alpha-black-10);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+`
+
+export const StyledAiComposerBox = styled.div`
+  border: 1px solid var(--color-secondary-20, #dadde2);
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
+
+  &:focus-within {
+    border-color: #7b5ef8;
+    box-shadow: 0 0 0 3px rgba(123, 94, 248, 0.12);
+  }
+`
+
+export const StyledAiAssistantTextarea = styled.textarea`
+  width: 100%;
+  min-height: 7rem;
+  max-height: 14rem;
+  resize: none;
+  border: none;
+  outline: none;
+  padding: 1.1rem 1.3rem 0.6rem;
+  background: transparent;
+  color: var(--color-secondary-90, #262f44);
+  font-size: 1.3rem;
+  line-height: 1.6;
+  font-family: inherit;
+
+  &::placeholder {
+    color: var(--color-secondary-40, #adb5bd);
+  }
+`
+
+export const StyledAiComposerFooter = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0.8rem 0.8rem;
+`
+
+export const StyledAiContextChips = styled.div`
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+`
+
+export const StyledAiContextChip = styled.button`
+  padding: 0.4rem 0.9rem;
+  border-radius: 20px;
+  border: 1px solid ${({ $active }) => ($active ? '#7b5ef8' : 'var(--color-secondary-20, #dadde2)')};
+  background: ${({ $active }) => ($active ? 'rgba(123,94,248,0.08)' : 'transparent')};
+  color: ${({ $active }) => ($active ? '#7b5ef8' : 'var(--color-secondary-50, #848c9d)')};
+  font-size: 1.15rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+
+  &:hover {
+    border-color: #7b5ef8;
+    color: #7b5ef8;
+    background: rgba(123, 94, 248, 0.06);
+  }
+`
+
+export const StyledAiSendButton = styled.button`
+  width: 3.2rem;
+  height: 3.2rem;
+  border-radius: 50%;
+  border: none;
+  background: ${({ disabled }) => (disabled ? 'var(--color-secondary-20, #dadde2)' : 'linear-gradient(135deg,#7b5ef8,#5b8dee)')};
+  color: ${({ disabled }) => (disabled ? 'var(--color-secondary-40, #adb5bd)' : '#fff')};
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ${({ disabled }) => (disabled ? 'not-allowed' : 'pointer')};
+  flex-shrink: 0;
+  font-size: 1.6rem;
+  line-height: 1;
+  transition: background 0.15s, opacity 0.15s;
+
+  &:hover:not(:disabled) {
+    opacity: 0.88;
+  }
+`
+
+/* ─── Reset / disclaimer ──────────────────────────────────────── */
+export const StyledAiResetRow = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0.4rem 0 0;
+`
+
+export const StyledAiResetBtn = styled.button`
+  background: none;
+  border: none;
+  font-size: 1.15rem;
+  color: var(--color-secondary-40, #adb5bd);
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+
+  &:hover {
+    color: var(--color-secondary-60, #6b7280);
+    text-decoration: underline;
+  }
+`
+
+export const StyledAiDisclaimer = styled.p`
+  margin: 0;
+  padding: 0.8rem 1.4rem 1rem;
+  font-size: 1.1rem;
+  color: var(--color-secondary-40, #adb5bd);
+  line-height: 1.45;
+  flex-shrink: 0;
+  text-align: center;
+`
+
+/* ─── Context badges ──────────────────────────────────────────── */
+export const StyledAiAssistantContextList = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+`
+
+export const StyledAiAssistantContextBadge = styled.div`
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  background: var(--color-secondary-10, #f4f5f7);
+  color: var(--color-secondary-60, #6b7280);
+  font-size: 1.15rem;
+  font-weight: 500;
+`
+
+/* ─── Unused legacy exports ───────────────────────────────────── */
+export const StyledAiAssistantPanelIntro = styled.p``
+export const StyledAiAssistantComposerActions = styled.div``

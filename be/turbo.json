@@ -1,0 +1,96 @@
+{
+    "$schema": "https://turborepo.dev/schema.json",
+    "globalDependencies": [
+        ".env"
+    ],
+    "globalEnv": [
+        "PORT_CONFIG_MANAGER",
+        "PORT_EVENT_GENERATOR",
+        "PORT_EVENT_RECEIVER",
+        "PORT_EVENT_ANALYZER",
+        "PORT_LLM_GATEWAY",
+        "PORT_ACTION_RUNNER",
+        "PORT_REPORT_MANAGER",
+        "PORT_AI_CHAT_SERVICE",
+        "URL_EVENT_RECEIVER",
+        "URL_CONFIG_MANAGER",
+        "URL_EVENT_ANALYZER",
+        "URL_LLM_GATEWAY",
+        "URL_ACTION_RUNNER",
+        "URL_REPORT_MANAGER",
+        "URL_AI_CHAT_SERVICE",
+        "NEXT_PUBLIC_EVENT_GENERATOR_URL",
+        "NEXT_PUBLIC_CONFIG_MANAGER_URL",
+        "NEXT_PUBLIC_EVENT_RECEIVER_URL",
+        "NEXT_PUBLIC_EVENT_ANALYZER_URL",
+        "NEXT_PUBLIC_LLM_GATEWAY_URL",
+        "NEXT_PUBLIC_ACTION_RUNNER_URL",
+        "NEXT_PUBLIC_REPORT_MANAGER_URL",
+        "NEXT_PUBLIC_AI_CHAT_SERVICE_URL",
+        "WEB_ORIGIN",
+        "DB_URL_EVENT_RECEIVER",
+        "DB_URL_CONFIG_MANAGER",
+        "DB_URL_EVENT_ANALYZER",
+        "DB_URL_ACTION_RUNNER",
+        "DB_URL_REPORT_MANAGER",
+        "DB_URL_AI_CHAT_SERVICE",
+        "SERVER_TIMEOUT",
+        "MAIL_HOST",
+        "MAIL_PORT",
+        "MAIL_SECURE",
+        "MAIL_USER",
+        "MAIL_PASS",
+        "MAIL_FROM",
+        "MAIL_SUBJECT_PREFIX",
+        "LLM_PROVIDER",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "GOOGLE_CLOUD_PROJECT",
+        "GOOGLE_CLOUD_LOCATION",
+        "VERTEX_MODEL_ID",
+        "VERTEX_TEMPERATURE",
+        "VERTEX_MAX_OUTPUT_TOKENS",
+        "ERROR_CONTEXT_LINES",
+        "FIREBASE_API_KEY",
+        "FIREBASE_AUTH_DOMAIN",
+        "FIREBASE_PROJECT_ID",
+        "FIREBASE_STORAGE_BUCKET",
+        "FIREBASE_MESSAGING_SENDER_ID",
+        "FIREBASE_APP_ID",
+        "FIRESTORE_DATABASE_ID",
+        "GOOGLE_AUTH_URL",
+        "AZURE_OPENAI_ENDPOINT",
+        "AZURE_OPENAI_API_KEY",
+        "AZURE_OPENAI_API_VERSION",
+        "AZURE_OPENAI_DEPLOYMENT",
+        "AZURE_OPENAI_MODEL",
+        "AZURE_OPENAI_TIMEOUT_MS",
+        "AZURE_OPENAI_MAX_TOKENS",
+        "AZURE_ANSWER_PREVIEW_CHARS"
+    ],
+    "tasks": {
+        "dev": {
+            "cache": false,
+            "persistent": true
+        },
+        "build": {
+            "dependsOn": [
+                "^build"
+            ],
+            "outputs": [
+                "dist/**",
+                ".next/**",
+                "!.next/cache/**"
+            ]
+        },
+        "lint": {
+            "dependsOn": [
+                "^lint"
+            ]
+        },
+        "test": {
+            "dependsOn": [
+                "^test"
+            ]
+        }
+    }
+}

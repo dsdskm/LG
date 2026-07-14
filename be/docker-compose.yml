@@ -1,0 +1,199 @@
+name: als
+
+x-app-common: &app-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  working_dir: /app
+  env_file:
+    - .env
+    - .env.docker
+  restart: unless-stopped
+
+services:
+  event_receiver_db:
+    image: postgres:16-alpine
+    container_name: event_receiver_db
+    environment:
+      POSTGRES_DB: event_receiver_db
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root
+    ports: ["5433:5432"]
+    volumes: ["event_receiver_db_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d event_receiver_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  config_manager_db:
+    image: postgres:16-alpine
+    container_name: config_manager_db
+    environment:
+      POSTGRES_DB: config_manager_db
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root
+    ports: ["5440:5432"]
+    volumes: ["config_manager_db_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d config_manager_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  event_analyzer_db:
+    image: postgres:16-alpine
+    container_name: event_analyzer_db
+    environment:
+      POSTGRES_DB: event_analyzer_db
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root
+    ports: ["5434:5432"]
+    volumes: ["event_analyzer_db_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d event_analyzer_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  action_runner_db:
+    image: postgres:16-alpine
+    container_name: action_runner_db
+    environment:
+      POSTGRES_DB: action_runner_db
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root
+    ports: ["5436:5432"]
+    volumes: ["action_runner_db_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d action_runner_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  report_manager_db:
+    image: postgres:16-alpine
+    container_name: report_manager_db
+    environment:
+      POSTGRES_DB: report_manager_db
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root
+    ports: ["5437:5432"]
+    volumes: ["report_manager_db_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d report_manager_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  ai_chat_service_db:
+    image: postgres:16-alpine
+    container_name: ai_chat_service_db
+    environment:
+      POSTGRES_DB: ai_chat_service_db
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root
+    ports: ["5439:5432"]
+    volumes: ["ai_chat_service_db_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d ai_chat_service_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  event_generator_service:
+    <<: *app-common
+    container_name: event_generator_service
+    command: sh -c "pnpm --filter ./apps/event_generator build && npx dotenv -e .env -- pnpm --filter ./apps/event_generator start"
+    ports: ["9001:9001"]
+
+  config_manager_service:
+    <<: *app-common
+    container_name: config_manager_service
+    command: sh -c "pnpm --filter ./apps/config_manager build && npx dotenv -e .env -- pnpm --filter ./apps/config_manager start"
+    depends_on:
+      config_manager_db:
+        condition: service_healthy
+    ports: ["3008:3008"]
+
+  event_receiver_service:
+    <<: *app-common
+    container_name: event_receiver_service
+    command: sh -c "pnpm --filter ./apps/event_receiver build && npx dotenv -e .env -- pnpm --filter ./apps/event_receiver start"
+    depends_on:
+      event_receiver_db:
+        condition: service_healthy
+      config_manager_service:
+        condition: service_started
+    ports: ["3001:3001"]
+
+  event_analyzer_service:
+    <<: *app-common
+    container_name: event_analyzer_service
+    command: sh -c "pnpm --filter ./apps/event_analyzer build && npx dotenv -e .env -- pnpm --filter ./apps/event_analyzer start"
+    depends_on:
+      event_analyzer_db:
+        condition: service_healthy
+      action_runner_service:
+        condition: service_started
+    ports: ["3002:3002"]
+
+  llm_gateway_service:
+    <<: *app-common
+    container_name: llm_gateway_service
+    command: sh -c "pnpm --filter ./apps/llm_gateway build && npx dotenv -e .env -- pnpm --filter ./apps/llm_gateway start"
+    depends_on:
+      config_manager_service:
+        condition: service_started
+    ports: ["3003:3003"]
+    # 컨테이너는 호스트 /etc/hosts 를 쓰지 않으므로 Azure 내부 엔드포인트를 여기에 매핑한다.
+    extra_hosts:
+      - "hs-prd-lab-robot-oai.openai.azure.com:10.167.2.11"
+      - "hs-prd-lab-robot-ai.cognitiveservices.azure.com:10.167.2.218"
+      - "hs-prd-lab-robot-ai.openai.azure.com:10.167.2.219"
+      - "hs-prd-lab-robot-ai.services.ai.azure.com:10.167.2.220"
+      - "eu-prd-task-dea-oai.openai.azure.com:10.182.184.151"
+      - "eu-prd-task-dea-ai.cognitiveservices.azure.com:10.182.184.253"
+      - "eu-prd-task-dea-ai.openai.azure.com:10.182.184.254"
+
+  action_runner_service:
+    <<: *app-common
+    container_name: action_runner_service
+    command: sh -c "pnpm --filter ./apps/action_runner build && npx dotenv -e .env -- pnpm --filter ./apps/action_runner start"
+    depends_on:
+      report_manager_service:
+        condition: service_started
+    ports: ["3004:3004"]
+
+  report_manager_service:
+    <<: *app-common
+    container_name: report_manager_service
+    command: sh -c "pnpm --filter ./apps/report_manager build && npx dotenv -e .env -- pnpm --filter ./apps/report_manager start"
+    depends_on:
+      report_manager_db:
+        condition: service_healthy
+    ports: ["3005:3005"]
+
+  
+  ai_chat_service:
+    <<: *app-common
+    container_name: ai_chat_service
+    command: sh -c "pnpm --filter ./apps/ai_chat_service build && npx dotenv -e .env -- pnpm --filter ./apps/ai_chat_service start"
+    depends_on:
+      ai_chat_service_db:
+        condition: service_healthy
+    ports: ["3007:3007"]
+
+volumes:
+  event_receiver_db_data:
+  config_manager_db_data:
+  event_analyzer_db_data:
+  report_manager_db_data:
+  action_runner_db_data:
+  ai_chat_service_db_data:

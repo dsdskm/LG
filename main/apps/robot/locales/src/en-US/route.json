@@ -1,0 +1,41 @@
+{
+  "SideBar": {
+    "gnb": {
+      "ota": "OTA",
+      "robot": "Robot",
+      "dashboard": "Dashboard",
+      "logviewer": "Logviewer",
+      "robotManagement": "Robot Management",
+      "robotList": "Robot List",
+      "groupManagement": "Group Management",
+      "userManagement": "User Management",
+      "mapManagement": "Map Management"
+    }
+  },
+  "Depth": {
+    "robotManagement": {
+      "name": "Robot Management"
+    },
+    "robotList": {
+      "name": "Robot List"
+    },
+    "groupManagement": {
+      "name": "Group Management"
+    },
+    "userManagement": {
+      "name": "User Management"
+    },
+    "mapManagement": {
+      "name": "Map Management"
+    },
+    "mapDetail": {
+      "name": "Map Detail"
+    },
+    "mapEdit": {
+      "name": "Map Edit"
+    },
+    "mapDeploy": {
+      "name": "Map Deploy"
+    }
+  }
+}

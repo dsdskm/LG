@@ -1,0 +1,17 @@
+{
+  "SideBar": {
+    "gnb": {
+      "overview": "学習概要",
+      "launcher": "学習開始",
+      "data": "データ準備状況",
+      "training": "学習状況",
+      "review": "検証/承認",
+      "tms": "TMS学習",
+      "teleop": "テレオペレーション",
+      "watch": "映像学習",
+      "simulation": "シミュレーション/増強",
+      "upload": "データアップロード",
+      "tmsEpisodes": "エピソード候補"
+    }
+  }
+}

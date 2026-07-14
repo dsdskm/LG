@@ -1,0 +1,16 @@
+**/test.jsx
+**/node_modules/**
+**/dist/**
+**/public/**
+pnpm-lock.yaml
+package-lock.json
+package.json
+yarn.lock
+README.md
+**/*.html
+.DS_Store
+.gitignore
+.env.*
+.prettierignore
+.prettierrc
+vite.config.js

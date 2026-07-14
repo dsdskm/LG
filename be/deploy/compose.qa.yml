@@ -1,0 +1,350 @@
+# =============================================================================
+# QA 프로덕션 compose : EC2 인스턴스 1대에서 서비스별 컨테이너로 실행
+#   - 이미지: ECR 의 단일 unified-service (SERVICE_NAME 으로 실행 서비스 선택)
+#   - DB: 컨테이너 내 Postgres (서비스별 1개, llm_gateway 는 DB 불필요)
+#   - 포트: 호스트 3001/3002/3003/3004/3005/3008 → ALB Target Group 매핑
+#
+# 사용:
+#   export IMAGE_REMOTE=398838060384.dkr.ecr.ap-northeast-2.amazonaws.com/rsp-qa-ai/unified-service:latest
+#   docker compose -f deploy/compose.qa.yml pull
+#   docker compose -f deploy/compose.qa.yml up -d
+#
+# 시크릿(Azure OpenAI 키, MAIL_* 등)은 같은 디렉터리의 .env 로 주입(있으면 로드, 없어도 기동).
+# 아래 environment 의 배선값(DB_URL_*, URL_*, PORT_*)이 .env 보다 우선합니다.
+# 요구: Docker Compose v2.24+ (env_file required:false 문법)
+# =============================================================================
+
+x-image: &image
+  image: ${IMAGE_REMOTE:-398838060384.dkr.ecr.ap-northeast-2.amazonaws.com/rsp-qa-ai/unified-service:latest}
+
+# 컨테이너 stdout/stderr → CloudWatch Logs (그룹은 CWAgent와 동일). 스트림은 서비스별로 지정.
+# 요구: EC2 인스턴스 역할에 logs:CreateLogStream/PutLogEvents/CreateLogGroup 권한
+#       (CloudWatchAgentServerPolicy 포함 시 충족)
+x-awslogs-opts: &awslogs-opts
+  awslogs-region: ap-northeast-2
+  awslogs-group: /aws/ec2/rsp-qa-ai
+  awslogs-create-group: "true"
+
+# 모든 앱 컨테이너 공통: 시크릿용 .env(선택) + 서비스 간 호출 URL 배선
+x-app-common: &app-common
+  <<: *image
+  restart: unless-stopped
+  env_file:
+    - path: .env
+      required: false
+  environment: &svc-urls
+    NODE_ENV: production
+    AWS_DEFAULT_REGION: ap-northeast-2
+    CORS_ALLOWED_ORIGINS: "https://dev.hcrsp.com,https://qa.hcrsp.com"
+    # 관리용 DB import 토큰(ADMIN_SEED_TOKEN)은 시크릿이라 .env 로 주입한다.
+    # (environment 블록은 .env 보다 우선하므로 여기 두지 않는다.)
+    URL_CONFIG_MANAGER: http://config_manager:3008
+    URL_EVENT_RECEIVER: http://event_receiver:3001
+    URL_EVENT_ANALYZER: http://event_analyzer:3002
+    URL_ACTION_RUNNER: http://action_runner:3004
+    URL_REPORT_MANAGER: http://report_manager:3005
+    URL_LLM_GATEWAY: http://llm_gateway:3003
+
+# Postgres 공통 템플릿
+x-db-common: &db-common
+  image: postgres:16-alpine
+  restart: unless-stopped
+  environment:
+    POSTGRES_USER: root
+    POSTGRES_PASSWORD: root
+
+services:
+  # ── Databases ──────────────────────────────────────────────
+  config_manager_db:
+    <<: *db-common
+    environment: { POSTGRES_USER: root, POSTGRES_PASSWORD: root, POSTGRES_DB: config_manager_db }
+    volumes: ["config_manager_db_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d config_manager_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  event_receiver_db:
+    <<: *db-common
+    environment: { POSTGRES_USER: root, POSTGRES_PASSWORD: root, POSTGRES_DB: event_receiver_db }
+    volumes: ["event_receiver_db_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d event_receiver_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  event_analyzer_db:
+    <<: *db-common
+    environment: { POSTGRES_USER: root, POSTGRES_PASSWORD: root, POSTGRES_DB: event_analyzer_db }
+    volumes: ["event_analyzer_db_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d event_analyzer_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  action_runner_db:
+    <<: *db-common
+    environment: { POSTGRES_USER: root, POSTGRES_PASSWORD: root, POSTGRES_DB: action_runner_db }
+    volumes: ["action_runner_db_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d action_runner_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  report_manager_db:
+    <<: *db-common
+    environment: { POSTGRES_USER: root, POSTGRES_PASSWORD: root, POSTGRES_DB: report_manager_db }
+    volumes: ["report_manager_db_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d report_manager_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ai_chat_service_db:
+    <<: *db-common
+    environment: { POSTGRES_USER: root, POSTGRES_PASSWORD: root, POSTGRES_DB: ai_chat_service_db }
+    volumes: ["ai_chat_service_db_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d ai_chat_service_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Services ───────────────────────────────────────────────
+  config_manager:
+    <<: *app-common
+    container_name: config_manager
+    environment:
+      <<: *svc-urls
+      SERVICE_NAME: config_manager
+      PORT_CONFIG_MANAGER: "3008"
+      DB_URL_CONFIG_MANAGER: postgres://root:root@config_manager_db:5432/config_manager_db
+    logging:
+      driver: awslogs
+      options:
+        <<: *awslogs-opts
+        awslogs-stream: config_manager
+    ports: ["3008:3008"]
+    depends_on:
+      config_manager_db: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3008/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  llm_gateway:
+    <<: *app-common
+    container_name: llm_gateway
+    environment:
+      <<: *svc-urls
+      SERVICE_NAME: llm_gateway
+      PORT_LLM_GATEWAY: "3003"
+      # Vertex(Gemini) 인증: 키 파일은 이미지에 포함되어 있고 ADC가 이 경로로 찾는다.
+      GOOGLE_CLOUD_PROJECT: ailogsystem-493123
+      GOOGLE_CLOUD_LOCATION: global
+      GOOGLE_APPLICATION_CREDENTIALS: /app/apps/llm_gateway/src/key/ailogsystem-service-account.json
+      AZURE_OPENAI_ENDPOINT: https://hs-prd-lab-robot-oai.openai.azure.com
+      AZURE_OPENAI_API_KEY: TBD
+      AZURE_OPENAI_API_VERSION: "2024-12-01-preview"
+      AZURE_OPENAI_DEPLOYMENT: gpt-5
+      AZURE_OPENAI_MODEL: gpt-5
+      AZURE_OPENAI_TIMEOUT_MS: "300000"
+      AZURE_OPENAI_MAX_TOKENS: "16384"
+      AZURE_ANSWER_PREVIEW_CHARS: "2000"
+    logging:
+      driver: awslogs
+      options:
+        <<: *awslogs-opts
+        awslogs-stream: llm_gateway
+    ports: ["3003:3003"]
+    depends_on:
+      config_manager: { condition: service_started }
+    # Azure OpenAI 내부 엔드포인트 (VPC 내부망에서 라우팅 가능해야 함)
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3003/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  event_receiver:
+    <<: *app-common
+    container_name: event_receiver
+    environment:
+      <<: *svc-urls
+      SERVICE_NAME: event_receiver
+      PORT_EVENT_RECEIVER: "3001"
+      DB_URL_EVENT_RECEIVER: postgres://root:root@event_receiver_db:5432/event_receiver_db
+      # Firebase(Firestore 트리거) — 프론트 자동 새로고침 알림용. 웹 config라 비밀 아님.
+      FIREBASE_API_KEY: AIzaSyCKIrn5Ddal7jxN10vYdsneTDHuloQoV_8
+      FIREBASE_AUTH_DOMAIN: ailogsystem-493123.firebaseapp.com
+      FIREBASE_PROJECT_ID: ailogsystem-493123
+      FIREBASE_STORAGE_BUCKET: ailogsystem-493123.firebasestorage.app
+      FIREBASE_MESSAGING_SENDER_ID: "669089571738"
+      FIREBASE_APP_ID: "1:669089571738:web:ce3a9af07ccd638d0e1023"
+      FIRESTORE_DATABASE_ID: main
+    logging:
+      driver: awslogs
+      options:
+        <<: *awslogs-opts
+        awslogs-stream: event_receiver
+    ports: ["3001:3001"]
+    depends_on:
+      event_receiver_db: { condition: service_healthy }
+      config_manager: { condition: service_started }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  report_manager:
+    <<: *app-common
+    container_name: report_manager
+    environment:
+      <<: *svc-urls
+      SERVICE_NAME: report_manager
+      PORT_REPORT_MANAGER: "3005"
+      DB_URL_REPORT_MANAGER: postgres://root:root@report_manager_db:5432/report_manager_db
+      # report_manager 는 event_receiver / event_analyzer DB 도 읽는다(read 연결)
+      DB_URL_EVENT_RECEIVER: postgres://root:root@event_receiver_db:5432/event_receiver_db
+      DB_URL_EVENT_ANALYZER: postgres://root:root@event_analyzer_db:5432/event_analyzer_db
+    logging:
+      driver: awslogs
+      options:
+        <<: *awslogs-opts
+        awslogs-stream: report_manager
+    ports: ["3005:3005"]
+    depends_on:
+      report_manager_db: { condition: service_healthy }
+      event_receiver_db: { condition: service_healthy }
+      event_analyzer_db: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3005/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  action_runner:
+    <<: *app-common
+    container_name: action_runner
+    environment:
+      <<: *svc-urls
+      SERVICE_NAME: action_runner
+      PORT_ACTION_RUNNER: "3004"
+      DB_URL_ACTION_RUNNER: postgres://root:root@action_runner_db:5432/action_runner_db
+    logging:
+      driver: awslogs
+      options:
+        <<: *awslogs-opts
+        awslogs-stream: action_runner
+    ports: ["3004:3004"]
+    depends_on:
+      action_runner_db: { condition: service_healthy }
+      report_manager: { condition: service_started }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3004/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # demo : 시연영상 재생용 Next.js 웹 (DB 불필요)
+  demo:
+    <<: *app-common
+    container_name: demo
+    environment:
+      <<: *svc-urls
+      SERVICE_NAME: demo
+    logging:
+      driver: awslogs
+      options:
+        <<: *awslogs-opts
+        awslogs-stream: demo
+    ports: ["4000:4000"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  event_analyzer:
+    <<: *app-common
+    container_name: event_analyzer
+    environment:
+      <<: *svc-urls
+      SERVICE_NAME: event_analyzer
+      PORT_EVENT_ANALYZER: "3002"
+      DB_URL_EVENT_ANALYZER: postgres://root:root@event_analyzer_db:5432/event_analyzer_db
+    logging:
+      driver: awslogs
+      options:
+        <<: *awslogs-opts
+        awslogs-stream: event_analyzer
+    ports: ["3002:3002"]
+    depends_on:
+      event_analyzer_db: { condition: service_healthy }
+      action_runner: { condition: service_started }
+      llm_gateway: { condition: service_started }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  ai_chat_service:
+    <<: *app-common
+    container_name: ai_chat_service
+    environment:
+      <<: *svc-urls
+      SERVICE_NAME: ai_chat_service
+      PORT_AI_CHAT_SERVICE: "3007"
+      DB_URL_AI_CHAT_SERVICE: postgres://root:root@ai_chat_service_db:5432/ai_chat_service_db
+      # action_runner 호출(액션 실행). pipeline.config 는 ACTION_RUNNER_URL 을 읽는다.
+      ACTION_RUNNER_URL: http://action_runner:3004
+      # LLM: Azure OpenAI + Vertex(Gemini) 를 직접 호출 (llm_gateway 와 동일 자격 재사용)
+      GOOGLE_CLOUD_PROJECT: ailogsystem-493123
+      GOOGLE_CLOUD_LOCATION: global
+      GOOGLE_APPLICATION_CREDENTIALS: /app/apps/llm_gateway/src/key/ailogsystem-service-account.json
+      AZURE_OPENAI_ENDPOINT: https://hs-prd-lab-robot-oai.openai.azure.com
+      AZURE_OPENAI_API_KEY: TBD
+      AZURE_OPENAI_API_VERSION: "2024-12-01-preview"
+      AZURE_OPENAI_DEPLOYMENT: gpt-5
+      AZURE_OPENAI_MODEL: gpt-5
+      AZURE_OPENAI_MAX_TOKENS: "16384"
+      AZURE_ANSWER_PREVIEW_CHARS: "2000"
+    logging:
+      driver: awslogs
+      options:
+        <<: *awslogs-opts
+        awslogs-stream: ai_chat_service
+    ports: ["3007:3007"]
+    depends_on:
+      ai_chat_service_db: { condition: service_healthy }
+      config_manager: { condition: service_started }
+      action_runner: { condition: service_started }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3007/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  config_manager_db_data:
+  ai_chat_service_db_data:
+  event_receiver_db_data:
+  event_analyzer_db_data:
+  action_runner_db_data:
+  report_manager_db_data:

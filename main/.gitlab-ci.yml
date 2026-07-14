@@ -1,0 +1,622 @@
+# .gitlab-ci.yml
+#
+# ✅ STS AssumeRole 보안 강화 버전 (DEBUG 모드 조건부 표시)
+#
+# 목표
+# - dev 및 기타 브랜치: push 시 자동 파이프라인 (DEV: build→deploy→verify 자동)
+# - qa / prd(production) 브랜치: 오직 GitLab UI의 "Run pipeline"(CI_PIPELINE_SOURCE=web)로만 파이프라인 생성 허용
+#   - API(trigger/api), 다른 파이프라인(parent_pipeline), 스케줄(schedule) 등도 모두 차단
+#   - 파이프라인이 시작되면 QA/PRD는 build→deploy→verify 모두 자동 수행 (job 내 manual 제거)
+#
+# 보안 개선사항
+# - STS AssumeRole을 통한 임시 자격증명 사용 (1시간 유효)
+# - External ID를 통한 추가 보안 검증
+# - 권한 분리: 기본 사용자는 AssumeRole만 가능, 실제 배포 권한은 별도 Role
+# - 민감한 정보 로그 노출 방지
+# - DEBUG 모드에서만 디버그 job 표시
+
+image: docker:25.0.5
+
+workflow:
+  rules:
+    # QA: UI(web) 수동 파이프라인만 허용
+    - if: '$CI_COMMIT_REF_NAME =~ /^(qa|QA)$/ && $CI_PIPELINE_SOURCE != "web"'
+      when: never
+    - if: '$CI_COMMIT_REF_NAME =~ /^(qa|QA)$/'
+      variables:
+        DEPLOY_ENVIRONMENT: 'qa'
+        ENVIRONMENT_NAME: 'qa'
+        ENVIRONMENT_URL: 'https://qa.hcrsp.com'
+
+    # PRD/PROD: UI(web) 수동 파이프라인만 허용
+    - if: '$CI_COMMIT_REF_NAME =~ /^(prd|PRD|prod|production)$/ && $CI_PIPELINE_SOURCE != "web"'
+      when: never
+    - if: '$CI_COMMIT_REF_NAME =~ /^(prd|PRD|prod|production)$/'
+      variables:
+        DEPLOY_ENVIRONMENT: 'prod'
+        ENVIRONMENT_NAME: 'production'
+        ENVIRONMENT_URL: 'https://hcrsp.com'
+
+    # 그 외(dev/feature 등): 항상 파이프라인 생성 (push 자동 포함)
+    - when: always
+      variables:
+        DEPLOY_ENVIRONMENT: 'dev'
+
+variables:
+  DOCKER_DRIVER: overlay2
+  DOCKER_API_VERSION: '1.43'
+  DOCKER_BUILDKIT: '1'
+  DEV_HTTP_PORT: '8081'
+  DEV_HOST_IP: '10.158.2.175'
+  # 디버그 모드 (개발/문제해결 시에만 true로 설정)
+  # DEBUG_MODE: "false"
+  # 진단 모드 (Runner 상태 확인용, 별도 제어)
+  RUN_DIAG: 'false'
+  # STS AssumeRole 설정
+  DEPLOYMENT_ROLE_ARN: arn:aws:iam::398838060384:role/gitlab-ci-deployment-role
+  EXTERNAL_ID: hcrsp-gitlab-deployment-2026
+
+stages:
+  - info
+  - build
+  - deploy
+  - verify
+
+# AssumeRole 공통 함수 정의
+.assume_role_script: &assume_role_script
+  - |
+    # 🔐 STS AssumeRole 함수
+    assume_aws_role() {
+      if [ "$DEPLOY_ENVIRONMENT" = "dev" ]; then
+        return 0
+      fi
+      
+      # 기본 자격증명 확인
+      if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+        echo "❌ AWS 자격 증명이 설정되지 않았습니다."
+        return 1
+      fi
+      
+      # DEBUG: AssumeRole 세부사항 (개발 시에만)
+      # if [ "${DEBUG_MODE:-false}" = "true" ]; then
+      #   echo "🔍 AssumeRole 시도: $DEPLOYMENT_ROLE_ARN"
+      #   echo "🔍 External ID: ${EXTERNAL_ID:0:10}..."
+      # fi
+      
+      # AssumeRole 실행 (출력 숨김)
+      local temp_creds
+      temp_creds=$(aws sts assume-role \
+        --role-arn "$DEPLOYMENT_ROLE_ARN" \
+        --role-session-name "gitlab-ci-${CI_JOB_ID}-$(date +%s)" \
+        --external-id "$EXTERNAL_ID" \
+        --duration-seconds 3600 \
+        --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+        --output text 2>/dev/null)
+      
+      if [ $? -eq 0 ] && [ ! -z "$temp_creds" ]; then
+        export AWS_ACCESS_KEY_ID=$(echo $temp_creds | cut -d' ' -f1)
+        export AWS_SECRET_ACCESS_KEY=$(echo $temp_creds | cut -d' ' -f2)
+        export AWS_SESSION_TOKEN=$(echo $temp_creds | cut -d' ' -f3)
+        
+        # DEBUG: 권한 확인 (개발 시에만)
+        # if [ "${DEBUG_MODE:-false}" = "true" ]; then
+        #   local caller_identity=$(aws sts get-caller-identity --query 'Arn' --output text 2>/dev/null)
+        #   echo "🔍 AssumeRole 성공: ${caller_identity}"
+        # fi
+        
+        return 0
+      else
+        echo "❌ AssumeRole 실패"
+        return 1
+      fi
+    }
+
+default:
+  tags:
+    - raus04
+  before_script:
+    # PATCH-A: aws-cli를 apk로 설치하지 않고, AWS CLI 공식 컨테이너로 aws 명령을 래핑
+    - apk add --no-cache curl jq
+    - |
+      aws() {
+        docker run --rm \
+          -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_SESSION_TOKEN \
+          -e AWS_DEFAULT_REGION -e AWS_REGION \
+          -v "$PWD:/work" -w /work \
+          public.ecr.aws/aws-cli/aws-cli:latest "$@"
+      }
+    - *assume_role_script
+    - |
+      set -e
+      echo "🚀 ${CI_PROJECT_NAME} (${CI_COMMIT_SHORT_SHA}) | Branch: ${CI_COMMIT_REF_NAME} | Env: ${DEPLOY_ENVIRONMENT}"
+
+      # 환경별 변수 세팅
+      if [ "$DEPLOY_ENVIRONMENT" = "production" ] || [ "$DEPLOY_ENVIRONMENT" = "prod" ]; then
+        export NODE_ENV="production"
+        export ENVIRONMENT="production"
+        export ENV="production"
+        export ECR_REPOSITORY_NAME="rsp-prod-hrsp-web"
+        export ECS_CLUSTER_NAME="rsp-prod-ecs"
+        export ECS_SERVICE_NAME="rsp-prod-hrsp-web-service"
+        export TASK_DEFINITION_NAME="rsp-prod-hrsp-web-task"
+        export SERVICE_URL="https://hcrsp.com"
+        export DOCKER_TAG="prod-${CI_COMMIT_SHORT_SHA}"
+        export DOCKERFILE_DEPLOY_ENV="prod"
+      elif [ "$DEPLOY_ENVIRONMENT" = "dev" ]; then
+        export NODE_ENV="development"
+        export ENVIRONMENT="dev"
+        export ENV="dev"
+        export LOCAL_IMAGE_NAME="${CI_PROJECT_NAME}:dev-${CI_COMMIT_SHORT_SHA}"
+        export LOCAL_CONTAINER_NAME="${CI_PROJECT_NAME}-dev"
+        export DOCKER_TAG="dev-${CI_COMMIT_SHORT_SHA}"
+        export DOCKERFILE_DEPLOY_ENV="dev"
+        export SERVICE_URL="http://${DEV_HOST_IP}:${DEV_HTTP_PORT}"
+      else
+        export NODE_ENV="qa"
+        export ENVIRONMENT="qa"
+        export ENV="qa"
+        export ECR_REPOSITORY_NAME="rsp-qa-hrsp-web"
+        export ECS_CLUSTER_NAME="rsp-qa-ecs"
+        export ECS_SERVICE_NAME="rsp-qa-hrsp-web-service"
+        export TASK_DEFINITION_NAME="rsp-qa-hrsp-web-task"
+        export SERVICE_URL="https://qa.hcrsp.com"
+        export DOCKER_TAG="qa-${CI_COMMIT_SHORT_SHA}"
+        export DOCKERFILE_DEPLOY_ENV="qa"
+      fi
+
+      # AWS 설정 및 AssumeRole (dev는 스킵)
+      if [ "$DEPLOY_ENVIRONMENT" != "dev" ]; then
+        if [ -z "${AWS_DEFAULT_REGION:-}" ] || [ -z "${AWS_ACCOUNT_ID:-}" ]; then
+          echo "❌ AWS 설정이 누락되었습니다."
+          exit 1
+        fi
+        
+        assume_aws_role || exit 1
+        export ECR_REPOSITORY_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPOSITORY_NAME}"
+      fi
+
+# 🔧 Runner 진단 (RUN_DIAG=true일 때만 표시)
+check_runner:
+  stage: info
+  rules:
+    - if: '$RUN_DIAG == "true"'
+      when: manual
+    - when: never
+  allow_failure: true
+  script:
+    - |
+      echo "🏃 Runner: $CI_RUNNER_DESCRIPTION"
+      echo "🐳 Docker: $(docker --version)"
+      echo "☁️ AWS CLI: $(aws --version)"
+
+      if [ "$DEPLOY_ENVIRONMENT" != "dev" ]; then
+        assume_aws_role && echo "✅ AssumeRole 테스트 성공" || echo "❌ AssumeRole 테스트 실패"
+      fi
+
+# 🐛 디버그 정보 (DEBUG_MODE=true일 때만 표시)
+debug_info:
+  stage: info
+  rules:
+    - if: '$DEBUG_MODE == "true"'
+      when: manual
+      allow_failure: true
+    - when: never
+  script:
+    - |
+      echo "🔍 디버그 정보 (DEBUG_MODE=true)"
+      echo "현재 DEBUG_MODE: ${DEBUG_MODE:-false}"
+      echo ""
+      echo "📋 주요 환경 변수:"
+      echo "CI_COMMIT_REF_NAME: $CI_COMMIT_REF_NAME"
+      echo "DEPLOY_ENVIRONMENT: $DEPLOY_ENVIRONMENT"
+      echo "CI_PIPELINE_SOURCE: $CI_PIPELINE_SOURCE"
+      echo "CI_JOB_ID: $CI_JOB_ID"
+      echo "CI_PIPELINE_ID: $CI_PIPELINE_ID"
+      echo ""
+      echo "🔧 AWS 설정:"
+      echo "AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-NOT_SET}"
+      echo "AWS_ACCOUNT_ID: ${AWS_ACCOUNT_ID:-NOT_SET}"
+      echo "DEPLOYMENT_ROLE_ARN: ${DEPLOYMENT_ROLE_ARN:-NOT_SET}"
+      echo ""
+      if [ -f build.env ]; then
+        echo "📋 build.env 내용:"
+        cat build.env
+      else
+        echo "📋 build.env 파일이 없습니다."
+      fi
+
+# 🐛 AssumeRole 테스트 (DEBUG_MODE=true일 때만 표시)
+test_assume_role:
+  stage: info
+  rules:
+    - if: '$DEBUG_MODE == "true" && $CI_COMMIT_REF_NAME =~ /^(qa|QA|prd|PRD|prod|production)$/'
+      when: manual
+      allow_failure: true
+    - when: never
+  script:
+    - |
+      echo "🔍 AssumeRole 상세 테스트"
+      echo "DEPLOYMENT_ROLE_ARN: $DEPLOYMENT_ROLE_ARN"
+      echo "EXTERNAL_ID: ${EXTERNAL_ID:0:10}..."
+      echo ""
+
+      if assume_aws_role; then
+        echo "✅ AssumeRole 성공"
+        echo "🔍 현재 권한:"
+        aws sts get-caller-identity
+        echo ""
+        echo "🔍 ECR 접근 테스트:"
+        aws ecr describe-repositories --region "$AWS_DEFAULT_REGION" --repository-names "$ECR_REPOSITORY_NAME" --query 'repositories[0].repositoryName' --output text || echo "❌ ECR 접근 실패"
+        echo ""
+        echo "🔍 ECS 접근 테스트:"
+        aws ecs describe-clusters --region "$AWS_DEFAULT_REGION" --clusters "$ECS_CLUSTER_NAME" --query 'clusters[0].clusterName' --output text || echo "❌ ECS 접근 실패"
+      else
+        echo "❌ AssumeRole 실패"
+        exit 1
+      fi
+
+build_image:
+  stage: build
+  rules:
+    - when: on_success
+  script:
+    - |
+      set -e
+
+      # build.env 초기화 (내용 숨김)
+      : > build.env
+      echo "DOTENV_INITIALIZED=true" >> build.env
+
+      if [ "$DEPLOY_ENVIRONMENT" = "dev" ]; then
+        echo "🏗️ DEV 이미지 빌드..."
+        
+        # DEBUG: 빌드 명령 표시 (개발 시에만)
+        # if [ "${DEBUG_MODE:-false}" = "true" ]; then
+        #   echo "🔍 Build Command: docker build --build-arg DEPLOY_ENV=$DOCKERFILE_DEPLOY_ENV -t $LOCAL_IMAGE_NAME ."
+        # fi
+        
+        docker build --build-arg DEPLOY_ENV="$DOCKERFILE_DEPLOY_ENV" -t "$LOCAL_IMAGE_NAME" . >/dev/null 2>&1
+        
+        # build.env 작성 (내용 숨김)
+        {
+          echo "DEPLOY_ENVIRONMENT=$DEPLOY_ENVIRONMENT"
+          echo "ENVIRONMENT=$ENVIRONMENT"
+          echo "NODE_ENV=$NODE_ENV"
+          echo "DOCKER_TAG=$DOCKER_TAG"
+          echo "LOCAL_IMAGE_NAME=$LOCAL_IMAGE_NAME"
+          echo "LOCAL_CONTAINER_NAME=$LOCAL_CONTAINER_NAME"
+          echo "DEV_HTTP_PORT=$DEV_HTTP_PORT"
+          echo "SERVICE_URL=$SERVICE_URL"
+          echo "BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        } >> build.env
+        
+        # DEBUG: build.env 내용 표시 (개발 시에만)
+        # if [ "${DEBUG_MODE:-false}" = "true" ]; then
+        #   echo "📋 Build Environment Variables:"
+        #   cat build.env
+        # fi
+        
+        docker builder prune -f >/dev/null 2>&1 || true
+        echo "✅ DEV 빌드 완료"
+        exit 0
+      fi
+
+      echo "🏗️ $DEPLOY_ENVIRONMENT 이미지 빌드 및 ECR 푸시..."
+
+      # DEBUG: ECR 정보 표시 (개발 시에만)
+      # if [ "${DEBUG_MODE:-false}" = "true" ]; then
+      #   echo "🔍 ECR Repository: $ECR_REPOSITORY_URI"
+      #   echo "🔍 Docker Tag: $DOCKER_TAG"
+      # fi
+
+      # ECR 로그인 (출력 숨김)
+      aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com" >/dev/null 2>&1
+
+      # 이미지 빌드 및 푸시 (출력 숨김)
+      docker build --build-arg DEPLOY_ENV="$DOCKERFILE_DEPLOY_ENV" -t "$ECR_REPOSITORY_URI:$DOCKER_TAG" -t "$ECR_REPOSITORY_URI:latest" . >/dev/null 2>&1
+      docker push "$ECR_REPOSITORY_URI:$DOCKER_TAG" >/dev/null 2>&1
+      docker push "$ECR_REPOSITORY_URI:latest" >/dev/null 2>&1
+
+      # 정리 (출력 숨김)
+      docker rmi -f "$ECR_REPOSITORY_URI:$DOCKER_TAG" "$ECR_REPOSITORY_URI:latest" >/dev/null 2>&1 || true
+      docker image prune -f >/dev/null 2>&1 || true
+      docker builder prune -f >/dev/null 2>&1 || true
+
+      # build.env 작성 (내용 숨김)
+      {
+        echo "DEPLOY_ENVIRONMENT=$DEPLOY_ENVIRONMENT"
+        echo "ENVIRONMENT=$ENVIRONMENT"
+        echo "NODE_ENV=$NODE_ENV"
+        echo "DOCKER_TAG=$DOCKER_TAG"
+        echo "ECR_REPOSITORY_NAME=$ECR_REPOSITORY_NAME"
+        echo "ECR_REPOSITORY_URI=$ECR_REPOSITORY_URI"
+        echo "ECR_IMAGE_URI=$ECR_REPOSITORY_URI:$DOCKER_TAG"
+        echo "ECS_CLUSTER_NAME=$ECS_CLUSTER_NAME"
+        echo "ECS_SERVICE_NAME=$ECS_SERVICE_NAME"
+        echo "TASK_DEFINITION_NAME=$TASK_DEFINITION_NAME"
+        echo "SERVICE_URL=$SERVICE_URL"
+        echo "BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      } >> build.env
+
+      # DEBUG: build.env 내용 표시 (개발 시에만)
+      # if [ "${DEBUG_MODE:-false}" = "true" ]; then
+      #   echo "📋 Build Environment Variables:"
+      #   cat build.env
+      # fi
+
+      echo "✅ $DEPLOY_ENVIRONMENT 빌드 및 푸시 완료"
+  artifacts:
+    reports:
+      dotenv: build.env
+    paths:
+      - build.env
+    expire_in: 2 hours
+  allow_failure: false
+
+run_on_runner_dev:
+  stage: deploy
+  dependencies:
+    - build_image
+  resource_group: dev
+  rules:
+    - if: '$CI_COMMIT_REF_NAME !~ /^(qa|QA|prd|PRD|prod|production)$/'
+      when: on_success
+    - when: never
+  script:
+    - |
+      set -e
+      echo "🚀 DEV 컨테이너 배포..."
+
+      VERIFY_CONTAINER="${LOCAL_CONTAINER_NAME}-verify"
+
+      # 1) 이미지 존재 여부 확인
+      docker image inspect "$LOCAL_IMAGE_NAME" >/dev/null 2>&1 || {
+        echo "❌ Image not found locally: $LOCAL_IMAGE_NAME"
+        echo "🔎 Local dev images:"
+        docker images --format '{{.Repository}}:{{.Tag}}' | grep -E "^${CI_PROJECT_NAME}:dev-" || true
+        exit 125
+      }
+
+      # 2) 검증용 컨테이너로 새 이미지 구동 테스트 (포트 바인딩 없이)
+      #    → 기존 서비스는 이 시점까지 계속 운영됨
+      docker rm -f "$VERIFY_CONTAINER" >/dev/null 2>&1 || true
+      rm -f docker_run.err
+
+      docker run -d \
+        --name "$VERIFY_CONTAINER" \
+        -e NODE_ENV=development \
+        -e ENVIRONMENT=dev \
+        -e ENV=dev \
+        -e DEPLOY_ENV=dev \
+        "$LOCAL_IMAGE_NAME" 1>/dev/null 2>docker_run.err || {
+          echo "❌ 새 이미지 구동 실패 - 기존 서비스 유지"
+          echo "----- docker_run.err -----"
+          cat docker_run.err
+          echo "--------------------------"
+          exit 125
+      }
+
+      sleep 3
+
+      # 3) 컨테이너가 즉시 종료되지 않았는지 확인
+      if ! docker ps --filter "name=${VERIFY_CONTAINER}" --filter "status=running" -q | grep -q .; then
+        echo "❌ 새 컨테이너가 즉시 종료됨 - 기존 서비스 유지"
+        echo "🔍 컨테이너 로그:"
+        docker logs "$VERIFY_CONTAINER" --tail 20 || true
+        docker rm -f "$VERIFY_CONTAINER" >/dev/null 2>&1 || true
+        exit 1
+      fi
+
+      echo "✅ 새 이미지 구동 확인 완료 → 기존 컨테이너 교체 시작"
+      docker rm -f "$VERIFY_CONTAINER" >/dev/null 2>&1 || true
+
+      # 4) 검증 완료 후 기존 컨테이너 제거 (서비스 최소 중단 구간)
+      if docker ps -a --format '{{.Names}}' | grep -qx "$LOCAL_CONTAINER_NAME"; then
+        docker rm -f "$LOCAL_CONTAINER_NAME" >/dev/null 2>&1 || true
+        sleep 2
+      fi
+
+      # 5) 포트 점유 확인
+      apk add --no-cache iproute2 >/dev/null 2>&1 || true
+      ss -ltnp | grep -E ":${DEV_HTTP_PORT}\b" || true
+
+      # 6) 새 컨테이너를 실제 서비스 포트로 실행
+      rm -f docker_run.err
+      docker run -d --rm \
+        --name "$LOCAL_CONTAINER_NAME" \
+        -p "${DEV_HTTP_PORT}:80" \
+        -e NODE_ENV=development \
+        -e ENVIRONMENT=dev \
+        -e ENV=dev \
+        -e DEPLOY_ENV=dev \
+        "$LOCAL_IMAGE_NAME" 1>/dev/null 2>docker_run.err || {
+          echo "❌ 최종 컨테이너 실행 실패"
+          echo "----- docker_run.err -----"
+          cat docker_run.err
+          echo "--------------------------"
+          exit 125
+      }
+
+      # 7) 최종 구동 확인
+      docker ps --filter "name=$LOCAL_CONTAINER_NAME" --no-trunc
+
+      # 8) 이전 이미지 정리
+      OLD_DEV_IMAGES=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^'"${CI_PROJECT_NAME}"':dev-' | grep -v -F "$LOCAL_IMAGE_NAME" || true)
+      if [ -n "$OLD_DEV_IMAGES" ]; then
+        echo "$OLD_DEV_IMAGES" | xargs -r docker rmi -f >/dev/null 2>&1 || true
+      fi
+      docker image prune -f >/dev/null 2>&1 || true
+
+      echo "✅ DEV 배포 완료: $SERVICE_URL"
+
+deploy_to_ecs:
+  stage: deploy
+  needs:
+    - job: build_image
+      artifacts: true
+  dependencies:
+    - build_image
+  rules:
+    - if: '$CI_COMMIT_REF_NAME =~ /^(qa|QA|prd|PRD|prod|production)$/'
+      when: on_success
+    - when: never
+  environment:
+    name: $ENVIRONMENT_NAME
+    url: $ENVIRONMENT_URL
+  script:
+    - |
+      set -e
+      echo "🚀 $DEPLOY_ENVIRONMENT ECS 배포..."
+
+      if [ ! -f build.env ]; then
+        echo "❌ build.env 파일이 없습니다."
+        exit 1
+      fi
+
+      # build.env 로드 (내용 숨김)
+      set -a
+      . ./build.env
+      set +a
+
+      # DEBUG: 환경 변수 표시 (개발 시에만)
+      # if [ "${DEBUG_MODE:-false}" = "true" ]; then
+      #   echo "📋 Loaded Environment Variables:"
+      #   echo "ECR_IMAGE_URI: $ECR_IMAGE_URI"
+      #   echo "ECS_CLUSTER_NAME: $ECS_CLUSTER_NAME"
+      #   echo "ECS_SERVICE_NAME: $ECS_SERVICE_NAME"
+      #   echo "TASK_DEFINITION_NAME: $TASK_DEFINITION_NAME"
+      # fi
+
+      if [ -z "${ECR_IMAGE_URI:-}" ]; then
+        echo "❌ ECR_IMAGE_URI가 설정되지 않았습니다."
+        exit 1
+      fi
+
+      # 현재 태스크 정의 가져오기 (출력 숨김)
+      CURRENT_TASK_DEF_JSON=$(aws ecs describe-task-definition --task-definition "$TASK_DEFINITION_NAME" --region "$AWS_DEFAULT_REGION" 2>/dev/null)
+
+      # 새 태스크 정의 생성 (출력 숨김)
+      NEW_TASK_DEF_JSON=$(echo "$CURRENT_TASK_DEF_JSON" | jq --arg IMAGE "$ECR_IMAGE_URI" --arg ENV "$ENVIRONMENT" --arg NODE_ENV "$NODE_ENV" '
+        .taskDefinition
+        | .containerDefinitions[0].image = $IMAGE
+        | .containerDefinitions[0].environment = [
+            {"name":"NODE_ENV", "value": ($NODE_ENV|tostring)},
+            {"name":"ENVIRONMENT", "value": ($ENV|tostring)},
+            {"name":"ENV", "value": ($ENV|tostring)},
+            {"name":"DEPLOY_ENV", "value": ($ENV|tostring)}
+          ]
+        | del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy)
+      ')
+
+      CURRENT_IMAGE=$(echo "$CURRENT_TASK_DEF_JSON" | jq -r '.taskDefinition.containerDefinitions[0].image')
+
+      if [ "$CURRENT_IMAGE" = "$ECR_IMAGE_URI" ]; then
+        echo "🔄 이미지 동일 - 기존 태스크 정의 재사용"
+        NEW_TASK_DEF_ARN=$(echo "$CURRENT_TASK_DEF_JSON" | jq -r '.taskDefinition.taskDefinitionArn')
+      else
+        echo "📝 새 태스크 정의 등록..."
+        NEW_TASK_DEF_ARN=$(aws ecs register-task-definition --region "$AWS_DEFAULT_REGION" --cli-input-json "$NEW_TASK_DEF_JSON" --query 'taskDefinition.taskDefinitionArn' --output text 2>/dev/null)
+      fi
+
+      # ECS 서비스 업데이트 (출력 숨김)
+      aws ecs update-service --cluster "$ECS_CLUSTER_NAME" --service "$ECS_SERVICE_NAME" --task-definition "$NEW_TASK_DEF_ARN" --region "$AWS_DEFAULT_REGION" >/dev/null 2>&1
+
+      # build.env 업데이트 (내용 숨김)
+      echo "NEW_TASK_DEF_ARN=$NEW_TASK_DEF_ARN" >> build.env
+
+      # DEBUG: 태스크 정의 ARN 표시 (개발 시에만)
+      # if [ "${DEBUG_MODE:-false}" = "true" ]; then
+      #   echo "📋 New Task Definition ARN: $NEW_TASK_DEF_ARN"
+      # fi
+
+      echo "✅ $DEPLOY_ENVIRONMENT ECS 배포 완료"
+  artifacts:
+    reports:
+      dotenv: build.env
+    paths:
+      - build.env
+    expire_in: 2 hours
+  allow_failure: false
+
+verify_dev:
+  stage: verify
+  dependencies:
+    - run_on_runner_dev
+  rules:
+    - if: '$CI_COMMIT_REF_NAME !~ /^(qa|QA|prd|PRD|prod|production)$/'
+      when: on_success
+    - when: never
+  script:
+    - |
+      set -e
+      echo "🔍 DEV 헬스체크..."
+      sleep 5
+
+      if curl -f --max-time 10 "http://${DEV_HOST_IP}:${DEV_HTTP_PORT}/health" >/dev/null 2>&1; then
+        echo "✅ DEV 헬스체크 성공"
+      else
+        echo "❌ DEV 헬스체크 실패"
+        echo "🔍 컨테이너 상태:"
+        docker ps --filter "name=$LOCAL_CONTAINER_NAME"
+        echo "🔍 컨테이너 로그 (최근 10줄):"
+        docker logs --tail 10 "$LOCAL_CONTAINER_NAME" || true
+        exit 1
+      fi
+
+verify_ecs:
+  stage: verify
+  needs:
+    - job: deploy_to_ecs
+      artifacts: true
+  dependencies:
+    - deploy_to_ecs
+  rules:
+    - if: '$CI_COMMIT_REF_NAME =~ /^(qa|QA|prd|PRD|prod|production)$/'
+      when: on_success
+    - when: never
+  script:
+    - |
+      set -e
+      echo "🔍 $DEPLOY_ENVIRONMENT ECS 배포 검증..."
+
+      # build.env 로드 (내용 숨김)
+      if [ -f build.env ]; then
+        set -a
+        . ./build.env
+        set +a
+      fi
+
+      echo "⏳ 서비스 안정화 대기 (60초)..."
+      sleep 60
+
+      # 헬스체크 (최대 10회 재시도)
+      for i in $(seq 1 10); do
+        if curl -f --max-time 10 "$SERVICE_URL/health" >/dev/null 2>&1; then
+          echo "✅ $DEPLOY_ENVIRONMENT 헬스체크 성공"
+          exit 0
+        else
+          echo "⚠️ 헬스체크 실패 ($i/10)"
+          if [ $i -eq 10 ]; then
+            echo "❌ 헬스체크 최종 실패"
+            
+            # 실패 시 디버깅 정보
+            echo "🔍 ECS 서비스 상태:"
+            aws ecs describe-services \
+              --cluster "$ECS_CLUSTER_NAME" \
+              --services "$ECS_SERVICE_NAME" \
+              --query 'services[0].{Status:status,Running:runningCount,Desired:desiredCount}' \
+              --output table
+            
+            echo "🔍 최근 이벤트:"
+            aws ecs describe-services \
+              --cluster "$ECS_CLUSTER_NAME" \
+              --services "$ECS_SERVICE_NAME" \
+              --query 'services[0].events[0:3].{Time:createdAt,Message:message}' \
+              --output table
+            
+            exit 1
+          else
+            sleep 30
+          fi
+        fi
+      done

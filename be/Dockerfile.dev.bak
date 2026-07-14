@@ -1,0 +1,15 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+RUN apk add --no-cache libc6-compat
+RUN corepack enable && corepack prepare pnpm@10.28.2 --activate
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+COPY apps ./apps
+COPY packages ./packages
+
+RUN pnpm install --frozen-lockfile
+
+# 공용 패키지 선빌드 (Next.js 앱 빌드 전에 반드시 필요하다면)
+RUN pnpm --filter @ai-log/shared-contracts build && pnpm --filter @ai-log/http-api build

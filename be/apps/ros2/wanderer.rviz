@@ -1,0 +1,39 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Views
+    Name: Views
+
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.7
+      Class: rviz_default_plugins/Map
+      Enabled: true
+      Name: Map
+      Topic:
+        Value: /map
+
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Robots
+      Topic:
+        Value: /robot_markers
+
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: Goal
+      Topic:
+        Value: /goal_marker
+
+  Global Options:
+    Background Color: 30; 30; 30
+    Fixed Frame: map
+    Frame Rate: 30
+
+  Views:
+    Current:
+      Class: rviz_default_plugins/TopDownOrtho
+      Scale: 40
+      Target Frame: <Fixed Frame>
+      Name: Current View

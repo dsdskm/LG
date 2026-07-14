@@ -1,0 +1,18 @@
+{
+  "SideBar": {
+    "gnb": {
+      "map": "Map",
+      "language": "Language",
+      "network": "Network",
+      "siteCode": "Site Code",
+      "robotInfo": "Robot Info",
+      "location": "Location",
+      "terms": "Terms",
+      "upload": "Upload",
+      "default": "Default",
+      "scan": "Scan",
+      "poi": "POI",
+      "zone": "Zone"
+    }
+  }
+}

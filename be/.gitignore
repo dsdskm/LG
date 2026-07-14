@@ -1,0 +1,20 @@
+node_modules
+dist
+.next
+.turbo
+/apps/llm_gateway/src/key/ailogsystem-service-account.json
+/apps/llm_gateway/src/key
+/apps/ai_chat_service/src/key
+pnpm-lock.yaml
+/log
+
+# ROS2 / colcon build artifacts (생성물 — 커밋 불필요)
+/build
+/install
+*.mcap
+
+# 서버 DB 백업 덤프(데이터 포함) — 커밋 금지
+scripts/aws/backup/
+apps/.DS_Store
+.DS_Store
+.env

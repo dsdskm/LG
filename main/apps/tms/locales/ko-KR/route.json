@@ -1,0 +1,9 @@
+{
+  "SideBar": {
+    "version": "Version",
+    "gnb": {
+      "taskflows": "Taskflow List",
+      "robots": "Robot List"
+    }
+  }
+}

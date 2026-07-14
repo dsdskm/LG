@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "tns-signal-fb"
+  },
+  "targets": {
+    "tns-signal-fb": {
+      "hosting": {
+        "setup": [
+          "initialsetup"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

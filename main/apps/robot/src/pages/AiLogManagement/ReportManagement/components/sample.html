@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>이슈 분석 보고서</title>
+    <!-- 아이콘 사용을 위한 FontAwesome CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <style>
+      :root {
+        --bg-gradient: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        --card-bg: #ffffff;
+        --text-main: #2d3436;
+        --text-sub: #636e72;
+        --accent-color: #6c5ce7;
+        --danger-color: #ff7675;
+        --success-color: #00b894;
+        --info-color: #0984e3;
+      }
+
+      body {
+        font-family:
+          'Pretendard',
+          -apple-system,
+          BlinkMacSystemFont,
+          system-ui,
+          Roboto,
+          sans-serif;
+        background: var(--bg-gradient);
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin: 0;
+        padding: 20px;
+        color: var(--text-main);
+      }
+
+      .report-container {
+        background: var(--card-bg);
+        width: 100%;
+        max-width: 800px;
+        border-radius: 20px;
+        box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+        position: relative;
+      }
+
+      /* 헤더 스타일 */
+      .report-header {
+        background: var(--accent-color);
+        color: white;
+        padding: 30px;
+        text-align: center;
+        position: relative;
+      }
+
+      .report-header h1 {
+        margin: 0;
+        font-size: 2rem;
+        font-weight: 700;
+        letter-spacing: -0.5px;
+      }
+
+      .report-header p {
+        margin: 10px 0 0;
+        opacity: 0.9;
+        font-size: 0.95rem;
+      }
+
+      /* 본문 스타일 */
+      .report-body {
+        padding: 40px;
+      }
+
+      .section-title {
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: var(--text-main);
+        margin-bottom: 15px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-bottom: 2px solid #f0f0f0;
+        padding-bottom: 10px;
+      }
+
+      .section-title.mt {
+        margin-top: 30px;
+      }
+
+      .info-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 20px;
+      }
+
+      .info-card {
+        background: #f8f9fa;
+        padding: 20px;
+        border-radius: 12px;
+        border-left: 4px solid var(--info-color);
+        transition: transform 0.2s ease;
+      }
+
+      .info-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+      }
+
+      /* 카드별 색상 테마 */
+      .card-cause {
+        border-left-color: var(--danger-color);
+      }
+
+      .card-summary {
+        border-left-color: var(--accent-color);
+      }
+
+      .card-solution {
+        border-left-color: var(--success-color);
+      }
+
+      .card-actions {
+        border-left-color: var(--info-color);
+      }
+
+      .card-severity {
+        border-left-color: #fdcb6e;
+      }
+
+      /* 노란색 계열 */
+      .card-llm {
+        border-left-color: var(--info-color);
+      }
+
+      .card-date {
+        border-left-color: #555;
+      }
+
+      .card-func {
+        border-left-color: #00cec9;
+      }
+
+      .card-assignee {
+        border-left-color: #e17055;
+      }
+
+      .card-label {
+        font-size: 0.85rem;
+        color: var(--text-sub);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 8px;
+        display: block;
+        font-weight: 600;
+      }
+
+      .card-value {
+        font-size: 1.1rem;
+        color: var(--text-main);
+        line-height: 1.6;
+        word-break: break-word;
+      }
+
+      /* 멀티라인(제안 액션/담당자: "- ..." 줄바꿈 유지) */
+      .card-value.multiline {
+        white-space: pre-line;
+        font-size: 1rem;
+      }
+
+      /* 기능 키 강조 */
+      .key-badge {
+        display: inline-block;
+        background: #e0e0e0;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-family: 'Courier New', monospace;
+        font-weight: bold;
+        color: #333;
+        margin-top: 5px;
+      }
+
+      /* 푸터 */
+      .report-footer {
+        text-align: center;
+        padding: 20px;
+        background: #fafafa;
+        color: #aaa;
+        font-size: 0.8rem;
+        border-top: 1px solid #eee;
+      }
+
+      @media (max-width: 600px) {
+        .report-body {
+          padding: 25px;
+        }
+
+        .info-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="report-container">
+      <!-- 헤더 -->
+      <div class="report-header">
+        <h1>시스템 이슈 분석 보고서</h1>
+        <p>자동 생성일: {createdAt}</p>
+      </div>
+
+      <!-- 본문 -->
+      <div class="report-body">
+        <!-- 메타: 분석 LLM / 생성 날짜 -->
+        <div class="info-grid">
+          <div class="info-card card-llm">
+            <span class="card-label"><i class="fa-solid fa-brain"></i> 분석 LLM</span>
+            <div class="card-value">{provider}</div>
+          </div>
+          <div class="info-card card-date">
+            <span class="card-label"><i class="fa-solid fa-calendar"></i> 생성 날짜</span>
+            <div class="card-value">{createdAt}</div>
+          </div>
+        </div>
+
+        <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee" />
+
+        <!-- 요약 -->
+        <div class="section-title">
+          <i class="fa-solid fa-file-lines" style="color: var(--accent-color)"></i>
+          요약
+        </div>
+        <div class="info-card card-summary">
+          <span class="card-label">Summary</span>
+          <div class="card-value">{summary}</div>
+        </div>
+
+        <!-- 원인 -->
+        <div class="section-title mt">
+          <i class="fa-solid fa-triangle-exclamation" style="color: var(--danger-color)"></i>
+          원인
+        </div>
+        <div class="info-card card-cause">
+          <span class="card-label">Root Cause</span>
+          <div class="card-value">{reason}</div>
+        </div>
+
+        <!-- 제안 솔루션 -->
+        <div class="section-title mt">
+          <i class="fa-solid fa-lightbulb" style="color: var(--success-color)"></i>
+          제안 솔루션
+        </div>
+        <div class="info-card card-solution">
+          <span class="card-label">Recommended Action</span>
+          <div class="card-value">{solutions}</div>
+        </div>
+
+        <!-- 제안 액션 -->
+        <div class="section-title mt">
+          <i class="fa-solid fa-list-check" style="color: var(--info-color)"></i>
+          제안 액션
+        </div>
+        <div class="info-card card-actions">
+          <span class="card-label">Suggested Actions</span>
+          <div class="card-value multiline">{actions}</div>
+        </div>
+
+        <!-- 심각도 / 관련 기능 -->
+        <div class="info-grid" style="margin-top: 30px">
+          <div class="info-card card-severity">
+            <span class="card-label"><i class="fa-solid fa-gauge-high"></i> 심각도</span>
+            <div class="card-value">{severity}</div>
+          </div>
+          <div class="info-card card-func">
+            <span class="card-label"><i class="fa-solid fa-code"></i> 관련 기능</span>
+            <div class="card-value">
+              <span class="key-badge">{funcKey}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 담당자 -->
+        <div class="section-title mt">
+          <i class="fa-solid fa-user-group" style="color: #e17055"></i>
+          담당자
+        </div>
+        <div class="info-card card-assignee">
+          <span class="card-label">Assignees</span>
+          <div class="card-value multiline">{assignee}</div>
+        </div>
+      </div>
+
+      <!-- 푸터 -->
+      <div class="report-footer">&copy; 2026 AI Analysis Report System. All rights reserved.</div>
+    </div>
+  </body>
+</html>

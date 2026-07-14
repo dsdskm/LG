@@ -1,0 +1,28 @@
+{
+  "SideBar": {
+    "gnb": {
+      "ota": "OTA",
+      "robot": "ロボット",
+      "dashboard": "ダッシュボード",
+      "logviewer": "リアルタイムログ",
+      "robotManagement": "ロボット管理",
+      "robotList": "ロボットリスト",
+      "groupManagement": "グループ管理",
+      "userManagement": "ユーザー管理"
+    }
+  },
+  "Depth": {
+    "robotManagement": {
+      "name": "ロボット管理"
+    },
+    "robotList": {
+      "name": "ロボットリスト"
+    },
+    "groupManagement": {
+      "name": "グループ管理"
+    },
+    "userManagement": {
+      "name": "ユーザー管理"
+    }
+  }
+}

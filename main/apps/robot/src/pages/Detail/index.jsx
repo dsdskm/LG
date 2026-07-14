@@ -1,0 +1,52 @@
+import React, { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
+import { StyledPageContent, Title, Tabs, Tab } from '@repo/ui'
+import { useSearchParams } from 'react-router-dom'
+import { deviceApis } from '@/apis'
+import AssetInfo from './tabs/AssetInfo'
+import HistoryList from './tabs/HistoryList'
+import WebConsole from './tabs/WebConsole'
+import '../../index.css'
+
+const Detail = () => {
+  const { t } = useTranslation('robot')
+  const [searchParams] = useSearchParams()
+  const deviceId = searchParams.get('deviceId')
+  const [deviceInfo, setDeviceInfo] = useState({})
+
+  useEffect(() => {
+    let canceled = false
+    ;(async () => {
+      try {
+        const data = await deviceApis.getDeviceInfo(deviceId)
+        if (!canceled && data) {
+          setDeviceInfo(data)
+        }
+      } catch (e) {
+        console.error('Error loadGetDevices:', e)
+      }
+    })()
+    return () => {
+      canceled = true
+    }
+  }, [deviceId])
+
+  return (
+    <StyledPageContent className="column">
+      <Title>{t('robotDetail')}</Title>
+      <Tabs defaultActiveId="tabAssetInfo">
+        <Tab id="tabAssetInfo" label={t('basicInformation')}>
+          <AssetInfo t={t} deviceId={deviceId} deviceInfo={deviceInfo} />
+        </Tab>
+        <Tab id="tabWebConsole" label={t('robotWebConsole')}>
+          <WebConsole t={t} deviceId={deviceId} deviceInfo={deviceInfo} />
+        </Tab>
+        <Tab id="tabHistory" label={t('contorlOperationHistory')}>
+          <HistoryList t={t} deviceId={deviceId} />
+        </Tab>
+      </Tabs>
+    </StyledPageContent>
+  )
+}
+
+export default Detail

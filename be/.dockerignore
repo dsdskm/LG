@@ -1,0 +1,15 @@
+.git
+.gitignore
+.DS_Store
+node_modules
+**/node_modules
+.turbo
+**/.turbo
+**/dist
+**/.next
+**/coverage
+**/*.log
+.env
+pnpm-debug.log*
+# 앱 하위 pnpm-workspace.yaml은 로컬 전용 설정 파일로, Docker 빌드 시 workspace 인식 충돌을 일으킴
+apps/**/pnpm-workspace.yaml

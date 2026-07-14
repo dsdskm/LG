@@ -1,0 +1,314 @@
+import styled, { css, keyframes } from 'styled-components'
+import { Handle } from '@xyflow/react'
+
+/** =========================
+ *  Handle 방향 상수
+ *  ========================= */
+
+export const StartH = {
+  right: 'right'
+} as const
+
+export const TaskH = {
+  right: 'right',
+  bottom: 'bottom',
+  left: 'left'
+} as const
+
+/** =========================
+ *  공통 Handle 스타일
+ *  ========================= */
+
+export const NodeHandle = styled(Handle)`
+  width: 4px;
+  height: 4px;
+  border-radius: 9999px;
+
+  background: #e2e8f0;
+  border: 1px solid #cbd5e1;
+
+  z-index: 2;
+`
+
+export const LeftHandle = styled(NodeHandle)`
+  top: 50%;
+`
+
+/** =========================
+ *  공통 Node 레이아웃
+ *  ========================= */
+
+export const BaseNodeRoot = styled.div<{
+  $selected: boolean
+}>`
+  width: 78px;
+  aspect-ratio: 5 / 3;
+
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+
+  padding: 4px 6px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+
+  position: relative;
+  overflow: visible;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  ${({ $selected }) =>
+    $selected
+      ? css`
+          border-color: #64748b;
+          box-shadow:
+            0 0 0 2px #e2e8f0,
+            0 1px 2px rgba(15, 23, 42, 0.08);
+        `
+      : css`
+          border-color: #e2e8f0;
+        `}
+`
+
+export const BaseBadgeRow = styled.div`
+  position: absolute;
+  top: 4px;
+  left: 6px;
+
+  display: flex;
+  gap: 2px;
+
+  max-width: calc(100% - 12px);
+  overflow: hidden;
+`
+
+export const BaseTitle = styled.div`
+  text-align: center;
+
+  font-size: 10px;
+  font-weight: 800;
+  color: #0f172a;
+
+  width: 100%;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+`
+
+/** =========================
+ *  StartNode 스타일
+ *  ========================= */
+
+export const StartNodeRoot = styled(BaseNodeRoot)`
+  /* 좌측 컬러 바가 카드 바깥 변에 붙도록 왼쪽 회색 보더 제거 */
+  border-left: none;
+
+  /* 좌측 컬러 바 (Control 과 동일한 보라) */
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    border-top-left-radius: inherit;
+    border-bottom-left-radius: inherit;
+    background: #8b5cf6;
+  }
+`
+
+export const StartBadgeRow = styled(BaseBadgeRow)`
+  flex-wrap: wrap;
+`
+
+export const StartTitle = BaseTitle
+
+const startBadgeBase = css`
+  display: inline-flex;
+  align-items: center;
+
+  border-radius: 9999px;
+  padding: 0 3px;
+  line-height: 1;
+
+  font-size: 6px;
+  font-weight: 700;
+`
+
+export const RootBadge = styled.span`
+  ${startBadgeBase};
+  border: 1px solid #a7f3d0;
+  background: #ecfdf5;
+  color: #047857;
+`
+
+/** =========================
+ *  TaskNode 스타일
+ *  ========================= */
+
+// taskType 별 좌측 컬러 바 색상 (Action=파랑 / Control=보라)
+const TASK_BAR_COLOR: Record<string, string> = {
+  ACTION: '#3b82f6',
+  CONTROL: '#8b5cf6',
+  ROOT: '#10b981'
+}
+
+export const TaskNodeRoot = styled(BaseNodeRoot)<{ $taskType?: string }>`
+  /* 좌측 컬러 바가 카드 바깥 변에 붙도록 왼쪽 회색 보더 제거 */
+  border-left: none;
+
+  /* 좌측 컬러 바 (taskType 기준) */
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    border-top-left-radius: inherit;
+    border-bottom-left-radius: inherit;
+    background: ${({ $taskType }) => TASK_BAR_COLOR[String($taskType ?? '').toUpperCase()] ?? '#3b82f6'};
+  }
+`
+
+export const TaskBadgeRow = styled(BaseBadgeRow)`
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
+`
+
+export const TaskRunningCountBadge = styled(BaseBadgeRow)`
+  left: auto;
+  top: -5px;
+  right: 0px;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
+`
+const blink = keyframes`
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+  `
+export const CircleBadge = styled.div`
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #3b82f6;
+
+  animation: ${blink} 1s ease-in-out infinite;
+`
+
+export const TaskTitle = BaseTitle
+
+const pillBase = css`
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+
+  max-width: 100%;
+  flex-shrink: 0;
+
+  border-radius: 9999px;
+  border: 1px solid #e2e8f0;
+
+  padding: 0 3px;
+  line-height: 1;
+
+  font-size: 6px;
+  font-weight: 700;
+`
+
+export const Pill = styled.span<{ $tone: 'name' }>`
+  ${pillBase};
+  background: #ffffff;
+  color: #475569;
+  border-color: #e2e8f0;
+`
+
+// Parallel 의 main 노드 표시 배지 (좌하단)
+export const MainNodeBadge = styled.span`
+  position: absolute;
+  bottom: -5px;
+  left: 0px;
+
+  display: inline-flex;
+  align-items: center;
+
+  border-radius: 9999px;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #4338ca;
+
+  padding: 0 3px;
+  line-height: 1;
+
+  font-size: 6px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+
+  z-index: 3;
+`
+
+export const PillText = styled.span`
+  display: block;
+  min-width: 0;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`
+
+// 점검(inspect) breakpoint 표시 점 (좌상단). IDE 의 중단점 마커처럼 빨간 원.
+export const BreakpointDot = styled.span`
+  position: absolute;
+  top: -6px;
+  left: -6px;
+
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #dc2626;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.35);
+
+  z-index: 4;
+`
+
+export const execStyle: Record<string, { border: string; bg: string; text: string; sub: string; handle: string }> = {
+  IDLE: {
+    border: '#cbd5e1',
+    bg: '#ffffff',
+    text: '#475569',
+    sub: '#94a3b8',
+    handle: '#cbd5e1'
+  },
+  RUNNING: {
+    border: '#60a5fa',
+    bg: '#eff6ff',
+    text: '#1d4ed8',
+    sub: '#60a5fa',
+    handle: '#60a5fa'
+  },
+  SUCCESS: {
+    border: '#34d399',
+    bg: '#ecfdf5',
+    text: '#065f46',
+    sub: '#10b981',
+    handle: '#34d399'
+  },
+  FAILURE: {
+    border: '#fb7185',
+    bg: '#fff1f2',
+    text: '#be123c',
+    sub: '#fb7185',
+    handle: '#fb7185'
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "name": "opcon",
+  "private": true,
+  "scripts": {
+    "build": "turbo run build --filter=!ebme --filter=!setup --filter=!init-setup",
+    "build:dev": "turbo run build:dev --filter=!ebme --filter=!setup --filter=!init-setup",
+    "build:qa": "turbo run build:qa --filter=!ebme --filter=!setup --filter=!init-setup",
+    "build:ebme": "turbo run build --filter=ebme",
+    "build:setup": "turbo run build --filter=setup",
+    "build:init-setup": "turbo run build --filter=init-setup",
+    "build:init-setup:qa": "turbo run build:qa --filter=init-setup",
+    "dev": "turbo run dev --filter=!ebme --filter=!setup --filter=!init-setup",
+    "dev:ebme": "turbo run dev --filter=ebme",
+    "dev:setup": "turbo run dev --filter=setup",
+    "dev:init-setup": "turbo run dev --filter=init-setup",
+    "preview": "turbo run preview --parallel --filter=!ebme --filter=!setup --filter=!init-setup",
+    "preview:ebme": "turbo run preview --parallel --filter=ebme",
+    "preview:setup": "turbo run preview --parallel --filter=setup",
+    "preview:init-setup": "turbo run preview --parallel --filter=init-setup",
+    "lint": "turbo run lint",
+    "format": "turbo run format",
+    "check-types": "turbo run check-types",
+    "add:app": "node scripts/add-app.js"
+  },
+  "devDependencies": {
+    "prettier": "^3.7.4",
+    "turbo": "^2.8.1"
+  },
+  "packageManager": "pnpm@10.30.3",
+  "engines": {
+    "node": ">=18"
+  }
+}

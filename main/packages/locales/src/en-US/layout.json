@@ -1,0 +1,26 @@
+{
+  "SideBar": {
+    "gnb": {
+      "ota": "S/W Deployment",
+      "ebme": "EBME",
+      "robot": "Robot Management",
+      "cms": "Contents Management",
+      "tms": "TMS",
+      "learning": "Learning",
+      "init-setup": "Initial Setup"
+    }
+  },
+  "LanguageSelect": {
+    "button": "Language"
+  },
+  "Footer": {
+    "customerInquiry": "Customer Inquiry",
+    "copyright": "Copyright © 2026 LG Electronics. All Rights Reserved"
+  },
+  "loading": "Loading...",
+  "LearningNotification": {
+    "panelTitle": "Learning Notifications",
+    "markAll": "Mark all as read",
+    "empty": "No new notifications"
+  }
+}
