@@ -4,6 +4,7 @@ import { listRecommendedActions, runAction } from '../screens/robot/ailog-event.
 import { navigateToScreen } from '../screens/common/navigation.actiontools'
 import { getPromptStore } from '../db/prompt-store.service'
 import { Logger } from '@nestjs/common'
+import { ChatScreenToolEntity } from '../db/chat-screen-tool.entity'
 
 const logger = new Logger('ScreenRegistry')
 
@@ -38,6 +39,52 @@ const TOOL_REGISTRY: Record<string, ToolDefinition> = {
   navigate_to_screen: navigateToScreen,
 }
 
+function normalizePath(value: unknown): string {
+  return String(value ?? '').trim().replace(/^\/+/, '')
+}
+
+function getDynamicNavigationTool(row: ChatScreenToolEntity): ToolDefinition | undefined {
+  const method = String(row.method ?? '').trim().toUpperCase()
+  if (method !== 'NAVIGATE') return undefined
+
+  const staticPayload = row.staticPayload as Record<string, unknown> | null
+  const targetPath = normalizePath(staticPayload?.path ?? row.endpoint)
+  if (!targetPath) return undefined
+
+  const name = String(row.toolName ?? '').trim()
+  if (!name) return undefined
+
+  return {
+    declaration: {
+      name,
+      description:
+        String(row.description ?? '').trim() ||
+        `${targetPath} 화면으로 이동시킨다. 화면 이동 요청일 때만 호출한다.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          reason: {
+            type: 'string',
+            description: '왜 이 화면으로 이동하는지에 대한 짧은 설명.',
+          },
+        },
+      },
+    },
+    async execute(args: Record<string, any>) {
+      return {
+        ok: true,
+        path: targetPath,
+        app: targetPath.split('/')[0] || undefined,
+        reason: String(args?.reason ?? '').trim() || undefined,
+      }
+    },
+  }
+}
+
+function resolveToolDefinition(row: ChatScreenToolEntity): ToolDefinition | undefined {
+  return TOOL_REGISTRY[row.toolName] ?? getDynamicNavigationTool(row)
+}
+
 function toChatAction(routeKey: string) {
   const normalized = String(routeKey || '').replace(/^\//, '').replace(/^robot\//, '')
   return normalized || 'default'
@@ -64,11 +111,11 @@ export function getScreenConfig(routeKey: string): ScreenConfig | undefined {
   const mergedActionSystemPrompt = [commonSystem, appActionSystem].filter(Boolean).join('\n\n')
 
   const dataTools = (store?.getScreenTools(normalizedRouteKey, 'data') ?? [])
-    .map((row) => TOOL_REGISTRY[row.toolName])
+    .map((row) => resolveToolDefinition(row))
     .filter((tool): tool is ToolDefinition => Boolean(tool))
 
   const actionTools = (store?.getScreenTools(normalizedRouteKey, 'action') ?? [])
-    .map((row) => TOOL_REGISTRY[row.toolName])
+    .map((row) => resolveToolDefinition(row))
     .filter((tool): tool is ToolDefinition => Boolean(tool))
 
   const baseAction = toChatAction(normalizedRouteKey)

@@ -15,10 +15,10 @@ MODE="start"
 
 usage() {
   echo "Usage:"
-  echo "  ./scripts/run/dev-run.sh                 # all apps, start mode"
-  echo "  ./scripts/run/dev-run.sh <app>           # single app, start mode"
-  echo "  ./scripts/run/dev-run.sh dev             # all apps, dev mode"
-  echo "  ./scripts/run/dev-run.sh <app> dev       # single app, dev mode"
+  echo "  ./scripts/local/run.sh                   # all apps, start mode"
+  echo "  ./scripts/local/run.sh <app>             # single app, start mode"
+  echo "  ./scripts/local/run.sh dev               # all apps, dev mode"
+  echo "  ./scripts/local/run.sh <app> dev         # single app, dev mode"
 }
 
 parse_args() {
@@ -114,6 +114,24 @@ run_build() {
   fi
 }
 
+run_health_check_once() {
+  if [[ "${RUN_HEALTH_CHECK_ON_BOOT:-1}" != "1" ]]; then
+    return 0
+  fi
+
+  if [[ ! -x ./scripts/local/health.sh ]]; then
+    echo "[dev-run] skip health check: ./scripts/local/health.sh not executable"
+    return 0
+  fi
+
+  local delay_sec="${HEALTH_CHECK_DELAY_SEC:-8}"
+  (
+    sleep "$delay_sec"
+    echo "[dev-run] running one-time local health check..."
+    ./scripts/local/health.sh local || true
+  ) &
+}
+
 # (1) start 모드일 때만 build
 if [[ "$MODE" == "start" ]]; then
   run_build "$APP"
@@ -131,6 +149,8 @@ if [[ "$APP" == "all" ]]; then
     app_name="${item%%:*}"
     run_service "$app_name" "$MODE" &
   done
+
+  run_health_check_once
 
   wait
   exit 0

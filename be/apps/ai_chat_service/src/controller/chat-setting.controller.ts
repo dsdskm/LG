@@ -31,12 +31,13 @@ type UpsertCommonPromptBody = {
 }
 
 type UpdateGuidanceBody = {
-  id?: number
-  screenName?: string
-  sections?: unknown
   examples?: unknown
-  fallbackText?: string
-  enabled?: boolean
+}
+
+type CreateGuidanceBody = {
+  appKey?: string
+  key?: string
+  routeKey?: string
 }
 
 type UpdateScreenToolBody = {
@@ -50,6 +51,28 @@ type UpdateScreenToolBody = {
   contextParams?: unknown
   requestParams?: unknown
   staticPayload?: unknown
+}
+
+type CreateCommonScreenToolBody = {
+  actionTypeKey?: string
+  displayName?: string
+  path?: string
+  enabled?: boolean
+}
+
+type CreateScreenToolBody = {
+  appKey?: string
+  key?: string
+  routeKey?: string
+  actionTypeKey?: string
+  toolName?: string
+  displayName?: string
+  description?: string | null
+  endpoint?: string | null
+  contextParams?: unknown
+  requestParams?: unknown
+  staticPayload?: unknown
+  enabled?: boolean
 }
 
 type UpdateRagDocBody = {
@@ -76,6 +99,18 @@ type CreateCommonRagDocBody = {
   sortOrder?: number
 }
 
+type CreateRagDocBody = {
+  appKey?: string
+  key?: string
+  routeKey?: string
+  chunkKey?: string
+  title?: string
+  keywords?: string[]
+  body?: string
+  enabled?: boolean
+  sortOrder?: number
+}
+
 @ApiTags('chat-settings')
 @Controller('chat/settings')
 export class ChatSettingController {
@@ -94,19 +129,20 @@ export class ChatSettingController {
     const values = await this.settings.getAll()
     const schema = await this.settings.getSchema()
     const llmProvider = await this.settings.getLlmProvider()
-    const [screens, prompts, guidance, ragDocs, screenTools, history] = await Promise.all([
+    const [screens, prompts, guidance, ragDocs, screenTools, actionTypes, history] = await Promise.all([
       this.promptStore.listScreens(),
       this.promptStore.listPrompts(),
       this.promptStore.listGuidance(),
       this.promptStore.listRag(),
       this.promptStore.listScreenTools(),
+      this.promptStore.listActionTypes(),
       this.chatLog.list({ limit: 20 }),
     ])
 
     return ok({
       schema,
       values: { ...values, llmProvider },
-      management: { screens, prompts, guidance, ragDocs, screenTools, history },
+      management: { screens, prompts, guidance, ragDocs, screenTools, actionTypes, history },
     })
   }
 
@@ -166,11 +202,19 @@ export class ChatSettingController {
   @ApiOkResponse({ description: '갱신된 guidance 반환' })
   async updateGuidance(@Param('id') id: string, @Body() body: UpdateGuidanceBody) {
     const row = await this.promptStore.updateGuidance(Number(id), {
-      screenName: body?.screenName,
-      sections: body?.sections,
       examples: body?.examples,
-      fallbackText: body?.fallbackText,
-      enabled: body?.enabled,
+    })
+    return ok(row)
+  }
+
+  @Post('guidance')
+  @ApiOperation({ summary: 'guidance 생성' })
+  @ApiOkResponse({ description: '생성된 guidance 반환' })
+  async createGuidance(@Body() body: CreateGuidanceBody) {
+    const row = await this.promptStore.createGuidance({
+      appKey: String(body?.appKey ?? ''),
+      key: String(body?.key ?? ''),
+      routeKey: String(body?.routeKey ?? ''),
     })
     return ok(row)
   }
@@ -191,6 +235,48 @@ export class ChatSettingController {
       staticPayload: body?.staticPayload,
     })
     return ok(row)
+  }
+
+  @Post('screen-tools/common')
+  @ApiOperation({ summary: '공통 화면 이동 액션 등록' })
+  @ApiOkResponse({ description: '생성된 공통 액션 반환' })
+  async createCommonScreenTool(@Body() body: CreateCommonScreenToolBody) {
+    const row = await this.promptStore.createCommonScreenTool({
+      actionTypeKey: String(body?.actionTypeKey ?? ''),
+      displayName: String(body?.displayName ?? ''),
+      path: String(body?.path ?? ''),
+      enabled: body?.enabled,
+    })
+    return ok(row)
+  }
+
+  @Post('screen-tools')
+  @ApiOperation({ summary: '화면 액션 생성' })
+  @ApiOkResponse({ description: '생성된 화면 액션 반환' })
+  async createScreenTool(@Body() body: CreateScreenToolBody) {
+    const row = await this.promptStore.createScreenTool({
+      appKey: String(body?.appKey ?? ''),
+      key: String(body?.key ?? ''),
+      routeKey: String(body?.routeKey ?? ''),
+      actionTypeKey: String(body?.actionTypeKey ?? ''),
+      toolName: String(body?.toolName ?? ''),
+      displayName: String(body?.displayName ?? ''),
+      description: body?.description,
+      endpoint: body?.endpoint,
+      contextParams: body?.contextParams,
+      requestParams: body?.requestParams,
+      staticPayload: body?.staticPayload,
+      enabled: body?.enabled,
+    })
+    return ok(row)
+  }
+
+  @Delete('screen-tools/:id')
+  @ApiOperation({ summary: '화면 툴 삭제' })
+  @ApiOkResponse({ description: '삭제된 툴 ID 반환' })
+  async deleteScreenTool(@Param('id') id: string) {
+    const out = await this.promptStore.deleteScreenTool(Number(id))
+    return ok(out)
   }
 
   @Put('rag-docs/:id')
@@ -224,6 +310,24 @@ export class ChatSettingController {
   @ApiOkResponse({ description: '생성된 공통 RAG 청크 반환' })
   async createCommonRagDoc(@Body() body: CreateCommonRagDocBody) {
     const row = await this.promptStore.createCommonRagChunk({
+      chunkKey: String(body?.chunkKey ?? ''),
+      title: body?.title,
+      keywords: body?.keywords,
+      body: body?.body,
+      enabled: body?.enabled,
+      sortOrder: body?.sortOrder,
+    })
+    return ok(row)
+  }
+
+  @Post('rag-docs')
+  @ApiOperation({ summary: '화면별 RAG 청크 등록' })
+  @ApiOkResponse({ description: '생성된 화면별 RAG 청크 반환' })
+  async createRagDoc(@Body() body: CreateRagDocBody) {
+    const row = await this.promptStore.createRagChunk({
+      appKey: String(body?.appKey ?? ''),
+      key: String(body?.key ?? ''),
+      routeKey: String(body?.routeKey ?? ''),
       chunkKey: String(body?.chunkKey ?? ''),
       title: body?.title,
       keywords: body?.keywords,

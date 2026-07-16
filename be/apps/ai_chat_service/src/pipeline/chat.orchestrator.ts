@@ -23,6 +23,7 @@ import { getScreenConfig, type ScreenConfig } from './screen-registry'
 import { COMMON_COLLECTION } from './rag/rag.docs'
 import type { ChatIntent, ChatReply, ChatTurn } from './pipeline.types'
 import type { ChatPipelineConfig } from './pipeline.config'
+import { getPromptStore } from '../db/prompt-store.service'
 
 export type OrchestrationOutput = {
   handled: boolean
@@ -33,6 +34,7 @@ export type OrchestrationOutput = {
 type NavigationResult = {
   path: string
   app?: string
+  screenName?: string
 }
 
 type ScreenTask =
@@ -143,7 +145,7 @@ export class ChatOrchestrator {
       return { text: undefined, usedCollection: undefined, usedChunks: [] }
     }
 
-    const result = await this.rag.answer(ordered, message, '', history)
+    const result = await this.rag.answer(ordered, message, history)
     const text = (result.text ?? '').trim()
 
     if (result.usedChunks.length === 0 || !text) {
@@ -290,16 +292,64 @@ export class ChatOrchestrator {
   }
 
   private findNavigationResult(executed: ExecutedCall[]): NavigationResult | undefined {
-    const call = executed.find((item) => item.name === 'navigate_to_screen' && !item.error)
-    const result = call?.result
+    for (const call of executed) {
+      if (call.error) continue
+      const result = call.result
+      if (!result || typeof result !== 'object') continue
 
-    if (!result || typeof result !== 'object') return undefined
+      const path = String((result as Record<string, unknown>).path ?? '').trim().replace(/^\/+/, '')
+      if (!path) continue
 
-    const path = String((result as Record<string, unknown>).path ?? '').trim().replace(/^\/+/, '')
-    if (!path) return undefined
+      const app = String((result as Record<string, unknown>).app ?? '').trim() || undefined
+      return { path, app }
+    }
 
-    const app = String((result as Record<string, unknown>).app ?? '').trim() || undefined
-    return { path, app }
+    return undefined
+  }
+
+  private normalizeForMatch(value: unknown): string {
+    return String(value ?? '')
+      .toLowerCase()
+      .replace(/\s+/g, '')
+      .replace(/[^\p{L}\p{N}]/gu, '')
+  }
+
+  private inferNavigationFromScreenName(message: string, currentApp: string): NavigationResult | undefined {
+    const store = getPromptStore()
+    const screens = store?.getEnabledScreens() ?? []
+    const normalizedMessage = this.normalizeForMatch(message)
+    if (!normalizedMessage) return undefined
+
+    const candidates = screens
+      .map((screen) => {
+        const normalizedScreenName = this.normalizeForMatch(screen.screenName)
+        if (!normalizedScreenName) return undefined
+        if (!normalizedMessage.includes(normalizedScreenName)) return undefined
+
+        return {
+          key: screen.key,
+          appKey: screen.appKey,
+          screenName: screen.screenName,
+          nameLen: normalizedScreenName.length,
+        }
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item))
+      .sort((a, b) => {
+        const appPriorityA = a.appKey === currentApp ? 0 : 1
+        const appPriorityB = b.appKey === currentApp ? 0 : 1
+        if (appPriorityA !== appPriorityB) return appPriorityA - appPriorityB
+        if (a.nameLen !== b.nameLen) return b.nameLen - a.nameLen
+        return a.key.localeCompare(b.key)
+      })
+
+    const best = candidates[0]
+    if (!best) return undefined
+
+    return {
+      path: best.key,
+      app: best.appKey,
+      screenName: best.screenName,
+    }
   }
 
   private async handleInfo(
@@ -314,22 +364,20 @@ export class ChatOrchestrator {
       `[prompt-apply] route=${screen.key} intent=info ragCollections=${ragCollections.join(',')}`,
     )
 
-    // fallback chain:
+    // response chain:
     // 1. app/common RAG collection
-    // 2. app fallbackText
-    // 3. default LLM
+    // 2. default LLM
     const { text, usedCollection, usedChunks } = await this.rag.answer(
       ragCollections,
       message,
-      screen.fallbackText,
       history,
     )
 
     const defaultLlmText =
-      usedChunks.length === 0
-        ? await this.generateDefaultLlmReply(screen, message, history, 'no-rag-hit')
+      usedChunks.length === 0 || !text?.trim()
+        ? await this.generateDefaultLlmReply(screen, message, history, usedChunks.length === 0 ? 'no-rag-hit' : 'rag-empty-text')
         : undefined
-    const finalText = defaultLlmText || text || screen.fallbackText
+    const finalText = defaultLlmText || text || ''
 
     return {
       handled: true,
@@ -384,10 +432,10 @@ export class ChatOrchestrator {
     const ragFallback = noExecution
       ? await this.tryRagFallback(ragCollections ?? [COMMON_COLLECTION, screen.ragCollection], message, history)
       : { text: undefined, usedCollection: undefined, usedChunks: [] }
-    const defaultLlmText = noExecution
-      ? await this.generateDefaultLlmReply(screen, message, history, 'data-no-execution-and-no-rag-hit')
+    const defaultLlmText = (noExecution || !text?.trim())
+      ? await this.generateDefaultLlmReply(screen, message, history, noExecution ? 'data-no-execution-and-no-rag-hit' : 'data-empty-text')
       : undefined
-    const finalText = text?.trim() || ragFallback.text || defaultLlmText || screen.fallbackText
+    const finalText = text?.trim() || ragFallback.text || defaultLlmText || ''
 
     const resolvedFilters = pickResolvedFilters(executed)
 
@@ -433,16 +481,36 @@ export class ChatOrchestrator {
     )
 
     const noExecution = executed.length === 0 || executed.every((call) => Boolean(call.error))
-    const ragFallback = noExecution
-      ? await this.tryRagFallback(ragCollections ?? [COMMON_COLLECTION, screen.ragCollection], message, history)
-      : { text: undefined, usedCollection: undefined, usedChunks: [] }
-    const defaultLlmText = noExecution
-      ? await this.generateDefaultLlmReply(screen, message, history, 'action-no-execution-and-no-rag-hit')
+    const inferredNavigation = noExecution
+      ? this.inferNavigationFromScreenName(message, screen.appKey)
       : undefined
-    const finalText = text?.trim() || ragFallback.text || defaultLlmText || screen.fallbackText
+
+    if (inferredNavigation) {
+      this.logger.log(
+        `[prompt-apply] route=${screen.key} inferred-navigation path=${inferredNavigation.path} screenName=${inferredNavigation.screenName ?? ''}`,
+      )
+    }
+
+    const ragFallback = noExecution
+      ? inferredNavigation
+        ? { text: undefined, usedCollection: undefined, usedChunks: [] }
+        : await this.tryRagFallback(ragCollections ?? [COMMON_COLLECTION, screen.ragCollection], message, history)
+      : { text: undefined, usedCollection: undefined, usedChunks: [] }
+    const defaultLlmText = (noExecution || !text?.trim())
+      ? inferredNavigation
+        ? undefined
+        : await this.generateDefaultLlmReply(screen, message, history, noExecution ? 'action-no-execution-and-no-rag-hit' : 'action-empty-text')
+      : undefined
+    const finalText =
+      text?.trim() ||
+      (inferredNavigation ? `${inferredNavigation.screenName ?? inferredNavigation.path} 화면으로 이동하겠습니다.` : '') ||
+      ragFallback.text ||
+      defaultLlmText ||
+      ''
 
     const ran = executed.find((c) => c.name === 'run_action')
-    const navigation = this.findNavigationResult(executed)
+    const navigation = this.findNavigationResult(executed) ?? inferredNavigation
+    const navigationText = navigation ? `${navigation.path} 화면으로 이동하겠습니다.` : undefined
 
     return {
       handled: true,
@@ -453,7 +521,7 @@ export class ChatOrchestrator {
           : ran
             ? { executed: ran.result }
             : undefined,
-        text: finalText,
+        text: finalText || navigationText || '요청을 처리했습니다.',
       },
       meta: {
         screenTask,

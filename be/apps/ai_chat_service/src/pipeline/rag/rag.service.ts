@@ -80,12 +80,11 @@ export class RagService {
   /**
    * 문서 근거로 답변.
    * collectionNames 를 순서대로 검색해(탭 → 공통) 처음으로 청크가 잡히는 컬렉션을 쓴다.
-   * 어디서도 못 찾으면 fallbackText 로 대체한다.
+   * 어디서도 못 찾으면 빈 텍스트를 반환하고 상위 계층에서 LLM 기본 응답으로 처리한다.
    */
   async answer(
     collectionNames: string | string[],
     message: string,
-    fallbackText: string,
     history: ChatTurn[] = [],
   ): Promise<{ text: string; usedCollection?: string; usedChunks: string[] }> {
     const names = Array.isArray(collectionNames) ? collectionNames : [collectionNames]
@@ -102,7 +101,7 @@ export class RagService {
       }
     }
     if (hits.length === 0) {
-      return { text: fallbackText, usedChunks: [] }
+      return { text: '', usedChunks: [] }
     }
 
     const collection = usedCollection ? this.resolveCollection(usedCollection) : undefined
@@ -142,7 +141,7 @@ export class RagService {
 
     const text = (res.text ?? '').trim()
     return {
-      text: text || fallbackText,
+      text,
       usedCollection,
       usedChunks: hits.map((h) => h.chunk.id),
     }

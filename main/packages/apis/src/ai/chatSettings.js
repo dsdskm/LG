@@ -55,6 +55,15 @@ export async function updateChatGuidance(id, payload) {
   return response.json()
 }
 
+export async function createChatGuidance(payload) {
+  const response = await fetch(`${BASE_URL}/chat/settings/guidance`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return response.json()
+}
+
 export async function updateChatScreenTool(id, payload) {
   const response = await fetch(
     `${BASE_URL}/chat/settings/screen-tools/${encodeURIComponent(String(id))}`,
@@ -64,6 +73,32 @@ export async function updateChatScreenTool(id, payload) {
       body: JSON.stringify(payload),
     },
   )
+  return response.json()
+}
+
+export async function createCommonChatScreenTool(payload) {
+  const response = await fetch(`${BASE_URL}/chat/settings/screen-tools/common`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return response.json()
+}
+
+export async function createChatScreenTool(payload) {
+  const response = await fetch(`${BASE_URL}/chat/settings/screen-tools`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return response.json()
+}
+
+export async function deleteChatScreenTool(id) {
+  const response = await fetch(`${BASE_URL}/chat/settings/screen-tools/${encodeURIComponent(String(id))}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+  })
   return response.json()
 }
 
@@ -90,6 +125,15 @@ export async function upsertCommonChatRagDoc(payload) {
 
 export async function createCommonChatRagDoc(payload) {
   const response = await fetch(`${BASE_URL}/chat/settings/rag-docs/common`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return response.json()
+}
+
+export async function createChatRagDoc(payload) {
+  const response = await fetch(`${BASE_URL}/chat/settings/rag-docs`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),

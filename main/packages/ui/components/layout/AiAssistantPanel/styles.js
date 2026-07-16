@@ -254,6 +254,43 @@ export const StyledAiAssistantMessageBubble = styled.div`
   word-break: break-word;
 `
 
+export const StyledAiActionCards = styled.div`
+  width: 90%;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.6rem;
+`
+
+export const StyledAiActionCard = styled.button`
+  width: 100%;
+  border: 1px solid var(--color-secondary-20, #dadde2);
+  border-radius: 10px;
+  background: #ffffff;
+  text-align: left;
+  padding: 0.9rem 1rem;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+
+  &:hover {
+    border-color: var(--color-secondary-30, #c0c4cc);
+    background: var(--color-secondary-10, #f4f5f7);
+  }
+`
+
+export const StyledAiActionCardTitle = styled.div`
+  font-size: 1.22rem;
+  font-weight: 700;
+  color: var(--color-secondary-90, #262f44);
+  line-height: 1.45;
+`
+
+export const StyledAiActionCardKeyword = styled.div`
+  margin-top: 0.2rem;
+  font-size: 1.12rem;
+  color: var(--color-secondary-60, #6b7280);
+  line-height: 1.45;
+`
+
 export const StyledAiAssistantEmpty = styled.div`
   flex: 1;
   display: flex;

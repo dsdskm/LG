@@ -13,6 +13,7 @@ import { ChatSettingEntity } from './db/chat-setting.entity';
 import { ChatSettingService } from './db/chat-setting.service';
 import { ChatRagDocEntity } from './db/chat-rag-doc.entity';
 import { ChatScreenToolEntity } from './db/chat-screen-tool.entity';
+import { ChatActionTypeEntity } from './db/chat-action-type.entity';
 import { PromptStoreService } from './db/prompt-store.service';
 import { ChatSettingController } from './controller/chat-setting.controller';
 
@@ -29,6 +30,7 @@ import { ChatSettingController } from './controller/chat-setting.controller';
         ChatGuidanceEntity,
         ChatRagDocEntity,
         ChatScreenToolEntity,
+        ChatActionTypeEntity,
       ],
       synchronize: true,
       logging: false,
@@ -41,6 +43,7 @@ import { ChatSettingController } from './controller/chat-setting.controller';
       ChatGuidanceEntity,
       ChatRagDocEntity,
       ChatScreenToolEntity,
+      ChatActionTypeEntity,
     ]),
   ],
   controllers: [ChatController, HealthController, ChatSettingController],

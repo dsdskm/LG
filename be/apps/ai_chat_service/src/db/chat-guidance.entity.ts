@@ -1,4 +1,4 @@
-import { Column, Entity, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm'
+import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm'
 
 /**
  * guidance(정적 안내) 데이터. key 는 실제 화면 경로, routeKey 는 바로 상위 경로.
@@ -19,26 +19,11 @@ export class ChatGuidanceEntity {
   @Column({ type: 'text', name: 'route_key', nullable: true })
   routeKey?: string | null
 
-  @Column({ type: 'text', name: 'chat_action', nullable: true })
-  chatAction?: string
-
-  @Column({ type: 'text', name: 'screen_name', nullable: true })
-  screenName?: string
-
-  @Column({ type: 'jsonb', name: 'sections', nullable: true })
-  sections?: unknown
-
-  @Column({ type: 'jsonb', name: 'examples', nullable: true })
+  @Column({ type: 'jsonb', name: 'examples', default: () => "'[]'::jsonb" })
   examples?: unknown
 
-  @Column({ type: 'text', name: 'fallback_text', nullable: true })
-  fallbackText?: string
-
-  @Column({ type: 'int', name: 'sort_order', default: 0 })
-  sortOrder!: number
-
-  @Column({ type: 'boolean', name: 'enabled', default: true })
-  enabled!: boolean
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
+  createdAt!: Date
 
   @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
   updatedAt!: Date

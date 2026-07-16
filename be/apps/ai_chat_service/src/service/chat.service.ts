@@ -18,7 +18,7 @@ import { ChatSettingService } from '../db/chat-setting.service'
 import { getPromptStore } from '../db/prompt-store.service'
 import { ChatOrchestrator } from '../pipeline/chat.orchestrator'
 import { loadChatPipelineConfig } from '../pipeline/pipeline.config'
-import type { ChatReply, ChatTurn } from '../pipeline/pipeline.types'
+import type { ChatReply, ChatTurn, SuggestedAction } from '../pipeline/pipeline.types'
 import { getScreenConfig } from '../pipeline/screen-registry'
 
 type RuntimeEntry = {
@@ -38,6 +38,13 @@ type ChatContext = {
   currentPath: string
   key: string
   history: ChatTurn[]
+}
+
+type ScreenSummary = {
+  appKey: string
+  key: string
+  screenName: string
+  sortOrder: number
 }
 
 type ScreenTask =
@@ -77,11 +84,84 @@ export class ChatService {
     const pipelineReply = await this.handleScreenPipeline(ctx)
     this.logger.log(`[handleChat] pipelineReply ${pipelineReply}`)
     if (pipelineReply) {
-      return pipelineReply
+      return this.withSuggestedActions(pipelineReply, ctx)
     }
 
     // 미등록 화면 또는 pipeline 실패 시 기존 guidance 경로
-    return this.handleGuidance(ctx)
+    const guidanceReply = await this.handleGuidance(ctx)
+    return this.withSuggestedActions(guidanceReply, ctx)
+  }
+
+  private normalizeRouteLike(value: string): string {
+    return String(value ?? '').trim().replace(/^\/+/, '')
+  }
+
+  private inferAppKeyFromRoute(routeKey: string): string {
+    const normalized = this.normalizeRouteLike(routeKey)
+    return normalized.split('/').filter(Boolean)[0] || ''
+  }
+
+  private buildNavigationSuggestions(ctx: ChatContext): SuggestedAction[] {
+    const store = getPromptStore()
+    const screensRaw = store?.getEnabledScreens() ?? []
+
+    const allScreens: ScreenSummary[] = screensRaw.map((row) => ({
+      appKey: String(row.appKey ?? '').trim(),
+      key: this.normalizeRouteLike(String(row.key ?? '')),
+      screenName: String(row.screenName ?? '').trim(),
+      sortOrder: Number(row.sortOrder ?? 0),
+    })).filter((row) => row.appKey && row.key && row.screenName)
+
+    if (allScreens.length === 0) {
+      return []
+    }
+
+    const currentRoute = this.normalizeRouteLike(ctx.key)
+    const currentApp = this.normalize(ctx.currentApp) || this.inferAppKeyFromRoute(currentRoute)
+
+    const sameApp = allScreens
+      .filter((row) => row.appKey === currentApp && row.key !== currentRoute)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+
+    const crossAppPriorityKeys = ['robot/dashboard', 'ota/campaign', 'cms/content', 'tms']
+    const crossApp: ScreenSummary[] = []
+    for (const key of crossAppPriorityKeys) {
+      const hit = allScreens.find((row) => row.key === key && row.key !== currentRoute)
+      if (hit) crossApp.push(hit)
+    }
+
+    const merged = [...sameApp, ...crossApp]
+    const deduped: ScreenSummary[] = []
+    const seen = new Set<string>()
+    for (const row of merged) {
+      if (seen.has(row.key)) continue
+      seen.add(row.key)
+      deduped.push(row)
+      if (deduped.length >= 6) break
+    }
+
+    return deduped.map((screen) => ({
+      id: `nav-${screen.key}`,
+      type: 'navigation',
+      label: screen.screenName,
+      keyword: `${screen.screenName} 화면으로 이동해줘`,
+      chat_action: 'navigation',
+      chat_action_param: {
+        path: screen.key,
+        app: screen.appKey,
+      },
+    }))
+  }
+
+  private withSuggestedActions(reply: ChatReply, ctx: ChatContext): ChatReply {
+    const suggestions = this.buildNavigationSuggestions(ctx)
+    if (suggestions.length === 0) return reply
+
+    const nextParam = { ...(reply.chat_action_param ?? {}), suggested_actions: suggestions }
+    return {
+      ...reply,
+      chat_action_param: nextParam,
+    }
   }
 
   private async resolveRuntime(): Promise<RuntimeEntry> {
@@ -200,28 +280,51 @@ export class ChatService {
    * 4. intent별 처리
    */
   private async handleScreenPipeline(ctx: ChatContext): Promise<ChatReply | null> {
-    if (!this.isRegisteredScreen(ctx.key)) {
+    const matchedRouteKey = this.findNearestRegisteredRouteKey(ctx.key)
+
+    if (!matchedRouteKey) {
       this.logger.log(`[handleScreenPipeline] unregistered screen route=${ctx.key}`)
       return null
     }
-    this.logger.log(`[handleScreenPipeline] key=${ctx.key}`)
+
+    const routeCtx =
+      matchedRouteKey === ctx.key
+        ? ctx
+        : {
+            ...ctx,
+            key: matchedRouteKey,
+            body: {
+              ...ctx.body,
+              originalRouteKey: ctx.key,
+              routeKey: matchedRouteKey,
+              screenRouteKey: matchedRouteKey,
+            },
+          }
+
+    if (matchedRouteKey !== ctx.key) {
+      this.logger.log(
+        `[handleScreenPipeline] route fallback original=${ctx.key} matched=${matchedRouteKey}`,
+      )
+    }
+
+    this.logger.log(`[handleScreenPipeline] key=${routeCtx.key}`)
     try {
-      if (ctx.key === 'robot/ailog/event') {
-        return this.handleRobotAilogEventScreen(ctx)
+      if (routeCtx.key === 'robot/ailog/event') {
+        return this.handleRobotAilogEventScreen(routeCtx)
       }
 
-      if (ctx.key.startsWith('robot/ailog/')) {
-        return this.handleRobotAilogChildScreen(ctx)
+      if (routeCtx.key.startsWith('robot/ailog/')) {
+        return this.handleRobotAilogChildScreen(routeCtx)
       }
 
-      if (ctx.key.startsWith('robot/')) {
-        return this.handleRobotGenericScreen(ctx)
+      if (routeCtx.key.startsWith('robot/')) {
+        return this.handleRobotGenericScreen(routeCtx)
       }
 
-      return this.handleGenericRegisteredScreen(ctx)
+      return this.handleGenericRegisteredScreen(routeCtx)
     } catch (e: any) {
       this.logger.error(
-        `[chat] screen pipeline error route=${ctx.key} err=${e?.message ?? String(e)}`,
+        `[chat] screen pipeline error route=${routeCtx.key} err=${e?.message ?? String(e)}`,
       )
       return null
     }
@@ -229,6 +332,62 @@ export class ChatService {
 
   private isRegisteredScreen(routeKey: string) {
     return Boolean(getScreenConfig(routeKey))
+  }
+
+  private findNearestRegisteredRouteKey(routeKey: string): string | null {
+    const normalized = String(routeKey ?? '').trim().replace(/^\/+/, '')
+    if (!normalized) return null
+
+    if (this.isRegisteredScreen(normalized)) {
+      return normalized
+    }
+
+    const segments = normalized.split('/').filter(Boolean)
+    for (let i = segments.length - 1; i > 0; i -= 1) {
+      const candidate = segments.slice(0, i).join('/')
+      if (this.isRegisteredScreen(candidate)) {
+        return candidate
+      }
+    }
+
+    const heuristicCandidates = this.getHeuristicFallbackCandidates(normalized)
+    for (const candidate of heuristicCandidates) {
+      if (this.isRegisteredScreen(candidate)) {
+        this.logger.log(
+          `[handleScreenPipeline] heuristic route fallback original=${normalized} matched=${candidate}`,
+        )
+        return candidate
+      }
+    }
+
+    return null
+  }
+
+  private getHeuristicFallbackCandidates(routeKey: string): string[] {
+    const normalized = String(routeKey ?? '').trim().replace(/^\/+/, '')
+    if (!normalized) return []
+
+    if (normalized.startsWith('robot/ailog/')) {
+      return ['robot/ailog/event', 'robot/ailog', 'robot/dashboard']
+    }
+
+    if (normalized.startsWith('robot/')) {
+      return ['robot/dashboard', 'robot/management']
+    }
+
+    if (normalized.startsWith('ota/')) {
+      return ['ota']
+    }
+
+    if (normalized.startsWith('cms/')) {
+      return ['cms']
+    }
+
+    if (normalized.startsWith('tms/')) {
+      return ['tms']
+    }
+
+    return []
   }
 
   /**
@@ -420,14 +579,11 @@ export class ChatService {
     })
 
     const text = result?.text?.trim()
-    const fallbackText =
-      getPromptStore()?.getPromptContent(routeKey, 'fallback') ??
-      '요청을 확인했습니다. 필요한 조건을 조금 더 알려주시면 정확히 도와드릴게요.'
-    const finalText = text || fallbackText
+    const finalText = text || ''
 
     if (!text) {
       this.logger.warn(
-        `[chat] guidance-empty-text route=${routeKey || '-'} fallbackApplied=true`,
+        `[chat] guidance-empty-text route=${routeKey || '-'} fallbackApplied=false`,
       )
     }
 

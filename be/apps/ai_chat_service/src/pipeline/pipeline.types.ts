@@ -24,6 +24,15 @@ export type ChatReply = {
   text: string
 }
 
+export type SuggestedAction = {
+  id: string
+  type: 'navigation' | 'prompt'
+  label: string
+  keyword: string
+  chat_action: string
+  chat_action_param?: Record<string, unknown>
+}
+
 /** 인텐트 분류 결과. */
 export type IntentResult = {
   intent: ChatIntent

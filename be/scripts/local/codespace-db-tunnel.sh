@@ -8,6 +8,9 @@ cd "$SCRIPT_DIR/../.."
 REPO="${CODESPACE_REPO:-dsdskm/lge}"
 CODESPACE_NAME="${CODESPACE_NAME:-${1:-}}"
 PORT_OFFSET="${PORT_OFFSET:-0}"
+TUNNEL_ALL_PORTS="${TUNNEL_ALL_PORTS:-0}"
+ALL_PORT_MIN="${ALL_PORT_MIN:-1024}"
+ALL_PORT_MAX="${ALL_PORT_MAX:-65535}"
 
 SERVICES=(
   config_manager
@@ -16,6 +19,10 @@ SERVICES=(
   action_runner
   report_manager
   ai_chat_service
+)
+
+EXTRA_PORTS=(
+  5173
 )
 
 db_port_for() {
@@ -34,6 +41,22 @@ log() { printf '%s\n' "$*"; }
 ok() { printf '✅ %s\n' "$*"; }
 warn() { printf '⚠️  %s\n' "$*"; }
 err() { printf '❌ %s\n' "$*" >&2; }
+
+start_tunnel() {
+  local label="$1"
+  local remote_port="$2"
+  local local_port="$3"
+  local logfile="$LOG_DIR/$label.log"
+
+  log "- $label: 127.0.0.1:$local_port -> $CODESPACE_NAME:127.0.0.1:$remote_port"
+  gh codespace ssh -c "$CODESPACE_NAME" -- -N -L "${local_port}:127.0.0.1:${remote_port}" >"$logfile" 2>&1 &
+  pids+=("$!")
+}
+
+list_remote_listening_ports() {
+  gh codespace ssh -c "$CODESPACE_NAME" -- bash -lc \
+    "ss -ltnH | awk '{print \\\$4}' | sed -E 's/.*:([0-9]+)$/\\1/' | sort -nu"
+}
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -82,18 +105,38 @@ trap cleanup INT TERM EXIT
 log "Codespace: $CODESPACE_NAME"
 log "Repo: $REPO"
 log "포트 오프셋: $PORT_OFFSET"
+log "전체 포트 모드(TUNNEL_ALL_PORTS): $TUNNEL_ALL_PORTS"
 log ""
 log "포트 포워딩 시작 중..."
 
-for service in "${SERVICES[@]}"; do
-  remote_port="$(db_port_for "$service")"
-  local_port="$((remote_port + PORT_OFFSET))"
-  logfile="$LOG_DIR/$service.log"
+if [[ "$TUNNEL_ALL_PORTS" == "1" ]]; then
+  mapfile -t listening_ports < <(list_remote_listening_ports || true)
 
-  log "- $service: 127.0.0.1:$local_port -> $CODESPACE_NAME:127.0.0.1:$remote_port"
-  gh codespace ssh -c "$CODESPACE_NAME" -- -N -L "${local_port}:127.0.0.1:${remote_port}" >"$logfile" 2>&1 &
-  pids+=("$!")
-done
+  if [[ "${#listening_ports[@]}" -eq 0 ]]; then
+    err "Codespace에서 LISTEN 중인 포트를 찾지 못했습니다."
+    exit 1
+  fi
+
+  for remote_port in "${listening_ports[@]}"; do
+    if (( remote_port < ALL_PORT_MIN || remote_port > ALL_PORT_MAX )); then
+      continue
+    fi
+
+    local_port="$((remote_port + PORT_OFFSET))"
+    start_tunnel "port_${remote_port}" "$remote_port" "$local_port"
+  done
+else
+  for service in "${SERVICES[@]}"; do
+    remote_port="$(db_port_for "$service")"
+    local_port="$((remote_port + PORT_OFFSET))"
+    start_tunnel "$service" "$remote_port" "$local_port"
+  done
+
+  for remote_port in "${EXTRA_PORTS[@]}"; do
+    local_port="$((remote_port + PORT_OFFSET))"
+    start_tunnel "port_${remote_port}" "$remote_port" "$local_port"
+  done
+fi
 
 log ""
 ok "pgAdmin4 접속 정보"
@@ -102,6 +145,11 @@ log "User=root"
 log "Password=root"
 log "Port=<기본포트 + $PORT_OFFSET>"
 log "DB=<서비스>_db"
+if [[ "$TUNNEL_ALL_PORTS" == "1" ]]; then
+  log ""
+  warn "전체 포트 모드: Codespace에서 열려 있는 TCP LISTEN 포트를 터널링했습니다."
+  warn "필터 범위: ${ALL_PORT_MIN}~${ALL_PORT_MAX}, 로컬포트=원격포트+$PORT_OFFSET"
+fi
 log ""
 warn "이 창을 닫지 마세요. 종료하려면 Ctrl+C."
 warn "문제가 있으면 로그를 확인하세요: $LOG_DIR"
