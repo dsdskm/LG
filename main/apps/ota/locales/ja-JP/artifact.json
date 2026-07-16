@@ -41,5 +41,18 @@
   "confirmSaveArtifact": "アーティファクトを保存しますか?",
   "saveAsLatest": "latestとして保存",
   "uploadCanceled": "アップロードがキャンセルされました。",
-  "abortUpload": "アップロード中断"
+  "abortUpload": "アップロード中断",
+  "forgeArtifact": "Forgeアーティファクト",
+  "retrieveForgeModel": "Forgeモデル取得",
+  "taskName": "タスク名",
+  "primarySkillName": "主要スキル名",
+  "selectedModel": "選択されたモデル",
+  "dataset": "データセット",
+  "foundationModelName": "基盤モデル",
+  "tags": "タグ",
+  "createdAt": "作成日",
+  "taskInstruction": "タスク指示",
+  "subtaskInstruction": "サブタスク指示",
+  "selectFoundationModel": "基盤モデル選択",
+  "searchTaskName": "タスク名"
 }

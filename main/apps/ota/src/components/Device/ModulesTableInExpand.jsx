@@ -4,25 +4,33 @@ import { useTranslation } from 'react-i18next'
 import { convertDateToString } from '@repo/utils'
 import { statusToBgColor, statusToColor } from '@/utils/common'
 import { DEVICE_STATUS } from '@/constants/device'
+import { deviceApis } from '@/apis'
 
-const ModulesTableInExpand = ({ data: modules, noData }) => {
+const ModulesTableInExpand = ({ deviceId, noData }) => {
+  console.log('deviceId', deviceId)
   const { t } = useTranslation('device')
-  const [allModules, setAllModules] = useState(modules)
+  const [allModules, setModules] = useState([])
 
   useEffect(() => {
-    setAllModules(modules || [])
-  }, [modules])
+    const fetchModules = async () => {
+      const response = await deviceApis.retrieveDeviceStatus(deviceId)
+      console.log('response', response)
+      setModules(JSON.parse(response.state.sWmodules) || [])
+    }
+    fetchModules()
+  }, [])
 
   const columns = [
     {
       name: t('moduleName'),
-      selector: (module) => module.displayName,
+      selector: (module) => module.name,
       sortable: 'true'
     },
     {
       name: t('version'),
-      selector: (module) => module.Version?.displayName,
-      sortable: 'true'
+      selector: (module) => module.version.split(':')[1],
+      sortable: 'true',
+      grow: 1.5
     },
     {
       name: t('status'),
@@ -36,11 +44,12 @@ const ModulesTableInExpand = ({ data: modules, noData }) => {
           </StyledTag>
         </div>
       ),
-      sortable: 'true'
+      sortable: 'true',
+      grow: 0.5
     },
     {
       name: t('updatedAt'),
-      selector: (module) => (module.updatedAt ? convertDateToString(module.updatedAt) : '-'),
+      selector: (module) => (module.lastCheck ? convertDateToString(module.lastCheck) : '-'),
       sortable: 'true'
     }
   ]

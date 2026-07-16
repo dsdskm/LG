@@ -176,6 +176,8 @@ const Artifact = () => {
   }
 
   useEffect(() => {
+    if (!company) return
+
     const retrieveModules = async () => {
       const moduleResponse = await moduleApis.retrieveModules(company.id)
       setModuleOptions([
@@ -184,7 +186,7 @@ const Artifact = () => {
       ])
     }
     retrieveModules()
-  }, [company.id, t])
+  }, [company, t])
 
   const orgIds =
     session.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
@@ -225,6 +227,7 @@ const Artifact = () => {
           <Dropdown
             size="lg"
             minWidth="180px"
+            label={t('module')}
             defaultValue={filterQuery}
             placeholder={t('selectModule')}
             options={moduleOptions}
@@ -233,13 +236,14 @@ const Artifact = () => {
           <SearchContainer>
             <Search
               value={searchQuery}
+              label={t('artifactName')}
               onChange={handleSearchChange}
               onReset={handleResetSearch}
               placeholder={tCommon('searchPlaceHolder')}
               width={'300px'}
             />
           </SearchContainer>
-          <ButtonWrap className="alignRight" style={{ marginBottom: '0' }}>
+          <ButtonWrap className="alignRight" style={{ marginBottom: '-2rem' }}>
             <Button
               variant="contained"
               onClick={handleCreate}

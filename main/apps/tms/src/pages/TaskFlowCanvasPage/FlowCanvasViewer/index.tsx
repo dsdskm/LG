@@ -76,6 +76,7 @@ import NodeInspectDialog, { DEFAULT_NODE_CONFIG, type NodeSimConfig } from './No
 import AstView from './AstView'
 import ConfirmModal from '@/pages/components/modal/ConfirmModal'
 import { buildBehaviorTreeFromFlowDefinition } from '@/bt/build'
+import { validateSemantics } from '@/bt/validation'
 import type { BtAstNode } from '@/bt/types'
 import { SimulationExecutor } from '@/bt/execution/simulationExecutor'
 import { EMPTY_SNAPSHOT, type ExecSnapshot, type ExecStatus, type FlowExecutor } from '@/bt/execution/executor'
@@ -280,12 +281,21 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
   // 렌더 시점이 아니라 Start 시점에만 호출한다.
   const compile = useCallback((): { model: BtAstNode | null; error: string | null } => {
     try {
+      // 1) Static Validation: build 과정에서 cycle/edge 오류 등 검출
       const { model } = buildBehaviorTreeFromFlowDefinition(safeFlow)
+
+      // 2) Semantic Validation: 만들어진 AST 기반 검증(dead branch 등)
+      const issues = validateSemantics({ flow: safeFlow, model, startNodeId })
+      const errors = issues.filter((i) => i.severity === 'error')
+      if (errors.length > 0) {
+        return { model: null, error: errors.map((e) => e.message).join('\n') }
+      }
+
       return { model, error: null }
     } catch (e: any) {
       return { model: null, error: String(e?.message ?? e) }
     }
-  }, [safeFlow])
+  }, [safeFlow, startNodeId])
 
   // 렌더링은 실행기 스냅샷만 본다(소스가 시뮬/로봇 무관).
   const currentNodeId = snapshot.currentNodeId
@@ -298,6 +308,9 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
       // 점검(inspect) 모드에서는 디버거 진행 상태를 우선 적용한다.
       const simStatus = mode === 'inspect' ? simStatusById[node.id] : undefined
       const breakpoint = mode === 'inspect' && !!nodeConfigs[node.id]?.breakpoint
+      // 강제 결과(NORMAL 제외) 마커: 우상단 네모 표시용
+      const forced = mode === 'inspect' ? nodeConfigs[node.id]?.forced : undefined
+      const forcedResult = forced && forced !== 'NORMAL' ? forced : undefined
       return {
         ...node,
         selected: node.id === selectedNodeId,
@@ -306,7 +319,8 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
           flowMode: readonlyFlowMode,
           taskStatus: simStatus ?? activeInfo?.status ?? 'IDLE',
           runningCount: activeInfo?.runningCount ?? 0,
-          breakpoint
+          breakpoint,
+          forcedResult
         },
         selectable: true,
         connectable: false

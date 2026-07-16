@@ -222,13 +222,15 @@ const Action = () => {
         <HeaderTitleGroup>
           <SearchContainer>
             <Search
+              label={t('title')}
               value={searchQuery}
               onChange={handleSearchChange}
               onReset={handleResetSearch}
               placeholder={tCommon('searchPlaceHolder')}
+              width={'300px'}
             />
           </SearchContainer>
-          <ButtonWrap className="alignRight" style={{ marginBottom: '0' }}>
+          <ButtonWrap className="alignRight" style={{ marginBottom: '-2rem' }}>
             {!deleteMode && (
               <Button
                 variant="contained"

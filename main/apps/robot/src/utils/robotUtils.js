@@ -85,6 +85,41 @@ export function parseDeviceInfo(deviceinfo) {
   return returnJson
 }
 
+// 기기 목록 폴링 결과를 타임스탬프 기반으로 병합한다.
+// updatedAt / state.stateUpdatedAt / connection.connectionUpdatedAt 비교 후
+// 변경된 기기만 교체하고, 변경 없으면 setDevices를 호출하지 않는다.
+// tsMap: 가변 객체 { [deviceId]: { updatedAt, st, conn } }
+// 반환: { hasChange, merger } — hasChange가 true일 때만 setDevices(merger) 호출
+export function buildDeviceMerger(newDevices, tsMap) {
+  const newIds = new Set(newDevices.map((d) => d.deviceId))
+  const changedIds = new Set()
+  let hasChange = false
+
+  newDevices.forEach((d) => {
+    const prev = tsMap[d.deviceId]
+    const st = d.state?.stateUpdatedAt ?? null
+    const conn = d.connection?.connectionUpdatedAt ?? null
+    if (!prev || d.updatedAt !== prev.updatedAt || st !== prev.st || conn !== prev.conn) {
+      tsMap[d.deviceId] = { updatedAt: d.updatedAt, st, conn }
+      changedIds.add(d.deviceId)
+      hasChange = true
+    }
+  })
+
+  const removed = Object.keys(tsMap).filter((id) => !newIds.has(id))
+  if (removed.length > 0) {
+    removed.forEach((id) => delete tsMap[id])
+    hasChange = true
+  }
+
+  const merger = (prev) => {
+    const prevMap = new Map(prev.map((d) => [d.deviceId, d]))
+    return newDevices.map((d) => (changedIds.has(d.deviceId) ? d : (prevMap.get(d.deviceId) ?? d)))
+  }
+
+  return { hasChange, merger }
+}
+
 //for Map
 export function parseRobotData(deviceinfo) {
   const pos = deviceinfo.state?.position
@@ -99,4 +134,22 @@ export function parseRobotData(deviceinfo) {
     siteName: !deviceinfo.provision.isDefaultSite ? deviceinfo.provision?.siteName : '-'
   }
   return returnJson
+}
+
+/**
+ * 다국어 name 객체에서 현재 언어의 값을 반환.
+ * name 예: { default: 'Reception', 'ko-KR': '리셉션', 'en-US': 'Reception', 'ja-JP': '受付' }
+ * - 현재 언어(lang, 예: 'ko-KR')와 대소문자 무시로 일치하는 키가 있으면 그 값
+ * - 없으면 default → en-US → 첫 값 순으로 폴백
+ * @param {object|string} name
+ * @param {string} lang i18n.language
+ */
+export function getLocalizedName(name, lang) {
+  if (!name) return ''
+  if (typeof name === 'string') return name
+  if (lang) {
+    const key = Object.keys(name).find((k) => k.toLowerCase() === String(lang).toLowerCase())
+    if (key && name[key]) return name[key]
+  }
+  return name.default ?? name['en-US'] ?? name['en-us'] ?? Object.values(name)[0] ?? ''
 }

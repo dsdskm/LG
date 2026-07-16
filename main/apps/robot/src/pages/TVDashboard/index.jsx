@@ -6,7 +6,7 @@ import forgeLogoSvg from '@/assets/image/svg/PhysicalWorksForge.svg?raw'
 import lgBrandSvg from '@/assets/image/svg/LGBrand.svg?raw'
 import headerLgBg from '@/assets/image/tvbg/header_lg.png'
 import { deviceApis, siteApis, mapApis } from '@/apis'
-import { parseRobotData } from '@/utils/robotUtils'
+import { parseRobotData, buildDeviceMerger } from '@/utils/robotUtils'
 import DataCollectionSection from '../Dashboard/components/DataCollectionSection'
 import RobotStateCards from '../Dashboard/components/RobotStateCards'
 import Location from '../Dashboard/KakaoMap'
@@ -462,6 +462,7 @@ const TVDashboard = () => {
   const [colorMode, setColorMode] = useState('gradient') // 'gradient' | 'solid'
   const theme = COLOR_MODES[colorMode]
   const intervalRef = useRef(null)
+  const deviceTsRef = useRef({}) // deviceId → { updatedAt, st, conn } 마지막 폴링 타임스탬프
 
   // 영역 순서/페이지
   const { pages, seq } = useMemo(() => buildAreaPlan(buildings), [buildings])
@@ -479,13 +480,16 @@ const TVDashboard = () => {
     return () => window.removeEventListener('resize', calc)
   }, [])
 
-  // 지도 로드 (영역 선택 시 빌딩/층/영역 ID 함께 전송, 없으면 사이트 지도)
+  // 맵은 device/area 단위로만 존재 (site/building/floor 단독 조회 불가).
+  // area로 조회할 때는 상위 buildingId/floorId를 반드시 함께 전달해야 함.
   const loadMap = useCallback(async (groupId, siteId, area) => {
+    if (!area?.areaId || !area?.buildingId || !area?.floorId) {
+      setMapData({})
+      setMapServer({})
+      return
+    }
     try {
-      const params = { groupId, siteId }
-      if (area?.buildingId) params.buildingId = area.buildingId
-      if (area?.floorId) params.floorId = area.floorId
-      if (area?.areaId) params.areaId = area.areaId
+      const params = { groupId, siteId, buildingId: area.buildingId, floorId: area.floorId, areaId: area.areaId }
       const data = await mapApis.getMapViewFind(params)
       let type = 'png', url = ''
       if (data.mapServer?.navi?.svgDownloadUrl) {
@@ -508,8 +512,10 @@ const TVDashboard = () => {
         deviceApis.getDevices(siteId ? { siteId } : {}),
         siteApis.getSites({})
       ])
-      setDevices(robotRes.content)
       setSites(siteRes.content)
+
+      const { hasChange, merger } = buildDeviceMerger(robotRes.content, deviceTsRef.current)
+      if (hasChange) setDevices(merger)
     } catch (err) {
       console.error('TVDashboard loadData:', err)
     }
@@ -538,11 +544,10 @@ const TVDashboard = () => {
     return () => clearInterval(id)
   }, [areaMode, seq.length])
 
-  // 현재 영역/사이트 지도 로드
+  // 현재 영역 지도 로드 (영역 없으면 맵 없음 — site/building/floor 단위 맵은 존재하지 않음)
   useEffect(() => {
     if (!hasSite) return
-    if (areaMode && currentArea) loadMap(paramGroup, paramSite, currentArea)
-    else loadMap(paramGroup, paramSite)
+    loadMap(paramGroup, paramSite, areaMode ? currentArea : null)
   }, [hasSite, areaMode, currentArea?.areaId, paramGroup, paramSite, loadMap])
 
   // 자동 새로고침 (헤더는 상시 연동 상태 — 항상 라이브)

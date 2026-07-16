@@ -21,6 +21,7 @@ import { toast } from 'react-toastify'
 import { useOrganizationStore, useUserStore } from '@repo/stores'
 import { moduleApis } from '@/apis'
 import ModuleTable from '@/components/Settings/CiCd/ModuleTable'
+import { ButtonWrap } from '@/components/common/styles'
 
 const CiCd = () => {
   const { t } = useTranslation('settings')
@@ -61,8 +62,8 @@ const CiCd = () => {
       const response = await moduleApis.fetchCiTemplate({ id: selectedModuleId, orgId: actualOrgs[0].id, mode })
       const fileContent = await fetch(response.results.url)
       const replacedContent = (await fileContent.text())
-        .replace('DYNAMIC_ECR_REPOSITORY_URI', response.results.repoUri)
-        .replace('DYNAMIC_ECR_REPOSITORY_NAME', response.results.repoUri.split('/').pop())
+        .replaceAll('DYNAMIC_ECR_REPOSITORY_URI', response.results.repoUri)
+        .replaceAll('DYNAMIC_ECR_REPOSITORY_NAME', response.results.repoUri.split('/').pop())
 
       const zip = new JSZip()
       zip.file('.gitlab-ci.yml', replacedContent)
@@ -153,19 +154,29 @@ const CiCd = () => {
   return (
     <StyledPageContent className="column">
       <Title>{t('cicdSettingsTitle')}</Title>
-      <OrganizationSelector supportNone={[false, true]} allToTop={false} />
+      <OrganizationSelector
+        supportAlls={[session.userRole === 'SYSTEM_MANAGER', false]}
+        supportNone={[false, true]}
+        allToTop={false}
+        onChange={() => {
+          fetchData()
+        }}
+      />
       <Section>
         <HeaderTitleGroup>
           <SearchContainer style={{ width: '300px' }}>
             <Search
+              label={t('moduleName')}
               placeholder={t('searchModulePlaceholder')}
               value={moduleSearch}
               onChange={(e) => setModuleSearch(e.target.value)}
             />
           </SearchContainer>
-          <Button variant="tertiary" size="md" onClick={() => setIsGuideModal(true)}>
-            {t('guideTitle')}
-          </Button>
+          <ButtonWrap className="alignRight" style={{ marginBottom: '-2rem' }}>
+            <Button variant="tertiary" size="md" onClick={() => setIsGuideModal(true)}>
+              {t('guideTitle')}
+            </Button>
+          </ButtonWrap>
         </HeaderTitleGroup>
 
         <div style={{ margin: '16px 0', fontSize: '14px', fontWeight: 'bold' }}>

@@ -237,15 +237,16 @@ const Management = () => {
   function filterTableList() {
     const filteredList = devices.filter((r) => {
       const matchGroup =
-        orgFilter.values[0] === 'all'
-          ? true
-          : orgFilter.values[0] === 'none'
-            ? r.provision?.isDefaultSite
-            : !r.provision?.isDefaultSite && r.provision?.groupId === orgFilter.values[0]
+        // orgFilter.values[0] === 'all'
+        //   ? true
+        //   : orgFilter.values[0] === 'none'
+        //     ? r.provision?.isDefaultSite
+        //     : !r.provision?.isDefaultSite && r.provision?.groupId === orgFilter.values[0]
+        orgFilter.values[0] === 'all' ? true : r.provision?.groupId === orgFilter.values[0]
       const matchSite =
         orgFilter.values[1] === 'all'
           ? true
-          : orgFilter.values[1] === 'none'
+          : orgFilter.values[1] === 'none' || orgFilter.actualOrgs[0]?.originalData?.isDefaultSite === true
             ? r.provision?.isDefaultSite
             : !r.provision?.isDefaultSite && r.provision?.siteId === orgFilter.values[1]
 
@@ -295,7 +296,7 @@ const Management = () => {
         <OrganizationSelector
           onChange={handleSelectOrg}
           // supportAlls={[true, true]}
-          // supportNone={[true, true]}
+          supportNone={[false, false]}
           disableCenter
         />
         <SectionRobot>

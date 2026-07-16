@@ -41,5 +41,18 @@
   "confirmSaveArtifact": "Are you sure you want to save the artifact?",
   "saveAsLatest": "Save as latest",
   "uploadCanceled": "Upload canceled",
-  "abortUpload": "Abort Upload"
+  "abortUpload": "Abort Upload",
+  "forgeArtifact": "Forge Artifact",
+  "retrieveForgeModel": "Retrieve Forge Model",
+  "taskName": "Task Name",
+  "primarySkillName": "Primary Skill Name",
+  "selectedModel": "Selected Model",
+  "dataset": "Dataset",
+  "foundationModelName": "Foundation Model",
+  "tags": "Tags",
+  "createdAt": "Created Date",
+  "taskInstruction": "Task Instruction",
+  "subtaskInstruction": "Sub Task Instruction",
+  "selectFoundationModel": "Select Foundation Model",
+  "searchTaskName": "Task Name"
 }

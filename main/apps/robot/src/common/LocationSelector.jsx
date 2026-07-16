@@ -48,14 +48,14 @@ const LocationSelector = ({ buildings = [], value = {}, onChange, areaCounts = {
 
   return (
     <>
-      <Select
-        value={buildingId}
-        onChange={(e) => onChange?.({ buildingId: e.target.value, floorId: '', areaId: '' })}
-      >
-        <option value="">{t('building')}</option>
+      <Select value={buildingId} onChange={(e) => onChange?.({ buildingId: e.target.value, floorId: '', areaId: '' })}>
+        <option value="" disabled>
+          {t('building')}
+        </option>
         {buildings.map((b) => (
           <option key={b.buildingId} value={b.buildingId}>
-            {b.buildingName}{suffix(cntBuilding(b))}
+            {b.buildingName}
+            {suffix(cntBuilding(b))}
           </option>
         ))}
       </Select>
@@ -65,10 +65,13 @@ const LocationSelector = ({ buildings = [], value = {}, onChange, areaCounts = {
           value={floorId}
           onChange={(e) => onChange?.({ buildingId, floorId: e.target.value, areaId: firstAreaOf(e.target.value) })}
         >
-          <option value="">{t('floor')}</option>
+          <option value="" disabled>
+            {t('floor')}
+          </option>
           {floors.map((f) => (
             <option key={f.floorId} value={f.floorId}>
-              {f.floorName}{suffix(cntFloor(f))}
+              {f.floorName}
+              {suffix(cntFloor(f))}
             </option>
           ))}
         </Select>
@@ -76,9 +79,13 @@ const LocationSelector = ({ buildings = [], value = {}, onChange, areaCounts = {
 
       {areas.length > 0 && (
         <Select value={areaId} onChange={(e) => onChange?.({ buildingId, floorId, areaId: e.target.value })}>
+          <option value="" disabled>
+            {t('area')}
+          </option>
           {areas.map((a) => (
             <option key={a.areaId} value={a.areaId}>
-              {a.areaName}{suffix(cntArea(a))}
+              {a.areaName}
+              {suffix(cntArea(a))}
             </option>
           ))}
         </Select>

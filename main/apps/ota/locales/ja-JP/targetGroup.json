@@ -46,5 +46,6 @@
   "dynamicModeSubtitle": "条件でマッチング",
   "dynamicModeDescription": "ルールを定義すると、グループ内のデバイスが自動的に更新されます。大規模または変化するセットに最適です。",
   "all": "全体",
-  "targetGroupLimitPerOrg": "ターゲットグループは組織あたり{{limit}}個まで作成できます。"
+  "targetGroupLimitPerOrg": "ターゲットグループは組織あたり{{limit}}個まで作成できます。",
+  "selectMode": "モードを選択してください"
 }

@@ -46,5 +46,6 @@
   "dynamicModeSubtitle": "Match by conditions",
   "dynamicModeDescription": "Define rules and let the robots in this group update automatically. Best for large or changing fleets.",
   "all": "All",
-  "targetGroupLimitPerOrg": "Target groups can be created up to {{limit}} per organization."
+  "targetGroupLimitPerOrg": "Target groups can be created up to {{limit}} per organization.",
+  "selectMode": "Select Mode"
 }

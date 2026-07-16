@@ -126,13 +126,15 @@ const Module = () => {
         <HeaderTitleGroup>
           <SearchContainer>
             <Search
+              label={t('moduleName')}
               value={searchQuery}
               onChange={handleSearchChange}
               onReset={handleResetSearch}
               placeholder={tCommon('searchPlaceHolder')}
+              width={'300px'}
             />
           </SearchContainer>
-          <ButtonWrap className="alignRight" style={{ marginBottom: '0' }}>
+          <ButtonWrap className="alignRight" style={{ marginBottom: '-2rem' }}>
             <Button variant="contained" onClick={handleCreate}>
               {t('create')}
             </Button>

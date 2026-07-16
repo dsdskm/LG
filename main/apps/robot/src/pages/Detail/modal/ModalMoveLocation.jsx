@@ -3,6 +3,7 @@ import { Modal, ModalButton } from '@repo/ui'
 import { Navigation, Play } from '@/assets/icon'
 import styled from 'styled-components'
 import { Search, SearchContainer } from '@repo/ui'
+import { getLocalizedName } from '@/utils/robotUtils'
 
 // ── Styled Components ──────────────────────────────────────────
 
@@ -115,9 +116,9 @@ const SelectedBar = styled.div`
  * mapServer.poi.pois 배열을 받아
  * 현재 언어(lang)에 맞는 name을 반환
  */
-function getPoiName(poi, lang = 'ko-KR') {
+function getPoiName(poi, lang) {
   if (!poi?.name) return poi?.poiId ?? '-'
-  return poi.name[lang] ?? poi.name['en-US'] ?? Object.values(poi.name)[0] ?? poi.poiId
+  return getLocalizedName(poi.name, lang) || poi.poiId
 }
 
 // ── Component ──────────────────────────────────────────────────

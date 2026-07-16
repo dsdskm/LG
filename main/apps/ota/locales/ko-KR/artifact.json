@@ -41,5 +41,18 @@
   "confirmSaveArtifact": "아티팩트를 저장하시겠습니까?",
   "saveAsLatest": "latest로 저장",
   "uploadCanceled": "업로드가 취소되었습니다.",
-  "abortUpload": "업로드 중지"
+  "abortUpload": "업로드 중지",
+  "forgeArtifact": "Forge 아티팩트",
+  "retrieveForgeModel": "Forge 모델 불러오기",
+  "taskName": "작업 이름",
+  "primarySkillName": "기본 스킬 이름",
+  "selectedModel": "선택된 모델",
+  "dataset": "데이터셋",
+  "foundationModelName": "기반 모델",
+  "tags": "태그",
+  "createdAt": "생성일",
+  "taskInstruction": "작업 지침",
+  "subtaskInstruction": "세부 작업 지침",
+  "selectFoundationModel": "기반 모델 선택",
+  "searchTaskName": "작업 이름"
 }

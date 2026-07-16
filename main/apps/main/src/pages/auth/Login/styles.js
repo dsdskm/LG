@@ -71,6 +71,7 @@ export const Footer = styled.div`
   position: absolute;
   bottom: 2.4rem;
   right: 2.4rem;
+  color: var(--color-neutral-80);
 `
 
 export const BlueDescBox = styled.div`

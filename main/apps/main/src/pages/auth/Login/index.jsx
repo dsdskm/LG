@@ -213,7 +213,7 @@ function Login() {
         </Tabs>
       </LoginBox>
       <Footer>
-        <p className="typographyBody6">Copyright © 2026 LG Electronics. All rights reserved.</p>
+        <p className="typographyButton5">Copyright © 2026 LG Electronics. All rights reserved.</p>
       </Footer>
     </LoginContainer>
   )

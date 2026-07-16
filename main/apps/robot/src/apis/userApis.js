@@ -26,7 +26,7 @@ export const patchUserRole = async (userId, params) => {
 }
 
 /**
- * 사용자 정 수정
+ * 사용자 정보 수정
  * @returns {Promise<any>}
  */
 export const patchUser = async (userId, params) => {

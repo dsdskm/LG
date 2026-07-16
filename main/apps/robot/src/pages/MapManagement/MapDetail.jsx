@@ -1,349 +1,387 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { StyledPageContent } from '@repo/ui'
-import { mapApis } from '@/apis'
+import { useTranslation } from 'react-i18next'
+import { StyledPageContent, Title, SectionRobot as Section, Button, Table } from '@repo/ui'
+import { mapApis, groupApis, siteApis, deviceApis } from '@/apis'
+import { toYmdHmKST } from '@/utils/dateUtils'
+import SiteMap3D from '../../common/SiteMap3D'
 import '../../index.css'
 
-// ─── Constants ─────────────────────────────────────────────────────────────────
+const MAP_TYPES = ['navi', 'poi', 'svg']
+const ACCEPT = { navi: '.zip', poi: '.json', svg: '.svg' }
 
-const LAYER_ITEMS = [
-  { key: 'drivable', label: '주행 가능 영역', color: '#4ade80', icon: '✅' },
-  { key: 'obstacles', label: '고정 장애물', color: '#8b9dc3', icon: '⛔' },
-  { key: 'walls', label: '벽 / 구조물', color: '#5a7a9a', icon: '🟦' },
-  { key: 'zones', label: '금지구역', color: '#ef4444', icon: '🚫' },
-  { key: 'trajectory', label: '로봇 궤적', color: '#3b82f6', icon: '📍' }
+const buildNameMap = (res, idKeys, nameKeys) => {
+  const list = Array.isArray(res) ? res : res?.content || []
+  const map = {}
+  list.forEach((o) => {
+    const id = idKeys.map((k) => o?.[k]).find(Boolean)
+    const name = nameKeys.map((k) => o?.[k]).find(Boolean)
+    if (id) map[id] = name || id
+  })
+  return map
+}
+
+const flattenSite = (site) => {
+  const building = {}
+  const floor = {}
+  const area = {}
+  ;(site?.buildings ?? []).forEach((b) => {
+    if (b.buildingId) building[b.buildingId] = b.buildingName ?? b.buildingId
+    ;(b.floors ?? []).forEach((f) => {
+      if (f.floorId) floor[f.floorId] = f.floorName ?? f.floorId
+      ;(f.areas ?? []).forEach((a) => {
+        if (a.areaId) area[a.areaId] = a.areaName ?? a.areaId
+      })
+    })
+  })
+  return { building, floor, area }
+}
+
+const formatBytes = (n) => {
+  if (n == null) return '-'
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / (1024 * 1024)).toFixed(2)} MB`
+}
+
+const emptyBox = (text) => (
+  <div
+    style={{
+      padding: '4rem',
+      textAlign: 'center',
+      color: 'var(--color-neutral-50)',
+      fontSize: '1.4rem',
+      border: '1px dashed var(--color-neutral-30)',
+      borderRadius: 'var(--radius-md)'
+    }}
+  >
+    {text}
+  </div>
+)
+
+const fileInfoColumns = [
+  { name: 'label', cell: (row) => <div style={{ fontSize: '14px', color: 'var(--color-neutral-60)' }}>{row.label}</div> },
+  { name: 'value', cell: (row) => <div style={{ fontSize: '14px', wordBreak: 'break-all' }}>{row.value}</div> }
 ]
-
-const HISTORY_TYPE_CLS = {
-  '초기 등록': 'bg-[#dbeafe] text-[#2563eb]',
-  '금지구역 변경': 'bg-[#fef3c7] text-[#d97706]',
-  '맵 데이터 갱신': 'bg-[#d1fae5] text-[#059669]',
-  '상태 변경': 'bg-[#f3e8ff] text-[#7c3aed]',
-  '로봇 배포': 'bg-[#e8f4fd] text-[#1a8bc5]'
-}
-
-// ─── Badge Helpers ──────────────────────────────────────────────────────────────
-
-function StatusBadge({ status }) {
-  const cls = {
-    Active: 'bg-[#d1fae5] text-[#059669]',
-    Draft: 'bg-[#fef3c7] text-[#d97706]',
-    Deprecated: 'bg-[#f3f4f6] text-[#6b7280]'
-  }
-  return <span className={`px-2 py-[2px] rounded-full text-[9px] ${cls[status] || cls.Deprecated}`}>{status}</span>
-}
-
-function RobotStatusBadge({ status }) {
-  const cls = {
-    운영: 'bg-[#dbeafe] text-[#2563eb]',
-    에러: 'bg-[#fee2e2] text-[#dc2626]',
-    오프라인: 'bg-[#fef3c7] text-[#d97706]'
-  }
-  return (
-    <span className={`px-2 py-[2px] rounded-full text-[9px] ${cls[status] || 'bg-[#f3f4f6] text-[#6b7280]'}`}>
-      {status}
-    </span>
-  )
-}
-
-function getMapDisplayName(map) {
-  if (!map) return ''
-  if (map.ownerType === 'site') return map.site || '(미등록)'
-  if (map.ownerRobotName) return `${map.ownerRobotName} (${map.ownerRobotMacAddress || ''})`
-  return map.ownerRobotId || 'Unknown'
-}
-
-// ─── Component ─────────────────────────────────────────────────────────────────
 
 const MapDetail = () => {
   const navigate = useNavigate()
+  const { t } = useTranslation('robot')
   const [searchParams] = useSearchParams()
-  const mapId = searchParams.get('mapId')
+  const mapIdParam = searchParams.get('mapId')
+  const qGroupId = searchParams.get('groupId')
+  const qSiteId = searchParams.get('siteId')
+  const qBuildingId = searchParams.get('buildingId')
+  const qFloorId = searchParams.get('floorId')
+  const qAreaId = searchParams.get('areaId')
+  const qDeviceId = searchParams.get('deviceId')
 
-  const [map, setMap] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [layers, setLayers] = useState({
-    drivable: true,
-    obstacles: true,
-    walls: true,
-    zones: true,
-    trajectory: false
-  })
-  const [zoom, setZoom] = useState(1)
-  const [showRobots, setShowRobots] = useState(false)
-  const [activeTab, setActiveTab] = useState('info')
+  const [mapId, setMapId] = useState(mapIdParam)
+  const [mapObject, setMapObject] = useState(null)
+  const [view, setView] = useState(null)
+  const [loading, setLoading] = useState(!!mapIdParam)
+  const [userMapApplied, setUserMapApplied] = useState(true)
+  const [uploadingType, setUploadingType] = useState(null)
+  const [names, setNames] = useState({ group: {}, site: {}, building: {}, floor: {}, area: {}, device: {} })
+  const fileInputs = useRef({})
 
-  useEffect(() => {
-    let canceled = false
-    ;(async () => {
-      setLoading(true)
-      try {
-        const data = await mapApis.getMapDetail(mapId)
-        if (!canceled && data) setMap(data)
-      } catch (e) {
-        console.error('맵 상세 조회 실패:', e)
-      } finally {
-        if (!canceled) setLoading(false)
-      }
-    })()
-    return () => {
-      canceled = true
+  const load = useCallback(async () => {
+    if (!mapId) {
+      setLoading(false)
+      return
+    }
+    setLoading(true)
+    try {
+      const [obj, viewData] = await Promise.all([
+        mapApis.getMap(mapId),
+        mapApis.getMapView(mapId).catch(() => null)
+      ])
+      setMapObject(obj)
+      setView(viewData)
+    } catch (e) {
+      console.error('맵 상세 조회 실패:', e)
+      setMapObject(null)
+    } finally {
+      setLoading(false)
     }
   }, [mapId])
 
-  if (loading) {
-    return (
-      <StyledPageContent>
-        <div className="flex flex-col items-center justify-center h-64">
-          <p className="text-[12px] text-[#888]">맵 정보를 불러오는 중...</p>
-        </div>
-      </StyledPageContent>
-    )
+  useEffect(() => {
+    load()
+  }, [load])
+
+  // 맵이 없을 때(신규)엔 query scope 사용
+  const scope = mapObject?.mapScope || {
+    groupId: qGroupId,
+    siteId: qSiteId,
+    buildingId: qBuildingId,
+    floorId: qFloorId,
+    areaId: qAreaId,
+    deviceId: qDeviceId
   }
+  const isRobotMap = !!scope.deviceId
+  const isNewMode = !mapId
+  const siteIdForNames = scope.siteId
 
-  if (!map) {
-    return (
-      <StyledPageContent>
-        <div className="flex flex-col items-center justify-center h-64">
-          <p className="text-[12px] text-[#888] mb-3">맵 데이터를 불러올 수 없습니다.</p>
-          <button onClick={() => navigate('/robot/maps')} className="text-[11px] text-[#1a8bc5]">
-            맵 관리로 돌아가기
-          </button>
-        </div>
-      </StyledPageContent>
-    )
-  }
+  useEffect(() => {
+    let canceled = false
+    Promise.allSettled([groupApis.getGroups({}), siteApis.getSites({}), deviceApis.getDevices({})]).then(([g, s, d]) => {
+      if (canceled) return
+      const val = (r) => (r.status === 'fulfilled' ? r.value : null)
+      setNames((prev) => ({
+        ...prev,
+        group: buildNameMap(val(g), ['groupId', 'id', 'code'], ['groupName', 'name', 'displayName']),
+        site: buildNameMap(val(s), ['siteId', 'id', 'code'], ['siteName', 'name', 'displayName']),
+        device: buildNameMap(val(d), ['deviceId', 'id'], ['deviceName', 'name'])
+      }))
+    })
+    return () => {
+      canceled = true
+    }
+  }, [])
 
-  const mapRobots = map.robots || []
-  const registeredRobotCount = map.registeredRobotCount ?? mapRobots.length
-  const isSite = map.ownerType === 'site'
-  const activeLayerCount = Object.values(layers).filter(Boolean).length
-  const zones = map.zones || []
-  const updateHistory = map.updateHistory || []
+  useEffect(() => {
+    if (!siteIdForNames) return
+    let canceled = false
+    siteApis
+      .getSiteById(siteIdForNames)
+      .then((data) => {
+        if (!canceled) setNames((prev) => ({ ...prev, ...flattenSite(data) }))
+      })
+      .catch((e) => console.error('사이트 계층 조회 실패:', e))
+    return () => {
+      canceled = true
+    }
+  }, [siteIdForNames])
 
-  const toggleLayer = (key) => setLayers((prev) => ({ ...prev, [key]: !prev[key] }))
+  const nm = (kind, id) => (id ? names[kind]?.[id] || id : null)
+
+  const navi = view?.navi
+  const naviSvg = navi?.svgDownloadUrl ?? null
+  const naviPng = navi?.pngDownloadUrl ?? null
+  const mapData = userMapApplied
+    ? naviSvg
+      ? { type: 'svg', url: naviSvg }
+      : naviPng
+        ? { type: 'png', url: naviPng }
+        : null
+    : naviPng
+      ? { type: 'png', url: naviPng }
+      : naviSvg
+        ? { type: 'svg', url: naviSvg }
+        : null
+
+  const versionsByType = {}
+  ;(mapObject?.latestVersions || []).forEach((v) => {
+    if (v?.mapType) versionsByType[v.mapType] = v
+  })
+
+  const locationText = isRobotMap
+    ? t('mapMgmt.robotOnly')
+    : [nm('building', scope.buildingId), nm('floor', scope.floorId), nm('area', scope.areaId)]
+        .filter((x) => x && x !== '-')
+        .join(' | ') || t('mapMgmt.siteBase')
+
+  const infoData = [
+    { label: t('mapMgmt.colType'), value: isRobotMap ? t('mapMgmt.robotMap') : t('mapMgmt.siteMap') },
+    { label: t('mapMgmt.location'), value: locationText },
+    { label: t('mapMgmt.labelGroup'), value: nm('group', scope.groupId) || '-' },
+    { label: t('mapMgmt.labelSite'), value: nm('site', scope.siteId) || '-' },
+    ...(isRobotMap ? [{ label: t('mapMgmt.colRobot'), value: nm('device', scope.deviceId) || scope.deviceId }] : []),
+    ...(mapObject
+      ? [
+          { label: t('mapMgmt.createdAt'), value: mapObject.createdAt ? toYmdHmKST(mapObject.createdAt) : '-' },
+          { label: t('mapMgmt.updatedAt'), value: mapObject.updatedAt ? toYmdHmKST(mapObject.updatedAt) : '-' }
+        ]
+      : [{ label: t('mapMgmt.status'), value: t('mapMgmt.newNoMap') }])
+  ]
+
+  const handleDownload = useCallback(async (versionId, filename) => {
+    try {
+      const url = await mapApis.getVersionDownloadUrl(versionId)
+      if (!url) {
+        alert(t('mapMgmt.downloadUrlFail'))
+        return
+      }
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename || ''
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+    } catch (e) {
+      console.error('다운로드 실패:', e)
+      alert(t('mapMgmt.downloadFail'))
+    }
+  }, [t])
+
+  const handleUpload = useCallback(
+    async (mapType, file) => {
+      if (!file) return
+      const body = {
+        mapType,
+        filename: file.name,
+        ...(scope.deviceId
+          ? { deviceId: scope.deviceId }
+          : {
+              groupId: scope.groupId,
+              siteId: scope.siteId,
+              ...(scope.buildingId ? { buildingId: scope.buildingId } : {}),
+              ...(scope.floorId ? { floorId: scope.floorId } : {}),
+              ...(scope.areaId ? { areaId: scope.areaId } : {})
+            })
+      }
+      setUploadingType(mapType)
+      try {
+        const up = await mapApis.createUploadUrl(body)
+        if (!up?.uploadUrl) throw new Error('presigned URL 없음')
+        const putRes = await fetch(up.uploadUrl, { method: 'PUT', body: file })
+        if (!putRes.ok) throw new Error(`S3 업로드 실패 (${putRes.status})`)
+        await mapApis.completeUpload(up.mapId, up.versionId)
+        alert(`${mapType.toUpperCase()} ${t('mapMgmt.uploadDone')}`)
+        if (up.mapId && up.mapId !== mapId) setMapId(up.mapId) // 신규 생성 → 해당 맵 로드
+        else await load()
+      } catch (e) {
+        console.error('업로드 실패:', e)
+        alert(`${mapType.toUpperCase()} ${t('mapMgmt.uploadFail')}`)
+      } finally {
+        setUploadingType(null)
+      }
+    },
+    [scope, mapId, load, t]
+  )
+
+  const notFound = mapId && !loading && !mapObject
 
   return (
-    <StyledPageContent>
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          <button
-            onClick={() => navigate('/robot/maps')}
-            className="p-1 text-[18px] text-[#555] hover:bg-[#f3f4f6] rounded flex-shrink-0"
-          >
-            ←
-          </button>
-          <span className="text-[14px] text-[#333] truncate">{getMapDisplayName(map)}</span>
-          <span
-            className={`px-2 py-[2px] rounded-full text-[9px] flex-shrink-0 ${
-              isSite ? 'bg-[#e8f4fd] text-[#1a8bc5]' : 'bg-[#f3e8ff] text-[#7c3aed]'
-            }`}
-          >
-            {isSite ? '사이트 맵' : '로봇 맵'}
-          </span>
-          <span className="px-2 py-[2px] rounded-full text-[9px] bg-[#f3f4f6] text-[#555] flex-shrink-0">
-            READ-ONLY
-          </span>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <button
-            onClick={() => setShowRobots(true)}
-            className="flex items-center gap-1 px-3 py-1 border border-[#ddd] rounded text-[11px] text-[#555] bg-white hover:bg-[#f9f9f9]"
-          >
-            👥 사용 로봇
-          </button>
-          <button
-            onClick={() => navigate(`/robot/maps/edit?mapId=${map.id}`)}
-            className="flex items-center gap-1 px-3 py-1 bg-[#1a8bc5] text-white rounded text-[11px] hover:bg-[#157aae]"
-          >
-            ✏️ 편집 시작
-          </button>
-        </div>
-      </div>
+    <StyledPageContent className="column">
+      <Title>{t('mapMgmt.detailTitle')}</Title>
 
-      {/* Map Canvas */}
-      <div className="bg-[#1a1f2e] border border-[#e8e8e8] rounded overflow-hidden mb-3">
-        <div className="flex items-center justify-between px-3 py-2 bg-[#f8f9fa] border-b border-[#e8e8e8]">
-          <span className="text-[10px] text-[#888]">맵 시각화 (2D)</span>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setZoom((z) => Math.max(0.5, z - 0.25))} className="text-[14px] text-[#555] px-1">
-              －
-            </button>
-            <span className="text-[10px] text-[#555] min-w-[40px] text-center">{Math.round(zoom * 100)}%</span>
-            <button onClick={() => setZoom((z) => Math.min(3, z + 0.25))} className="text-[14px] text-[#555] px-1">
-              ＋
-            </button>
-            <button onClick={() => setZoom(1)} className="text-[10px] text-[#555] px-1">
-              ⤢
-            </button>
-          </div>
-        </div>
-        <div className="h-48 flex flex-col items-center justify-center gap-2">
-          <span className="text-4xl">🗺️</span>
-          <span className="text-[12px] text-[#5a7a9a]">{getMapDisplayName(map)}</span>
-          <span className="text-[10px] text-[#3a4a5a]">{map.mapType} Map</span>
-          <div className="flex gap-2 mt-1">
-            {LAYER_ITEMS.filter((l) => layers[l.key]).map((l) => (
-              <div key={l.key} className="w-2 h-2 rounded-full" style={{ backgroundColor: l.color }} />
-            ))}
-          </div>
-          <span className="text-[9px] text-[#3a4a5a]">{activeLayerCount} layers active</span>
-        </div>
-      </div>
-
-      {/* Info / History Panel */}
-      <div className="bg-white border border-[#e8e8e8] rounded overflow-hidden mb-3">
-        <div className="flex border-b border-[#e8e8e8]">
-          {[
-            { key: 'info', label: 'ℹ️ 맵 정보' },
-            { key: 'history', label: '📋 업데이트 이력' }
-          ].map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`flex-1 flex items-center justify-center gap-1 py-2 text-[11px] transition-colors ${
-                activeTab === tab.key
-                  ? 'bg-[#e8f4fd] border-b-2 border-[#1a8bc5] text-[#1a8bc5]'
-                  : 'text-[#888] hover:bg-[#f9f9f9]'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="p-3">
-          {activeTab === 'info' && (
-            <div className="space-y-1">
-              {[
-                ['식별자', getMapDisplayName(map)],
-                ['구분', isSite ? '사이트 맵' : '로봇 맵'],
-                ['타입', map.mapType],
-                ['상태', map.status],
-                ['Site', map.site || '-'],
-                ...(isSite && map.building ? [['Building', map.building]] : []),
-                ...(isSite && map.floor ? [['Floor', map.floor]] : []),
-                ...(isSite && map.area ? [['Area', map.area]] : []),
-                ['생성', map.createdAt],
-                ['최종 수정', map.updatedAt],
-                ['등록 로봇', isSite ? `${registeredRobotCount}대` : '-'],
-                ['맵 사용 로봇', `${mapRobots.length}대`]
-              ].map(([label, value]) => (
-                <div key={label} className="flex justify-between items-center py-1 border-b border-[#f9f9f9]">
-                  <span className="text-[10px] text-[#888]">{label}</span>
-                  <span className="text-[10px] text-[#333]">{value}</span>
+      {loading ? (
+        <Section>{emptyBox(t('mapMgmt.loadingMap'))}</Section>
+      ) : notFound ? (
+        <Section>{emptyBox(t('mapMgmt.mapNotFound'))}</Section>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {/* 기본 정보 — 2열 배치 */}
+          <Section>
+            <label className="typographyBody4" style={{ fontWeight: 'bold' }}>
+              {t('mapMgmt.basicInfo')}
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', columnGap: '2.4rem', marginTop: '1rem' }}>
+              {infoData.map((row) => (
+                <div
+                  key={row.label}
+                  style={{
+                    display: 'flex',
+                    gap: '1.2rem',
+                    fontSize: '1.4rem',
+                    padding: '0.8rem 0',
+                    borderBottom: '1px solid var(--color-neutral-15)'
+                  }}
+                >
+                  <span style={{ minWidth: '8rem', color: 'var(--color-neutral-60)' }}>{row.label}</span>
+                  <span style={{ wordBreak: 'break-all' }}>{row.value}</span>
                 </div>
               ))}
             </div>
-          )}
+          </Section>
 
-          {activeTab === 'history' && (
-            <div>
-              {updateHistory.length === 0 ? (
-                <p className="text-[10px] text-[#aaa]">업데이트 이력이 없습니다.</p>
-              ) : (
-                [...updateHistory].reverse().map((h) => (
-                  <div key={h.id} className="border-l-2 border-[#1a8bc5] pl-3 py-1 mb-3">
-                    <span
-                      className={`px-2 py-[2px] rounded-full text-[9px] mb-1 inline-block ${
-                        HISTORY_TYPE_CLS[h.type] || 'bg-[#f3f4f6] text-[#6b7280]'
-                      }`}
-                    >
-                      {h.type}
-                    </span>
-                    <p className="text-[10px] text-[#333]">{h.description}</p>
-                    <p className="text-[9px] text-[#aaa] mt-1">
-                      {h.date}&nbsp;&nbsp;{h.operator}
-                    </p>
-                  </div>
-                ))
+          {/* NAVI / POI / SVG 파일 — 다운로드 / 업로드 */}
+          <Section>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <label className="typographyBody4" style={{ fontWeight: 'bold' }}>
+                {t('mapMgmt.mapFiles')}
+              </label>
+              {mapId && (
+                <Button theme="tertiary" size="sm" onClick={() => navigate(`/robot/maps/history?mapId=${mapId}`)}>
+                  {t('mapMgmt.manageHistory')}
+                </Button>
               )}
             </div>
-          )}
-        </div>
-      </div>
+            <div style={{ display: 'flex', gap: '1.2rem', flexWrap: 'wrap', marginTop: '1rem' }}>
+              {MAP_TYPES.map((type) => {
+                const v = versionsByType[type]
+                const busy = uploadingType === type
+                return (
+                  <div
+                    key={type}
+                    style={{
+                      flex: '1 1 24rem',
+                      minWidth: '24rem',
+                      border: '1px solid var(--color-neutral-20)',
+                      borderRadius: 'var(--radius-md)',
+                      padding: '1.4rem',
+                      background: v ? 'var(--color-neutral-10)' : 'var(--color-secondary-10)'
+                    }}
+                  >
+                    <div style={{ fontWeight: 700, fontSize: '1.4rem', marginBottom: '0.8rem' }}>{type.toUpperCase()}</div>
+                    {v ? (
+                      <Table
+                        className="no-table-head"
+                        noTableHead
+                        columns={fileInfoColumns}
+                        data={[
+                          { label: t('mapMgmt.fileName'), value: v.filename },
+                          { label: t('mapMgmt.fileSize'), value: formatBytes(v.fileSize) },
+                          { label: t('mapMgmt.status'), value: v.status },
+                          { label: t('mapMgmt.updatedAt'), value: v.updatedAt ? toYmdHmKST(v.updatedAt) : '-' }
+                        ]}
+                      />
+                    ) : (
+                      <span style={{ fontSize: '1.3rem', color: 'var(--color-neutral-50)' }}>{t('mapMgmt.noFile')}</span>
+                    )}
 
-      {/* Layer Control */}
-      <div className="bg-white border border-[#e8e8e8] rounded p-3 mb-3">
-        <div className="flex items-center gap-2 mb-3">
-          <span className="text-[12px]">🗂️</span>
-          <span className="text-[11px] text-[#333]">레이어 컨트롤</span>
-        </div>
-        {LAYER_ITEMS.map((item) => (
-          <button
-            key={item.key}
-            onClick={() => toggleLayer(item.key)}
-            className="flex items-center gap-2 py-1 w-full hover:bg-[#f9f9f9] rounded"
-          >
-            <div
-              className={`w-[14px] h-[14px] rounded flex items-center justify-center border flex-shrink-0 ${
-                layers[item.key] ? 'bg-[#1a8bc5] border-[#1a8bc5]' : 'border-[#ddd]'
-              }`}
-            >
-              {layers[item.key] && <span className="text-[8px] text-white leading-none">✓</span>}
-            </div>
-            <span className="text-[10px]">{item.icon}</span>
-            <span className="text-[10px] text-[#555] flex-1 text-left">{item.label}</span>
-            <div
-              className="w-2 h-2 rounded-full flex-shrink-0"
-              style={{ backgroundColor: item.color, opacity: layers[item.key] ? 1 : 0.3 }}
-            />
-          </button>
-        ))}
-      </div>
-
-      {/* Zone List */}
-      {zones.length > 0 && (
-        <div className="bg-white border border-[#e8e8e8] rounded p-3 mb-3">
-          <div className="flex items-center gap-2 mb-3">
-            <span>🚫</span>
-            <span className="text-[11px] text-[#333]">금지구역 ({zones.length})</span>
-          </div>
-          {zones.map((z) => (
-            <div key={z.id} className="p-2 rounded bg-[#fff5f5] border border-[#fecaca] mb-2">
-              <p className="text-[10px] text-[#dc2626]">{z.name}</p>
-              {z.memo && <p className="text-[10px] text-[#888] mt-1">{z.memo}</p>}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Robots Modal */}
-      {showRobots && (
-        <div
-          className="fixed inset-0 flex items-center justify-center z-50 p-6"
-          style={{ backgroundColor: 'rgba(0,0,0,0.3)' }}
-          onClick={() => setShowRobots(false)}
-        >
-          <div
-            className="bg-white rounded p-4 w-full max-w-md max-h-96 overflow-auto shadow-lg"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex justify-between items-center mb-3">
-              <span className="text-[12px] text-[#333]">맵 사용 로봇 목록 ({mapRobots.length}대)</span>
-              <button onClick={() => setShowRobots(false)} className="text-[20px] text-[#888] leading-none">
-                ×
-              </button>
-            </div>
-            {mapRobots.length === 0 ? (
-              <p className="text-[11px] text-[#888]">이 맵을 사용하는 로봇이 없습니다.</p>
-            ) : (
-              <div className="space-y-2">
-                {mapRobots.map((r) => (
-                  <div key={r.id} className="flex items-center justify-between p-2 bg-[#f8f9fa] rounded">
-                    <div>
-                      <p className="text-[11px] text-[#333]">{r.name}</p>
-                      <p className="text-[10px] text-[#aaa]">
-                        {r.macAddress}&nbsp;&nbsp;{r.model}
-                      </p>
+                    <div style={{ marginTop: '1rem', display: 'flex', alignItems: 'center', gap: '0.8rem', flexWrap: 'wrap' }}>
+                      <Button
+                        theme="tertiary"
+                        size="sm"
+                        disabled={!v}
+                        onClick={() => v && handleDownload(v.versionId, v.filename)}
+                      >
+                        {t('mapMgmt.download')}
+                      </Button>
+                      <input
+                        type="file"
+                        accept={ACCEPT[type]}
+                        ref={(el) => (fileInputs.current[type] = el)}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          e.target.value = ''
+                          handleUpload(type, file)
+                        }}
+                        style={{ display: 'none' }}
+                      />
+                      <Button theme="tertiary" size="sm" disabled={busy} onClick={() => fileInputs.current[type]?.click()}>
+                        {busy ? t('mapMgmt.uploading') : t('mapMgmt.upload')}
+                      </Button>
                     </div>
-                    <RobotStatusBadge status={r.status} />
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+                )
+              })}
+            </div>
+          </Section>
+
+          {/* 2D 맵 (로봇 상세 맵 영역과 동일 방식, 2D 고정) */}
+          <Section>
+            <label className="typographyBody4" style={{ fontWeight: 'bold' }}>
+              {t('mapMgmt.preview')}
+            </label>
+            <div style={{ marginTop: '1rem' }}>
+              {mapData ? (
+                <SiteMap3D
+                  only2D
+                  mapData={mapData}
+                  mapServer={view}
+                  robotDatas={[]}
+                  height="520px"
+                  mapApplyControl={{ applied: userMapApplied, onChange: setUserMapApplied }}
+                />
+              ) : (
+                emptyBox(isNewMode ? t('mapMgmt.newUploadHint') : t('mapMgmt.noPreview'))
+              )}
+            </div>
+          </Section>
         </div>
       )}
     </StyledPageContent>

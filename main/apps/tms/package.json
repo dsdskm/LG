@@ -38,6 +38,7 @@
     "react-toastify": "^11.0.5",
     "styled-components": "^6.3.8",
     "three": "^0.182.0",
+    "three-mesh-bvh": "^0.9.11",
     "urdf-loader": "^0.12.7",
     "vite-plugin-svgr": "^4.5.0",
     "yaml": "^2.9.0",

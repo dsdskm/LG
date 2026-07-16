@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { Table, Modal, Button, ExpandableSection, SectionRobot as Section } from '@repo/ui'
 import { toYmdHmKST } from '@/utils/dateUtils'
-import { parseDeviceInfo, parseRobotData } from '@/utils/robotUtils'
+import { parseDeviceInfo, parseRobotData, getLocalizedName } from '@/utils/robotUtils'
 import { EditButton, PlayButton, StopButton, LiveSpan } from '@/utils/style'
 import { SectionList, ControlDiv, ControlBtn } from '../styles'
 import { useModalState } from '@repo/hooks'
@@ -31,6 +31,9 @@ import {
   Navigation
 } from '@/assets/icon'
 
+// sitePosition(건물/층/영역) 식별 키 — 값이 바뀌면 해당 위치의 지도를 다시 로딩
+const sitePosKey = (sp) => (sp?.buildingId ? `${sp.buildingId}/${sp.floorId}/${sp.areaId}` : null)
+
 const AssetInfo = ({ t, deviceId }) => {
   const EditRobotModal = useModalState()
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false)
@@ -42,11 +45,20 @@ const AssetInfo = ({ t, deviceId }) => {
   const [robotState, setRobotState] = useState({})
   const [showMap, setShowMap] = useState(false)
   const [mapServer, setMapServer] = useState({})
-  const { t: tCommon } = useTranslation('common')
+  const { t: tCommon, i18n } = useTranslation('common')
   const MoveLocationModal = useModalState()
   const { session } = useUserStore()
   const [isLive, setIsLive] = useState(false)
   const liveIntervalRef = useRef(null)
+  const prevSitePosRef = useRef(null) // 마지막으로 지도를 로딩한 sitePosition 키
+  const pollCacheRef = useRef({
+    updatedAt: null,
+    st: null, // state.stateUpdatedAt
+    conn: null, // connection.connectionUpdatedAt
+    hwTs: null,
+    senTs: null,
+    swTs: null
+  })
 
   useEffect(() => {
     loadDeviceInfo()
@@ -101,8 +113,13 @@ const AssetInfo = ({ t, deviceId }) => {
       setRobotState(data?.state)
 
       const provisionData = data.provision
-      if (provisionData && !provisionData.isDefaultSite) {
-        getMapUrl(provisionData, data.state?.sitePosition)
+      const sp = data.state?.sitePosition
+      // 맵은 device/area 단위로만 존재 → sitePosition(area) 없으면 조회하지 않음
+      if (provisionData && !provisionData.isDefaultSite && sp) {
+        prevSitePosRef.current = sitePosKey(sp)
+        getMapUrl(provisionData, sp)
+      } else {
+        setShowMap(false)
       }
     } catch (err) {
       console.error('Error loadDeviceInfo:', err)
@@ -111,15 +128,19 @@ const AssetInfo = ({ t, deviceId }) => {
   }, [])
 
   const getMapUrl = useCallback(async (provisionData, sitePosition) => {
+    // 맵은 area 단위로만 존재하며, 조회 시 상위 buildingId/floorId를 반드시 함께 전달해야 함.
+    if (!sitePosition?.areaId || !sitePosition?.buildingId || !sitePosition?.floorId) {
+      setShowMap(false)
+      return
+    }
     try {
       const params = {
         groupId: provisionData.groupId,
-        siteId: provisionData.siteId
+        siteId: provisionData.siteId,
+        buildingId: sitePosition.buildingId,
+        floorId: sitePosition.floorId,
+        areaId: sitePosition.areaId
       }
-      // 로봇이 위치한 영역(sitePosition)이 있으면 빌딩/층/영역 ID 함께 전송
-      if (sitePosition?.buildingId) params.buildingId = sitePosition.buildingId
-      if (sitePosition?.floorId) params.floorId = sitePosition.floorId
-      if (sitePosition?.areaId) params.areaId = sitePosition.areaId
       const data = await mapApis.getMapViewFind(params)
       let type = 'png'
       let url = ''
@@ -241,7 +262,7 @@ const AssetInfo = ({ t, deviceId }) => {
 
       try {
         await deviceApis.postInstanceActions(deviceId, params)
-        const poiName = poi.name?.['ko-KR'] ?? poi.name?.['en-US'] ?? poi.poiId
+        const poiName = getLocalizedName(poi.name, i18n.language) || poi.poiId
         setConfirmMessage(`${poiName} ${t('moveCommandSent')}`)
         setIsConfirmModalOpen(true)
       } catch (err) {
@@ -292,13 +313,46 @@ const AssetInfo = ({ t, deviceId }) => {
   const pollDeviceInfo = useCallback(async () => {
     try {
       const data = await deviceApis.getDeviceInfo(deviceId)
+      if (!data) return
+      const c = pollCacheRef.current
+
+      const st = data.state?.stateUpdatedAt ?? null
+      const conn = data.connection?.connectionUpdatedAt ?? null
+
+      // 최상위 변경 없음 → 아무것도 갱신하지 않음 (불필요 리렌더 차단)
+      if (data.updatedAt === c.updatedAt && st === c.st && conn === c.conn) return
+
+      // 상단 정보(이름/배터리/상태/위치)는 변경 시 갱신
       setDeviceInfo(parseDeviceInfo(data))
       setRobotDatas([parseRobotData(data)])
-      setRobotState(data?.state)
+
+      // PartsStatusPanel용 robotState는 hw/sen/sw 타임스탬프가 바뀐 경우에만 갱신
+      const hwTs = data.state?.hwComponentsUpdatedAt ?? null
+      const senTs = data.state?.sensorsUpdatedAt ?? null
+      const swTs = data.state?.sWmodulesUpdatedAt ?? null
+      if (hwTs !== c.hwTs || senTs !== c.senTs || swTs !== c.swTs) {
+        setRobotState(data.state)
+        c.hwTs = hwTs
+        c.senTs = senTs
+        c.swTs = swTs
+      }
+
+      c.updatedAt = data.updatedAt
+      c.st = st
+      c.conn = conn
+
+      // 지도(sitePosition) 갱신 — 기존과 동일
+      const sp = data.state?.sitePosition
+      const key = sitePosKey(sp)
+      const provisionData = data.provision
+      if (key && key !== prevSitePosRef.current && provisionData && !provisionData.isDefaultSite) {
+        prevSitePosRef.current = key
+        getMapUrl(provisionData, sp)
+      }
     } catch (err) {
       console.error('Error pollDeviceInfo:', err)
     }
-  }, [deviceId])
+  }, [deviceId, getMapUrl])
 
   const handleLivePlay = () => {
     setIsLive(true)
@@ -588,6 +642,7 @@ const AssetInfo = ({ t, deviceId }) => {
         onConfirm={handleMoveLocation}
         mapServer={mapServer}
         t={t}
+        lang={i18n.language}
       />
     </>
   )

@@ -282,6 +282,28 @@ export const BreakpointDot = styled.span`
   z-index: 4;
 `
 
+// "실행 결과 강제"(SUCCESS/FAILURE/RUNNING) 표시. 우상단, breakpoint 점의 절반 크기 네모.
+const FORCED_MARK_COLOR: Record<'SUCCESS' | 'FAILURE' | 'RUNNING', string> = {
+  SUCCESS: '#34d399',
+  FAILURE: '#fb7185',
+  RUNNING: '#60a5fa'
+}
+
+export const ForcedResultMark = styled.span<{ $result: 'SUCCESS' | 'FAILURE' | 'RUNNING' }>`
+  position: absolute;
+  top: -3px;
+  right: -3px;
+
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: ${({ $result }) => FORCED_MARK_COLOR[$result]};
+  border: 1px solid #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.35);
+
+  z-index: 4;
+`
+
 export const execStyle: Record<string, { border: string; bg: string; text: string; sub: string; handle: string }> = {
   IDLE: {
     border: '#cbd5e1',

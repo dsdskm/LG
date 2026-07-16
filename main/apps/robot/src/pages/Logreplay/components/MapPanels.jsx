@@ -1,13 +1,9 @@
 // Logreplay/components/MapPanels.jsx
 import React, { memo, useMemo, useRef, useEffect, useState } from 'react'
 import { S } from '../styles'
-import CoveragePanel from './CoveragePanel'
 import SensorChart from './SensorChart'
 import { Button } from '@repo/ui'
 import DrivingMap3D from './DrivingMap3D'
-
-// ✅ 이동면적(coverage) 데이터 확보 전까지 비활성
-const ENABLE_COVERAGE_PANEL = false
 
 // ✅ SensorChart에 넘기는 labels/colors는 정적이므로 모듈 상수로 고정.
 //    (인라인 객체로 넘기면 매 렌더마다 새 참조 → SensorChart effect 재실행 → uPlot 재생성)
@@ -231,15 +227,11 @@ function MapPanels({
   canvasRef,
   threeMountRef,
   isLoadingLogs,
-  canPlay,
   loadPhase,
   onCanvasMouseDown,
   msToClock,
   leftPlayable,
-  coverageGrid,
   coveragePathPoints = [],
-  showSensor,
-  setShowSensor,
   currentTimestampMs,
   durationMs,
   formattedCurrentTime,
@@ -314,12 +306,6 @@ function MapPanels({
     return ''
   }, [loadPhase, leftHasPts, leftHasGrid, leftReadyByData])
 
-  // ✅ (유지) 디폴트는 센서 정보로
-  useEffect(() => {
-    setShowSensor?.(true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   // ===============================
   // 우측 센서 차트 게이팅(좌측과 동일한 로딩 Sync)
   // ===============================
@@ -359,9 +345,6 @@ function MapPanels({
     el.textContent = `${timeLabelCurrent}${timeLabelDuration}`
   }, [timeLabelCurrent, timeLabelDuration])
 
-  // ✅ 우측은 센서 정보 고정(이동면적 disable 정책)
-  const effectiveShowSensor = true
-
   return (
     <div style={S.mapsArea}>
       {/* 좌측: 이동현황 */}
@@ -396,9 +379,8 @@ function MapPanels({
           }}
         >
           {/* ✅ ready일 때만 차트 렌더 (uPlot이 0px에서 그려지는 문제 방지) */}
-          {effectiveShowSensor ? (
-            rightInteractiveReady ? (
-              chartLoading ? (
+          {rightInteractiveReady ? (
+            chartLoading ? (
                 <div
                   style={{
                     width: '100%',
@@ -446,46 +428,7 @@ function MapPanels({
             ) : (
               // overlay가 덮을 거지만, 레이아웃 흔들림 방지용 빈 자리(선택)
               <div style={{ width: '100%', height: 220 * 2 + 12 }} />
-            )
-          ) : ENABLE_COVERAGE_PANEL ? (
-            <CoveragePanel
-              grid={coverageGrid}
-              pathPoints={coveragePathPoints}
-              overlayTextInit={'mcap 파일 선택 후 조회 버튼을 눌러주세요'}
-              background="#0D1117"
-              fillColor="rgba(156,163,175,0.32)"
-              edgeDark="rgba(0,0,0,0.65)"
-              edgeLight="rgba(255,255,255,0.28)"
-              edgeOuterPx={1.0}
-              edgeInnerPx={0.7}
-              centerLineColor="#9FE3FC"
-              brushWidthM={0.44}
-              useClosing={true}
-              closeBlurPx={2.0}
-              closeThreshold={95}
-              arrowEveryMeters={2.1}
-              arrowSizePx={4}
-              arrowFill="#0B0F14"
-              arrowStroke="#A5F3FC"
-              arrowStrokeWidth={0.8}
-              currentTimestampMs={currentTimestampMs}
-              durationMs={durationMs}
-              msToClock={msToClock}
-              followPlay={true}
-              fitMode="grid"
-              autoFitOnData={true}
-              padPx={24}
-              loadPhase={loadPhase}
-              isLoadingLogs={isLoadingLogs}
-              minSamples={150}
-              minSeconds={3.0}
-              showDebugLabel={false}
-            />
-          ) : (
-            <div style={{ opacity: 0.65, padding: 12, fontSize: 12 }}>
-              이동면적(coverage) 데이터 확보 전이라 비활성화되어 있습니다.
-            </div>
-          )}
+            )}
 
           {/* ✅ 우측 Overlay: 좌측과 동일한 로딩 Sync */}
           {showRightOverlay && (

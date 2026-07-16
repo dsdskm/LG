@@ -19,8 +19,11 @@ import { useS3Upload } from '@repo/hooks/useS3Upload'
 import { useOrganizationStore, useUserStore } from '@repo/stores'
 import { DropdownContainer } from './styles'
 import { ButtonWrap, PageHeadWrap } from '@/components/common/styles'
-import { VersionContainer } from '@repo/ui/styles'
+import ForgeListModal from '@/components/Artifact/ForgeListModal'
+import DockerSection from '@/components/Artifact/DockerSection'
+import ForgeSection from '@/components/Artifact/ForgeSection'
 import { toast } from 'react-toastify'
+import { PACKAGE_TYPE_CODE } from '@/constants/artifact'
 
 const ArtifactDetail = () => {
   const { id } = useParams()
@@ -44,6 +47,7 @@ const ArtifactDetail = () => {
   const [allModules, setAllModules] = useState([])
   const [moduleOptions, setModuleOptions] = useState([])
   const [moduleId, setModuleId] = useState(null)
+  const [packageTypeOptions, setPackageTypeOptions] = useState([])
   const [latestVersion, setLatestVersion] = useState(true)
 
   const [version, setVersion] = useState('')
@@ -52,6 +56,9 @@ const ArtifactDetail = () => {
   const [isUploadFailModalOpen, setIsUploadFailModalOpen] = useState(false)
   const [isUploadCancelModalOpen, setIsUploadCancelModalOpen] = useState(false)
   const [createdArtifactId, setCreatedArtifactId] = useState(null)
+  const [isForgeModal, setIsForgeModal] = useState(false)
+  const [selectedForgeModel, setSelectedForgeModel] = useState(null)
+  const [organizationId, setOrganizationId] = useState('')
 
   const { uploadFile, abort, isUploading, uploadProgress, error } = useS3Upload({
     requestUploadUrl: async ({ file, chunkCount, context }) => {
@@ -94,7 +101,6 @@ const ArtifactDetail = () => {
 
   const confirmSave = async () => {
     setIsConfirmModalOpen(false)
-    console.log('save')
     const versionList = versions.map((v) => v)
     if (latestVersion) {
       versionList.push('latest')
@@ -106,18 +112,23 @@ const ArtifactDetail = () => {
       displayName,
       memo,
       moduleId,
-      version: { displayName: versionList },
-      fileInfo: {
+      version: { displayName: versionList }
+    }
+    if (packageType?.code === PACKAGE_TYPE_CODE.FORGE) {
+      artifactData.forgeModelId = selectedForgeModel?.id
+      artifactData.packageTypeId = packageType?.id
+    } else if (packageType?.code === PACKAGE_TYPE_CODE.DOCKER) {
+      artifactData.fileInfo = {
         artifact: {
           name: artifactFile?.fileName || artifactFile?.name,
           size: artifactFile?.fileSize || artifactFile?.size
         }
       }
-    }
-    if (manifestFile) {
-      artifactData.fileInfo.manifest = {
-        name: manifestFile?.fileName || manifestFile?.name,
-        size: manifestFile?.fileSize || manifestFile?.size
+      if (manifestFile) {
+        artifactData.fileInfo.manifest = {
+          name: manifestFile?.fileName || manifestFile?.name,
+          size: manifestFile?.fileSize || manifestFile?.size
+        }
       }
     }
     const CHUNK_SIZE = 1024 * 1024 * 10 // 10MB
@@ -213,15 +224,23 @@ const ArtifactDetail = () => {
     setVersions(versions.filter((_, i) => i !== index))
   }
 
+  const handlePackageTypeChange = (value) => {
+    const pt = allPackageTypes.find((p) => p.id === Number(value))
+    setPackageType(pt)
+  }
+
+  const handleRetrieveForgeModel = () => {
+    setIsForgeModal(true)
+  }
+
   const isDisabled = () => {
     if (id) {
       return !displayName
     }
+    if (packageType?.code === PACKAGE_TYPE_CODE.FORGE) {
+      return !displayName || !selectedForgeModel
+    }
     return !displayName || !packageType || !versions.length || !artifactFile || !moduleId
-  }
-
-  const isDockerType = () => {
-    return packageType?.code === '0000'
   }
 
   const addVersion = () => {
@@ -242,7 +261,6 @@ const ArtifactDetail = () => {
   }
 
   useEffect(() => {
-    console.log(id)
     if (id) {
       try {
         const retrieveArtifacts = async () => {
@@ -253,17 +271,30 @@ const ArtifactDetail = () => {
           setMemo(artifact.memo || '')
           setStatus(artifact.status)
           setModuleId(artifact.Module.id || '')
-          setPackageType(artifact.PackageType || null)
+          const moduleResponse = await moduleApis.retrieveModules(company.id, artifact.Module.id)
+          setPackageType(moduleResponse.results[0].PackageType || null)
           setVersions(artifact.Versions.map((v) => v.displayName) || [])
           setOrganizationId(artifact.Organization.id || '')
 
-          const artifactFile = artifact.Files.find((file) => file.fileType === 'artifact')
-          const manifestFile = artifact.Files.find((file) => file.fileType === 'manifest')
-          const { fileName: artifactFileName, fileSize: artifactFileSize } = artifactFile
-          setArtifactFile({ fileName: artifactFileName, fileSize: artifactFileSize } || null)
+          if (artifact.ForgeModel || artifact.forgeModel) {
+            setSelectedForgeModel(artifact.ForgeModel || artifact.forgeModel)
+          } else {
+            setSelectedForgeModel(null)
+          }
+
+          const artifactFile = artifact.Files?.find((file) => file.fileType === 'artifact')
+          const manifestFile = artifact.Files?.find((file) => file.fileType === 'manifest')
+          if (artifactFile) {
+            const { fileName: artifactFileName, fileSize: artifactFileSize } = artifactFile
+            setArtifactFile({ fileName: artifactFileName, fileSize: artifactFileSize })
+          } else {
+            setArtifactFile(null)
+          }
           if (manifestFile) {
             const { fileName: manifestFileName, fileSize: manifestFileSize } = manifestFile
-            setManifestFile({ fileName: manifestFileName, fileSize: manifestFileSize } || null)
+            setManifestFile({ fileName: manifestFileName, fileSize: manifestFileSize })
+          } else {
+            setManifestFile(null)
           }
         }
         retrieveArtifacts()
@@ -297,7 +328,9 @@ const ArtifactDetail = () => {
       setIsLoading(true)
       try {
         const response = await packageTypeApis.retrievePackageTypes(company.id)
-        setAllPackageTypes(response.results)
+        const pkgTypes = response.results
+        setPackageTypeOptions(pkgTypes.map((pkgType) => ({ value: pkgType.id, name: pkgType.displayName })))
+        setAllPackageTypes(pkgTypes)
       } catch (error) {
         console.error('Error retrieving package types:', error)
       } finally {
@@ -306,6 +339,8 @@ const ArtifactDetail = () => {
     }
     retrievePackageTypes()
   }, [company])
+
+  console.log('Render: packageType is', packageType, 'code is', packageType?.code)
 
   return (
     <StyledPageContent className="column">
@@ -345,87 +380,48 @@ const ArtifactDetail = () => {
         <Section gap="0.5rem">
           <DropdownContainer>
             <Dropdown
-              label={t('module')}
+              label={t('packageType')}
               size="lg"
-              value={moduleId}
-              placeholder={t('selectModule')}
-              options={moduleOptions}
-              onChange={handleModuleChange}
+              value={packageType?.id}
+              placeholder={t('selectPackageType')}
+              options={packageTypeOptions}
+              onChange={handlePackageTypeChange}
               disabled={id !== undefined && id !== null}
             />
           </DropdownContainer>
-          <Input
-            type="file"
-            label={t('fileArtifact')}
-            size="lg"
-            value={artifactFile?.fileName || ''}
-            onChange={(e) => setArtifactFile(e.target?.files[0] || artifactFile)}
-            onReset={() => setArtifactFile(null)}
-            disabled={id !== undefined && id !== null && (status === 'IN_PROGRESS' || status === 'SUCCESS')}
-          />
-          {packageType?.needScript && (
-            <Input
-              type="file"
-              label={t('fileManifest')}
-              size="lg"
-              value={manifestFile?.fileName || ''}
-              onChange={(e) => setManifestFile(e.target?.files[0] || manifestFile)}
-              onReset={() => setManifestFile(null)}
-              disabled={id !== undefined && id !== null && (status === 'IN_PROGRESS' || status === 'SUCCESS')}
+          {packageType?.code === PACKAGE_TYPE_CODE.DOCKER && (
+            <DockerSection
+              t={t}
+              id={id}
+              status={status}
+              packageType={packageType}
+              moduleId={moduleId}
+              moduleOptions={moduleOptions}
+              handleModuleChange={handleModuleChange}
+              artifactFile={artifactFile}
+              setArtifactFile={setArtifactFile}
+              manifestFile={manifestFile}
+              setManifestFile={setManifestFile}
+              version={version}
+              setVersion={setVersion}
+              versions={versions}
+              addVersion={addVersion}
+              handleDeleteTag={handleDeleteTag}
             />
           )}
-          <VersionContainer>
-            <div className="version-label">{isDockerType() ? 'Tag' : 'Version'}</div>
-            <div className="version-wrapper">
-              <div
-                className={`version-input-group ${!moduleId || (id !== undefined && id !== null) ? 'disabled' : ''}`}
-              >
-                <Input
-                  value={version}
-                  size="sm"
-                  style={{ width: '20rem' }}
-                  onChange={(e) => setVersion(e.target.value)}
-                  type="text"
-                  disabled={id !== undefined && id !== null}
-                  onKeyDown={(e) => e.key === 'Enter' && version && addVersion()}
-                />
-                <Button
-                  variant="contained"
-                  onClick={addVersion}
-                  disabled={(id !== undefined && id !== null) || !version}
-                >
-                  +
-                </Button>
-              </div>
-              <div className="version-list">
-                {versions.map((ver, index) => (
-                  <div key={index} className="tag">
-                    <Tag
-                      variant="contained"
-                      size="sm"
-                      onClick={() => (id === undefined || id === null) && handleDeleteTag(index)}
-                    >
-                      {ver}
-                      {(id === undefined || id === null) && (
-                        <span
-                          className="close-icon"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleDeleteTag(index)
-                          }}
-                        >
-                          ✕
-                        </span>
-                      )}
-                    </Tag>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </VersionContainer>
+          {packageType?.code === PACKAGE_TYPE_CODE.FORGE && (
+            <ForgeSection
+              t={t}
+              id={id}
+              selectedForgeModel={selectedForgeModel}
+              setSelectedForgeModel={setSelectedForgeModel}
+              handleRetrieveForgeModel={handleRetrieveForgeModel}
+            />
+          )}
         </Section>
       </Section>
 
+      {/* Uploading Artifact Modal */}
       <Modal
         isOpen={isUploading}
         title={t('uploadingArtifact') || 'Uploading Artifact'}
@@ -443,6 +439,7 @@ const ArtifactDetail = () => {
         </div>
       </Modal>
 
+      {/* Save Artifact Confirmation Modal */}
       <Modal
         isOpen={isConfirmModalOpen}
         title={t('saveArtifact')}
@@ -469,6 +466,7 @@ const ArtifactDetail = () => {
         </div>
       </Modal>
 
+      {/* Upload File Fail Modal */}
       <Modal
         isOpen={isUploadFailModalOpen}
         title={tCommon('error.uploadFail')}
@@ -487,6 +485,7 @@ const ArtifactDetail = () => {
         </div>
       </Modal>
 
+      {/* Upload File Cancel Modal */}
       <Modal
         isOpen={isUploadCancelModalOpen}
         title={t('abortUpload')}
@@ -507,6 +506,18 @@ const ArtifactDetail = () => {
           <p>{t('confirmAbortUpload')}</p>
         </div>
       </Modal>
+
+      {/* Forge Model Selection Modal */}
+      <ForgeListModal
+        isOpen={isForgeModal}
+        onClose={() => setIsForgeModal(false)}
+        onConfirm={(model) => {
+          setSelectedForgeModel(model)
+          setDisplayName(`${model.trainedModelMetadata?.trainedFor?.taskName}`)
+          setIsForgeModal(false)
+        }}
+        companyId={company?.id}
+      />
     </StyledPageContent>
   )
 }

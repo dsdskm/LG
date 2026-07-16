@@ -22,8 +22,7 @@ import SiteDetail from './pages/SiteDetail'
 import { AppProvider } from './common/AppContext'
 import MapManagement from './pages/MapManagement'
 import MapDetail from './pages/MapManagement/MapDetail'
-import MapEdit from './pages/MapManagement/MapEdit'
-import MapDeploy from './pages/MapManagement/MapDeploy'
+import MapHistory from './pages/MapManagement/MapHistory'
 import AiLogManagement from './pages/AiLogManagement'
 import AiEventSummaryPanel from './pages/Dashboard/components/AiEventSummaryPanel'
 import TVDashboard from './pages/TVDashboard'
@@ -55,40 +54,32 @@ const appRoutes = [
       }
     ]
   },
-  // {
-  //   name: 'mapManagement',
-  //   path: '/robot/maps',
-  //   prefix: 'robot',
-  //   icon: 'map',
-  //   element: <MapManagement />,
-  //   accessLevel: [0, 1, 2, 3],
-  //   depth: [
-  //     {
-  //       name: 'mapDetail',
-  //       hide: true,
-  //       hasBack: true,
-  //       path: '/robot/maps/detail',
-  //       prefix: 'robot',
-  //       element: <MapDetail />
-  //     },
-  //     {
-  //       name: 'mapEdit',
-  //       hide: true,
-  //       hasBack: true,
-  //       path: '/robot/maps/edit',
-  //       prefix: 'robot',
-  //       element: <MapEdit />
-  //     },
-  //     {
-  //       name: 'mapDeploy',
-  //       hide: true,
-  //       hasBack: true,
-  //       path: '/robot/maps/deploy',
-  //       prefix: 'robot',
-  //       element: <MapDeploy />
-  //     }
-  //   ]
-  // },
+  {
+    name: 'mapManagement',
+    path: '/robot/maps',
+    prefix: 'robot',
+    icon: 'map',
+    element: <MapManagement />,
+    accessLevel: [0, 1, 2, 3],
+    depth: [
+      {
+        name: 'mapDetail',
+        hide: true,
+        hasBack: true,
+        path: '/robot/maps/detail',
+        prefix: 'robot',
+        element: <MapDetail />
+      },
+      {
+        name: 'mapHistory',
+        hide: true,
+        hasBack: true,
+        path: '/robot/maps/history',
+        prefix: 'robot',
+        element: <MapHistory />
+      }
+    ]
+  },
 
   {
     name: 'aiLogManagement',
