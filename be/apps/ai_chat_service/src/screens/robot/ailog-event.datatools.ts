@@ -114,10 +114,10 @@ function pickOptionalString(value: unknown): string | undefined {
 function extractResolvedFilters(payload: any): {
   start: string
   end: string
-  severity?: string
-  func?: string
-  status?: string
-  keyword?: string
+  severity: string | undefined
+  func: string | undefined
+  status: string | undefined
+  keyword: string | undefined
 } | null {
   if (!payload || typeof payload !== 'object') return null
 
