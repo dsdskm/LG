@@ -41,6 +41,18 @@ export class ChatScreenToolEntity {
   @Column({ type: 'text', name: 'endpoint', nullable: true })
   endpoint?: string | null
 
+  @Column({ type: 'text', name: 'base_url', nullable: true })
+  baseUrl?: string | null
+
+  @Column({ type: 'jsonb', name: 'request_headers', nullable: true })
+  requestHeaders?: unknown
+
+  @Column({ type: 'jsonb', name: 'request_query', nullable: true })
+  requestQuery?: unknown
+
+  @Column({ type: 'jsonb', name: 'request_body', nullable: true })
+  requestBody?: unknown
+
   @Column({ type: 'jsonb', name: 'context_params', nullable: true })
   contextParams?: unknown
 

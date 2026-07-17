@@ -48,6 +48,10 @@ type UpdateScreenToolBody = {
   apiName?: string | null
   method?: string | null
   endpoint?: string | null
+  baseUrl?: string | null
+  requestHeaders?: unknown
+  requestQuery?: unknown
+  requestBody?: unknown
   contextParams?: unknown
   requestParams?: unknown
   staticPayload?: unknown
@@ -69,6 +73,10 @@ type CreateScreenToolBody = {
   displayName?: string
   description?: string | null
   endpoint?: string | null
+  baseUrl?: string | null
+  requestHeaders?: unknown
+  requestQuery?: unknown
+  requestBody?: unknown
   contextParams?: unknown
   requestParams?: unknown
   staticPayload?: unknown
@@ -230,6 +238,10 @@ export class ChatSettingController {
       apiName: body?.apiName,
       method: body?.method,
       endpoint: body?.endpoint,
+      baseUrl: body?.baseUrl,
+      requestHeaders: body?.requestHeaders,
+      requestQuery: body?.requestQuery,
+      requestBody: body?.requestBody,
       contextParams: body?.contextParams,
       requestParams: body?.requestParams,
       staticPayload: body?.staticPayload,
@@ -263,6 +275,10 @@ export class ChatSettingController {
       displayName: String(body?.displayName ?? ''),
       description: body?.description,
       endpoint: body?.endpoint,
+      baseUrl: body?.baseUrl,
+      requestHeaders: body?.requestHeaders,
+      requestQuery: body?.requestQuery,
+      requestBody: body?.requestBody,
       contextParams: body?.contextParams,
       requestParams: body?.requestParams,
       staticPayload: body?.staticPayload,

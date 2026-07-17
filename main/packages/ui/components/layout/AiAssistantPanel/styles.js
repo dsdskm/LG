@@ -306,11 +306,44 @@ const aiDotBounce = keyframes`
   40%           { transform: translateY(-4px); opacity: 1; }
 `
 
+const resolveLoadingTone = (stage) => {
+  switch (stage) {
+    case 'requesting':
+      return '59, 130, 246'
+    case 'thinking':
+      return '37, 99, 235'
+    case 'generating':
+      return '30, 64, 175'
+    case 'completed':
+      return '29, 78, 216'
+    default:
+      return '100, 116, 139'
+  }
+}
+
+const resolveLoadingStrength = (elapsed) => {
+  const sec = Number.isFinite(Number(elapsed)) ? Number(elapsed) : 0
+  return Math.min(1, 0.28 + sec * 0.12)
+}
+
 export const StyledAiAssistantLoadingBubble = styled.div`
   max-width: 90%;
   border-radius: 1.6rem 1.6rem 1.6rem 0.4rem;
   padding: 1rem 1.3rem;
-  background: var(--color-secondary-10, #f4f5f7);
+  background: ${({ $stage, $elapsed }) => {
+    const tone = resolveLoadingTone($stage)
+    const strength = resolveLoadingStrength($elapsed)
+    const lightAlpha = (0.08 + strength * 0.08).toFixed(3)
+    const strongAlpha = (0.14 + strength * 0.14).toFixed(3)
+    return `linear-gradient(135deg, rgba(${tone}, ${lightAlpha}), rgba(${tone}, ${strongAlpha}))`
+  }};
+  border: 1px solid ${({ $stage, $elapsed }) => {
+    const tone = resolveLoadingTone($stage)
+    const strength = resolveLoadingStrength($elapsed)
+    const borderAlpha = (0.16 + strength * 0.22).toFixed(3)
+    return `rgba(${tone}, ${borderAlpha})`
+  }};
+  transition: background 0.22s ease, border-color 0.22s ease;
 `
 
 export const StyledAiAssistantLoadingRow = styled.div`
@@ -328,8 +361,14 @@ export const StyledAiAssistantLoadingDots = styled.div`
     width: 0.65rem;
     height: 0.65rem;
     border-radius: 50%;
-    background: var(--color-secondary-50, #848c9d);
+    background: ${({ $stage, $elapsed }) => {
+      const tone = resolveLoadingTone($stage)
+      const strength = resolveLoadingStrength($elapsed)
+      const alpha = (0.42 + strength * 0.52).toFixed(3)
+      return `rgba(${tone}, ${alpha})`
+    }};
     animation: ${aiDotBounce} 1.2s infinite ease-in-out;
+    transition: background 0.18s ease;
   }
 
   & > span:nth-child(1) { animation-delay: 0s; }
@@ -339,7 +378,13 @@ export const StyledAiAssistantLoadingDots = styled.div`
 
 export const StyledAiAssistantLoadingText = styled.div`
   font-size: 1.2rem;
-  color: var(--color-secondary-50, #848c9d);
+  color: ${({ $stage, $elapsed }) => {
+    const tone = resolveLoadingTone($stage)
+    const strength = resolveLoadingStrength($elapsed)
+    const alpha = (0.48 + strength * 0.5).toFixed(3)
+    return `rgba(${tone}, ${alpha})`
+  }};
+  transition: color 0.18s ease;
 `
 
 /* ─── Composer ────────────────────────────────────────────────── */

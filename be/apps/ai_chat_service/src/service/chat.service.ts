@@ -16,10 +16,13 @@ import type { LlmProvider, LlmRuntime } from '../llm/llm.types'
 import { ChatLogService } from '../db/chat-log.service'
 import { ChatSettingService } from '../db/chat-setting.service'
 import { getPromptStore } from '../db/prompt-store.service'
+import { findPhraseMapMatch } from '../db/query-phrase-map.repo'
 import { ChatOrchestrator } from '../pipeline/chat.orchestrator'
 import { loadChatPipelineConfig } from '../pipeline/pipeline.config'
+import type { ToolContext } from '../pipeline/tool.type'
 import type { ChatReply, ChatTurn, SuggestedAction } from '../pipeline/pipeline.types'
 import { getScreenConfig } from '../pipeline/screen-registry'
+import { queryEvents } from '../screens/robot/ailog-event.datatools'
 
 type RuntimeEntry = {
   llm: LlmRuntime
@@ -73,22 +76,76 @@ export class ChatService {
     private readonly chatSetting: ChatSettingService,
   ) { }
 
+  private stageLog(stage: string, detail?: string) {
+    const suffix = detail ? ` ${detail}` : ''
+    this.logger.log(`================= [chat-stage] ${stage}${suffix}`)
+  }
+
+  private toDisplayText(value: unknown): string {
+    if (typeof value === 'string') return value.trim()
+    if (value === null || value === undefined) return ''
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+    if (typeof value === 'object') {
+      const row = value as Record<string, unknown>
+
+      const isEventSummaryObject =
+        ['totalCount', 'actionCompletedCount', 'analysisCompletedCount', 'analysisFailedCount']
+          .some((k) => k in row)
+
+      if (isEventSummaryObject) {
+        const n = (k: string) => Number(row[k] ?? 0) || 0
+        return [
+          `조회 결과 총 ${n('totalCount')}건입니다.`,
+          `조치 완료 ${n('actionCompletedCount')}건, 분석 완료 ${n('analysisCompletedCount')}건, 분석 실패 ${n('analysisFailedCount')}건입니다.`,
+          `심각도는 critical ${n('severityCriticalCount')}건, high ${n('severityHighCount')}건, middle ${n('severityMiddleCount')}건, low ${n('severityLowCount')}건입니다.`,
+        ].join(' ')
+      }
+
+      const preferred = [row.text, row.summary, row.message, row.description]
+        .map((v) => (typeof v === 'string' ? v.trim() : ''))
+        .find(Boolean)
+      if (preferred) return preferred
+      try {
+        return JSON.stringify(value)
+      } catch {
+        return ''
+      }
+    }
+    return ''
+  }
+
   async handleChat(body: any): Promise<ChatReply> {
+    this.stageLog('handleChat:start', `currentApp=${this.normalize(body?.currentApp) || '-'} currentPath=${this.normalize(body?.currentPath) || '-'} key=${this.normalize(body?.key) || '-'} message=${this.normalize(body?.message) || '-'}`)
+
     const runtime = await this.resolveRuntime()
+    this.stageLog('handleChat:runtime-resolved')
     // this.logger.log(`[handleChat] runtime ${JSON.stringify(runtime)}`)
     // validation check
     runtime.llm.assertConfig()
+    this.stageLog('handleChat:runtime-validated')
 
     const ctx = await this.buildChatContext(body, runtime)
+    this.stageLog('handleChat:context-built', `routeKey=${ctx.key} historyTurns=${ctx.history.length}`)
     // this.logger.log(`[handleChat] ctx ${JSON.stringify(ctx)}`)
+
+    const ruleFirstReply = await this.tryRuleFirstEventQuery(ctx)
+    if (ruleFirstReply) {
+      this.stageLog('handleChat:rule-first-handled', `chatAction=${ruleFirstReply.chat_action}`)
+      return this.withSuggestedActions(ruleFirstReply, ctx)
+    }
+
+    this.stageLog('handleChat:pipeline-begin')
     const pipelineReply = await this.handleScreenPipeline(ctx)
     this.logger.log(`[handleChat] pipelineReply ${pipelineReply}`)
     if (pipelineReply) {
+      this.stageLog('handleChat:pipeline-handled', `chatAction=${pipelineReply.chat_action}`)
       return this.withSuggestedActions(pipelineReply, ctx)
     }
 
     // 미등록 화면 또는 pipeline 실패 시 기존 guidance 경로
+    this.stageLog('handleChat:guidance-fallback-begin')
     const guidanceReply = await this.handleGuidance(ctx)
+    this.stageLog('handleChat:guidance-fallback-done', `chatAction=${guidanceReply.chat_action}`)
     return this.withSuggestedActions(guidanceReply, ctx)
   }
 
@@ -280,10 +337,12 @@ export class ChatService {
    * 4. intent별 처리
    */
   private async handleScreenPipeline(ctx: ChatContext): Promise<ChatReply | null> {
+    this.stageLog('screen-pipeline:start', `requestedRoute=${ctx.key}`)
     const matchedRouteKey = this.findNearestRegisteredRouteKey(ctx.key)
 
     if (!matchedRouteKey) {
       this.logger.log(`[handleScreenPipeline] unregistered screen route=${ctx.key}`)
+      this.stageLog('screen-pipeline:unregistered', `requestedRoute=${ctx.key}`)
       return null
     }
 
@@ -305,9 +364,11 @@ export class ChatService {
       this.logger.log(
         `[handleScreenPipeline] route fallback original=${ctx.key} matched=${matchedRouteKey}`,
       )
+      this.stageLog('screen-pipeline:route-fallback', `original=${ctx.key} matched=${matchedRouteKey}`)
     }
 
     this.logger.log(`[handleScreenPipeline] key=${routeCtx.key}`)
+    this.stageLog('screen-pipeline:dispatch', `route=${routeCtx.key}`)
     try {
       if (routeCtx.key === 'robot/ailog/event') {
         return this.handleRobotAilogEventScreen(routeCtx)
@@ -326,6 +387,7 @@ export class ChatService {
       this.logger.error(
         `[chat] screen pipeline error route=${routeCtx.key} err=${e?.message ?? String(e)}`,
       )
+      this.stageLog('screen-pipeline:error', `route=${routeCtx.key} err=${e?.message ?? String(e)}`)
       return null
     }
   }
@@ -528,6 +590,7 @@ export class ChatService {
     ctx: ChatContext,
     intent: ScreenTask,
   ): Promise<ChatReply | null> {
+    this.stageLog('orchestrator:start', `route=${ctx.key} screenTask=${intent} message=${ctx.message}`)
     const pipelineBody = {
       ...ctx.body,
       routeKey: ctx.key,
@@ -541,12 +604,96 @@ export class ChatService {
       pipelineBody,
     )
     this.logger.log(`[runOrchestrator] out ${JSON.stringify(out)}`)
+    this.stageLog('orchestrator:result', `handled=${String(out.handled)} hasReply=${String(Boolean(out.reply))}`)
     if (out.handled && out.reply) {
       await this.saveLog(ctx.body, out.reply, ctx)
+      this.stageLog('orchestrator:reply-saved', `chatAction=${out.reply.chat_action}`)
       return out.reply
     }
 
+    this.stageLog('orchestrator:no-reply')
     return null
+  }
+
+  /**
+   * 규칙 기반 우선 처리.
+   * phrase map 에 매칭되는 robot/ailog/event 조회 문장은 LLM 없이 즉시 처리한다.
+   */
+  private async tryRuleFirstEventQuery(ctx: ChatContext): Promise<ChatReply | null> {
+    const matchedRouteKey = this.findNearestRegisteredRouteKey(ctx.key)
+    const isAilogRoute =
+      matchedRouteKey === 'robot/ailog/event' ||
+      matchedRouteKey === 'robot/ailog' ||
+      String(ctx.key ?? '').startsWith('robot/ailog')
+
+    if (!isAilogRoute) {
+      return null
+    }
+
+    const phraseMatch = await findPhraseMapMatch('robot/ailog/event', ctx.message)
+    const normalizedMessage = String(ctx.message ?? '').toLowerCase()
+    const heuristicQuickQuery =
+      /(이슈|이벤트)/.test(normalizedMessage) &&
+      /(오늘|어제|일주일|한달|한\s*달|1개월|3개월|3달|\d{1,2}월\s*\d{1,2}일|부터|까지)/.test(normalizedMessage)
+
+    if (!phraseMatch && !heuristicQuickQuery) {
+      this.stageLog('rule-first:miss', `route=${matchedRouteKey || ctx.key} message=${ctx.message}`)
+      return null
+    }
+
+    if (phraseMatch) {
+      this.stageLog(
+        'rule-first:match',
+        `route=${matchedRouteKey || ctx.key} matchType=${phraseMatch.matchType ?? 'exact'} intent=${phraseMatch.intentKey}`,
+      )
+    } else {
+      this.stageLog('rule-first:heuristic', `route=${matchedRouteKey || ctx.key} message=${ctx.message}`)
+    }
+
+    const bodyContext =
+      ctx.body?.context && typeof ctx.body.context === 'object' && !Array.isArray(ctx.body.context)
+        ? (ctx.body.context as Record<string, unknown>)
+        : {}
+
+    const toolCtx: ToolContext = {
+      accessToken: ctx.body?.accessToken,
+      apiBaseUrl: ctx.body?.apiBaseUrl,
+      eventAnalyzerUrl: ctx.body?.eventAnalyzerUrl,
+      configManagerUrl: ctx.body?.configManagerUrl,
+      context: {
+        ...bodyContext,
+        __userMessage: ctx.message,
+      },
+      log: {
+        log: (m) => this.logger.log(m),
+        error: (m) => this.logger.error(m),
+      },
+    }
+
+    try {
+      const result = (await queryEvents.execute({}, toolCtx)) as any
+      const filters = result?.resolvedFilters && typeof result.resolvedFilters === 'object'
+        ? result.resolvedFilters
+        : undefined
+      const summary = this.toDisplayText(result?.summary)
+
+      const screen = getScreenConfig('robot/ailog/event')
+      const reply: ChatReply = {
+        chat_action: screen?.chatActions.data ?? 'ailog/event/filter',
+        chat_action_param: filters ? { filters } : undefined,
+        text: summary || '조회 결과를 확인했습니다.',
+      }
+
+      await this.saveLog(ctx.body, reply, ctx)
+      this.stageLog('rule-first:served', `route=${matchedRouteKey} chatAction=${reply.chat_action}`)
+      return reply
+    } catch (e: any) {
+      this.logger.warn(
+        `[rule-first] direct query failed route=${matchedRouteKey} err=${e?.message ?? String(e)}; fallback to pipeline`,
+      )
+      this.stageLog('rule-first:error', `route=${matchedRouteKey} err=${e?.message ?? String(e)}`)
+      return null
+    }
   }
 
   /** 기존 화면 안내(guidance) 처리. */

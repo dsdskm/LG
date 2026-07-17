@@ -40,6 +40,29 @@ import {
 } from './styles'
 import { postSiteAssistantChat } from '@repo/apis/ai/chat.js'
 
+const ENABLE_QUICK_COMMANDS = true
+const ENABLE_MESSAGE_SUGGESTED_ACTIONS = false
+
+const SENDING_STAGE = {
+  IDLE: 'idle',
+  REQUESTING: 'requesting',
+  THINKING: 'thinking',
+  GENERATING: 'generating',
+  COMPLETED: 'completed',
+}
+
+const SENDING_STAGE_LABEL = {
+  [SENDING_STAGE.REQUESTING]: '요청중',
+  [SENDING_STAGE.THINKING]: '생각중',
+  [SENDING_STAGE.GENERATING]: '응답생성중',
+  [SENDING_STAGE.COMPLETED]: '응답완료',
+}
+
+const TYPEWRITER_INTERVAL_MS = 110
+const ASSISTANT_TYPEWRITER_INTERVAL_MS = 24
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
 const pickRandomItems = (items, count) => {
   const list = Array.isArray(items) ? [...items] : []
   for (let i = list.length - 1; i > 0; i -= 1) {
@@ -137,6 +160,8 @@ const extractAssistantText = (result) => {
 }
 
 const extractSuggestedActions = (result) => {
+  if (!ENABLE_MESSAGE_SUGGESTED_ACTIONS) return []
+
   const payload = result?.data ?? result ?? null
   const list = payload?.chat_action_param?.suggested_actions
   if (!Array.isArray(list)) return []
@@ -314,6 +339,10 @@ const AiAssistantPanel = ({ greetingExtra }) => {
 
   const [draft, setDraft] = useState('')
   const [isSending, setIsSending] = useState(false)
+  const [sendingStage, setSendingStage] = useState(SENDING_STAGE.IDLE)
+  const [sendingElapsedSec, setSendingElapsedSec] = useState(0)
+  const [typedStageLabel, setTypedStageLabel] = useState('')
+  const [typedAssistantMessages, setTypedAssistantMessages] = useState({})
   const [pageContextOn, setPageContextOn] = useState(true)
   const [pendingNavigation, setPendingNavigation] = useState(null)
   const [screenSuggestions, setScreenSuggestions] = useState([])
@@ -321,6 +350,8 @@ const AiAssistantPanel = ({ greetingExtra }) => {
   const messageListRef = useRef(null)
   const textareaRef = useRef(null)
   const abortRef = useRef(null)
+  const sendingStartedAtRef = useRef(null)
+  const assistantTypingTimerRef = useRef(null)
   // 멀티턴: 직전에 이벤트 표에 적용된 필터. 후속 발화("심각도 높음만") 병합 기준.
   const lastFiltersRef = useRef(null)
 
@@ -346,6 +377,133 @@ const AiAssistantPanel = ({ greetingExtra }) => {
   useEffect(() => {
     if (isOpen) textareaRef.current?.focus()
   }, [isOpen])
+
+  useEffect(() => {
+    if (!isSending) return undefined
+
+    const toThinking = setTimeout(() => {
+      setSendingStage((prev) => (prev === SENDING_STAGE.REQUESTING ? SENDING_STAGE.THINKING : prev))
+    }, 350)
+
+    const toGenerating = setTimeout(() => {
+      setSendingStage((prev) => (
+        prev === SENDING_STAGE.REQUESTING || prev === SENDING_STAGE.THINKING
+          ? SENDING_STAGE.GENERATING
+          : prev
+      ))
+    }, 1100)
+
+    return () => {
+      clearTimeout(toThinking)
+      clearTimeout(toGenerating)
+    }
+  }, [isSending])
+
+  useEffect(() => {
+    if (!isSending) {
+      setSendingElapsedSec(0)
+      return undefined
+    }
+
+    const startedAt = Number(sendingStartedAtRef.current)
+    if (!Number.isFinite(startedAt) || startedAt <= 0) {
+      const now = Date.now()
+      sendingStartedAtRef.current = now
+      setSendingElapsedSec(0)
+      return undefined
+    }
+
+    setSendingElapsedSec(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)))
+    const timer = setInterval(() => {
+      const elapsed = Math.max(0, Math.floor((Date.now() - startedAt) / 1000))
+      setSendingElapsedSec(elapsed)
+    }, 200)
+
+    return () => {
+      clearInterval(timer)
+    }
+  }, [isSending])
+
+  useEffect(() => {
+    if (!isSending) {
+      setTypedStageLabel('')
+      return undefined
+    }
+
+    const fullLabel = SENDING_STAGE_LABEL[sendingStage] || '작업중'
+    let index = 0
+    setTypedStageLabel('')
+
+    const timer = setInterval(() => {
+      index += 1
+      setTypedStageLabel(fullLabel.slice(0, index))
+      if (index >= fullLabel.length) {
+        clearInterval(timer)
+      }
+    }, TYPEWRITER_INTERVAL_MS)
+
+    return () => {
+      clearInterval(timer)
+    }
+  }, [isSending, sendingStage])
+
+  useEffect(() => {
+    const latestAssistantMessage = [...messages]
+      .reverse()
+      .find((m) => m?.role === 'assistant' && typeof m?.content === 'string')
+
+    if (!latestAssistantMessage) return undefined
+
+    const targetId = String(latestAssistantMessage.id ?? '')
+    const fullText = String(latestAssistantMessage.content ?? '')
+    if (!targetId || !fullText) return undefined
+
+    const currentTyped = String(typedAssistantMessages[targetId] ?? '')
+    if (currentTyped.length >= fullText.length) return undefined
+
+    if (assistantTypingTimerRef.current) {
+      clearInterval(assistantTypingTimerRef.current)
+      assistantTypingTimerRef.current = null
+    }
+
+    setTypedAssistantMessages((prev) => ({
+      ...prev,
+      [targetId]: '',
+    }))
+
+    let index = 0
+    assistantTypingTimerRef.current = setInterval(() => {
+      index += 1
+      const next = fullText.slice(0, index)
+      setTypedAssistantMessages((prev) => ({
+        ...prev,
+        [targetId]: next,
+      }))
+
+      if (index >= fullText.length) {
+        if (assistantTypingTimerRef.current) {
+          clearInterval(assistantTypingTimerRef.current)
+          assistantTypingTimerRef.current = null
+        }
+      }
+    }, ASSISTANT_TYPEWRITER_INTERVAL_MS)
+
+    return () => {
+      if (assistantTypingTimerRef.current) {
+        clearInterval(assistantTypingTimerRef.current)
+        assistantTypingTimerRef.current = null
+      }
+    }
+  }, [messages])
+
+  useEffect(() => {
+    return () => {
+      if (assistantTypingTimerRef.current) {
+        clearInterval(assistantTypingTimerRef.current)
+        assistantTypingTimerRef.current = null
+      }
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -511,7 +669,10 @@ const AiAssistantPanel = ({ greetingExtra }) => {
     }
 
     setDraft('')
+    sendingStartedAtRef.current = Date.now()
+    setSendingElapsedSec(0)
     setIsSending(true)
+    setSendingStage(SENDING_STAGE.REQUESTING)
 
     const controller = new AbortController()
     abortRef.current = controller
@@ -543,13 +704,17 @@ const AiAssistantPanel = ({ greetingExtra }) => {
       const chat_action_param = data.chat_action_param
       const navigationPath = String(chat_action_param?.path ?? '').trim().replace(/^\/+/, '')
       const hasNavigationParams = chat_action === 'navigation' && extractPathParams(navigationPath).length > 0
+      const suggestedActions = chat_action === 'ailog/event/filter' ? [] : extractSuggestedActions(result)
+
+      setSendingStage(SENDING_STAGE.COMPLETED)
+      await sleep(280)
 
       if (!hasNavigationParams) {
         appendMessage({
           id: buildMessageId(),
           role: 'assistant',
           content: extractAssistantText(result),
-          suggestedActions: extractSuggestedActions(result),
+          suggestedActions,
           createdAt: new Date().toISOString(),
           context,
         })
@@ -560,6 +725,8 @@ const AiAssistantPanel = ({ greetingExtra }) => {
     } catch (error) {
       // 사용자가 "중지" 를 눌러 취소한 경우: 에러 메시지 대신 안내만.
       if (error?.name === 'AbortError') {
+        setSendingStage(SENDING_STAGE.COMPLETED)
+        await sleep(180)
         appendMessage({
           id: buildMessageId(),
           role: 'assistant',
@@ -568,6 +735,8 @@ const AiAssistantPanel = ({ greetingExtra }) => {
           context,
         })
       } else {
+        setSendingStage(SENDING_STAGE.COMPLETED)
+        await sleep(180)
         appendMessage({
           id: buildMessageId(),
           role: 'assistant',
@@ -579,6 +748,8 @@ const AiAssistantPanel = ({ greetingExtra }) => {
     } finally {
       abortRef.current = null
       setIsSending(false)
+      setSendingStage(SENDING_STAGE.IDLE)
+      sendingStartedAtRef.current = null
       textareaRef.current?.focus()
     }
   }
@@ -672,7 +843,7 @@ const AiAssistantPanel = ({ greetingExtra }) => {
                 </StyledAiGreetingCta>
               </StyledAiGreeting>
 
-              {quickCommands.length > 0 ? (
+              {ENABLE_QUICK_COMMANDS && quickCommands.length > 0 ? (
                 <div style={{ padding: '0 1.6rem 1.2rem' }}>
                   <StyledAiAssistantMessage $role="assistant">
                     <div style={{ marginBottom: '8px', fontSize: '12px', color: '#6b7280', fontWeight: 700 }}>
@@ -702,10 +873,12 @@ const AiAssistantPanel = ({ greetingExtra }) => {
                   </StyledAiAssistantMessageMeta>
 
                   <StyledAiAssistantMessageBubble $role={m.role}>
-                    {m.content}
+                    {m.role === 'assistant'
+                      ? (typedAssistantMessages[m.id] ?? m.content)
+                      : m.content}
                   </StyledAiAssistantMessageBubble>
 
-                  {m.role === 'assistant' && Array.isArray(m.suggestedActions) && m.suggestedActions.length > 0 && (
+                  {ENABLE_MESSAGE_SUGGESTED_ACTIONS && m.role === 'assistant' && Array.isArray(m.suggestedActions) && m.suggestedActions.length > 0 && (
                     <>
                       <div style={{ marginTop: '8px', fontSize: '12px', color: '#6b7280', fontWeight: 700 }}>
                         아래 명령어를 추천드려요.
@@ -729,15 +902,24 @@ const AiAssistantPanel = ({ greetingExtra }) => {
 
               {isSending && (
                 <StyledAiAssistantMessage $role="assistant">
-                  <StyledAiAssistantLoadingBubble>
+                  <StyledAiAssistantLoadingBubble
+                    $stage={sendingStage}
+                    $elapsed={sendingElapsedSec}
+                  >
                     <StyledAiAssistantLoadingRow>
-                      <StyledAiAssistantLoadingDots>
+                      <StyledAiAssistantLoadingDots
+                        $stage={sendingStage}
+                        $elapsed={sendingElapsedSec}
+                      >
                         <span />
                         <span />
                         <span />
                       </StyledAiAssistantLoadingDots>
-                      <StyledAiAssistantLoadingText>
-                        작성 중...
+                      <StyledAiAssistantLoadingText
+                        $stage={sendingStage}
+                        $elapsed={sendingElapsedSec}
+                      >
+                        {(typedStageLabel || '...') + ` · ${sendingElapsedSec}초`}
                       </StyledAiAssistantLoadingText>
                     </StyledAiAssistantLoadingRow>
                   </StyledAiAssistantLoadingBubble>

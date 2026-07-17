@@ -214,7 +214,7 @@ export class ChatOrchestrator {
       ].join(' '),
     )
 
-    const toolCtx = this.buildToolCtx(body)
+    const toolCtx = this.buildToolCtx(body, message)
 
     switch (pipelineIntent) {
       case 'data':
@@ -276,14 +276,25 @@ export class ChatOrchestrator {
     }
   }
 
-  private buildToolCtx(body: any): ToolContext {
+  private buildToolCtx(body: any, message?: string): ToolContext {
+    const bodyContext =
+      body?.context && typeof body.context === 'object' && !Array.isArray(body.context)
+        ? (body.context as Record<string, unknown>)
+        : {}
+    const userMessage = String(message ?? '').trim()
+
     return {
       accessToken: body?.accessToken,
       apiBaseUrl: body?.apiBaseUrl,
       eventAnalyzerUrl: body?.eventAnalyzerUrl,
       configManagerUrl: body?.configManagerUrl,
       actionRunnerUrl: this.pipeline.actionRunnerUrl,
-      context: body?.context,
+      context: userMessage
+        ? {
+          ...bodyContext,
+          __userMessage: userMessage,
+        }
+        : bodyContext,
       log: {
         log: (m) => this.logger.log(m),
         error: (m) => this.logger.error(m),

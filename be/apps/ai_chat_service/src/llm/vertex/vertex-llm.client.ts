@@ -230,10 +230,12 @@ export class VertexLlmClient implements LlmClient {
         case 'tool': {
           const name = m.tool_call_id ? callIdToName.get(m.tool_call_id) : undefined;
           const parsed = safeJsonParse(m.content ?? '');
+          // Vertex functionResponse.response 는 object(Struct) 여야 한다.
+          // tool 결과가 배열/원시값이면 그대로 넣지 말고 object 로 감싸서 보낸다.
           const response =
-            parsed && typeof parsed === 'object'
+            parsed && typeof parsed === 'object' && !Array.isArray(parsed)
               ? (parsed as Record<string, any>)
-              : { result: m.content ?? '' };
+              : { result: parsed ?? m.content ?? '' };
           pushMerged('user', [
             { functionResponse: { name: name ?? 'unknown', response } },
           ]);

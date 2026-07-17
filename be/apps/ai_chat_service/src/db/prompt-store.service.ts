@@ -124,22 +124,28 @@ export class PromptStoreService implements OnModuleInit {
   getScreenTools(routeKey: string, kind?: string): ChatScreenToolEntity[] {
     const normalizedRouteKey = String(routeKey ?? '').trim()
     const normalizedKind = String(kind ?? '').trim().toLowerCase()
+    const segments = normalizedRouteKey.split('/').filter(Boolean)
+    const lookupKeys = [
+      normalizedRouteKey,
+      ...Array.from({ length: Math.max(segments.length - 1, 0) }, (_, idx) =>
+        segments.slice(0, segments.length - 1 - idx).join('/'),
+      ),
+      'common',
+    ].filter(Boolean)
+    const keyPriority = new Map(lookupKeys.map((key, idx) => [key, idx]))
 
     const candidates = Array.from(this.tools.values())
       .filter((row) => {
         if (row.enabled === false) return false
 
         const rowKey = String(row.key ?? '').trim()
-        const isTarget = rowKey === normalizedRouteKey
-        const isCommonFallback = normalizedRouteKey !== 'common' && rowKey === 'common'
-
-        if (!isTarget && !isCommonFallback) return false
+        if (!keyPriority.has(rowKey)) return false
         if (!normalizedKind) return true
         return String(row.kind ?? '').trim().toLowerCase() === normalizedKind
       })
       .sort((a, b) => {
-        const aPriority = String(a.key ?? '').trim() === normalizedRouteKey ? 0 : 1
-        const bPriority = String(b.key ?? '').trim() === normalizedRouteKey ? 0 : 1
+        const aPriority = keyPriority.get(String(a.key ?? '').trim()) ?? Number.MAX_SAFE_INTEGER
+        const bPriority = keyPriority.get(String(b.key ?? '').trim()) ?? Number.MAX_SAFE_INTEGER
 
         if (aPriority !== bPriority) return aPriority - bPriority
         if (Number(a.sortOrder ?? 0) !== Number(b.sortOrder ?? 0)) {
@@ -433,6 +439,10 @@ export class PromptStoreService implements OnModuleInit {
       apiName?: string | null
       method?: string | null
       endpoint?: string | null
+      baseUrl?: string | null
+      requestHeaders?: unknown
+      requestQuery?: unknown
+      requestBody?: unknown
       contextParams?: unknown
       requestParams?: unknown
       staticPayload?: unknown
@@ -514,6 +524,10 @@ export class PromptStoreService implements OnModuleInit {
     displayName: string
     description?: string | null
     endpoint?: string | null
+    baseUrl?: string | null
+    requestHeaders?: unknown
+    requestQuery?: unknown
+    requestBody?: unknown
     contextParams?: unknown
     requestParams?: unknown
     staticPayload?: unknown
@@ -568,6 +582,10 @@ export class PromptStoreService implements OnModuleInit {
       apiName: actionType.apiName,
       method: actionType.method,
       endpoint: String(input.endpoint ?? '').trim() || null,
+      baseUrl: String(input.baseUrl ?? '').trim() || null,
+      requestHeaders: input.requestHeaders ?? {},
+      requestQuery: input.requestQuery ?? {},
+      requestBody: input.requestBody ?? {},
       contextParams: input.contextParams ?? [],
       requestParams: input.requestParams ?? [],
       staticPayload: input.staticPayload ?? {},

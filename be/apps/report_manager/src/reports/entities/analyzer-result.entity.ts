@@ -27,6 +27,9 @@ export class AnalyzerResultEntity {
   @Column({ type: 'text', name: 'service', nullable: true })
   service?: string;
 
+  @Column({ type: 'real', name: 'confidence', nullable: true })
+  confidence?: number;
+
   // 후속 액션 제안 (event_analyzer가 채움). 읽기 전용.
   @Column({ type: 'jsonb', name: 'actions', nullable: true })
   actions?: SuggestedAction[];

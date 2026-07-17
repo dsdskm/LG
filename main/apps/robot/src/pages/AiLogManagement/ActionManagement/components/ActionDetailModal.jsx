@@ -47,6 +47,30 @@ const normalizeAction = (actionItem) => {
   }
 }
 
+const normalizeFuncOptions = (response) => {
+  const payload = response?.data ?? response ?? null
+
+  const base = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.data)
+      ? payload.data
+      : Array.isArray(payload?.items)
+        ? payload.items
+        : Array.isArray(payload?.list)
+          ? payload.list
+          : []
+
+  return base
+    .map((item) => {
+      if (typeof item === 'string') return item.trim()
+      if (item && typeof item === 'object') {
+        return String(item.name ?? item.func ?? '').trim()
+      }
+      return ''
+    })
+    .filter(Boolean)
+}
+
 const ActionDetailModal = ({ actionItem, errorMessage, isCreateMode, onClose, onSave, onDelete }) => {
   const [draft, setDraft] = useState(() => normalizeAction(actionItem))
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false)
@@ -65,8 +89,8 @@ const ActionDetailModal = ({ actionItem, errorMessage, isCreateMode, onClose, on
   useEffect(() => {
     let alive = true
     getFuncs()
-      .then((names) => {
-        if (alive) setFuncOptions(Array.isArray(names) ? names : [])
+      .then((response) => {
+        if (alive) setFuncOptions(normalizeFuncOptions(response))
       })
       .catch(() => {
         if (alive) setFuncOptions([])
