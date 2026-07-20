@@ -1,0 +1,13 @@
+{
+  "SideBar": {
+    "gnb": {
+      "default": "Default Setup",
+      "driving": "Driving Setup",
+      "hwTest": "HW Test",
+      "device": "Device",
+      "raat": "RAAT",
+      "ros2Status": "ROS2 Status",
+      "diagnostics": "Diagnostics"
+    }
+  }
+}

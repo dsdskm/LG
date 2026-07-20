@@ -1,0 +1,43 @@
+{
+  "SideBar": {
+    "version": "Version",
+    "gnb": {
+      "ota": "OTA",
+      "robot": "로봇",
+      "dashboard": "대시보드",
+      "logviewer": "실시간 로그",
+      "robotManagement": "로봇 관리",
+      "robotList": "로봇 목록",
+      "groupManagement": "그룹 관리",
+      "userManagement": "사용자 관리",
+      "mapManagement": "맵 관리",
+      "aiLogManagement": "AI 로그 분석"
+    }
+  },
+  "Depth": {
+    "robotManagement": {
+      "name": "로봇 관리"
+    },
+    "robotList": {
+      "name": "로봇 목록"
+    },
+    "groupManagement": {
+      "name": "그룹 관리"
+    },
+    "userManagement": {
+      "name": "사용자 관리"
+    },
+    "mapManagement": {
+      "name": "맵 관리"
+    },
+    "mapDetail": {
+      "name": "맵 상세"
+    },
+    "mapEdit": {
+      "name": "맵 편집"
+    },
+    "mapDeploy": {
+      "name": "맵 배포"
+    }
+  }
+}

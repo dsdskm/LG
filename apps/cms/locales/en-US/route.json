@@ -1,0 +1,64 @@
+{
+  "SideBar": {
+    "gnb": {
+      "content": "Content",
+      "label": "Label",
+      "embedding": "Voice Chat",
+      "embeddingDocs": "Documents",
+      "embeddingAction": "Robot Action",
+      "embeddingTest": "Test",
+      "embeddingVersion": "Vector Versions",
+      "settings": "Settings",
+      "contentType": "Content Type",
+      "category": "Category",
+      "apiDoc": "API Document"
+    }
+  },
+  "Depth": {
+    "content": {
+      "name": "Content"
+    },
+    "contentDetail": {
+      "name": "Content Detail"
+    },
+    "label": {
+      "name": "Label"
+    },
+    "labelDetail": {
+      "name": "Label Detail"
+    },
+    "embedding": {
+      "name": "Voice Chat"
+    },
+    "embeddingDocs": {
+      "name": "Documents"
+    },
+    "embeddingAction": {
+      "name": "Robot Action"
+    },
+    "embeddingActionDetail": {
+      "name": "Robot Action Detail"
+    },
+    "embeddingDetail": {
+      "name": "Voice Chat Document Detail"
+    },
+    "embeddingVersion": {
+      "name": "Vector Versions"
+    },
+    "embeddingTest": {
+      "name": "Voice Chat Test"
+    },
+    "contentType": {
+      "name": "Content Type"
+    },
+    "contentTypeDetail": {
+      "name": "Content Type Detail"
+    },
+    "category": {
+      "name": "Category"
+    },
+    "categoryDetail": {
+      "name": "Category Detail"
+    }
+  }
+}

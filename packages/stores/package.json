@@ -1,0 +1,16 @@
+{
+  "name": "@repo/stores",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./*": "./src/*.js"
+  },
+  "dependencies": {
+    "zustand": "^5.0.10"
+  },
+  "devDependencies": {
+    "prettier": "^3.7.4"
+  }
+}

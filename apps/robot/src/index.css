@@ -1,0 +1,14 @@
+@tailwind components;
+@tailwind utilities;
+
+@theme {
+  --spacing: 0.25rem; /* 4px */
+
+  /* breakpoints */
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+
+  --tw-border-style: solid;
+}

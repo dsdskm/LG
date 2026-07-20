@@ -1,0 +1,350 @@
+import React, { useState, useEffect, useRef } from 'react'
+import { SectionRobot as Section, Button } from '@repo/ui'
+import CardConfigModal from '../modal/CardConfigModal'
+import ConsoleCard from '../component/ConsoleCard'
+import styled from 'styled-components'
+import { getClientId } from '../config/clientId'
+
+// ✅ 모든 styled-components 정의
+const ConsoleContainer = styled.div`
+  padding: 20px;
+  background: #f8f9fa;
+  min-height: 100vh;
+`
+
+const ConsoleHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+  padding-bottom: 15px;
+  border-bottom: 2px solid #e0e0e0;
+`
+
+const ConsoleTitle = styled.h2`
+  margin: 0;
+  color: #333;
+  font-size: 24px;
+`
+
+const ConfigButton = styled.button`
+  padding: 10px 20px;
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.3s ease;
+
+  &:hover {
+    background: #0056b3;
+  }
+`
+
+const MIN_CARD_W = 280
+const GAP = 12
+
+const getColCount = (count) => Math.min(count, 3)
+
+const CardsGridWrapper = styled.div`
+  container-type: inline-size;
+`
+
+const CardsGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(${({ $cols }) => $cols}, 1fr);
+  gap: ${GAP}px;
+
+  @container (max-width: ${3 * MIN_CARD_W + 2 * GAP}px) {
+    grid-template-columns: repeat(${({ $cols }) => Math.min($cols, 2)}, 1fr);
+  }
+
+  @container (max-width: ${2 * MIN_CARD_W + GAP}px) {
+    grid-template-columns: 1fr;
+  }
+`
+
+const EmptyState = styled.div`
+  text-align: center;
+  padding: 60px 20px;
+  color: #666;
+
+  p {
+    font-size: 18px;
+    margin-bottom: 20px;
+  }
+
+  button {
+    padding: 12px 24px;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background 0.3s ease;
+
+    &:hover {
+      background: #0056b3;
+    }
+  }
+`
+
+const WebConsole = ({ t, deviceId }) => {
+  const [showConfigModal, setShowConfigModal] = useState(false)
+  const [cards, setCards] = useState([])
+  const cardRefs = useRef({}) // ★ cardId → ref
+
+  // ✅ 카드 타입 정의
+  const cardTypes = {
+    READONLY: {
+      status: {
+        name: t('stateInformation'),
+        path: '/status',
+        port: 3000,
+        icon: '📊'
+      },
+      sensor: {
+        name: t('sensorData'),
+        path: '/sensor',
+        port: 3000,
+        icon: '🔍'
+      },
+      micom: {
+        name: t('micom'),
+        path: '/micom',
+        port: 3000,
+        icon: '🔧'
+      },
+      diagnostic: {
+        name: t('diagnostic'),
+        path: '/diagnostic',
+        port: 3000,
+        icon: '🩺'
+      },
+      '3d-view': {
+        name: t('3dView'),
+        path: '/3d-view',
+        port: 3000,
+        icon: '🎯',
+        isRealtime: true,
+        realtimePort: 9765,
+        realtimePath: '/ws/3d-stream'
+      }
+    },
+    CONTROL: {
+      RAAT: {
+        name: 'RAAT',
+        path: '/',
+        port: 80,
+        icon: '�'
+      },
+      'map-settings': {
+        name: t('mapSetting'),
+        path: '/map-settings',
+        port: 3000,
+        icon: '🗺️'
+      },
+      poi: {
+        name: t('pointOfInterest'),
+        path: '/poi',
+        port: 3000,
+        icon: '📍'
+      },
+      tofu: {
+        name: 'TOFU',
+        path: '/tofu',
+        port: 3000,
+        icon: '🤖'
+      },
+      vla: {
+        name: 'VLA',
+        path: '/vla',
+        port: 3000,
+        icon: '🧠'
+      },
+      settings: {
+        name: t('setting'),
+        path: '/settings',
+        port: 3000,
+        icon: '⚙️'
+      }
+    }
+  }
+
+  // cardTypes 정의에서 경로로 카드 정보 조회 (module-scope so both load and save can use it)
+  const findCardTypeDef = (targetPath) => {
+    for (const [categoryKey, category] of Object.entries(cardTypes)) {
+      for (const cardInfo of Object.values(category)) {
+        if (cardInfo.path === targetPath) return { ...cardInfo, categoryKey }
+      }
+    }
+    return null
+  }
+
+  // 로컬 스토리지에서 카드 설정 로드
+  useEffect(() => {
+    const savedCards = localStorage.getItem(`robot-console-cards-${deviceId}`)
+    if (savedCards) {
+      try {
+        const parsedCards = JSON.parse(savedCards)
+        const validatedCards = parsedCards.map((card, index) => {
+          const savedPath = card.path ?? card.targetPath ?? card.url ?? '/'
+          const def = findCardTypeDef(savedPath)
+          return {
+            cardId: card.cardId ?? `${index + 1}`,
+            cardName: card.name ?? card.cardName ?? card.title ?? def?.name ?? 'Unknown',
+            targetPath: savedPath,
+            targetPort: String(card.port ?? card.targetPort ?? def?.port ?? '3000'),
+            icon: card.icon ?? def?.icon ?? '�',
+            // ✅ � 핵심 수정 (순서 변경)
+            cardType: def?.categoryKey ?? card.type ?? card.cardType ?? 'READONLY',
+            isRealtime: def?.isRealtime ?? card.isRealtime ?? false,
+            realtimePort: def?.realtimePort ?? card.realtimePort ?? null,
+            realtimePath: def?.realtimePath ?? card.realtimePath ?? null
+          }
+        })
+        setCards(validatedCards)
+      } catch (error) {
+        console.error('Failed to parse saved cards:', error)
+        setCards([])
+      }
+    } else {
+      // 기본 카드 설정
+      const defaultCards = [
+        {
+          cardId: '1',
+          cardName: t('stateInformation'),
+          targetPath: '/status',
+          targetPort: '3000',
+          icon: '📊',
+          cardType: 'READONLY'
+        },
+        {
+          cardId: '2',
+          cardName: t('sensorData'),
+          targetPath: '/sensor',
+          targetPort: '3000',
+          icon: '🔍',
+          cardType: 'READONLY'
+        }
+      ]
+      setCards(defaultCards)
+    }
+  }, [deviceId])
+
+  // ★ unmount 시 모든 카드 리소스 정리 (탭 전환 등)
+  useEffect(() => {
+    return () => {
+      console.log('RobotWebConsole unmounting — cleaning up all cards')
+      Object.values(cardRefs.current).forEach((ref) => {
+        if (ref?.cleanup) {
+          ref.cleanup()
+        }
+      })
+      cardRefs.current = {}
+    }
+  }, [])
+
+  // 카드 설정 저장
+  const handleCardConfig = (selectedCards) => {
+    const cardsToSave = selectedCards.map((card, index) => {
+      const targetPath = card.path || card.targetPath || card.url || '/'
+      const def = findCardTypeDef(targetPath)
+      return {
+        cardId: `${index + 1}`,
+        cardName: card.name || card.cardName || card.title || def?.name || 'Unknown',
+        targetPath,
+        targetPort: String(card.port || card.targetPort || def?.port || '3000'),
+        icon: card.icon || def?.icon || '📱',
+        cardType: card.type || card.cardType || def?.categoryKey || 'READONLY',
+        isRealtime: def?.isRealtime ?? card.isRealtime ?? false,
+        realtimePort: def?.realtimePort ?? card.realtimePort ?? null,
+        realtimePath: def?.realtimePath ?? card.realtimePath ?? null
+      }
+    })
+
+    // ★ 삭제된 카드의 리소스 정리
+    const newCardIds = new Set(cardsToSave.map((c) => c.cardId))
+    cards.forEach((oldCard) => {
+      if (!newCardIds.has(oldCard.cardId)) {
+        const ref = cardRefs.current[oldCard.cardId]
+        if (ref?.cleanup) {
+          console.log(`Cleaning up removed card: ${oldCard.cardName}`)
+          ref.cleanup()
+        }
+        delete cardRefs.current[oldCard.cardId]
+      }
+    })
+
+    setCards(cardsToSave)
+    localStorage.setItem(`robot-console-cards-${deviceId}`, JSON.stringify(cardsToSave))
+    setShowConfigModal(false)
+  }
+
+  // ✅ 확대 핸들러 - 팝업으로 변경
+  const handleCardExpand = (card) => {
+    console.log('🔍 Expanding card in popup:', card)
+    const cid = getClientId(deviceId, card.targetPort)
+
+    const expandUrl = `${config.proxyServerUrl}${card.targetPath}?_deviceId=${deviceId}&_port=${card.targetPort}&_cid=${cid}&mode=readonly&expanded=true`
+
+    const expandWindow = window.open(
+      expandUrl,
+      `robot-expand-${deviceId}-${card.targetPath.replace(/\//g, '-')}`,
+      'width=1400,height=900,scrollbars=yes,resizable=yes,menubar=no,toolbar=no'
+    )
+
+    if (!expandWindow) {
+      alert('브라우저 팝업 차단을 해제하세요.')
+      return
+    }
+
+    console.log('✅ Expand window opened successfully')
+  }
+
+  return (
+    <>
+      <Section>
+        <div style={{ marginBottom: '10px', minWidth: '90px', display: 'flex', justifyContent: 'flex-end' }}>
+          <Button onClick={() => setShowConfigModal(true)}>{t('cardSetting')}</Button>
+        </div>
+        <div>
+          {cards.length === 0 ? (
+            <EmptyState>
+              <p>{t('noConsoleCard')}</p>
+              <button onClick={() => setShowConfigModal(true)}>{t('addCard')}</button>
+            </EmptyState>
+          ) : (
+            <CardsGridWrapper>
+              <CardsGrid $cols={getColCount(cards.length)}>
+                {cards.map((card) => (
+                  <ConsoleCard
+                    key={card.cardId}
+                    robotId={deviceId}
+                    card={card}
+                    onExpand={handleCardExpand}
+                    //onControlOpen={onControlWindowOpen}
+                  />
+                ))}
+              </CardsGrid>
+            </CardsGridWrapper>
+          )}
+        </div>
+        {showConfigModal && (
+          <CardConfigModal
+            isOpen={showConfigModal}
+            onClose={() => setShowConfigModal(false)}
+            onSave={handleCardConfig}
+            cardTypes={cardTypes}
+            currentCards={cards}
+          />
+        )}
+      </Section>
+    </>
+  )
+}
+
+export default WebConsole

@@ -1,0 +1,136 @@
+import { parseCDR } from './cdrParser'
+
+let ws = null
+const subMap = {} // subId -> { topic, schemaName, encoding }
+
+self.onmessage = (event) => {
+  const { op, data } = event.data
+
+  switch (op) {
+    case 'connect': {
+      const { url } = data
+      if (ws) {
+        try {
+          ws.close()
+        } catch (err) {}
+      }
+
+      ws = new WebSocket(url, ['foxglove.sdk.v1'])
+      ws.binaryType = 'arraybuffer'
+
+      ws.onopen = () => {
+        self.postMessage({ op: 'status', status: 'connected' })
+      }
+
+      ws.onclose = () => {
+        self.postMessage({ op: 'status', status: 'disconnected' })
+      }
+
+      ws.onerror = (e) => {
+        self.postMessage({ op: 'status', status: 'error' })
+      }
+
+      ws.onmessage = (msgEvent) => {
+        if (msgEvent.data instanceof ArrayBuffer) {
+          const view = new DataView(msgEvent.data)
+          const opcode = view.getUint8(0)
+          if (opcode !== 0x01) return
+
+          const subId = view.getUint32(1, true)
+          const payload = msgEvent.data.slice(13)
+
+          const info = subMap[subId]
+          if (!info) return
+
+          let parsed = null
+          if (info.encoding === 'json') {
+            try {
+              const jsonStr = new TextDecoder('utf-8').decode(payload)
+              parsed = JSON.parse(jsonStr)
+            } catch (e) {}
+          } else {
+            parsed = parseCDR(payload, info.schemaName)
+          }
+
+          if (parsed) {
+            // Transferable objects list to avoid serialization copy overhead
+            const transferables = []
+            if (parsed.points instanceof Float32Array) {
+              transferables.push(parsed.points.buffer)
+            }
+            if (parsed.ranges instanceof Float32Array) {
+              transferables.push(parsed.ranges.buffer)
+            }
+            if (parsed.intensities instanceof Float32Array) {
+              transferables.push(parsed.intensities.buffer)
+            }
+            if (parsed.data instanceof Int8Array) {
+              transferables.push(parsed.data.buffer)
+            }
+
+            self.postMessage({ op: 'message', topic: info.topic, parsed }, transferables)
+          }
+          return
+        }
+
+        try {
+          const msg = JSON.parse(msgEvent.data)
+          if (msg.op === 'serverInfo') {
+            self.postMessage({ op: 'serverInfo', name: msg.name, supportedEncodings: msg.supportedEncodings })
+          } else if (msg.op === 'advertise') {
+            self.postMessage({ op: 'advertise', channels: msg.channels })
+          }
+        } catch (e) {}
+      }
+      break
+    }
+
+    case 'disconnect': {
+      if (ws) {
+        try {
+          ws.close()
+        } catch (err) {}
+        ws = null
+      }
+      break
+    }
+
+    case 'subscribe': {
+      const { subscriptions } = data // Array of { id, channelId, topic, schemaName, encoding }
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
+
+      const subsToSend = subscriptions.map((sub) => {
+        subMap[sub.id] = { topic: sub.topic, schemaName: sub.schemaName, encoding: sub.encoding }
+        return { id: sub.id, channelId: sub.channelId, encoding: sub.encoding }
+      })
+
+      ws.send(
+        JSON.stringify({
+          op: 'subscribe',
+          subscriptions: subsToSend
+        })
+      )
+      break
+    }
+
+    case 'unsubscribe': {
+      const { subscriptionIds } = data
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
+
+      subscriptionIds.forEach((id) => {
+        delete subMap[id]
+      })
+
+      ws.send(
+        JSON.stringify({
+          op: 'unsubscribe',
+          subscriptionIds
+        })
+      )
+      break
+    }
+
+    default:
+      break
+  }
+}

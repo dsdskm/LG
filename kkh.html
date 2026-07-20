@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Cloud 관제 시스템 아키텍처</title>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #0f172a;
+            color: #fff;
+            overflow: hidden;
+        }
+
+        .slide {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            box-sizing: border-box;
+            transition: all 0.5s ease;
+        }
+
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 20px;
+        }
+
+        h2 {
+            font-size: 2rem;
+            margin-bottom: 20px;
+            color: #38bdf8;
+        }
+
+        p {
+            font-size: 1.3rem;
+            line-height: 1.6;
+            opacity: 0.9;
+        }
+
+        .box-container {
+            display: flex;
+            gap: 20px;
+            margin-top: 40px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .box {
+            padding: 20px 30px;
+            border-radius: 12px;
+            background: #1e293b;
+            border: 1px solid #334155;
+            min-width: 220px;
+            text-align: center;
+            transition: all 0.3s;
+        }
+
+        .box:hover {
+            transform: translateY(-5px);
+            background: #334155;
+        }
+
+        .highlight {
+            border: 2px solid #38bdf8;
+            background: #1e40af;
+        }
+
+        .nav {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            margin-left: 10px;
+            background: #38bdf8;
+            border: none;
+            color: #000;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- ✅ 1 슬라이드 -->
+    <div class="slide">
+        <h1>Cloud 관제 시스템</h1>
+        <h2>전체 아키텍처</h2>
+        <p>로봇 → AWS → Backend → Frontend → AI Service 흐름으로 구성</p>
+    </div>
+
+    <!-- ✅ 2 슬라이드 -->
+    <div class="slide" style="display:none">
+        <h2>1. 로봇 & AWS Cloud 영역</h2>
+
+        <div class="box-container">
+            <div class="box highlight">Robot</div>
+            <div class="box">AWS Cloud 관제</div>
+        </div>
+
+        <p>현장 로봇에서 발생한 데이터가 AWS Cloud로 수집됨</p>
+    </div>
+
+    <!-- ✅ 3 슬라이드 -->
+    <div class="slide" style="display:none">
+        <h2>2. Backend 서비스 구성</h2>
+
+        <div class="box-container">
+            <div class="box">CMS Backend</div>
+            <div class="box">TMS Backend</div>
+            <div class="box highlight">AI Service Backend</div>
+        </div>
+
+        <p>각 도메인별 Backend + AI 분석 서비스 구성</p>
+    </div>
+
+    <!-- ✅ 4 슬라이드 -->
+    <div class="slide" style="display:none">
+        <h2>3. Cloud 관제 프론트엔드</h2>
+
+        <div class="box-container">
+            <div class="box">Robot Management</div>
+            <div class="box">Group / Site / User</div>
+            <div class="box">OTA</div>
+            <div class="box">CMS</div>
+            <div class="box">TMS</div>
+            <div class="box highlight">AI Log Dashboard</div>
+        </div>
+
+        <p>각 기능별 UI 모듈 구성</p>
+    </div>
+
+    <!-- ✅ 5 슬라이드 -->
+    <div class="slide" style="display:none">
+        <h2>4. AI Chat Service</h2>
+
+        <div class="box-container">
+            <div class="box highlight">AI Chat Service</div>
+        </div>
+
+        <p>
+            사용자가 현재 화면 기반으로 질문하면<br />
+            AI가 데이터를 분석하여 즉시 답변 제공
+        </p>
+    </div>
+
+    <!-- ✅ 6 슬라이드 -->
+    <div class="slide" style="display:none">
+        <h2>핵심 가치</h2>

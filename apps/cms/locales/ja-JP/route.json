@@ -1,0 +1,64 @@
+{
+  "SideBar": {
+    "gnb": {
+      "content": "コンテンツ",
+      "label": "ラベル",
+      "embedding": "音声対話",
+      "embeddingDocs": "ドキュメント登録",
+      "embeddingAction": "ロボットアクション",
+      "embeddingTest": "テスト",
+      "embeddingVersion": "ベクターバージョン",
+      "settings": "設定",
+      "contentType": "コンテンツタイプ",
+      "category": "カテゴリー",
+      "apiDoc": "APIドキュメント"
+    }
+  },
+  "Depth": {
+    "content": {
+      "name": "コンテンツ"
+    },
+    "contentDetail": {
+      "name": "コンテンツ詳細"
+    },
+    "label": {
+      "name": "ラベル"
+    },
+    "labelDetail": {
+      "name": "ラベル詳細"
+    },
+    "embedding": {
+      "name": "音声対話"
+    },
+    "embeddingDocs": {
+      "name": "ドキュメント登録"
+    },
+    "embeddingAction": {
+      "name": "ロボットアクション"
+    },
+    "embeddingActionDetail": {
+      "name": "ロボットアクション詳細"
+    },
+    "embeddingDetail": {
+      "name": "音声対話ドキュメント詳細"
+    },
+    "embeddingVersion": {
+      "name": "ベクターバージョン"
+    },
+    "embeddingTest": {
+      "name": "音声対話テスト"
+    },
+    "contentType": {
+      "name": "コンテンツタイプ"
+    },
+    "contentTypeDetail": {
+      "name": "コンテンツタイプ詳細"
+    },
+    "category": {
+      "name": "カテゴリー"
+    },
+    "categoryDetail": {
+      "name": "カテゴリー詳細"
+    }
+  }
+}

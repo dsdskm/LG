@@ -1,0 +1,16 @@
+{
+  "labelTitle": "ラベル設定",
+  "labelName": "ラベル名",
+  "labelType": "ラベル種別",
+  "createdAt": "作成日",
+  "create": "作成",
+  "modify": "修正",
+  "cancel": "キャンセル",
+  "detail": "詳細",
+  "default": "デフォルト",
+  "normal": "ノーマル",
+  "enterLabel": "ラベルを入力してください",
+  "duplicateName": "重複したラベルは入力できません。",
+  "save": "保存",
+  "systemLabel": "システムラベル"
+}

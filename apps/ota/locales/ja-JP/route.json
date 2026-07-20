@@ -1,0 +1,87 @@
+{
+  "SideBar": {
+    "gnb": {
+      "ota": "OTA",
+      "campaign": "デプロイ",
+      "artifact": "アーティファクト",
+      "targetGroup": "ターゲットグループ",
+      "action": "ポストアクション",
+      "management": "管理",
+      "organization": "組織",
+      "policy": "ポリシー",
+      "device": "デバイス",
+      "admin": "管理者",
+      "settings": "設定",
+      "approve": "承認",
+      "request": "リクエスト",
+      "role": "権限",
+      "module": "モジュール",
+      "cicdSetting": "CI/CD 設定",
+      "deviceType": "デバイスタイプ",
+      "apiDoc": "API ドキュメント",
+      "icons": "アイコンビューア"
+    }
+  },
+  "Depth": {
+    "artifact": {
+      "name": "アーティファクト"
+    },
+    "campaign": {
+      "name": "デプロイ"
+    },
+    "targetGroup": {
+      "name": "ターゲットグループ"
+    },
+    "action": {
+      "name": "ポストアクション"
+    },
+    "management": {
+      "name": "管理"
+    },
+    "campaignDetail": {
+      "name": "デプロイ詳細"
+    },
+    "actionDetail": {
+      "name": "ポストアクション詳細"
+    },
+    "approve": {
+      "name": "承認"
+    },
+    "approveDetail": {
+      "name": "承認詳細"
+    },
+    "request": {
+      "name": "リクエスト"
+    },
+    "requestDetail": {
+      "name": "リクエスト詳細"
+    },
+    "role": {
+      "name": "権限"
+    },
+    "module": {
+      "name": "モジュール"
+    },
+    "deviceType": {
+      "name": "デバイスタイプ"
+    },
+    "roleDetail": {
+      "name": "権限詳細"
+    },
+    "moduleDetail": {
+      "name": "モジュール詳細"
+    },
+    "deviceTypeDetail": {
+      "name": "デバイスタイプ詳細"
+    },
+    "organizationDetail": {
+      "name": "組織"
+    },
+    "policyDetail": {
+      "name": "ポリシー"
+    },
+    "deviceDetail": {
+      "name": "デバイス"
+    }
+  }
+}

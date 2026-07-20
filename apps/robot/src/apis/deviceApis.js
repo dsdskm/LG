@@ -1,0 +1,98 @@
+import { robotClient } from '@repo/apis'
+import { ENDPOINTS, GETSIZE } from './constants'
+
+const axiosRobot = robotClient(import.meta.env.VITE_API_BASE_URL)
+const isRefactoryTemp = import.meta.env.VITE_BE_REFACTORY_TEMP
+  ? import.meta.env.VITE_BE_REFACTORY_TEMP == 'Y'
+    ? true
+    : false
+  : false
+const pathDevices = isRefactoryTemp ? '/api/v1/devices' : ENDPOINTS.ROBOT.DEVICES
+
+/**
+ * 로봇 목록 조회
+ * @returns {Promise<any>}
+ */
+
+export const getDevices = async (params = undefined) => {
+  const size = GETSIZE
+
+  const response = await axiosRobot.get(pathDevices, {
+    params: {
+      size,
+      ...(params ?? {}) // params가 있으면 추가
+    }
+  })
+  return response
+}
+
+/**
+ * 로봇 정보 조회
+ * @returns {Promise<any>}
+ */
+export const getDeviceInfo = async (deviceId) => {
+  const response = await axiosRobot.get(pathDevices + '/' + deviceId)
+  return response
+}
+
+/**
+ * 로봇 정보 수정
+ * @returns {Promise<any>}
+ */
+export const putDeviceInfo = async (deviceId, deviceName) => {
+  const response = await axiosRobot.put(pathDevices + '/' + deviceId, {
+    deviceName
+  })
+  return response
+}
+
+/**
+ * 로봇 사이트 배정
+ * @returns {Promise<any>}
+ */
+export const putDeviceAssignment = async (deviceId, body) => {
+  const response = await axiosRobot.put(pathDevices + '/' + deviceId + '/site', body)
+  return response
+}
+
+/**
+ * 에러 리스트
+ * @returns {Promise<any>}
+ */
+export const getDeviceErrors = async (deviceId, params = undefined) => {
+  const size = GETSIZE
+
+  const response = await axiosRobot.get(pathDevices + '/' + deviceId + '/error', {
+    params: {
+      size,
+      ...(params ?? {}) // params가 있으면 추가
+    }
+  })
+  return response
+}
+
+/**
+ * 전체 알림 리스트 조회
+ * @returns {Promise<any>}
+ */
+export const getDeviceNotifications = async (params = undefined) => {
+  const size = GETSIZE
+
+  const response = await axiosRobot.get(pathDevices + '/notification', {
+    params: {
+      size,
+      ...(params ?? {}) // params가 있으면 추가
+    }
+  })
+  return response
+}
+
+/**
+ * instantActions
+ * @returns {Promise<any>}
+ */
+export const postInstanceActions = async (deviceId, params) => {
+  const path = pathDevices + '/' + deviceId + '/instantActions'
+  const response = await axiosRobot.post(path, params)
+  return response
+}

@@ -1,0 +1,299 @@
+{
+  "actions": {
+    "delete": "삭제"
+  },
+  "canvas": {
+    "header": {
+      "undo": "실행 취소",
+      "undoTitle": "실행 취소 (Ctrl+Z)",
+      "redo": "다시 실행",
+      "redoTitle": "다시 실행 (Ctrl+Shift+Z)",
+      "editInfo": "정보 수정",
+      "editInfoTitle": "Task Flow 정보 수정",
+      "tempSave": "임시 저장",
+      "tempSaving": "임시 저장중...",
+      "tempSaveNotConnected": "임시 저장 기능이 연결되지 않았습니다.",
+      "tempSaveNoChanges": "임시 저장할 변경사항이 없습니다.",
+      "save": "저장",
+      "saving": "저장중...",
+      "saveNotConnected": "저장 기능이 연결되지 않았습니다.",
+      "saveNoChanges": "저장할 변경사항이 없습니다."
+    },
+    "confirmDelete": {
+      "title": "노드를 삭제할까요?",
+      "description": "삭제하면 되돌릴 수 없습니다."
+    },
+    "align": {
+      "button": "정렬",
+      "selectAtLeastTwo": "2개 이상의 노드를 선택하세요(ctrl + 클릭)",
+      "alignSelected": "선택 노드 정렬",
+      "guideTitle": "정렬 안내",
+      "guideDesc": "2개 이상의 노드를 선택하세요.\n(ctrl + 클릭으로 여러 노드를 선택할 수 있습니다.)"
+    },
+    "mode": {
+      "default": "Horizontal mode",
+      "tree": "Vertical mode",
+      "switchToTree": "Switch to vertical mode (top-down flow)",
+      "switchToDefault": "Switch to horizontal mode (left-right flow)"
+    },
+    "edge": {
+      "typeLabel": "Edge type",
+      "types": {
+        "bezier": "Curved",
+        "straight": "Straight",
+        "step": "Step"
+      },
+      "connect": {
+        "denyControlBottom": "A control node cannot connect from the bottom.",
+        "denyLeftNotControl": "Only control nodes can connect from the left.",
+        "denyTargetNotLeft": "Nodes can only be connected at their input point (horizontal: left / vertical: top).",
+        "denyDefault": "This connection is not allowed."
+      }
+    },
+    "viewer": {
+      "properties": "속성",
+      "emptyHint": "노드를 선택하면 속성 정보가 표시됩니다.",
+      "viewMode": "view mode",
+      "inspectMode": "점검 mode",
+      "targetNone": "타겟 선택: none",
+      "inspect": {
+        "auto": "Auto",
+        "manual": "Manual",
+        "tickRate": "Tick Rate",
+        "start": "Start",
+        "stop": "Stop",
+        "pause": "Pause",
+        "resume": "Resume",
+        "next": "Next",
+        "tickOnce": "Tick Once",
+        "buildError": "Failed to build BehaviorTree — check the flow",
+        "dialog": {
+          "title": "Node Inspect Settings",
+          "forceResult": "Force Result",
+          "normal": "Normal",
+          "success": "SUCCESS",
+          "failed": "FAILED",
+          "running": "RUNNING",
+          "returnValue": "Return Value",
+          "returnValuePlaceholder": "Enter return value",
+          "breakpoint": "Set Breakpoint",
+          "forceLocked": "This node already ran — result can't be changed",
+          "close": "Close"
+        }
+      }
+    },
+    "property": {
+      "kicker": "PROPERTIES",
+      "empty": "노드/엣지를 선택하면 속성이 표시됩니다",
+      "edge": "Edge",
+      "node": "Node",
+      "deleteEdgeTitle": "선택된 엣지를 삭제합니다",
+      "deleteNodeTitle": "선택된 노드를 삭제합니다",
+      "confirmDeleteEdgeTitle": "엣지를 삭제할까요?",
+      "tabTask": "Task",
+      "tabContents": "Contents",
+      "noTaskInfo": "표시할 Task 정보가 없습니다",
+      "noProperty": "Property가 없습니다",
+      "noEditableProperty": "수정 가능한 Property가 없습니다",
+      "noContentInfo": "표시할 Content 정보가 없습니다",
+      "mainNodes": "Main 노드",
+      "mainNodesDesc": "성공/실패 판정에 사용할 노드를 선택하세요. 선택되지 않은 노드는 항상 성공으로 처리됩니다.",
+      "mainNodesEmpty": "연결된 자식 노드가 없습니다"
+    },
+    "page": {
+      "newFlowTitle": "새 Task Flow",
+      "defaultTitle": "Task Flow",
+      "warnings": "경고:",
+      "btSuccessTitle": "BT 변환 성공",
+      "btSuccessMessage": "BT 변환이 성공했습니다.",
+      "btUnknownError": "BT 변환 중 알 수 없는 오류가 발생했습니다.",
+      "btFailTitle": "BT 변환 실패",
+      "orgRequired": "조직 정보가 필요합니다. 그룹과 사이트를 모두 선택한 뒤 다시 시도해주세요.",
+      "nameRequired": "Task Flow 이름은 필수입니다.",
+      "btNoResult": "BT 변환 결과가 없습니다. 다시 시도해주세요.",
+      "saveError": "저장 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+      "nameFirstRequired": "Task Flow 이름을 먼저 입력해주세요. '정보 수정' 버튼에서 수정할 수 있습니다.",
+      "infoDialogTitle": "Task Flow 정보 수정",
+      "infoDialogDesc": "Task Flow 이름과 설명을 수정할 수 있습니다.",
+      "apply": "적용",
+      "btTempSave": "임시 저장",
+      "btTempSaving": "임시 저장 중...",
+      "btSave": "저장",
+      "btSaving": "저장 중...",
+      "tempSaveDoneTitle": "임시 저장 완료",
+      "saveDoneTitle": "저장 완료",
+      "tempSaveDoneDesc": "작업 내용이 임시 저장되었습니다.",
+      "saveDoneDesc": "작업 내용이 성공적으로 저장되었습니다.",
+      "tempSaveFailTitle": "임시 저장 실패",
+      "saveFailTitle": "저장 실패",
+      "leaveConfirmDesc": "Unsaved changes will not be kept.",
+      "leaveConfirmYes": "Yes",
+      "leaveConfirmNo": "No"
+    },
+    "sound": {
+      "play": "재생",
+      "pause": "일시정지",
+      "stop": "정지"
+    }
+  },
+  "infoDialog": {
+    "nameLabel": "Task Flow 이름",
+    "descriptionLabel": "설명",
+    "processing": "처리 중...",
+    "nameRequired": "이름을 입력하세요.",
+    "nameTooLong": "이름은 40자 이하로 입력하세요.",
+    "descriptionTooLong": "설명은 300자 이하로 입력하세요."
+  },
+  "list": {
+    "title": "Task Flow 목록",
+    "searchPlaceholder": "Task Flow 이름/설명 검색",
+    "create": "생성",
+    "noData": "Task Flow가 없습니다.",
+    "totalCount": "총 {{count}}개",
+    "notDeployed": "미배포",
+    "deployStatus": {
+      "PENDING": "배포 중",
+      "IN_PROGRESS": "배포 중",
+      "COMPLETED": "배포 완료",
+      "CANCELED": "배포 취소",
+      "DELETION_IN_PROGRESS": "삭제 중"
+    },
+    "empty": {
+      "title": "아직 등록된 Task Flow가 없습니다",
+      "descPrefix": "우측 상단의 ",
+      "createButton": "신규 생성",
+      "descSuffix": " 버튼으로 Task Flow를 추가해보세요."
+    }
+  },
+  "detail": {
+    "status": {
+      "draft": "Draft",
+      "activated": "Activated",
+      "deactivated": "Deactivated",
+      "disabled": "Disabled"
+    },
+    "deployStatus": {
+      "PENDING": "배포대기",
+      "IN_PROGRESS": "진행중",
+      "COMPLETED": "배포완료",
+      "CANCELED": "배포취소",
+      "DELETION_IN_PROGRESS": "삭제중"
+    },
+    "edit": "수정",
+    "deployManage": "배포/배포삭제",
+    "more": "더보기",
+    "activate": "활성화",
+    "deactivate": "비활성화",
+    "basicInfo": "기본 정보",
+    "description": "상세 설명",
+    "versionInfo": "버전 정보",
+    "statusLabel": "상태",
+    "requiredSkill": "필요 Skill",
+    "executionCondition": "실행 조건",
+    "deployInfo": "배포 정보",
+    "cumulativeDeploy": "누적 배포",
+    "recentDeploy": "최근 배포",
+    "deploySuccess": "배포 성공",
+    "deployFail": "배포 실패",
+    "deployPending": "배포 대기",
+    "unit": "{{count}}대",
+    "processError": "처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+    "invalidAccess": "잘못된 접근입니다. 유효한 TaskFlow ID가 필요합니다.",
+    "loadError": "데이터를 불러오는 중 오류가 발생했습니다.",
+    "noData": "데이터 없음",
+    "confirm": {
+      "activateTitle": "TaskFlow를 활성화할까요?",
+      "activateDesc": "\"{{name}}\" TaskFlow를 활성화합니다.",
+      "activating": "활성화 중...",
+      "activate": "활성화",
+      "deactivateTitle": "TaskFlow를 비활성화할까요?",
+      "deactivateDesc": "\"{{name}}\" TaskFlow를 비활성화합니다.",
+      "deactivating": "비활성화 중...",
+      "deactivate": "비활성화",
+      "deleteTitle": "TaskFlow를 삭제할까요?",
+      "deleteDesc": "\"{{name}}\" TaskFlow를 삭제합니다. \n삭제 시 로봇에 등록된 TaskFlow와 시스템에 저장된 TaskFlow가 모두 삭제되며, 복구할 수 없습니다.",
+      "deleting": "삭제 중..."
+    },
+    "success": {
+      "activateTitle": "활성화 완료",
+      "activateMsg": "\"{{name}}\" TaskFlow가 활성화되었습니다.",
+      "deactivateTitle": "비활성화 완료",
+      "deactivateMsg": "\"{{name}}\" TaskFlow가 비활성화되었습니다.",
+      "deleteTitle": "삭제 완료",
+      "deleteMsg": "\"{{name}}\" TaskFlow가 삭제되었습니다."
+    },
+    "error": {
+      "activateFail": "활성화 실패",
+      "deactivateFail": "비활성화 실패",
+      "deleteFail": "삭제 실패",
+      "processFail": "처리 실패"
+    }
+  },
+  "deploy": {
+    "title": "Task Flow 배포",
+    "descPlaceholder": "부가 설명 부분 추가 필요",
+    "requiredSkills": "필요 스킬:",
+    "skillsPlaceholder": "스킬 부분 정보 추가 필요",
+    "deploy": "배포",
+    "undeploy": "배포 삭제",
+    "selectAll": "전체 선택",
+    "searchRobot": "로봇명 검색",
+    "selectedCount": "총 {{count}}대가 선택 되었습니다.",
+    "unit": "{{count}}대",
+    "unassignedGroup": "미지정 그룹",
+    "unassignedSite": "미지정 사이트",
+    "skill": {
+      "navigation": "주행",
+      "manipulation": "매니플레이션"
+    },
+    "robot": {
+      "unassigned": "미지정",
+      "supportedSkills": "지원 스킬",
+      "notDeployable": "배포 불가"
+    },
+    "modal": {
+      "selectedPrefix": "선택하신 ",
+      "deploySuffix": "의 로봇에 배포하시겠습니까?",
+      "undeploySuffix": "의 로봇에 대한 배포를 삭제하시겠습니까?",
+      "irreversible": "이 작업이 실행되면 취소할 수 없습니다.",
+      "deploying": "배포중",
+      "undeploying": "배포 삭제중",
+      "deployRequested": "배포요청 완료",
+      "undeployRequested": "배포 삭제요청 완료",
+      "deployFailed": "배포요청 실패",
+      "undeployFailed": "배포 삭제요청 실패",
+      "deployTitleSuffix": "v{{version}}을(를) 배포 합니다.",
+      "undeployTitleSuffix": "을(를) 배포 삭제 합니다."
+    }
+  },
+  "robots": {
+    "title": "RobotsPage",
+    "statusFilter": "로봇상태",
+    "taskflowFilter": "taskflow",
+    "installedCount": "설치 TaskFlow",
+    "recentRun": "최근 실행",
+    "runningStatus": {
+      "READY": "대기",
+      "RUNNING": "실행중",
+      "PAUSED": "일시정지",
+      "CANCELED": "취소됨",
+      "STOPPED": "정지",
+      "FAILURE": "실패",
+      "SUCCESS": "성공"
+    }
+  },
+  "robotDetail": {
+    "control": {
+      "start": "실행",
+      "pause": "일시정지",
+      "resume": "리줌",
+      "stop": "정지",
+      "use": "사용",
+      "unuse": "미사용"
+    },
+    "active": "활성",
+    "inactive": "비활성",
+    "using": "사용중",
+    "unused": "미사용"
+  }
+}
