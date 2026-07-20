@@ -126,6 +126,7 @@
       "saveDoneDesc": "작업 내용이 성공적으로 저장되었습니다.",
       "tempSaveFailTitle": "임시 저장 실패",
       "saveFailTitle": "저장 실패",
+      "moveToMapIdMismatch": "MoveTo Taskはすべて同じmapIdである必要があります。",
       "leaveConfirmDesc": "保存されていない変更は保持されません。",
       "leaveConfirmYes": "はい",
       "leaveConfirmNo": "いいえ"
