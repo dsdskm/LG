@@ -6,6 +6,7 @@ import { PreviewCard } from './styles.preview'
 import { PreviewProps } from './types.preview'
 import { parseMotionYaml } from '@/utils/motionParser'
 import { MotionData, ParsedTrajectory, TrajectoryPoint } from '@/types/motion'
+import { MotionCollision } from './MotionCollision'
 const URDF_BASE = '/tms/urdf/cloid_description_1k'
 
 const motion_yaml = `
@@ -39,48 +40,12 @@ trajectory:
       time_from_start: {sec: 1, nanosec: 0}
  
     # Initial pose (1-10s)
-    - positions: [0.0, 0.436332, -0.436332, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    - positions: [0.0, 0.0, 0.0, 0.0,
+                  1.000, 0.283, -0.691, 2.052, -0.011, -0.313, 0.193,
+                  1.000, 0.283, -0.691, 2.052, -0.011, -0.313, 0.193]
       time_from_start: {sec: 10, nanosec: 0}
  
-    # Posture 1 (10-15s)
-    - positions: [0.0, 0.436332, -0.436332, 0.0, 3.124139, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.124139, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-      time_from_start: {sec: 15, nanosec: 0}
- 
-    # Posture 2 (15-20s)
-    - positions: [0.0, 0.436332, -0.436332, 0.0, 1.570796, 0.0, 0.0, 2.094395, 0.0, 0.0, 0.0, 1.570796, 0.0, 0.0, 2.094395, 0.0, 0.0, 0.0]
-      time_from_start: {sec: 20, nanosec: 0}
- 
-    # Posture 3 (20-25s)
-    - positions: [0.0, 0.436332, -0.436332, 0.0, 1.570796, 1.570796, 0.0, 1.570796, 0.0, 0.0, 0.0, 1.570796, 1.570796, 0.0, 1.570796, 0.0, 0.0, 0.0]
-      time_from_start: {sec: 25, nanosec: 0}
- 
-    # Posture 4 (25-30s)
-    - positions: [0.0, 0.436332, -0.436332, 0.0, 1.570796, 1.570796, 1.570796, 1.570796, 1.570796, 1.221730, 0.0, 1.570796, 1.570796, 1.570796, 1.570796, 1.570796, 1.221730, 0.0]
-      time_from_start: {sec: 30, nanosec: 0}
- 
-    # Posture 5 (30-35s)
-    - positions: [0.0, 0.436332, -0.436332, 0.0, 1.570796, 1.570796, 1.570796, 1.570796, 1.570796, 0.0, 1.221730, 1.570796, 1.570796, 1.570796, 1.570796, 1.570796, 0.0, 1.221730]
-      time_from_start: {sec: 35, nanosec: 0}
- 
-    # Posture 6 (35-40s)
-    - positions: [0.0, 0.436332, -0.436332, 0.0, 1.570796, 1.570796, -1.570796, 1.570796, -1.570796, -1.221730, 0.0, 1.570796, 1.570796, -1.570796, 1.570796, -1.570796, -1.221730, 0.0]
-      time_from_start: {sec: 40, nanosec: 0}
- 
-    # Posture 7 (40-45s)
-    - positions: [0.0, 0.436332, -0.436332, 0.0, 1.570796, 1.570796, -1.570796, 1.570796, -1.570796, 0.0, -1.221730, 1.570796, 1.570796, -1.570796, 1.570796, -1.570796, 0.0, -1.221730]
-      time_from_start: {sec: 45, nanosec: 0}
- 
-    # Posture 8 (45-50s)
-    - positions: [0.0, 0.436332, -0.436332, 0.0, 1.570796, 1.570796, 0.0, 1.570796, 0.0, 0.0, 0.0, 1.570796, 1.570796, 0.0, 1.570796, 0.0, 0.0, 0.0]
-      time_from_start: {sec: 50, nanosec: 0}
- 
-    # Posture 9 (50-55s)
-    - positions: [0.0, 0.436332, -0.436332, 0.0, 1.570796, 0.0, 0.0, 2.094395, 0.0, 0.0, 0.0, 1.570796, 0.0, 0.0, 2.094395, 0.0, 0.0, 0.0]
-      time_from_start: {sec: 55, nanosec: 0}
- 
-    # Initial pose (55-60s)
-    - positions: [0.0, 0.436332, -0.436332, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-      time_from_start: {sec: 60, nanosec: 0}
+
  
 path_tolerance: []
 goal_tolerance: []
@@ -92,6 +57,8 @@ function useUrdfRobot(url: string) {
   const LoaderClass = URDFLoader as any as new (...args: any[]) => any
   return useLoader(LoaderClass, url, (loader) => {
     loader.packages = { cloid_description: URDF_BASE }
+    // 충돌 감지를 위해 collision geometry 를 반드시 파싱하도록 설정 (기본값 false)
+    loader.parseCollision = true
   })
 }
 
@@ -129,7 +96,7 @@ function Robot({ urdfUrl, motionData }: RobotProps) {
   const duration = motionData?.frames[motionData?.frames.length - 1].t ?? 1
 
   useFrame((_, delta) => {
-    //console.log('delta', delta)
+    console.log('delta', delta)
     timeRef.current = timeRef.current + delta
     const joints = sampleFrame(motionData?.frames ?? [], timeRef.current)
     Object.entries(joints).forEach(([key, value]) => {
@@ -138,7 +105,12 @@ function Robot({ urdfUrl, motionData }: RobotProps) {
     })
   })
 
-  return <primitive ref={robotRef} object={robot} />
+  return (
+    <>
+      <primitive ref={robotRef} object={robot} />
+      <MotionCollision urdfModel={robot} />
+    </>
+  )
 }
 
 export default function MotionPreview({ node }: PreviewProps) {

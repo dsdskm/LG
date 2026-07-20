@@ -1,9 +1,15 @@
-import { APP_ROUTE_TREE, ROBOT_ROUTE } from '../chatSettings.constants'
+const getFirstLeafKey = (node) => {
+    if (!node) return ''
+    if (!Array.isArray(node.children) || node.children.length === 0) {
+        return String(node.key ?? '')
+    }
+    return getFirstLeafKey(node.children[0])
+}
 
-export const AppSideTabs = ({ appKey, activeRouteKey, onChange }) => {
-    const routeTree = APP_ROUTE_TREE[appKey] ?? []
+export const AppSideTabs = ({ routeTree, activeRouteKey, onChange }) => {
+    const list = Array.isArray(routeTree) ? routeTree : []
 
-    if (routeTree.length <= 0) {
+    if (list.length <= 0) {
         return (
             <aside
                 style={{
@@ -61,7 +67,7 @@ export const AppSideTabs = ({ appKey, activeRouteKey, onChange }) => {
                 상세 화면
             </div>
 
-            {routeTree.map((route) => {
+            {list.map((route) => {
                 const hasChildren = Array.isArray(route.children) && route.children.length > 0
                 const isParentActive =
                     activeRouteKey === route.key || (hasChildren && activeRouteKey.startsWith(`${route.key}/`))
@@ -70,7 +76,7 @@ export const AppSideTabs = ({ appKey, activeRouteKey, onChange }) => {
                     <div key={route.key} style={{ display: 'grid', gap: '6px' }}>
                         <button
                             type="button"
-                            onClick={() => onChange(hasChildren ? ROBOT_ROUTE.AILOG_EVENT : route.key)}
+                            onClick={() => onChange(hasChildren ? getFirstLeafKey(route) : route.key)}
                             style={{
                                 width: '100%',
                                 border: 'none',

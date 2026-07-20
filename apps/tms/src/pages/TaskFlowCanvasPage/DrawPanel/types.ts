@@ -20,6 +20,7 @@ export type TaskNodeData = {
   taskStatus?: string
   runningCount?: number
   breakpoint?: boolean
+  forcedResult?: 'SUCCESS' | 'FAILURE' | 'RUNNING'
   groupId?: string | null
   siteId?: string | null
   propertySchema?: PropertySchema

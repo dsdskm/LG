@@ -1,5 +1,5 @@
 import { useDevice } from '@/api/deviceApis'
-import { StyledPageContent, Title, Section, NoData } from '@repo/ui'
+import { StyledPageContent, Title, NoData } from '@repo/ui'
 import { useParams } from 'react-router-dom'
 import TaskFlowList from './components/TaskFlowList'
 import { useEffect, useRef, useState } from 'react'
@@ -10,7 +10,7 @@ import { FlowArea, FlowCanvasWrap } from '../TaskFlowListDetailPage/styles'
 import { useGetTaskFlow } from '@/api/taskFlowApis'
 import TaskFlowReadonlyCanvas from '../TaskFlowCanvasPage/FlowCanvasViewer'
 import { useTranslation } from 'react-i18next'
-import { CenteredContent } from './styles'
+import { CenteredContent, Section } from './styles'
 
 const RobotDetailPage = () => {
   const { t } = useTranslation('tms')

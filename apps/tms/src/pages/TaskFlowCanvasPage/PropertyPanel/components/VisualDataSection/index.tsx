@@ -5,40 +5,38 @@ import PoiPreview from './previews/PoiPreview'
 import SoundPreview from './previews/SoundPreview'
 import { VisualDataSectionProps } from './types'
 
-export default function VisualDataSection({
-  selectedData
-}: VisualDataSectionProps) {
+export default function VisualDataSection({ selectedData }: VisualDataSectionProps) {
   if (!selectedData) {
     return <></>
   }
 
   console.log(`VisualDataSection selectedData`, selectedData)
-  const contentTypeName = selectedData.contentTypeName ?? ""
-  const taskType = selectedData.taskType ?? ""
+  const contentTypeName = selectedData.contentTypeName ?? ''
+  const taskType = selectedData.taskType ?? ''
 
-  if (taskType === "ACTION" && contentTypeName) {
+  if (taskType === 'ACTION' && contentTypeName) {
     const previewNode = { data: selectedData }
-    if (contentTypeName === "POI") {
+    if (contentTypeName === 'POI') {
       return <PoiPreview node={previewNode} />
     }
 
-    if (contentTypeName === "MOTION") {
+    if (contentTypeName === 'MOTION') {
       return <MotionPreview node={previewNode} />
     }
 
-    if (contentTypeName === "TTS") {
+    if (contentTypeName === 'TTS') {
       return <SoundPreview node={previewNode} />
     }
 
-    if (contentTypeName === "BGM") {
+    if (contentTypeName === 'BGM') {
       return <SoundPreview node={previewNode} />
     }
 
-    if (contentTypeName.startsWith("FACE:")) {
+    if (contentTypeName.startsWith('FACE:')) {
       return <FacePreview node={previewNode} />
     }
 
-    if (contentTypeName === "OBJECT") {
+    if (contentTypeName === 'OBJECT') {
       return <ObjectPreview node={previewNode} />
     }
   }

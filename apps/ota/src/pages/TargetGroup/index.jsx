@@ -1,5 +1,6 @@
 import React, { useState, useEffect, Suspense, useCallback } from 'react'
 import {
+  Dropdown,
   StyledPageContent,
   Section,
   Title,
@@ -38,6 +39,8 @@ const TargetGroup = () => {
   const { t: tCommon } = useTranslation('common')
   const { actualOrgs, allOrgs, defaultOrg } = useOrganizationStore()
   const [isLoading, setIsLoading] = useState(true)
+  const [filterQuery, setFilterQuery] = useState('all')
+  const [modeOptions, setModeOptions] = useState([])
 
   const tableHeader = () => {
     return {
@@ -98,8 +101,9 @@ const TargetGroup = () => {
     const searchQueryStr = searchQuery || ''
     const matchesSearch = displayNameStr.toLowerCase().includes(searchQueryStr.toLowerCase())
     const matchesOrg = orgFilter.matchesOrg({ id: item.organizationId })
+    const matchesMode = filterQuery === 'all' || filterQuery === '' || item.mode === filterQuery
 
-    return matchesSearch && matchesOrg
+    return matchesSearch && matchesOrg && matchesMode
   })
 
   const handleResetSearch = () => {
@@ -136,6 +140,11 @@ const TargetGroup = () => {
             }
           })
         setProcessedData(responseData)
+        const uniqueModes = Array.from(new Set(responseData.map((item) => item.mode).filter(Boolean)))
+        setModeOptions([
+          { value: 'all', name: t('all') || 'All' },
+          ...uniqueModes.map((mode) => ({ value: mode, name: t(mode) || mode }))
+        ])
       } catch (error) {
         console.error(error)
       } finally {
@@ -159,22 +168,36 @@ const TargetGroup = () => {
     navigate(`/ota/target-group/detail/?orgId=${orgId}`)
   }
 
+  const handleFilterChange = (value) => {
+    setFilterQuery(value)
+  }
+
   return (
     <StyledPageContent className="column">
       <Title>{t('targetGroupTitle')}</Title>
       <OrganizationSelector onChange={handleSelectOrg} allToTop={false} />
       <Section>
         <HeaderTitleGroup>
+          <Dropdown
+            size="lg"
+            minWidth="180px"
+            label={t('mode')}
+            value={filterQuery}
+            placeholder={t('selectMode')}
+            options={modeOptions}
+            onChange={handleFilterChange}
+          />
           <SearchContainer>
             <Search
               value={searchQuery}
+              label={t('groupName')}
               onChange={handleSearchChange}
               onReset={handleResetSearch}
               placeholder={tCommon('searchPlaceHolder')}
               width={'300px'}
             />
           </SearchContainer>
-          <ButtonWrap className="alignRight" style={{ marginBottom: '0' }}>
+          <ButtonWrap className="alignRight" style={{ marginBottom: '-2rem' }}>
             <Button onClick={handleCreate} disabled={actualOrgs.length !== 1 && session.userRole !== 'SYSTEM_MANAGER'}>
               {t('create')}
             </Button>

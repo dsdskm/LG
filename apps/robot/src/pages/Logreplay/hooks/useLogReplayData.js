@@ -596,10 +596,6 @@ export default function useLogReplayData({
     pendingKeywordRef.current = pendingKeyword
   }, [pendingKeyword])
 
-  const logLinesRef = useRef(logLines)
-  useEffect(() => {
-    logLinesRef.current = logLines
-  }, [logLines])
   // ✅ [Option A] playhead(tSec)에 맞는 pose를 캐시에서 골라 pathPoints를 "현재까지"로 갱신
   // ✅ [REPLACE] applyPoseByPlayhead
   const applyPoseByPlayhead = useCallback(
@@ -734,7 +730,7 @@ export default function useLogReplayData({
   const handleKeywordSearchClick = useCallback(async () => {
     const keyword = (pendingKeywordRef.current || '').trim()
 
-    // ✅ [FIX] playhead 동기화(logWindowCache 기반)에서는 searchQuery로 덮어쓰지 말고 ref 필터로 처리
+    // 키워드는 logWindowCache 기반 ref 필터(applyLogsByPlayhead)로 반영
     appliedKeywordRef.current = keyword
     setAppliedKeyword(keyword)
 

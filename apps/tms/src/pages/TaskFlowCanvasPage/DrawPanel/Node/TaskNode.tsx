@@ -13,6 +13,7 @@ import {
   CircleBadge,
   MainNodeBadge,
   BreakpointDot,
+  ForcedResultMark,
   execStyle
 } from './styles.node'
 import { RFTaskNode } from '../types'
@@ -86,6 +87,7 @@ export default function TaskNode({ id, data, selected }: Props) {
       {isMainNode && <MainNodeBadge>MAIN</MainNodeBadge>}
 
       {data?.breakpoint && <BreakpointDot />}
+      {data?.forcedResult && <ForcedResultMark $result={data.forcedResult} />}
     </TaskNodeRoot>
   )
 }

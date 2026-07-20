@@ -5,6 +5,7 @@ import ModulesTableInExpand from './ModulesTableInExpand'
 import { StyledExpandedWrapper } from '@/components/common/styles'
 
 const ExpandOfDevice = ({ data: deviceData, isClosing, inModal = false, noData, allModules = [] }) => {
+  console.log('deviceData', deviceData)
   const { t } = useTranslation('device')
 
   // Show modules inside the expandable row
@@ -41,7 +42,7 @@ const ExpandOfDevice = ({ data: deviceData, isClosing, inModal = false, noData, 
             <Search value={searchQuery} onChange={handleSearchChange} placeholder={t('searchModulePlaceholder')} />
           </SearchContainer>
         </HeaderTitleGroup>
-        <ModulesTableInExpand data={filteredModules} noData={noData} />
+        <ModulesTableInExpand deviceId={deviceData?.thingName} noData={noData} />
       </Section>
     </StyledExpandedWrapper>
   )

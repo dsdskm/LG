@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 import SiteMap from './SiteMap'
 import { parseMultigrid, worldToSvgPixel } from '@/utils/mapUtils'
+import { getLocalizedName } from '@/utils/robotUtils'
 
 // ─── coordinate helpers ───────────────────────────────────────────────────────
 // MULTIGRID parsing + world→SVG pixel conversion live in mapUtils so the 2D
@@ -526,19 +527,6 @@ function RobotPin({ position, color, name, state, model, minZ, modelScale, ringR
   )
 }
 
-// POI 이름 추출 — 2D SiteMap과 동일하게 대소문자 무시로 ko-KR/en-US 키를 찾는다.
-// (3D가 정확한 대소문자('ko-KR')만 찾아 라벨이 비던 문제 수정)
-const poiLabel = (name) => {
-  if (!name) return ''
-  if (typeof name === 'string') return name
-  const keys = Object.keys(name)
-  const key =
-    keys.find((k) => k.toLowerCase() === 'ko-kr') ??
-    keys.find((k) => k.toLowerCase() === 'en-us') ??
-    keys[0]
-  return key ? name[key] : ''
-}
-
 // POI marker — identical visual to the 2D SiteMap
 function PoiPin({ position, isCharging, label }) {
   return (
@@ -773,8 +761,16 @@ const guideText = (t, mode, touch) => {
 
 // ─── main component ───────────────────────────────────────────────────────────
 
-const SiteMap3D = ({ mapData, robotDatas = [], mapServer, clickRobot = false, height = '500px' }) => {
-  const { t } = useTranslation('robot')
+const SiteMap3D = ({
+  mapData,
+  robotDatas = [],
+  mapServer,
+  clickRobot = false,
+  height = '500px',
+  only2D = false,
+  mapApplyControl = null
+}) => {
+  const { t, i18n } = useTranslation('robot')
   const [svgText, setSvgText] = useState(null)
   const [svgSize, setSvgSize] = useState(null)
   const [multigrid, setMultigrid] = useState(null)
@@ -1008,14 +1004,26 @@ const SiteMap3D = ({ mapData, robotDatas = [], mapServer, clickRobot = false, he
   const content = (
     <Wrapper $fullscreen={fullscreen} $height={height}>
       <TopRightTools>
-        <ViewToggle>
-          <ViewToggleButton $active={viewMode === '2D'} onClick={() => setViewMode('2D')}>
-            2D
-          </ViewToggleButton>
-          <ViewToggleButton $active={viewMode === '3D'} onClick={() => setViewMode('3D')}>
-            3D
-          </ViewToggleButton>
-        </ViewToggle>
+        {!only2D && (
+          <ViewToggle>
+            <ViewToggleButton $active={viewMode === '2D'} onClick={() => setViewMode('2D')}>
+              2D
+            </ViewToggleButton>
+            <ViewToggleButton $active={viewMode === '3D'} onClick={() => setViewMode('3D')}>
+              3D
+            </ViewToggleButton>
+          </ViewToggle>
+        )}
+        {mapApplyControl && (
+          <ViewToggle>
+            <ViewToggleButton $active={mapApplyControl.applied} onClick={() => mapApplyControl.onChange(true)}>
+              사용자
+            </ViewToggleButton>
+            <ViewToggleButton $active={!mapApplyControl.applied} onClick={() => mapApplyControl.onChange(false)}>
+              원본
+            </ViewToggleButton>
+          </ViewToggle>
+        )}
         <IconButton
           onClick={() => setFullscreen((v) => !v)}
           title={fullscreen ? t('map.exitFullscreen') : t('map.fullscreen')}
@@ -1106,7 +1114,7 @@ const SiteMap3D = ({ mapData, robotDatas = [], mapServer, clickRobot = false, he
                 key={poi.poiId}
                 position={poi.pos}
                 isCharging={poi.type === 'CHARGING'}
-                label={poiLabel(poi.name)}
+                label={getLocalizedName(poi.name, i18n.language)}
               />
             ))}
           </Canvas>

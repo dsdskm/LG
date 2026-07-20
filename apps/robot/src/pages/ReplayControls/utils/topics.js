@@ -15,11 +15,15 @@ export const BATTERY_TOPICS = ['/battery/battery_status']
 // rosout 토픽 후보 (rcl_interfaces/msg/Log)
 export const ROSOUT_TOPICS = ['/rosout']
 
+// tracking_controller 토픽 후보 (target_position/target_velocity 명령값)
+export const TRACKING_TOPICS = ['/tracking_controller/joint']
+
 // 끝부분 매칭 폴백(후보에 없는 새 prefix가 와도 흡수)
 export const DIAGNOSTIC_FALLBACK = /\/diagnostic$/i
 export const ACTUATOR_FALLBACK = /\/actuator_states$/i
 export const BATTERY_FALLBACK = /(battery_status|battery_state)$/i
 export const ROSOUT_FALLBACK = /rosout/i
+export const TRACKING_FALLBACK = /tracking_controller\/joint$/i
 
 // samples(토픽→wrapped 배열 객체)에서 실제 존재하는 토픽 키를 반환. 없으면 null.
 // - 1순위: 후보 중 비어있지 않은 샘플을 가진 키

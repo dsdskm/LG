@@ -96,3 +96,19 @@ export const postInstanceActions = async (deviceId, params) => {
   const response = await axiosRobot.post(path, params)
   return response
 }
+
+/**
+ * 기기 제어 로그 목록 조회
+ * @returns {Promise<any>}
+ */
+export const getDeviceControlHistory = async (deviceId, params) => {
+  const size = GETSIZE
+
+  const response = await axiosRobot.get(pathDevices + '/' + deviceId + '/control', {
+    params: {
+      size,
+      ...(params ?? {}) // params가 있으면 추가
+    }
+  })
+  return response
+}

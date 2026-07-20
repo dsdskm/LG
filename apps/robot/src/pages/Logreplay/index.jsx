@@ -8,7 +8,6 @@ import HeaderControlsOrig from './components/HeaderControls'
 import MapPanelsOrig from './components/MapPanels'
 import PlayerBarOrig from './components/PlayerBar'
 import LogsSectionOrig from './components/LogsSection'
-import useLogSearch from './hooks/useLogSearch'
 
 // 스타일
 import { S } from './styles'
@@ -122,7 +121,6 @@ const BodyContainer = React.memo(
       msToClock,
 
       // 커버리지/맵 데이터
-      mapGrid,
       coveragePathPoints,
 
       gridData,
@@ -135,9 +133,6 @@ const BodyContainer = React.memo(
       odomChart1,
       odomChart2,
       chartLoading,
-      // 토글
-      showSensor,
-      setShowSensor,
 
       // 플레이어 바
       progressBarRef,
@@ -161,7 +156,6 @@ const BodyContainer = React.memo(
       logError,
       logLines,
       filteredLines,
-      displayLines,
       detectLevel,
       logContainerRef,
       levelFilter,
@@ -197,10 +191,8 @@ const BodyContainer = React.memo(
             leftPlayable={leftPlayable}
             // 인터랙션
             onCanvasMouseDown={onCanvasMouseDown}
-            // onCanvasWheel={onCanvasWheel} // non-passive로 addEventListener 등록했다면 주석 유지
             msToClock={msToClock}
             // 이동면적(오른쪽 패널)
-            coverageGrid={mapGrid}
             coveragePathPoints={coveragePathPoints}
             gridData={gridData}
             pathPoints={pathPoints}
@@ -208,9 +200,6 @@ const BodyContainer = React.memo(
             localCostmapFrames={localCostmapFrames}
             dwaGoals={dwaGoals}
             t0EpochMs={t0EpochMs}
-            // 신규 추가
-            showSensor={showSensor}
-            setShowSensor={setShowSensor}
             odomChart1={odomChart1}
             odomChart2={odomChart2}
             chartLoading={chartLoading}
@@ -318,10 +307,8 @@ export default function Logreplay({ robotName = '로봇 명', initialDate }) {
     selectedDate,
     selectedLogId,
     isPlaying,
-    playIndex,
     showSettings,
     settings,
-    dateInputRef,
     logLines,
     isLoadingLogs,
     logError,
@@ -332,7 +319,6 @@ export default function Logreplay({ robotName = '로봇 명', initialDate }) {
     topRatio,
     containerRef,
     filteredLines,
-    displayLines,
     isPreparingDownload,
 
     // 게이팅
@@ -376,11 +362,9 @@ export default function Logreplay({ robotName = '로봇 명', initialDate }) {
 
     // 캔버스/진행바 인터랙션
     handleProgressPointerDown,
-    onCanvasWheel, // non-passive로 바인딩되어 있어도 prop으로 유지(필요 시 재연결 가능)
     onCanvasMouseDown,
 
     // 커버리지 패널용
-    mapGrid,
     coveragePathPoints,
 
     gridData,
@@ -408,16 +392,6 @@ export default function Logreplay({ robotName = '로봇 명', initialDate }) {
     hoverAbsLabel
   } = useLogReplayLogic({ initialDate, deviceId })
 
-  const getDeviceName = async () => {
-    try {
-      const data = await deviceApis.getDeviceInfo(deviceId)
-      if (!data?.deviceName) return
-      setDeviceName((prev) => (prev === data.deviceName ? prev : data.deviceName))
-    } catch (err) {
-      console.error('Error loadGetDevices:', err)
-    }
-  }
-
   useEffect(() => {
     let canceled = false
     ;(async () => {
@@ -441,9 +415,6 @@ export default function Logreplay({ robotName = '로봇 명', initialDate }) {
 
   const isEmptyOption = selectedLogId === '__empty__'
   const headerLocked = isPlaying || isLoadingLogs
-
-  // ★ 센서 토글 상태 (MapPanels에 전달)
-  const [showSensor, setShowSensor] = useState(false)
 
   // ★★★ 헤더에 전달할 props 묶음을 안정 레퍼런스로 고정
   const headerProps = useMemo(
@@ -522,7 +493,6 @@ export default function Logreplay({ robotName = '로봇 명', initialDate }) {
           // 유틸
           msToClock={msToClock}
           // 커버리지
-          mapGrid={mapGrid}
           coveragePathPoints={coveragePathPoints}
           gridData={gridData}
           pathPoints={pathPoints}
@@ -533,9 +503,6 @@ export default function Logreplay({ robotName = '로봇 명', initialDate }) {
           odomChart1={odomChart1}
           odomChart2={odomChart2}
           chartLoading={chartLoading}
-          // 토글
-          showSensor={showSensor}
-          setShowSensor={setShowSensor}
           // 플레이어 바
           progressBarRef={progressBarRef}
           handleProgressPointerDown={handleProgressPointerDown}
@@ -562,7 +529,6 @@ export default function Logreplay({ robotName = '로봇 명', initialDate }) {
           logError={logError}
           logLines={logLines}
           filteredLines={filteredLines}
-          displayLines={displayLines}
           detectLevel={detectLevel}
           logContainerRef={logContainerRef}
           levelFilter={levelFilter}

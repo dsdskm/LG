@@ -14,32 +14,15 @@ const Detail = () => {
   const deviceId = searchParams.get('deviceId')
   const [deviceInfo, setDeviceInfo] = useState({})
 
-  useEffect(() => {
-    let canceled = false
-    ;(async () => {
-      try {
-        const data = await deviceApis.getDeviceInfo(deviceId)
-        if (!canceled && data) {
-          setDeviceInfo(data)
-        }
-      } catch (e) {
-        console.error('Error loadGetDevices:', e)
-      }
-    })()
-    return () => {
-      canceled = true
-    }
-  }, [deviceId])
-
   return (
     <StyledPageContent className="column">
       <Title>{t('robotDetail')}</Title>
       <Tabs defaultActiveId="tabAssetInfo">
         <Tab id="tabAssetInfo" label={t('basicInformation')}>
-          <AssetInfo t={t} deviceId={deviceId} deviceInfo={deviceInfo} />
+          <AssetInfo t={t} deviceId={deviceId} />
         </Tab>
         <Tab id="tabWebConsole" label={t('robotWebConsole')}>
-          <WebConsole t={t} deviceId={deviceId} deviceInfo={deviceInfo} />
+          <WebConsole t={t} deviceId={deviceId} />
         </Tab>
         <Tab id="tabHistory" label={t('contorlOperationHistory')}>
           <HistoryList t={t} deviceId={deviceId} />

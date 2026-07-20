@@ -103,6 +103,7 @@ const Device = () => {
         <HeaderTitleGroup>
           <SearchContainer>
             <Search
+              label={t('deviceName')}
               value={searchQuery}
               onChange={handleSearchChange}
               onReset={handleResetSearch}

@@ -4,6 +4,7 @@ export const EMPTY_MANAGEMENT = {
     guidance: [],
     ragDocs: [],
     screenTools: [],
+    actionTypes: [],
     history: [],
 }
 

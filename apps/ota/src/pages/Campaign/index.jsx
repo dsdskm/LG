@@ -64,7 +64,7 @@ const Campaign = () => {
   const { t: tCommon } = useTranslation('common')
   const navigate = useNavigate()
   const { actualOrgs, allOrgs, defaultOrg } = useOrganizationStore()
-  const session = useUserStore((state) => state.session)
+  const { session } = useUserStore()
   const [isProcessing, setIsProcessing] = useState(false)
   const [countOfStatus, setCountOfStatus] = useState({})
 
@@ -385,6 +385,7 @@ const Campaign = () => {
         <HeaderTitleGroup>
           <Dropdown
             size="lg"
+            label={t('status')}
             minWidth="180px"
             defaultValue={filterQuery}
             options={campaignStatusOptions}
@@ -393,13 +394,14 @@ const Campaign = () => {
           <SearchContainer>
             <Search
               value={searchQuery}
+              label={t('campaignName')}
               onChange={handleSearchChange}
               onReset={handleResetSearch}
               placeholder={tCommon('searchPlaceHolder')}
               width={'300px'}
             />
           </SearchContainer>
-          <ButtonWrap className="alignRight" style={{ marginBottom: '0' }}>
+          <ButtonWrap className="alignRight" style={{ marginBottom: '-2rem' }}>
             <Button
               onClick={() =>
                 navigate(

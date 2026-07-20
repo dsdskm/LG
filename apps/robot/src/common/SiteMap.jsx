@@ -1,8 +1,10 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react'
 import styled from 'styled-components'
 import { createSvgUrlFromPng, getSvgSize, parseMultigrid, worldToSvgPixel } from '@/utils/mapUtils'
+import { getLocalizedName } from '@/utils/robotUtils'
 import { RobotImange } from '@/assets/image'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 
 const MIN_SCALE = 1
 const MAX_SCALE = 4
@@ -176,6 +178,7 @@ const SiteMap = ({ mapData, robotDatas = [], mapServer, clickRobot = false, heig
   const svgUrlRef = useRef(null)
   const viewportRef = useRef(null)
   const navigate = useNavigate()
+  const { i18n } = useTranslation()
 
   const [viewportSize, setViewportSize] = useState({
     width: 0,
@@ -655,15 +658,7 @@ const SiteMap = ({ mapData, robotDatas = [], mapServer, clickRobot = false, heig
               }}
             >
               <PoiDot $isCharging={poi.type === 'CHARGING'} />
-              <PoiLabel>
-                {(() => {
-                  if (!poi.name) return null
-                  const key =
-                    Object.keys(poi.name).find((k) => k.toLowerCase() === 'ko-kr') ??
-                    Object.keys(poi.name).find((k) => k.toLowerCase() === 'en-us')
-                  return key ? poi.name[key] : null
-                })()}
-              </PoiLabel>
+              <PoiLabel>{getLocalizedName(poi.name, i18n.language)}</PoiLabel>
             </PoiMarker>
           ))}
         </Canvas>

@@ -76,6 +76,7 @@ import NodeInspectDialog, { DEFAULT_NODE_CONFIG, type NodeSimConfig } from './No
 import AstView from './AstView'
 import ConfirmModal from '@/pages/components/modal/ConfirmModal'
 import { buildBehaviorTreeFromFlowDefinition } from '@/bt/build'
+import { validateSemantics } from '@/bt/validation'
 import type { BtAstNode } from '@/bt/types'
 import { SimulationExecutor } from '@/bt/execution/simulationExecutor'
 import { EMPTY_SNAPSHOT, type ExecSnapshot, type ExecStatus, type FlowExecutor } from '@/bt/execution/executor'
@@ -109,6 +110,11 @@ const STATUS_LEGEND = [
   { label: '실패', border: '#fb7185', bg: '#fff1f2' },
   { label: '대기', border: '#d1d5db', bg: '#ffffff' }
 ]
+
+// 미니맵을 캔버스 크기에 비례시키는 비율(가로/세로 각각 캔버스의 22%)과 크기 제한
+const MINIMAP_RATIO = 0.22
+const MINIMAP_MIN = 120
+const MINIMAP_MAX = 320
 
 const nodeTypes: NodeTypes = {
   taskNode: TaskNode,
@@ -180,6 +186,9 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
   // 로컬 전용: BT(AST) 텍스트 뷰 표시 토글
   const [showAst, setShowAst] = useState(false)
 
+  // ReactFlow 컨테이너 크기(미니맵을 이 크기에 비례시키기 위해 관찰)
+  const [flowSize, setFlowSize] = useState({ width: 0, height: 0 })
+
   // Executor(시뮬/디바이스)로부터 받은 현재 실행 스냅샷. FE 는 이것만 보고 렌더링한다.
   const [snapshot, setSnapshot] = useState<ExecSnapshot>(EMPTY_SNAPSHOT)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -203,6 +212,27 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
   useEffect(() => {
     tickRateRef.current = tickRate
   }, [tickRate])
+
+  // ReactFlow wrapper 크기를 관찰해 미니맵 크기를 비례 조정한다.
+  useLayoutEffect(() => {
+    const el = wrapperRef.current
+    if (!el) return
+    const update = () => setFlowSize({ width: el.clientWidth, height: el.clientHeight })
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  // 미니맵을 캔버스 크기에 비례시킨다(최소/최대 clamp 적용).
+  const minimapStyle = useMemo<React.CSSProperties>(() => {
+    if (!flowSize.width || !flowSize.height) return {}
+    const clamp = (v: number) => Math.round(Math.min(MINIMAP_MAX, Math.max(MINIMAP_MIN, v)))
+    return {
+      width: clamp(flowSize.width * MINIMAP_RATIO),
+      height: clamp(flowSize.height * MINIMAP_RATIO)
+    }
+  }, [flowSize])
 
   const safeFlow = useMemo(() => {
     const ensured = ensureStartNode(flowDefinition ?? { nodes: [], edges: [] }) as FlowDefinition
@@ -251,12 +281,21 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
   // 렌더 시점이 아니라 Start 시점에만 호출한다.
   const compile = useCallback((): { model: BtAstNode | null; error: string | null } => {
     try {
+      // 1) Static Validation: build 과정에서 cycle/edge 오류 등 검출
       const { model } = buildBehaviorTreeFromFlowDefinition(safeFlow)
+
+      // 2) Semantic Validation: 만들어진 AST 기반 검증(dead branch 등)
+      const issues = validateSemantics({ flow: safeFlow, model, startNodeId })
+      const errors = issues.filter((i) => i.severity === 'error')
+      if (errors.length > 0) {
+        return { model: null, error: errors.map((e) => e.message).join('\n') }
+      }
+
       return { model, error: null }
     } catch (e: any) {
       return { model: null, error: String(e?.message ?? e) }
     }
-  }, [safeFlow])
+  }, [safeFlow, startNodeId])
 
   // 렌더링은 실행기 스냅샷만 본다(소스가 시뮬/로봇 무관).
   const currentNodeId = snapshot.currentNodeId
@@ -269,6 +308,9 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
       // 점검(inspect) 모드에서는 디버거 진행 상태를 우선 적용한다.
       const simStatus = mode === 'inspect' ? simStatusById[node.id] : undefined
       const breakpoint = mode === 'inspect' && !!nodeConfigs[node.id]?.breakpoint
+      // 강제 결과(NORMAL 제외) 마커: 우상단 네모 표시용
+      const forced = mode === 'inspect' ? nodeConfigs[node.id]?.forced : undefined
+      const forcedResult = forced && forced !== 'NORMAL' ? forced : undefined
       return {
         ...node,
         selected: node.id === selectedNodeId,
@@ -277,7 +319,8 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
           flowMode: readonlyFlowMode,
           taskStatus: simStatus ?? activeInfo?.status ?? 'IDLE',
           runningCount: activeInfo?.runningCount ?? 0,
-          breakpoint
+          breakpoint,
+          forcedResult
         },
         selectable: true,
         connectable: false
@@ -626,7 +669,7 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
                   onNodeClick={handleNodeClick}
                   onPaneClick={handlePaneClick}
                 >
-                  <MiniMap />
+                  <MiniMap style={minimapStyle} />
                   <Controls showInteractive={false} />
                 </ReactFlow>
               </FlowFill>

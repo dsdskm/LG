@@ -1,58 +1,40 @@
 import React, { useEffect, useCallback, useState, useMemo } from 'react'
 import { Table, SectionRobot as Section } from '@repo/ui'
 import { useTranslation } from 'react-i18next'
-
-const tempList = [
-  {
-    id: '1',
-    user: 'admin@hcrsp.com',
-    path: '재부팅 (Reboot)',
-    startTime: '2026-05-12 09:15',
-    endTime: '2026-05-12 09:18',
-    status: 'closed'
-  },
-  {
-    id: '2',
-    user: 'ops@hcrsp.com',
-    path: '비상 정지 (Emergency Stop)',
-    startTime: '2026-05-12 10:22',
-    endTime: '2026-05-12 10:23',
-    status: 'closed'
-  },
-  {
-    id: '3',
-    user: 'admin@hcrsp.com',
-    path: 'Map Settings',
-    startTime: '2026-04-03 14:23',
-    endTime: '2026-04-03 14:45',
-    status: 'closed'
-  },
-  {
-    id: '4',
-    user: 'ops@hcrsp.com',
-    path: 'POI Navigation',
-    startTime: '2026-04-03 15:10',
-    status: 'in_progress'
-  }
-]
+import { toYmdHmKST } from '@/utils/dateUtils'
+import { userApis, deviceApis } from '@/apis'
 
 const HistoryList = ({ t, deviceId }) => {
   const { t: tCommon } = useTranslation('common')
   const [historys, setHistorys] = useState([])
   const [filteredList, setFilteredList] = useState([])
+  const [userMap, setUserMap] = useState({})
+
+  // userId -> userEmail 맵 미리 구성
+  const loadUserList = useCallback(async () => {
+    try {
+      const data = await userApis.getUsers({})
+      const map = {}
+      ;(data.content || []).forEach((u) => {
+        map[u.userId] = u.userEmail
+      })
+      setUserMap(map)
+    } catch (err) {
+      console.error('Error loadUsers:', err)
+    }
+  }, [])
 
   const loadHistoryList = useCallback(
     async (searchParams = {}) => {
-      setHistorys(tempList)
-      //   try {
-      //     const data = await deviceApis.getDevices()
-      //     console.info('data :', data)
-      //     setHistorys(data.content)
-      //     setTableList(data.content)
-      //   } catch (err) {
-      //     console.error('Error loadGetDevices:', err)
-      //   } finally {
-      //   }
+      setHistorys([])
+      try {
+        const data = await deviceApis.getDeviceControlHistory(deviceId, searchParams)
+        setHistorys(data.content)
+        setTableList(data.content)
+      } catch (err) {
+        console.error('Error loadGetDeviceControlHistory:', err)
+      } finally {
+      }
     },
     [deviceId]
   )
@@ -67,31 +49,56 @@ const HistoryList = ({ t, deviceId }) => {
   }
 
   useEffect(() => {
+    loadUserList()
+  }, [loadUserList])
+
+  useEffect(() => {
     loadHistoryList()
   }, [deviceId])
 
-  const columns = [
-    {
-      name: t('user'),
-      selector: (row) => row.user,
-      sortable: true
-    },
-    {
-      name: t('contorlEntryPath'),
-      selector: (row) => row.path,
-      sortable: true
-    },
-    {
-      name: t('startEndtime'),
-      selector: (row) => row.startTime,
-      sortable: true
-    },
-    {
-      name: t('state'),
-      selector: (row) => row.status,
-      sortable: true
+  // controlCommand(JSON 문자열)에서 actionType 추출
+  const getActionType = (controlCommandStr) => {
+    try {
+      const cmd = JSON.parse(controlCommandStr)
+      const action = (cmd.actions && cmd.actions[0]) || (cmd.instantActions && cmd.instantActions[0])
+      return action?.actionType ?? '-'
+    } catch (err) {
+      return '-'
     }
-  ]
+  }
+
+  // controlResult 값에 따른 상태 표시
+  const getState = (controlResult) => {
+    if (controlResult === null) return t('normal') /* '일반' */
+    if (controlResult === 'saveOnly') return t('saveOnly') /* '저장 전용' */
+    return controlResult
+  }
+
+  const columns = useMemo(
+    () => [
+      {
+        name: t('user'),
+        selector: (row) => userMap[row.userId] || t('unconfirmed'),
+        sortable: true
+      },
+      {
+        name: t('contorlEntryPath'),
+        selector: (row) => getActionType(row.controlCommand),
+        sortable: true
+      },
+      {
+        name: t('startEndtime'),
+        selector: (row) => toYmdHmKST(row.createdAt),
+        sortable: true
+      },
+      {
+        name: t('state'),
+        selector: (row) => getState(row.controlResult),
+        sortable: true
+      }
+    ],
+    [t, userMap]
+  )
 
   return (
     <>

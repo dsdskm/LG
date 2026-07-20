@@ -303,7 +303,7 @@ export const PromptTextarea = styled.textarea`
 export const PromptFooter = styled.div`
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
   flex-wrap: wrap;
 `

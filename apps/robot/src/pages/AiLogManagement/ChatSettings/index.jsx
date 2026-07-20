@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  createCommonChatScreenTool,
+  createChatGuidance,
+  createChatRagDoc,
+  createChatScreenTool,
   getChatSettings,
+  createCommonChatRagDoc,
+  deleteChatScreenTool,
+  deleteChatRagDoc,
   updateChatGuidance,
   updateChatPrompt,
   updateChatRagDoc,
   updateChatScreenTool,
   updateChatSettings,
+  upsertCommonChatPrompt,
 } from '@repo/apis/ai/chatSettings.js'
 
 import {
@@ -23,8 +31,14 @@ import {
   ModalActions,
 } from './styles'
 
-import { APP_TAB, EMPTY_MANAGEMENT, ROBOT_ROUTE } from './chatSettings.constants'
-import { groupPrompts, groupScreenSettings, getPromptDraft } from './chatSettings.utils'
+import { APP_TAB, EMPTY_MANAGEMENT } from './chatSettings.constants'
+import {
+  buildAppRouteTree,
+  getFirstRouteKeyFromTree,
+  groupScreenSettings,
+  hasRouteKeyInTree,
+  getPromptDraft,
+} from './chatSettings.utils'
 import { TopTabs } from './components/TopTabs'
 import { AppSideTabs } from './components/AppSideTabs'
 import { CommonSettingsTab } from './sections/CommonSettingsTab'
@@ -42,14 +56,25 @@ import { HistoryTab } from './sections/HistoryTab'
  */
 const ChatSettings = () => {
   const [activeAppTab, setActiveAppTab] = useState(APP_TAB.COMMON)
-  const [activeRouteKey, setActiveRouteKey] = useState(ROBOT_ROUTE.DASHBOARD)
+  const [activeRouteKey, setActiveRouteKey] = useState('')
 
   const [schema, setSchema] = useState([])
   const [values, setValues] = useState({})
   const [draftProvider, setDraftProvider] = useState('')
 
   const [management, setManagement] = useState(EMPTY_MANAGEMENT)
-  const [settingDrafts, setSettingDrafts] = useState({})
+  const [commonPromptDraft, setCommonPromptDraft] = useState({
+    label: '공통 프롬프트',
+    content: '',
+    enabled: true,
+  })
+  const [newCommonRagDraft, setNewCommonRagDraft] = useState({
+    chunkKey: '',
+    title: '공통 RAG',
+    body: '',
+    keywordsText: '[]',
+    enabled: true,
+  })
   const [promptDrafts, setPromptDrafts] = useState({})
   const [guidanceDrafts, setGuidanceDrafts] = useState({})
   const [ragDrafts, setRagDrafts] = useState({})
@@ -60,9 +85,16 @@ const ChatSettings = () => {
 
   const [saving, setSaving] = useState(false)
   const [savingPromptKey, setSavingPromptKey] = useState('')
-  const [savingSettingKey, setSavingSettingKey] = useState('')
+  const [savingCommonPrompt, setSavingCommonPrompt] = useState(false)
   const [savingGuidanceKey, setSavingGuidanceKey] = useState('')
+  const [creatingGuidanceRouteKey, setCreatingGuidanceRouteKey] = useState('')
   const [savingRagKey, setSavingRagKey] = useState('')
+  const [savingCreateCommonRag, setSavingCreateCommonRag] = useState(false)
+  const [savingCreateScreenRag, setSavingCreateScreenRag] = useState(false)
+  const [savingCreateCommonTool, setSavingCreateCommonTool] = useState(false)
+  const [savingCreateScreenTool, setSavingCreateScreenTool] = useState(false)
+  const [deletingCommonRagKey, setDeletingCommonRagKey] = useState('')
+  const [deletingToolKey, setDeletingToolKey] = useState('')
   const [savingToolKey, setSavingToolKey] = useState('')
 
   const [savedOpen, setSavedOpen] = useState(false)
@@ -88,18 +120,20 @@ const ChatSettings = () => {
         guidance: Array.isArray(nextManagement.guidance) ? nextManagement.guidance : [],
         ragDocs: Array.isArray(nextManagement.ragDocs) ? nextManagement.ragDocs : [],
         screenTools: Array.isArray(nextManagement.screenTools) ? nextManagement.screenTools : [],
+        actionTypes: Array.isArray(nextManagement.actionTypes) ? nextManagement.actionTypes : [],
         history: Array.isArray(nextManagement.history) ? nextManagement.history : [],
       }
 
       setManagement(normalizedManagement)
 
-      const nextSettingDrafts = {}
-      for (const item of Array.isArray(data.schema) ? data.schema : []) {
-        if (item?.key === 'llmProvider') continue
-        const raw = data?.values?.[item.key]
-        nextSettingDrafts[item.key] = raw === undefined || raw === null ? '' : String(raw)
-      }
-      setSettingDrafts(nextSettingDrafts)
+      const nextCommonPrompt = normalizedManagement.prompts.find(
+        (item) => String(item?.key ?? '') === 'common' && String(item?.promptType ?? item?.category ?? '').toLowerCase() === 'system'
+      )
+      setCommonPromptDraft({
+        label: String(nextCommonPrompt?.label ?? '공통 프롬프트'),
+        content: String(nextCommonPrompt?.content ?? ''),
+        enabled: nextCommonPrompt?.enabled !== false,
+      })
 
       setPromptDrafts(
         Object.fromEntries(
@@ -160,6 +194,7 @@ const ChatSettings = () => {
               contextParamsText: JSON.stringify(item.contextParams ?? [], null, 2),
               requestParamsText: JSON.stringify(item.requestParams ?? [], null, 2),
               staticPayloadText: JSON.stringify(item.staticPayload ?? {}, null, 2),
+              path: String(item?.staticPayload?.path ?? item?.endpoint ?? ''),
             },
           ])
         )
@@ -177,19 +212,67 @@ const ChatSettings = () => {
 
   const providerItem = useMemo(() => schema.find((s) => s.key === 'llmProvider'), [schema])
 
-  const futureItems = useMemo(() => schema.filter((s) => s.key !== 'llmProvider'), [schema])
-
-  const commonPrompts = useMemo(
-    () => management.prompts.filter((item) => String(item?.key ?? '') === 'common'),
+  const commonPromptItem = useMemo(
+    () =>
+      management.prompts.find(
+        (item) =>
+          String(item?.key ?? '') === 'common' &&
+          String(item?.promptType ?? item?.category ?? '').toLowerCase() === 'system'
+      ) ?? null,
     [management.prompts]
   )
 
-  const groupedPrompts = useMemo(() => groupPrompts(commonPrompts), [commonPrompts])
+  const commonRagDocs = useMemo(
+    () => management.ragDocs.filter((item) => String(item?.key ?? '') === 'common'),
+    [management.ragDocs]
+  )
+
+  const commonTools = useMemo(
+    () =>
+      management.screenTools.filter(
+        (item) =>
+          String(item?.key ?? '') === 'common' &&
+          String(item?.method ?? '').trim().toUpperCase() !== 'NAVIGATE'
+      ),
+    [management.screenTools]
+  )
+
+  const commonActionTypes = useMemo(
+    () =>
+      (management.actionTypes ?? []).filter(
+        (item) => String(item?.method ?? '').trim().toUpperCase() !== 'NAVIGATE'
+      ),
+    [management.actionTypes]
+  )
+
+  const screenActionTypes = useMemo(
+    () =>
+      (management.actionTypes ?? []).filter(
+        (item) => String(item?.method ?? '').trim().toUpperCase() !== 'NAVIGATE'
+      ),
+    [management.actionTypes]
+  )
 
   const screenGroups = useMemo(
     () => groupScreenSettings(management.screens, management.prompts, management.guidance, management.ragDocs, management.screenTools),
     [management.guidance, management.prompts, management.ragDocs, management.screenTools, management.screens]
   )
+
+  const appRouteTree = useMemo(
+    () => buildAppRouteTree(management.screens, activeAppTab),
+    [management.screens, activeAppTab]
+  )
+
+  useEffect(() => {
+    if (activeAppTab === APP_TAB.COMMON || activeAppTab === APP_TAB.HISTORY) {
+      if (activeRouteKey) setActiveRouteKey('')
+      return
+    }
+
+    if (!hasRouteKeyInTree(appRouteTree, activeRouteKey)) {
+      setActiveRouteKey(getFirstRouteKeyFromTree(appRouteTree))
+    }
+  }, [activeAppTab, appRouteTree, activeRouteKey])
 
   const isDirty = Boolean(draftProvider) && draftProvider !== values.llmProvider
 
@@ -214,6 +297,40 @@ const ChatSettings = () => {
     }
   }, [draftProvider, isDirty, saving])
 
+  const handleCommonPromptChange = useCallback((field, nextValue) => {
+    setCommonPromptDraft((prev) => ({
+      ...prev,
+      [field]: nextValue,
+    }))
+  }, [])
+
+  const handleSaveCommonPrompt = useCallback(async () => {
+    setSavingCommonPrompt(true)
+    setError('')
+
+    try {
+      const res = await upsertCommonChatPrompt({
+        label: String(commonPromptDraft.label ?? ''),
+        content: String(commonPromptDraft.content ?? ''),
+        enabled: Boolean(commonPromptDraft.enabled),
+      })
+      const next = res?.data ?? {}
+
+      setCommonPromptDraft({
+        label: String(next.label ?? commonPromptDraft.label ?? '공통 프롬프트'),
+        content: String(next.content ?? commonPromptDraft.content ?? ''),
+        enabled: next.enabled !== false,
+      })
+      setSavedMessage(`${String(next.label ?? '공통 프롬프트')}가 저장되었습니다.`)
+      setSavedOpen(true)
+      await load()
+    } catch (e) {
+      setError(e?.message || '공통 프롬프트 저장에 실패했습니다.')
+    } finally {
+      setSavingCommonPrompt(false)
+    }
+  }, [commonPromptDraft, load])
+
   const handlePromptChange = useCallback((key, field, nextValue) => {
     setPromptDrafts((prev) => ({
       ...prev,
@@ -223,51 +340,6 @@ const ChatSettings = () => {
       },
     }))
   }, [])
-
-  const handleSettingChange = useCallback((key, nextValue) => {
-    setSettingDrafts((prev) => ({
-      ...prev,
-      [key]: nextValue,
-    }))
-  }, [])
-
-  const handleSaveSetting = useCallback(
-    async (item) => {
-      const key = String(item?.key ?? '')
-      if (!key) return
-
-      const rawValue = settingDrafts[key] ?? ''
-      let nextValue = rawValue
-      if (item?.type === 'number') {
-        if (String(rawValue).trim() === '') {
-          nextValue = null
-        } else {
-          const parsed = Number(rawValue)
-          if (Number.isNaN(parsed)) {
-            setError(`${item.label || key} 값은 숫자여야 합니다.`)
-            return
-          }
-          nextValue = parsed
-        }
-      }
-
-      setSavingSettingKey(key)
-      setError('')
-
-      try {
-        const res = await updateChatSettings({ settings: [{ key, value: nextValue }] })
-        const next = res?.data?.values ?? {}
-        setValues(next)
-        setSavedMessage(`${item.label || key} 설정이 저장되었습니다.`)
-        setSavedOpen(true)
-      } catch (e) {
-        setError(e?.message || '설정 저장에 실패했습니다.')
-      } finally {
-        setSavingSettingKey('')
-      }
-    },
-    [settingDrafts]
-  )
 
 
   const handleSavePrompt = useCallback(
@@ -307,17 +379,15 @@ const ChatSettings = () => {
   }, [])
 
   const handleSaveGuidance = useCallback(
-    async (item) => {
+    async (item, overrideDraft) => {
       const draftKey = String(item.id)
-      const draft = guidanceDrafts[draftKey] ?? {}
+      const draft = overrideDraft ?? guidanceDrafts[draftKey] ?? {}
 
-      let sections = []
       let examples = []
       try {
-        sections = JSON.parse(String(draft.sectionsText ?? '[]'))
         examples = JSON.parse(String(draft.examplesText ?? '[]'))
       } catch {
-        setError('guidance sections/examples는 JSON 형식이어야 합니다.')
+        setError('guidance examples는 JSON 형식이어야 합니다.')
         return
       }
 
@@ -325,25 +395,71 @@ const ChatSettings = () => {
       setError('')
 
       try {
-        await updateChatGuidance(item.id, {
-          screenName: String(draft.screenName ?? ''),
-          fallbackText: String(draft.fallbackText ?? ''),
-          sections,
+        const res = await updateChatGuidance(item.id, {
           examples,
-          enabled: Boolean(draft.enabled),
         })
+
+        if (Number(res?.code ?? 0) !== 200) {
+          throw new Error(String(res?.message ?? '가이드 저장 응답이 올바르지 않습니다.'))
+        }
 
         setSavedMessage(`${item.screenName || item.key} 가이드가 저장되었습니다.`)
         setSavedOpen(true)
         await load()
+        return true
       } catch (e) {
         setError(e?.message || '가이드 저장에 실패했습니다.')
+        return false
       } finally {
         setSavingGuidanceKey('')
       }
     },
     [guidanceDrafts, load]
   )
+
+  const handleCreateGuidance = useCallback(async ({ appKey, routeKey, routeParentKey, screenName, initialExamples, fallbackText }) => {
+    const normalizedRouteKey = String(routeKey ?? '').trim()
+    if (!normalizedRouteKey) return false
+
+    setCreatingGuidanceRouteKey(normalizedRouteKey)
+    setError('')
+
+    try {
+      const res = await createChatGuidance({
+        appKey: String(appKey ?? '').trim(),
+        key: normalizedRouteKey,
+        routeKey: String(routeParentKey ?? '').trim(),
+      })
+
+      if (Number(res?.code ?? 0) !== 200) {
+        throw new Error(String(res?.message ?? '화면 가이드 생성 응답이 올바르지 않습니다.'))
+      }
+
+      const next = res?.data ?? {}
+
+      const examples = Array.isArray(initialExamples) ? initialExamples : []
+
+      if (next?.id && (examples.length > 0 || fallbackText !== undefined)) {
+        const updateRes = await updateChatGuidance(next.id, {
+          examples,
+        })
+
+        if (Number(updateRes?.code ?? 0) !== 200) {
+          throw new Error(String(updateRes?.message ?? '추천 메세지 저장 응답이 올바르지 않습니다.'))
+        }
+      }
+
+      setSavedMessage(`${String(screenName ?? normalizedRouteKey)} 추천 메세지 설정이 생성되었습니다.`)
+      setSavedOpen(true)
+      await load()
+      return true
+    } catch (e) {
+      setError(e?.message || '화면 가이드 생성에 실패했습니다.')
+      return false
+    } finally {
+      setCreatingGuidanceRouteKey('')
+    }
+  }, [load])
 
   const handleRagChange = useCallback((id, field, nextValue) => {
     setRagDrafts((prev) => ({
@@ -354,6 +470,144 @@ const ChatSettings = () => {
       },
     }))
   }, [])
+
+  const handleNewCommonRagChange = useCallback((field, nextValue) => {
+    setNewCommonRagDraft((prev) => ({
+      ...prev,
+      [field]: nextValue,
+    }))
+  }, [])
+
+  const handleCreateCommonRag = useCallback(async () => {
+    let keywords = []
+    try {
+      keywords = JSON.parse(String(newCommonRagDraft.keywordsText ?? '[]'))
+    } catch {
+      setError('공통 RAG keywords는 JSON 배열 형식이어야 합니다.')
+      return
+    }
+
+    if (!Array.isArray(keywords)) {
+      setError('공통 RAG keywords는 JSON 배열 형식이어야 합니다.')
+      return
+    }
+
+    const chunkKey = String(newCommonRagDraft.chunkKey ?? '').trim()
+    if (!chunkKey) {
+      setError('공통 RAG chunk key(목차 ID)는 필수입니다.')
+      return
+    }
+
+    setSavingCreateCommonRag(true)
+    setError('')
+
+    try {
+      const res = await createCommonChatRagDoc({
+        chunkKey,
+        title: String(newCommonRagDraft.title ?? ''),
+        body: String(newCommonRagDraft.body ?? ''),
+        keywords,
+        enabled: Boolean(newCommonRagDraft.enabled),
+      })
+      const next = res?.data ?? {}
+
+      setNewCommonRagDraft({
+        chunkKey: '',
+        title: '공통 RAG',
+        body: '',
+        keywordsText: '[]',
+        enabled: true,
+      })
+      setSavedMessage(`${String(next.title ?? '공통 RAG')} 청크가 등록되었습니다.`)
+      setSavedOpen(true)
+      await load()
+    } catch (e) {
+      setError(e?.message || '공통 RAG 등록에 실패했습니다.')
+    } finally {
+      setSavingCreateCommonRag(false)
+    }
+  }, [newCommonRagDraft, load])
+
+  const handleDeleteCommonRag = useCallback(async (item) => {
+    const id = Number(item?.id)
+    if (!Number.isFinite(id) || id <= 0) return
+
+    const deletingKey = String(id)
+    setDeletingCommonRagKey(deletingKey)
+    setError('')
+
+    try {
+      await deleteChatRagDoc(id)
+      setSavedMessage(`${String(item?.title ?? item?.chunkKey ?? '공통 RAG')} 청크가 삭제되었습니다.`)
+      setSavedOpen(true)
+      await load()
+    } catch (e) {
+      setError(e?.message || '공통 RAG 삭제에 실패했습니다.')
+    } finally {
+      setDeletingCommonRagKey('')
+    }
+  }, [load])
+
+  const handleDeleteRag = useCallback(async (item) => {
+    const id = Number(item?.id)
+    if (!Number.isFinite(id) || id <= 0) return
+
+    const deletingKey = String(id)
+    setDeletingCommonRagKey(deletingKey)
+    setError('')
+
+    try {
+      await deleteChatRagDoc(id)
+      setSavedMessage(`${String(item?.title ?? item?.chunkKey ?? 'RAG')} 청크가 삭제되었습니다.`)
+      setSavedOpen(true)
+      await load()
+    } catch (e) {
+      setError(e?.message || 'RAG 삭제에 실패했습니다.')
+    } finally {
+      setDeletingCommonRagKey('')
+    }
+  }, [load])
+
+  const handleCreateScreenRag = useCallback(async (draft) => {
+    let keywords = []
+    try {
+      keywords = JSON.parse(String(draft?.keywordsText ?? '[]'))
+    } catch {
+      setError('화면 RAG keywords는 JSON 배열 형식이어야 합니다.')
+      return false
+    }
+
+    if (!Array.isArray(keywords)) {
+      setError('화면 RAG keywords는 JSON 배열 형식이어야 합니다.')
+      return false
+    }
+
+    setSavingCreateScreenRag(true)
+    setError('')
+
+    try {
+      const res = await createChatRagDoc({
+        appKey: String(draft?.appKey ?? '').trim(),
+        key: String(draft?.key ?? '').trim(),
+        routeKey: String(draft?.routeKey ?? '').trim(),
+        title: String(draft?.title ?? ''),
+        body: String(draft?.body ?? ''),
+        keywords,
+        enabled: Boolean(draft?.enabled),
+      })
+
+      const next = res?.data ?? {}
+      setSavedMessage(`${String(next.title ?? next.chunkKey ?? '화면 RAG')} 청크가 등록되었습니다.`)
+      setSavedOpen(true)
+      await load()
+      return true
+    } catch (e) {
+      setError(e?.message || '화면 RAG 등록에 실패했습니다.')
+      return false
+    } finally {
+      setSavingCreateScreenRag(false)
+    }
+  }, [load])
 
   const handleSaveRag = useCallback(
     async (item) => {
@@ -407,9 +661,45 @@ const ChatSettings = () => {
   }, [])
 
   const handleSaveTool = useCallback(
-    async (item) => {
+    async (item, overrideDraft) => {
       const draftKey = String(item.id)
-      const draft = toolDrafts[draftKey] ?? {}
+      const draft = overrideDraft ?? toolDrafts[draftKey] ?? {}
+
+      if (String(item?.key ?? '') === 'common') {
+        const path = String(draft.path ?? draft.endpoint ?? '').trim().replace(/^\/+/, '')
+        if (!path) {
+          setError('공통 액션 경로(path)는 필수입니다.')
+          return
+        }
+
+        setSavingToolKey(draftKey)
+        setError('')
+
+        try {
+          await updateChatScreenTool(item.id, {
+            enabled: Boolean(draft.enabled),
+            displayName: String(draft.displayName ?? ''),
+            description: null,
+            apiName: String(item.apiName ?? ''),
+            method: String(item.method ?? ''),
+            endpoint: path,
+            contextParams: [],
+            requestParams: [],
+            staticPayload: { path },
+          })
+
+          setSavedMessage(`${item.displayName || item.toolName} 공통 액션이 저장되었습니다.`)
+          setSavedOpen(true)
+          await load()
+          return true
+        } catch (e) {
+          setError(e?.message || '공통 액션 저장에 실패했습니다.')
+          return false
+        } finally {
+          setSavingToolKey('')
+        }
+        return false
+      }
 
       let contextParams = []
       let requestParams = []
@@ -442,8 +732,10 @@ const ChatSettings = () => {
         setSavedMessage(`${item.toolName} 툴 설정이 저장되었습니다.`)
         setSavedOpen(true)
         await load()
+        return true
       } catch (e) {
         setError(e?.message || '툴 설정 저장에 실패했습니다.')
+        return false
       } finally {
         setSavingToolKey('')
       }
@@ -451,14 +743,150 @@ const ChatSettings = () => {
     [load, toolDrafts]
   )
 
-  const handleChangeAppTab = useCallback((nextApp) => {
-    setActiveAppTab(nextApp)
+  const handleCreateCommonTool = useCallback(async (overrideDraft) => {
+    const draft = overrideDraft ?? {}
 
-    if (nextApp === APP_TAB.ROBOT) {
-      setActiveRouteKey(ROBOT_ROUTE.DASHBOARD)
+    const displayName = String(draft.displayName ?? '').trim()
+    if (!displayName) {
+      setError('공통 액션 표시명은 필수입니다.')
       return
     }
 
+    const path = String(draft.path ?? '').trim().replace(/^\/+/, '')
+    if (!path) {
+      setError('공통 액션 경로(path)는 필수입니다.')
+      return
+    }
+
+    const actionTypeKey = String(draft.actionTypeKey ?? '').trim()
+    if (!actionTypeKey) {
+      setError('액션 유형은 필수입니다.')
+      return false
+    }
+
+    setSavingCreateScreenTool(true)
+    setError('')
+
+    try {
+      const res = await createCommonChatScreenTool({
+        actionTypeKey,
+        displayName,
+        path,
+        enabled: Boolean(draft.enabled),
+      })
+      const next = res?.data ?? {}
+
+      setSavedMessage(`${String(next.displayName ?? '공통 액션')}이 추가되었습니다.`)
+      setSavedOpen(true)
+      await load()
+      return true
+    } catch (e) {
+      setError(e?.message || '공통 액션 추가에 실패했습니다.')
+      return false
+    } finally {
+      setSavingCreateScreenTool(false)
+    }
+  }, [load])
+
+  const handleDeleteTool = useCallback(async (item) => {
+    const id = Number(item?.id)
+    if (!Number.isFinite(id) || id <= 0) return
+
+    const targetKey = String(id)
+    setDeletingToolKey(targetKey)
+    setError('')
+
+    try {
+      await deleteChatScreenTool(id)
+      setSavedMessage(`${String(item?.displayName ?? item?.toolName ?? '공통 액션')}이 삭제되었습니다.`)
+      setSavedOpen(true)
+      await load()
+    } catch (e) {
+      setError(e?.message || '공통 액션 삭제에 실패했습니다.')
+    } finally {
+      setDeletingToolKey('')
+    }
+  }, [load])
+
+  const handleCreateScreenTool = useCallback(async (draft) => {
+    const appKey = String(draft?.appKey ?? '').trim()
+    const key = String(draft?.key ?? '').trim()
+    const displayName = String(draft?.displayName ?? '').trim()
+    const toolName = String(draft?.toolName ?? '').trim()
+    const actionTypeKey = String(draft?.actionTypeKey ?? '').trim()
+
+    if (!appKey) {
+      setError('앱 키(appKey)가 필요합니다.')
+      return false
+    }
+
+    if (!key) {
+      setError('화면 키(routeKey)가 필요합니다.')
+      return false
+    }
+
+    if (!actionTypeKey) {
+      setError('액션 유형은 필수입니다.')
+      return false
+    }
+
+    if (!toolName) {
+      setError('액션 키(tool_name)는 필수입니다.')
+      return false
+    }
+
+    if (!displayName) {
+      setError('표시명(display_name)은 필수입니다.')
+      return false
+    }
+
+    let contextParams = []
+    let requestParams = []
+    let staticPayload = {}
+
+    try {
+      contextParams = JSON.parse(String(draft?.contextParamsText ?? '[]'))
+      requestParams = JSON.parse(String(draft?.requestParamsText ?? '[]'))
+      staticPayload = JSON.parse(String(draft?.staticPayloadText ?? '{}'))
+    } catch {
+      setError('신규 화면 액션 JSON 필드(context/request/staticPayload) 형식이 올바르지 않습니다.')
+      return false
+    }
+
+    setSavingCreateCommonTool(true)
+    setError('')
+
+    try {
+      const res = await createChatScreenTool({
+        appKey,
+        key,
+        routeKey: String(draft?.routeKey ?? '').trim(),
+        actionTypeKey,
+        toolName,
+        displayName,
+        description: String(draft?.description ?? ''),
+        endpoint: String(draft?.endpoint ?? ''),
+        contextParams,
+        requestParams,
+        staticPayload,
+        enabled: Boolean(draft?.enabled),
+      })
+
+      const next = res?.data ?? {}
+      setSavedMessage(`${String(next.displayName ?? next.toolName ?? '화면 액션')}이 추가되었습니다.`)
+      setSavedOpen(true)
+      await load()
+      return true
+    } catch (e) {
+      setError(e?.message || '화면 액션 추가에 실패했습니다.')
+      return false
+    } finally {
+      setSavingCreateCommonTool(false)
+    }
+  }, [load])
+
+  const handleChangeAppTab = useCallback((nextApp) => {
+    setActiveAppTab(nextApp)
     setActiveRouteKey('')
   }, [])
 
@@ -488,17 +916,30 @@ const ChatSettings = () => {
               isDirty={isDirty}
               saving={saving}
               onSaveProvider={handleSaveProvider}
-              futureItems={futureItems}
-              settingDrafts={settingDrafts}
-              savingSettingKey={savingSettingKey}
-              onSettingChange={handleSettingChange}
-              onSaveSetting={handleSaveSetting}
-              groupedPrompts={groupedPrompts}
-              management={management}
-              promptDrafts={promptDrafts}
-              savingPromptKey={savingPromptKey}
-              onPromptChange={handlePromptChange}
-              onSavePrompt={handleSavePrompt}
+              commonPromptItem={commonPromptItem}
+              commonPromptDraft={commonPromptDraft}
+              savingCommonPrompt={savingCommonPrompt}
+              onCommonPromptChange={handleCommonPromptChange}
+              onSaveCommonPrompt={handleSaveCommonPrompt}
+              commonRagDocs={commonRagDocs}
+              ragDrafts={ragDrafts}
+              savingRagKey={savingRagKey}
+              onRagChange={handleRagChange}
+              onSaveRag={handleSaveRag}
+              newCommonRagDraft={newCommonRagDraft}
+              savingCreateCommonRag={savingCreateCommonRag}
+              deletingCommonRagKey={deletingCommonRagKey}
+              onNewCommonRagChange={handleNewCommonRagChange}
+              onCreateCommonRag={handleCreateCommonRag}
+              onDeleteCommonRag={handleDeleteCommonRag}
+              commonTools={commonTools}
+              actionTypes={commonActionTypes}
+              savingToolKey={savingToolKey}
+              savingCreateCommonTool={savingCreateCommonTool}
+              deletingToolKey={deletingToolKey}
+              onSaveTool={handleSaveTool}
+              onCreateCommonTool={handleCreateCommonTool}
+              onDeleteTool={handleDeleteTool}
             />
           ) : null}
 
@@ -515,28 +956,40 @@ const ChatSettings = () => {
                 alignItems: 'start',
               }}
             >
-              <AppSideTabs appKey={activeAppTab} activeRouteKey={activeRouteKey} onChange={setActiveRouteKey} />
+              <AppSideTabs routeTree={appRouteTree} activeRouteKey={activeRouteKey} onChange={setActiveRouteKey} />
 
               <AppScreenSettingsTab
                 appKey={activeAppTab}
                 activeRouteKey={activeRouteKey}
                 screenGroups={screenGroups}
+                commonPromptItem={commonPromptItem}
+                commonPromptDraft={commonPromptDraft}
+                actionTypes={screenActionTypes}
                 promptDrafts={promptDrafts}
                 guidanceDrafts={guidanceDrafts}
                 ragDrafts={ragDrafts}
                 toolDrafts={toolDrafts}
                 savingPromptKey={savingPromptKey}
                 savingGuidanceKey={savingGuidanceKey}
+                creatingGuidanceRouteKey={creatingGuidanceRouteKey}
                 savingRagKey={savingRagKey}
+                deletingRagKey={deletingCommonRagKey}
+                savingCreateRag={savingCreateScreenRag}
+                savingCreateTool={savingCreateScreenTool}
                 savingToolKey={savingToolKey}
                 onPromptChange={handlePromptChange}
                 onSavePrompt={handleSavePrompt}
                 onGuidanceChange={handleGuidanceChange}
                 onSaveGuidance={handleSaveGuidance}
+                onCreateGuidance={handleCreateGuidance}
                 onRagChange={handleRagChange}
                 onSaveRag={handleSaveRag}
+                onCreateRag={handleCreateScreenRag}
+                onDeleteRag={handleDeleteRag}
                 onToolChange={handleToolChange}
                 onSaveTool={handleSaveTool}
+                onCreateTool={handleCreateScreenTool}
+                onDeleteTool={handleDeleteTool}
               />
             </div>
           ) : null}

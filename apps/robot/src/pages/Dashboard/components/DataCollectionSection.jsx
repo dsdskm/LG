@@ -407,9 +407,10 @@ const SliderThumb = styled.div`
 
 // Forge 연동 상태 바
 const ForgeBar = styled.div`
-  background: #eef1f6;
+  background: #fff;
   border: 1px solid rgba(172, 173, 188, 0.3);
-  border-radius: 14px;
+  border-radius: 16px;
+  box-shadow: 0 0 15px 0 rgba(173, 173, 173, 0.18);
   padding: 12px 18px;
   display: flex;
   align-items: center;
@@ -428,9 +429,9 @@ const ForgeStatus = styled.span`
   gap: 7px;
   font-size: 1.2rem;
   font-weight: 700;
-  color: #334155;
-  background: #fff;
-  border: 1px solid #e2e8f0;
+  color: #454749;
+  background: #eae8e2;
+  border: 1px solid rgba(140, 134, 120, 0.35);
   border-radius: 20px;
   padding: 4px 12px;
 `

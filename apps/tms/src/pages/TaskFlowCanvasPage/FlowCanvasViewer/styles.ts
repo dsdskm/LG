@@ -29,6 +29,7 @@ export const CanvasRoot = styled.div`
 `
 
 export const CanvasMain = styled.div`
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -37,6 +38,10 @@ export const CanvasMain = styled.div`
 `
 
 export const Toolbar = styled.div`
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -44,6 +49,10 @@ export const Toolbar = styled.div`
 `
 
 export const FlowTitleBar = styled.div`
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 10;
   flex-shrink: 0;
   display: flex;
   align-items: center;

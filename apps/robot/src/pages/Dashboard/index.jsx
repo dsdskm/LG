@@ -24,7 +24,7 @@ import {
 import { deviceApis, siteApis, mapApis } from '@/apis'
 import { useNavigate } from 'react-router-dom'
 import { robotStore } from '@/utils/robotStore'
-import { parseRobotData } from '@/utils/robotUtils'
+import { parseRobotData, buildDeviceMerger } from '@/utils/robotUtils'
 
 import Location from './KakaoMap'
 import TableAlarm from './AlarmTable'
@@ -79,6 +79,7 @@ const Dashboard = () => {
   const [buildings, setBuildings] = useState([])
   const [locSel, setLocSel] = useState({ buildingId: '', floorId: '', areaId: '' })
   const liveIntervalRef = useRef(null)
+  const deviceTsRef = useRef({}) // deviceId → { updatedAt, st, conn } 마지막 폴링 타임스탬프
 
   // 선택된 사이트가 isDefaultSite=true인 경우 → 권역별 지도 표시
   const isDefaultSiteSelected =
@@ -115,7 +116,7 @@ const Dashboard = () => {
         wait: device.deviceState === 'STANDBY' ? 1 : 0,
         charge: device.deviceState === 'CHARGE' ? 1 : 0,
         error: device.deviceState === 'ERROR' ? 1 : 0,
-        offline: device.deviceState === 'OFFLINE' ? 1 : 0
+        offline: device.deviceState === 'OFFLINE' || device.deviceState === 'POWEROFF' ? 1 : 0
       }
 
       if (!siteMap.has(siteId)) {
@@ -181,11 +182,12 @@ const Dashboard = () => {
   }, [])
 
   function matchOrgGroup(_device) {
-    return orgFilter.values[0] === 'all'
-      ? true
-      : orgFilter.values[0] === 'none'
-        ? _device.provision?.isDefaultSite
-        : !_device.provision.isDefaultSite && _device.provision?.groupId === orgFilter.values[0]
+    // return orgFilter.values[0] === 'all'
+    //   ? true
+    //   : orgFilter.values[0] === 'none'
+    //     ? _device.provision?.isDefaultSite
+    //     : !_device.provision.isDefaultSite && _device.provision?.groupId === orgFilter.values[0]
+    return orgFilter.values[0] === 'all' ? true : _device.provision?.groupId === orgFilter.values[0]
   }
 
   function matchOrgSite(_device) {
@@ -216,6 +218,7 @@ const Dashboard = () => {
             _deviceCount.lrn++
             break
           case 'OFFLINE':
+          case 'POWEROFF':
             _deviceCount.off++
             break
           case 'ERROR':
@@ -238,7 +241,7 @@ const Dashboard = () => {
       setMapData({})
       setMapServer({})
     }
-  }, [orgFilter, devices])
+  }, [orgFilter, devices, isDefaultSiteSelected])
 
   const resolveGroupId = useCallback(() => {
     let groupId = orgFilter.values[0]
@@ -284,15 +287,24 @@ const Dashboard = () => {
     if (best) setLocSel(best)
   }, [buildings, areaCounts, locSel.areaId])
 
-  // 맵 로드: 사이트 선택 시 사이트 맵, 영역 선택 시 영역 맵.
-  // 빌딩/층만 선택된 경우엔 조회하지 않음(빌딩/층 단위 지도는 없음) → areaId만 의존.
+  // 맵은 device/area 단위로만 존재 (site/building/floor 단독 조회 불가).
+  // area로 조회할 때는 상위 buildingId/floorId를 반드시 함께 전달해야 함.
   useEffect(() => {
-    if (orgFilter.values[1] !== 'all' && orgFilter.values[1] !== 'none' && !isDefaultSiteSelected) {
+    if (
+      orgFilter.values[1] !== 'all' &&
+      orgFilter.values[1] !== 'none' &&
+      !isDefaultSiteSelected &&
+      locSel.buildingId &&
+      locSel.floorId &&
+      locSel.areaId
+    ) {
       loadSiteMap(resolveGroupId(), orgFilter.values[1], {
         buildingId: locSel.buildingId,
         floorId: locSel.floorId,
         areaId: locSel.areaId
       })
+    } else {
+      setUseImageMap(false)
     }
   }, [orgFilter, locSel.buildingId, locSel.floorId, locSel.areaId, isDefaultSiteSelected])
 
@@ -320,12 +332,19 @@ const Dashboard = () => {
   }
 
   const loadSiteMap = useCallback(async (groupId, siteId, extra = {}) => {
+    // 맵은 area 단위로만 존재하며, 조회 시 상위 buildingId/floorId를 반드시 함께 전달해야 함.
+    if (!extra.areaId || !extra.buildingId || !extra.floorId) {
+      setUseImageMap(false)
+      return
+    }
     try {
-      const params = { groupId, siteId }
-      // 영역 선택 시 빌딩/층/영역 ID 함께 전송 (미선택 시 사이트 맵).
-      if (extra.buildingId) params.buildingId = extra.buildingId
-      if (extra.floorId) params.floorId = extra.floorId
-      if (extra.areaId) params.areaId = extra.areaId
+      const params = {
+        groupId,
+        siteId,
+        buildingId: extra.buildingId,
+        floorId: extra.floorId,
+        areaId: extra.areaId
+      }
       const data = await mapApis.getMapViewFind(params)
 
       let type = 'png'
@@ -354,8 +373,9 @@ const Dashboard = () => {
   const pollDevices = useCallback(async () => {
     try {
       const siteId = orgFilter.values[1] !== 'all' && orgFilter.values[1] !== 'none' ? orgFilter.values[1] : undefined
-      const dataRobot = (await deviceApis.getDevices({ siteId })).content
-      setDevices(dataRobot)
+      const newDevices = (await deviceApis.getDevices(siteId ? { siteId } : {})).content
+      const { hasChange, merger } = buildDeviceMerger(newDevices, deviceTsRef.current)
+      if (hasChange) setDevices(merger)
     } catch (err) {
       console.error('Error pollDevices:', err)
     }
@@ -378,7 +398,7 @@ const Dashboard = () => {
           <OrganizationSelector
             onChange={handleSelectOrg}
             // supportAlls={[true, true]}
-            // supportNone={[true, true]}
+            supportNone={[false, false]}
             disableCenter
           />
           {useImageMap &&

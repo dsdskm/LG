@@ -62,3 +62,10 @@ export const MediumSegmentedButton = styled(SegmentedButton)`
   font-size: 14px;
   color: ${({ $active }) => ($active ? '#1d4ed8' : '#c0c7d0')};
 `
+export const Section = styled.section`
+  border: 1px solid #dce2ea;
+  border-radius: 16px;
+  background: #ffffff;
+  overflow: hidden;
+  min-height: 620px;
+`

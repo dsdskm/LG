@@ -19,7 +19,7 @@ const TAB_PROMPT = 'prompt'
 const TAB_ASSIGNEES = 'assignees'
 const TAB_REPORT = 'report'
 // AI Assistant 패널 설정(⚙)에서 진입하는 전용 페이지. 탭 바에는 노출하지 않는다.
-const TAB_CHAT_SETTINGS = 'chat-settings'
+const TAB_CHAT_SETTINGS = 'ai-chat-settings'
 
 const VALID_TABS = [TAB_EVENT, TAB_STATS, TAB_FUNC, TAB_ACTION, TAB_PROMPT, TAB_ASSIGNEES, TAB_REPORT, TAB_CHAT_SETTINGS]
 

@@ -501,7 +501,6 @@ export function useLogReplayLogic({ initialDate, deviceId }) {
     hoverAbsLabel,
 
     // 커버리지(오른쪽)
-    mapGrid: gridData,
     coveragePathPoints: pathPoints,
 
     gridData,

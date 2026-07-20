@@ -36,7 +36,7 @@ export const groupPrompts = (prompts) => {
 }
 
 export const getGuidanceRouteKey = (item) => {
-    return String(item?.routeKey ?? item?.screenKey ?? item?.key ?? item?.screenName ?? 'unknown')
+    return String(item?.key ?? item?.screenKey ?? item?.routeKey ?? item?.screenName ?? 'unknown')
 }
 
 export const getScreenRouteKey = (item) => {
@@ -169,4 +169,144 @@ export const filterScreenGroupsByRoute = (screenGroups, activeRouteKey) => {
 
         return routeKey === activeRouteKey
     })
+}
+
+const normalizeRoute = (value) => String(value ?? '').trim().replace(/^\/+/, '')
+
+export const buildAppRouteTree = (screens, appKey, visibleRouteKeys) => {
+    const normalizedAppKey = String(appKey ?? '').trim()
+    if (!normalizedAppKey) return []
+
+    const appScreens = (Array.isArray(screens) ? screens : [])
+        .filter((item) => item?.enabled !== false)
+        .map((item) => {
+            const key = normalizeRoute(item?.key)
+            const parentKey = normalizeRoute(item?.routeKey)
+            const itemAppKey = String(item?.appKey ?? '').trim() || key.split('/')[0]
+
+            return {
+                key,
+                parentKey,
+                appKey: itemAppKey,
+                label: String(item?.screenName ?? key.split('/').pop() ?? key),
+                sortOrder: Number(item?.sortOrder ?? 0),
+            }
+        })
+        .filter((item) => item.appKey === normalizedAppKey && item.key)
+
+    return buildFilteredAppRouteTree(appScreens, visibleRouteKeys)
+}
+
+const buildFilteredAppRouteTree = (appScreens, visibleRouteKeys) => {
+    const rows = Array.isArray(appScreens) ? appScreens : []
+
+    let filtered = rows
+    if (visibleRouteKeys instanceof Set && visibleRouteKeys.size > 0) {
+        const exists = new Set(rows.map((item) => item.key))
+        const parentMap = new Map(rows.map((item) => [item.key, item.parentKey]))
+
+        const include = new Set()
+        for (const key of visibleRouteKeys) {
+            if (!exists.has(key)) continue
+
+            include.add(key)
+            let cursor = parentMap.get(key)
+            while (cursor && exists.has(cursor) && !include.has(cursor)) {
+                include.add(cursor)
+                cursor = parentMap.get(cursor)
+            }
+        }
+
+        filtered = rows.filter((item) => include.has(item.key))
+    }
+
+    const nodeMap = new Map(
+        filtered.map((item) => [
+            item.key,
+            {
+                key: item.key,
+                label: item.label,
+                sortOrder: item.sortOrder,
+                children: [],
+            },
+        ])
+    )
+
+    for (const item of filtered) {
+        const node = nodeMap.get(item.key)
+        if (!node) continue
+
+        const parent = nodeMap.get(item.parentKey)
+        if (parent && parent.key !== node.key) {
+            parent.children.push(node)
+        }
+    }
+
+    const roots = filtered
+        .filter((item) => {
+            const parent = nodeMap.get(item.parentKey)
+            return !parent || parent.key === item.key
+        })
+        .map((item) => nodeMap.get(item.key))
+        .filter(Boolean)
+
+    const sortNodes = (nodes) => {
+        nodes.sort((left, right) => {
+            if (left.sortOrder !== right.sortOrder) return left.sortOrder - right.sortOrder
+            return String(left.key).localeCompare(String(right.key))
+        })
+
+        nodes.forEach((node) => sortNodes(node.children))
+    }
+
+    sortNodes(roots)
+    return roots
+}
+
+export const buildActionRouteKeysByApp = (screenTools, appKey) => {
+    const normalizedAppKey = String(appKey ?? '').trim()
+    if (!normalizedAppKey) return new Set()
+
+    const keys = new Set()
+    for (const item of (Array.isArray(screenTools) ? screenTools : [])) {
+        if (item?.enabled === false) continue
+        if (String(item?.key ?? '').trim() !== 'common') continue
+
+        const method = String(item?.method ?? '').trim().toUpperCase()
+        if (method !== 'NAVIGATE') continue
+
+        const path = normalizeRoute(item?.staticPayload?.path ?? item?.endpoint)
+        if (!path || !path.startsWith(`${normalizedAppKey}/`)) continue
+        keys.add(path)
+    }
+
+    return keys
+}
+
+export const getFirstRouteKeyFromTree = (routeTree) => {
+    const list = Array.isArray(routeTree) ? routeTree : []
+    if (list.length === 0) return ''
+
+    const visit = (node) => {
+        if (!node) return ''
+        if (!Array.isArray(node.children) || node.children.length === 0) {
+            return String(node.key ?? '')
+        }
+        return visit(node.children[0])
+    }
+
+    return visit(list[0])
+}
+
+export const hasRouteKeyInTree = (routeTree, routeKey) => {
+    const target = normalizeRoute(routeKey)
+    if (!target) return false
+
+    const visit = (node) => {
+        if (!node) return false
+        if (String(node.key ?? '') === target) return true
+        return (node.children ?? []).some((child) => visit(child))
+    }
+
+    return (Array.isArray(routeTree) ? routeTree : []).some((node) => visit(node))
 }
