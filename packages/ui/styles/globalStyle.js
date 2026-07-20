@@ -22,7 +22,7 @@ const GlobalStyle = createGlobalStyle`
     margin: 0;
     width: 100%;
     font-size: 1.6rem;
-    background: var(--color-secondary-10);
+    background: var(--t-page-bg);
     height: calc(var(--viewport-height) * 100);
     overflow: hidden;
 

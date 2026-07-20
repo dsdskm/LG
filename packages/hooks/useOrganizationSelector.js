@@ -1,10 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useLocation } from 'react-router-dom'
 import { organizationApis, organizationCmsApis, groupApis, siteApis } from '@repo/apis'
 import { useOrganizationStore } from '@repo/stores'
 import { standardizeOrganization } from '@repo/utils'
 
 export const useOrganizationSelector = (email) => {
+  const { t } = useTranslation('common')
   const { pathname } = useLocation()
   const [organizations, setOrganizations] = useState([])
   const [isLoading, setIsLoading] = useState(true)
@@ -25,7 +27,7 @@ export const useOrganizationSelector = (email) => {
     const standardGroups = groups.map((group) => standardizeOrganization(group, 'GROUP'))
     const standardSites = sites.map((site) => {
       const groupOrg = standardGroups.find((item) => item.code === site.groupId)
-      return standardizeOrganization(site, 'SITE', groupOrg)
+      return standardizeOrganization(site, 'SITE', groupOrg, t)
     })
     return [...standardGroups, ...standardSites]
   }

@@ -11,8 +11,10 @@ const defaultRoutes = [
 const CopyrightText = styled.span`
   display: flex;
   align-items: center;
-  font-size: 1.1rem;
-  color: #94a3b8;
+  font-size: var(--font-size-button-5);
+  line-height: var(--line-height-button-5);
+  font-weight: 500;
+  color: var(--t-footer-fg);
   white-space: nowrap;
 
   &::before {

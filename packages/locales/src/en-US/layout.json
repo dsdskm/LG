@@ -13,6 +13,11 @@
   "LanguageSelect": {
     "button": "Language"
   },
+  "ThemeToggle": {
+    "title": "Switch screen style (excludes Forge area)",
+    "modernNeutral": "Modern Neutral",
+    "classicBlue": "Classic Blue"
+  },
   "Footer": {
     "customerInquiry": "Customer Inquiry",
     "copyright": "Copyright © 2026 LG Electronics. All Rights Reserved"

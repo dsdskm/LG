@@ -7,15 +7,15 @@ const gnbButtonStyles = css`
   gap: 0.6rem;
   width: 100%;
   padding: 1.4rem;
-  // border-radius: var(--radius-lg);
-  color: var(--color-neutral-70);
+  border-radius: var(--t-gnb-radius);
+  color: var(--t-sidebar-fg);
 
   &:hover {
-    background: var(--color-secondary-20);
+    background: var(--t-sidebar-hover-bg);
   }
 
   &:active {
-    background: var(--color-secondary-30);
+    background: var(--t-sidebar-press-bg);
   }
 
   &.active {

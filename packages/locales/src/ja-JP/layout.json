@@ -13,6 +13,11 @@
   "LanguageSelect": {
     "button": "言語"
   },
+  "ThemeToggle": {
+    "title": "画面スタイル切替（Forge領域を除く）",
+    "modernNeutral": "モダンニュートラル",
+    "classicBlue": "クラシックブルー"
+  },
   "Footer": {
     "customerInquiry": "お客様問い合わせ",
     "copyright": "Copyright © 2026 LG Electronics. All Rights Reserved"

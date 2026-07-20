@@ -350,13 +350,9 @@ const AiAssistantPanel = ({ greetingExtra }) => {
     if (!content || isSending) return
 
     const createdAt = new Date().toISOString()
+    const now = new Date()
+    const conversationId = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
     const context = { ...routeContext, sentAt: createdAt }
-
-    // 멀티턴: 현재 발화 append 전의 최근 대화를 히스토리로 전달(최대 8턴).
-    const history = messages
-      .slice(-8)
-      .map((m) => ({ role: m.role, content: String(m.content ?? '').trim() }))
-      .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.content)
 
     appendMessage({ id: buildMessageId(), role: 'user', content, createdAt, context })
     setDraft('')
@@ -370,6 +366,7 @@ const AiAssistantPanel = ({ greetingExtra }) => {
         message: content,
         currentPath: pageContextOn ? routeContext.pathname : undefined,
         currentApp: pageContextOn ? (routeContext.appPrefix || undefined) : undefined,
+        conversationId,
         // 작성자(대화기록 저장용)
         author: session?.email || undefined,
         // data/action 인텐트에서 robot/AI API 호출에 필요한 자격증명·엔드포인트
@@ -377,8 +374,6 @@ const AiAssistantPanel = ({ greetingExtra }) => {
         apiBaseUrl: import.meta.env.VITE_API_BASE_URL,
         eventAnalyzerUrl: import.meta.env.VITE_EVENT_ANALYZER_URL,
         configManagerUrl: import.meta.env.VITE_CONFIG_MANAGER_URL,
-        // 멀티턴 컨텍스트
-        history,
         previousFilters: lastFiltersRef.current || undefined,
         context: {
           groupId: selectedOrgs?.[0],

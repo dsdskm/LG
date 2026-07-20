@@ -209,4 +209,70 @@
   --line-height-button-3: 1.8rem;
   --line-height-button-4: 1.5rem;
   --line-height-button-5: 1.3rem;
+
+  /* ── runtime theme tokens (default = new / "현재 스타일") ────────── */
+  --t-header-bg: #8c8678;
+  --t-menu-active-bg: rgba(17, 17, 17, 0.2);
+  --t-menu-active-hover-bg: rgba(17, 17, 17, 0.28);
+  --t-menu-hover-bg: rgba(17, 17, 17, 0.1);
+  --t-account-bg: rgba(255, 255, 255, 0.1);
+  --t-account-hover-bg: rgba(255, 255, 255, 0.18);
+  --t-account-active-bg: rgba(255, 255, 255, 0.24);
+
+  --t-sidebar-bg: #d3cfc4;
+  --t-sidebar-fg: var(--color-neutral-90);
+  --t-sidebar-hover-bg: rgba(255, 255, 255, 0.5);
+  --t-sidebar-press-bg: rgba(255, 255, 255, 0.75);
+  --t-sidebar-pad: 0.8rem;
+  --t-sidebar-item-gap: 0.4rem;
+  --t-gnb-radius: var(--radius-md);
+
+  --t-page-bg: #eae8e2;
+
+  --t-table-head-bg: #eae8e2;
+  --t-table-head-fg: #454749;
+  --t-table-border: rgba(140, 134, 120, 0.22);
+
+  --t-tab-active: #4e422c;
+  --t-select-accent: #b91c4c;
+  --t-select-accent-hover: #cd7b94;
+
+  --t-ai-gradient: linear-gradient(135deg, #cd7b94 0%, #bf2d59 55%, #b91c4c 100%);
+  --t-ai-accent: #bd2654;
+  --t-ai-accent-rgb: 189, 38, 84;
+
+  --t-footer-fg: var(--color-neutral-80);
+}
+
+/* ── legacy theme ("기존 스타일") — toggled on <html data-theme="legacy"> ── */
+[data-theme='legacy'] {
+  --t-header-bg: linear-gradient(90deg, #5ba1c2 0%, #97d0eb 52.77%, #6caecc 92.03%);
+  --t-menu-active-bg: rgba(255, 255, 255, 0.25);
+  --t-menu-active-hover-bg: rgba(255, 255, 255, 0.2);
+  --t-menu-hover-bg: rgba(255, 255, 255, 0.1);
+  --t-account-bg: var(--alpha-black-30);
+  --t-account-hover-bg: var(--alpha-black-50);
+  --t-account-active-bg: var(--alpha-black-70);
+
+  --t-sidebar-bg: var(--color-secondary-15);
+  --t-sidebar-fg: var(--color-neutral-70);
+  --t-sidebar-hover-bg: var(--color-secondary-20);
+  --t-sidebar-press-bg: var(--color-secondary-30);
+  /* 선택 박스의 둥근 모양·여백(pad/gap/radius)은 테마 공통 유지 → legacy 미override */
+
+  --t-page-bg: var(--color-secondary-10);
+
+  --t-table-head-bg: var(--color-secondary-10);
+  --t-table-head-fg: var(--color-secondary-60);
+  --t-table-border: rgba(53, 64, 86, 0.1);
+
+  --t-tab-active: var(--color-primary-70);
+  --t-select-accent: var(--color-primary-70);
+  --t-select-accent-hover: var(--color-primary-50);
+
+  --t-ai-gradient: linear-gradient(135deg, #7b5ef8 0%, #5b8dee 100%);
+  --t-ai-accent: #7b5ef8;
+  --t-ai-accent-rgb: 123, 94, 248;
+
+  /* Copyright(Footer) 색은 테마 공통(또렷한 뉴트럴) 유지 → legacy 미override */
 }

@@ -5,7 +5,8 @@ import {
   StyledProfileContainer,
   StyledProfileDropdown,
   StyledAiAssistantCard,
-  StyledAiAssistantLabel
+  StyledAiAssistantLabel,
+  StyledThemeToggle
 } from './styles'
 import Button from '../../common/Button'
 import LanguageSelect from '../LanguageSelect'
@@ -13,7 +14,7 @@ import IconButton from '../../common/IconButton'
 import Logo from '../Logo'
 import SvgMenu from '../../../assets/svgs/menu.svg'
 import SvgNotification from '../../../assets/svgs/notification.svg'
-import { useAiAssistantStore, useResponsiveStore, useSideBarStore, useUserStore } from '@repo/stores'
+import { useAiAssistantStore, useResponsiveStore, useSideBarStore, useUserStore, useThemeStore } from '@repo/stores'
 import ServiceMenuIcon from '../ServiceMenuIcon'
 import LearningNotification from './LearningNotification'
 import { getAppPrefix } from '@repo/utils'
@@ -26,6 +27,7 @@ import Icon from '../../common/Icon'
 const Header = () => {
   const { t } = useTranslation('layout')
   const { toggleSideBar } = useSideBarStore()
+  const { theme, toggleTheme } = useThemeStore()
   const { responsiveMode } = useResponsiveStore()
   const email = useUserStore((state) => state.session?.email)
   const { pathname } = useLocation()
@@ -61,6 +63,10 @@ const Header = () => {
         </div>
 
         <div className="content right">
+          <StyledThemeToggle type="button" onClick={toggleTheme} title={t('ThemeToggle.title')}>
+            🎨 {theme === 'new' ? t('ThemeToggle.classicBlue') : t('ThemeToggle.modernNeutral')}
+          </StyledThemeToggle>
+
           <LanguageSelect />
 
           <LearningNotification />

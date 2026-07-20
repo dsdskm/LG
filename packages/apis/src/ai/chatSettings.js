@@ -4,7 +4,7 @@ const BASE_URL = import.meta.env.VITE_AI_CHAT_SERVICE_URL
  * 채팅 설정 전체 + 스키마 조회
  * @returns {Promise<{ code:number, data:{ schema:Array, values:Object } }>}
  */
-export async function getChatSettings() {
+export async function getChatSettings() {  
   const response = await fetch(`${BASE_URL}/chat/settings`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
@@ -37,9 +37,27 @@ export async function updateChatPrompt(id, payload) {
   return response.json()
 }
 
+export async function upsertCommonChatPrompt(payload) {
+  const response = await fetch(`${BASE_URL}/chat/settings/prompts/common`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return response.json()
+}
+
 export async function updateChatGuidance(id, payload) {
   const response = await fetch(`${BASE_URL}/chat/settings/guidance/${encodeURIComponent(String(id))}`, {
     method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return response.json()
+}
+
+export async function createChatGuidance(payload) {
+  const response = await fetch(`${BASE_URL}/chat/settings/guidance`, {
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
@@ -58,6 +76,32 @@ export async function updateChatScreenTool(id, payload) {
   return response.json()
 }
 
+export async function createCommonChatScreenTool(payload) {
+  const response = await fetch(`${BASE_URL}/chat/settings/screen-tools/common`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return response.json()
+}
+
+export async function createChatScreenTool(payload) {
+  const response = await fetch(`${BASE_URL}/chat/settings/screen-tools`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return response.json()
+}
+
+export async function deleteChatScreenTool(id) {
+  const response = await fetch(`${BASE_URL}/chat/settings/screen-tools/${encodeURIComponent(String(id))}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  return response.json()
+}
+
 export async function updateChatRagDoc(id, payload) {
   const response = await fetch(
     `${BASE_URL}/chat/settings/rag-docs/${encodeURIComponent(String(id))}`,
@@ -67,5 +111,40 @@ export async function updateChatRagDoc(id, payload) {
       body: JSON.stringify(payload),
     },
   )
+  return response.json()
+}
+
+export async function upsertCommonChatRagDoc(payload) {
+  const response = await fetch(`${BASE_URL}/chat/settings/rag-docs/common`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return response.json()
+}
+
+export async function createCommonChatRagDoc(payload) {
+  const response = await fetch(`${BASE_URL}/chat/settings/rag-docs/common`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return response.json()
+}
+
+export async function createChatRagDoc(payload) {
+  const response = await fetch(`${BASE_URL}/chat/settings/rag-docs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return response.json()
+}
+
+export async function deleteChatRagDoc(id) {
+  const response = await fetch(`${BASE_URL}/chat/settings/rag-docs/${encodeURIComponent(String(id))}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+  })
   return response.json()
 }
