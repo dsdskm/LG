@@ -7,7 +7,7 @@
 AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID:-398838060384}"
 AWS_REGION="${AWS_REGION:-ap-northeast-2}"
 
-ECR_REPOSITORY="${ECR_REPOSITORY:-ota-qa-1000-200-300-ota-demo-abbc6699}"
+ECR_REPOSITORY="${ECR_REPOSITORY:-rsp-qa-ai/unified-service}"
 
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 
