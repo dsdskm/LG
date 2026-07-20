@@ -30,10 +30,10 @@ const TaskFlowControlButton = ({
   function onControlClick(event: React.MouseEvent<HTMLButtonElement>) {
     console.log('control clicked')
     event.stopPropagation()
-    control.execute(control.command[0], taskFlowId)
+    control.execute(control.command, taskFlowId)
   }
 
-  switch (control.command[0]) {
+  switch (control.command) {
     case 'start':
       enabled = enabled && taskFlowRunningStatus === 'READY'
       break

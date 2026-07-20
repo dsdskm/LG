@@ -14,6 +14,7 @@
   "group": "그룹",
   "site": "사이트",
   "siteName": "사이트명",
+  "defaultSite": "디폴트사이트",
   "all": "전체",
   "selectGroup": "그룹 선택",
   "selectSite": "사이트 선택",

@@ -7,9 +7,11 @@ export type PreviewNodeLike = {
   data?: SelectedData
 } | null
 
+export type PlayStatus = 'NONE' | 'READY' | 'PLAYING' | 'FINISHED'
 export type PreviewProps = {
   node?: PreviewNodeLike
   selectedData?: SelectedData | null
+  nodeId?: string
 }
 
 export interface BVHMesh extends Mesh {

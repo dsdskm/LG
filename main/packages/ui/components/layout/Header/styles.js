@@ -2,7 +2,7 @@ import styled from 'styled-components'
 import { mobileHeaderButtonStyle } from '@repo/ui/styles'
 
 export const StyledHeader = styled.header`
-  background: linear-gradient(90deg, #5ba1c2 0%, #97d0eb 52.77%, #6caecc 92.03%);
+  background: var(--t-header-bg);
 
   .container,
   .containerHeader {
@@ -27,6 +27,11 @@ export const StyledHeader = styled.header`
 
   .logo {
     padding-top: 0.4rem;
+
+    /* 브랜드 로고는 테마 공통으로 항상 흰색 */
+    & svg path {
+      fill: var(--color-neutral-10);
+    }
   }
 
   @media all and (max-width: 767px) {
@@ -84,6 +89,16 @@ export const StyledHeaderButton = styled.button`
     align-items: center;
     gap: 0.2rem;
     color: var(--color-neutral-10);
+
+    /* 언어 지구본 아이콘은 테마 공통으로 항상 흰색 라인아트 */
+    & .icon svg circle,
+    & .icon svg path {
+      stroke: var(--color-neutral-10);
+    }
+
+    & .icon svg circle {
+      fill: none;
+    }
   }
 
   @media all and (max-width: 767px) {
@@ -112,6 +127,21 @@ export const StyledProfileContainer = styled.div`
   display: flex;
   align-items: center;
   gap: 1rem;
+
+  & > button {
+    background: var(--t-account-bg);
+    color: var(--color-neutral-10);
+    border-radius: var(--radius-sm);
+
+    &:hover:not(:disabled) {
+      text-decoration: none;
+      background: var(--t-account-hover-bg);
+    }
+
+    &:active:not(:disabled) {
+      background: var(--t-account-active-bg);
+    }
+  }
 `
 
 export const StyledProfileDropdown = styled.div`
@@ -191,6 +221,31 @@ export const StyledAiAssistantLabel = styled.span`
   font-weight: 700;
   line-height: 1;
   white-space: nowrap;
+
+  @media all and (max-width: 767px) {
+    display: none;
+  }
+`
+
+export const StyledThemeToggle = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 3.2rem;
+  padding: 0 1rem;
+  border: 1px solid var(--alpha-white-30);
+  border-radius: var(--radius-sm);
+  background: var(--alpha-white-10);
+  color: var(--color-neutral-10);
+  font-size: 1.2rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease;
+
+  &:hover {
+    background: var(--alpha-white-20);
+  }
 
   @media all and (max-width: 767px) {
     display: none;

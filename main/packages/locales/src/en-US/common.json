@@ -13,6 +13,7 @@
   "group": "Group",
   "site": "Site",
   "siteName": "Site Name",
+  "defaultSite": "Default Site",
   "all": "All",
   "selectGroup": "Select Group",
   "selectSite": "Select Site",

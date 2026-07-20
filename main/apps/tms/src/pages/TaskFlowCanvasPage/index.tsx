@@ -27,11 +27,35 @@ type SubmitState = 'save' | 'temp' | null
 type SaveOverride = { name: string; description: string }
 type BtModalMode = 'save-gate' | null
 type BtModalStatus = 'success' | 'error'
+type MoveToMapEntry = { nodeId: string; mapId: string }
 
 function normalizeOrgId(value: any) {
   if (value == null) return ''
   const str = String(value).trim()
   return str
+}
+
+function parseMapIdFromContentValue(raw: unknown): string {
+  if (!raw) return ''
+
+  if (typeof raw === 'object') {
+    const mapId = (raw as Record<string, unknown>)?.mapId
+    return typeof mapId === 'string' ? mapId.trim() : ''
+  }
+
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim()
+    if (!trimmed || trimmed[0] !== '{') return ''
+    try {
+      const parsed = JSON.parse(trimmed)
+      const mapId = parsed?.mapId
+      return typeof mapId === 'string' ? mapId.trim() : ''
+    } catch {
+      return ''
+    }
+  }
+
+  return ''
 }
 
 export default function TaskFlowCanvasPage() {
@@ -228,6 +252,42 @@ export default function TaskFlowCanvasPage() {
     return { groupId, siteId }
   }, [selectedGroupId, selectedSiteId, selectedFlow?.groupId, selectedFlow?.siteId, t])
 
+  const validateMoveToMapId = useCallback(() => {
+    const moveToEntries: MoveToMapEntry[] = nodes
+      .filter((node: any) => {
+        const data = node?.data ?? {}
+        const taskType = String(data.taskType ?? '').trim().toUpperCase()
+        const taskName = String(data.taskName ?? '').trim().toLowerCase()
+        return taskType === 'ACTION' && taskName === 'moveto'
+      })
+      .map((node: any) => {
+        const data = node?.data ?? {}
+        return {
+          nodeId: String(node?.id ?? ''),
+          mapId: parseMapIdFromContentValue(data.contentValue)
+        }
+      })
+
+    console.log('[SAVE][MoveTo] mapId list:', moveToEntries)
+
+    if (moveToEntries.length <= 1) return true
+
+    if (moveToEntries.some((entry) => !entry.mapId)) {
+      setSaveErrorMessage(t('canvas.page.moveToMapIdMismatch'))
+      setSaveErrorOpen(true)
+      return false
+    }
+
+    const uniqueMapIds = new Set(moveToEntries.map((entry) => entry.mapId))
+    if (uniqueMapIds.size > 1) {
+      setSaveErrorMessage(t('canvas.page.moveToMapIdMismatch'))
+      setSaveErrorOpen(true)
+      return false
+    }
+
+    return true
+  }, [nodes, t])
+
   const doSave = async (mode: SaveMode, behaviorTreeXml?: string, override?: SaveOverride) => {
     try {
       setSaving(true)
@@ -354,6 +414,10 @@ export default function TaskFlowCanvasPage() {
 
     if (mode === 'temp') {
       await doSave('temp', undefined, override)
+      return
+    }
+
+    if (!validateMoveToMapId()) {
       return
     }
 

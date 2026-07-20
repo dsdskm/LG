@@ -82,9 +82,10 @@ export const generateUuid36 = () => {
  * @param {Object} org 원본 데이터
  * @param {string} type 데이터 유형 ('GROUP', 'SITE', 'ORGANIZATION')
  * @param {string|number} parent 최상위 부모 데이터 (GROUP인 경우 사용)
+ * @param {Function} [t] i18n 번역 함수 (미전달 시 영문 기본값 사용)
  * @returns {Object} 표준 포맷 데이터
  */
-export const standardizeOrganization = (org, type = 'ORGANIZATION', parent = null) => {
+export const standardizeOrganization = (org, type = 'ORGANIZATION', parent = null, t = null) => {
   if (type === 'GROUP') {
     return {
       code: org.groupId,

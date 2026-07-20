@@ -13,6 +13,7 @@
   "group": "グループ",
   "site": "サイト",
   "siteName": "サイト名",
+  "defaultSite": "デフォルトサイト",
   "all": "すべて",
   "selectGroup": "グループ選択",
   "selectSite": "サイト選択",

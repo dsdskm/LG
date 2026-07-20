@@ -275,7 +275,7 @@ const BottomCard = styled.div`
   gap: 20px;
   background: ${BODY_BG};
   border-radius: 12px;
-  padding: 20px;
+  padding: 20px 20px 12px;
   box-shadow: 4px 4px 10px rgba(0, 0, 0, 0.1);
 `
 
@@ -672,6 +672,7 @@ const TVDashboard = () => {
           <CollectionWrap>
             <DataCollectionSection
               chartHeight={90}
+              embedded
               showSectionTitle={false}
               showForgeBar={false}
               line={theme.line}

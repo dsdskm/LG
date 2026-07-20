@@ -1,7 +1,7 @@
 import styled from 'styled-components'
 
 export const StyledDataTable = styled.div`
-  --alpha-table-border: rgba(53, 64, 86, 0.1);
+  --alpha-table-border: var(--t-table-border);
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -22,8 +22,8 @@ export const StyledDataTable = styled.div`
   .rdt_TableHeadRow {
     border-top: 1px solid var(--alpha-table-border);
     border-bottom: 2px solid var(--alpha-table-border);
-    background: var(--color-secondary-10);
-    color: var(--color-secondary-60);
+    background: var(--t-table-head-bg);
+    color: var(--t-table-head-fg);
   }
 
   .rdt_TableCol {

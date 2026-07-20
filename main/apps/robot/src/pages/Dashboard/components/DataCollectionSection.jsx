@@ -196,7 +196,7 @@ const SubIndicator = styled.span`
   border-radius: 8px;
   padding: 4px 10px;
   font-size: 1.2rem;
-  font-weight: 700;
+  font-weight: 500;
   white-space: nowrap;
 `
 const SubLabelG = styled.span`
@@ -226,19 +226,26 @@ const TeleopLabel = styled.span`
 const AvgRow = styled.div`
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 8px;
   margin-top: 6px;
+  /* 영문 제목이 1줄로 접히며 생긴 여백만큼 아래를 채워 차트가 위(라벨 영역)로
+     늘어나지 않게 유지 → x축/그래프 높이를 이전과 동일하게 보존 */
+  margin-bottom: 1.6rem;
+  white-space: nowrap;
 `
 
 const AvgTitle = styled.span`
   font-size: 1.2rem;
   color: ${MUTED};
   font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
 `
 
 const AvgItem = styled.span`
   font-size: 1.2rem;
   color: ${MUTED};
+  white-space: nowrap;
 
   strong {
     color: ${GOLD};
@@ -591,7 +598,7 @@ const DataCollectionSection = ({
   segFill = PURPLE,            // 스토리지 게이지 사용(색 또는 CSS 그라데이션)
   segEmpty = '#e6e1d6'         // 스토리지 게이지 미사용
 } = {}) => {
-  const { t } = useTranslation('robot')
+  const { t, i18n } = useTranslation('robot')
   const [stats, setStats] = useState(null)
 
   const load = useCallback(() => {
@@ -619,6 +626,8 @@ const DataCollectionSection = ({
   const dailyPct = daily.achievementPct ?? Math.round((daily.actual / daily.target) * 100)
   const prevMonthLabel = t('collection.lastMonth', '전월')
   const yesterdayLabel = t('collection.yesterday', '전일')
+  // 영문은 라벨(Monthly/Daily/Hourly)만으로 의미가 명확해 'cases' 단위를 생략 → 1줄 표시
+  const caseUnit = i18n.language?.startsWith('en') ? '' : t('collection.caseUnit', '건')
 
   return (
     <Wrapper $embedded={embedded}>
@@ -658,9 +667,9 @@ const DataCollectionSection = ({
           {cumulative.avgProduction && (
             <AvgRow>
               <AvgTitle>{t('collection.avgProduction', '평균 생산량')}</AvgTitle>
-              <AvgItem>{t('collection.monthlyShort', '월간')}<strong>{cumulative.avgProduction.monthly.toLocaleString()}{t('collection.caseUnit', '건')}</strong></AvgItem>
-              <AvgItem>{t('collection.dailyShort', '일간')}<strong>{cumulative.avgProduction.daily.toLocaleString()}{t('collection.caseUnit', '건')}</strong></AvgItem>
-              <AvgItem>{t('collection.hourlyShort', '시간당')}<strong>{cumulative.avgProduction.hourly.toLocaleString()}{t('collection.caseUnit', '건')}</strong></AvgItem>
+              <AvgItem>{t('collection.monthlyShort', '월간')}<strong>{cumulative.avgProduction.monthly.toLocaleString()}{caseUnit}</strong></AvgItem>
+              <AvgItem>{t('collection.dailyShort', '일간')}<strong>{cumulative.avgProduction.daily.toLocaleString()}{caseUnit}</strong></AvgItem>
+              <AvgItem>{t('collection.hourlyShort', '시간당')}<strong>{cumulative.avgProduction.hourly.toLocaleString()}{caseUnit}</strong></AvgItem>
             </AvgRow>
           )}
           <ChartBox $h={bigH}>
@@ -676,6 +685,14 @@ const DataCollectionSection = ({
                   <XAxis dataKey="month" tick={{ fontSize: 9, fill: MUTED }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
                   <YAxis tickFormatter={(v) => `${Math.round(v / 1000)}K`} tick={{ fontSize: 9, fill: MUTED }} axisLine={false} tickLine={false} width={28} domain={['dataMin - 2000', 'dataMax + 1500']} />
                   <Tooltip content={<GenTooltip />} cursor={{ stroke: targetColor, strokeDasharray: '3 3' }} />
+                  {/* 오늘(마지막 지점) 세로 기준선 — 2·3번 차트와 동일 (텍스트 없음) */}
+                  <ReferenceLine
+                    x={cumulative.trend[cumulative.trend.length - 1].month}
+                    stroke={line}
+                    strokeWidth={1.5}
+                    strokeDasharray="4 3"
+                    ifOverflow="visible"
+                  />
                   <Area
                     type="monotone"
                     dataKey="value"

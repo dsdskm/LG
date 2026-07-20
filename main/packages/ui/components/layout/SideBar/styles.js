@@ -3,13 +3,14 @@ import styled from 'styled-components'
 export const StyledGnb = styled.nav`
   height: 100%;
   // padding: 0.5rem;
-  background: var(--color-secondary-15);
+  background: var(--t-sidebar-bg);
   display: flex;
   flex-direction: column;
   ${({ $compact }) => !$compact && `overflow-y: auto;`}
 
   & > ul {
     flex: 1;
+    padding: var(--t-sidebar-pad);
   }
 `
 
@@ -17,7 +18,7 @@ export const StyledGnbItem = styled.li`
   position: relative;
 
   &:not(:last-of-type) {
-    // margin-bottom: 0.5rem;
+    margin-bottom: var(--t-sidebar-item-gap);
   }
 
   &:hover > .gnbTooltip {

@@ -13,6 +13,11 @@
   "LanguageSelect": {
     "button": "언어"
   },
+  "ThemeToggle": {
+    "title": "화면 스타일 전환 (Forge 영역 제외)",
+    "modernNeutral": "모던 뉴트럴",
+    "classicBlue": "클래식 블루"
+  },
   "Footer": {
     "customerInquiry": "고객 문의",
     "copyright": "Copyright © 2026 LG Electronics. All Rights Reserved"

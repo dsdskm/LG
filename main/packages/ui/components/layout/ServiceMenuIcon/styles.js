@@ -2,7 +2,7 @@ import styled from 'styled-components'
 
 export const StyledNavButton = styled.button`
   position: relative;
-  background: ${({ $isActive }) => ($isActive ? 'rgba(255, 255, 255, 0.25)' : 'transparent')};
+  background: ${({ $isActive }) => ($isActive ? 'var(--t-menu-active-bg)' : 'transparent')};
   border: none;
   cursor: pointer;
   padding: 0.6rem 1.4rem;
@@ -19,13 +19,13 @@ export const StyledNavButton = styled.button`
 
   &:hover {
     color: var(--color-neutral-10);
-    background: ${({ $isActive }) => ($isActive ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.1)')};
+    background: ${({ $isActive }) => ($isActive ? 'var(--t-menu-active-hover-bg)' : 'var(--t-menu-hover-bg)')};
     transform: translateY(-1px);
   }
 
   &:active {
     transform: translateY(0);
-    background: rgba(255, 255, 255, 0.25);
+    background: var(--t-menu-active-hover-bg);
   }
 `
 
@@ -34,7 +34,7 @@ import Dropdown from '../../common/Dropdown'
 export const HeaderMobileDropdown = styled(Dropdown)`
   .select {
     & > .selectButton {
-      background: rgba(255, 255, 255, 0.25);
+      background: var(--t-menu-active-bg);
       border: none;
       color: var(--color-neutral-10);
       border-radius: 100px;
@@ -46,7 +46,7 @@ export const HeaderMobileDropdown = styled(Dropdown)`
       outline: none !important;
 
       &:hover:not(:disabled) {
-        background: rgba(255, 255, 255, 0.35);
+        background: var(--t-menu-active-hover-bg);
         text-decoration: none;
       }
     }
