@@ -10,12 +10,13 @@ import { useTaskFlowStore } from './store/taskflow.store'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { flattenRoutes, appRoutes, getAppPrefix } from './router/routes'
 import Router from './router/tms.router'
-import { useOrganizationStore } from '@repo/stores'
+import { useOrganizationStore, useThemeStore } from '@repo/stores'
 
 const queryClient = new QueryClient()
 
 function App() {
   useWindowDimensions()
+  useThemeStore((state) => state.theme)
   const { pathname } = useLocation()
   const { t: layoutT } = useTranslation('layout')
   const { t: appT } = useTranslation('route')

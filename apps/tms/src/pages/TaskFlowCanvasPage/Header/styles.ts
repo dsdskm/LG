@@ -5,9 +5,9 @@ export const HeaderRoot = styled.header`
   align-items: center;
   justify-content: space-between;
 
-  border-bottom: 1px solid rgba(255, 255, 255, 0.4);
-  color: #ffffff;
-  background: linear-gradient(90deg, #5ba1c2 0%, #97d0eb 52.77%, #6caecc 92.03%);
+  border-bottom: 1px solid var(--t-table-border);
+  color: var(--color-neutral-10);
+  background: var(--t-header-bg);
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
 
   padding: 12px 24px;

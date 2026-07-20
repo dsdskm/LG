@@ -2,7 +2,18 @@ import { useTranslation } from 'react-i18next'
 import { Icon, Title as UiTitle } from '@repo/ui'
 import { Undo, Redo } from '@/assets'
 import { getTaskFlowStatusLabel } from '@/utils/taskflowStatus'
-import { Description, HeaderDivider, HeaderRoot, IconButton, Left, PrimaryButton, Right, SecondaryButton, StatusPill, TitleRow } from './styles'
+import {
+  Description,
+  HeaderDivider,
+  HeaderRoot,
+  IconButton,
+  Left,
+  PrimaryButton,
+  Right,
+  SecondaryButton,
+  StatusPill,
+  TitleRow
+} from './styles'
 
 type Props = {
   title?: string
