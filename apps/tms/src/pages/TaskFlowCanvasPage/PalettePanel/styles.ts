@@ -39,7 +39,7 @@ export const SectionHeader = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #8fb3cf;
+  background: var(--t-header-bg);
   padding: 8px 12px; /* px-3 py-2 */
 `;
 
