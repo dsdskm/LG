@@ -4,13 +4,21 @@ import { useParams } from 'react-router-dom'
 import TaskFlowList from './components/TaskFlowList'
 import { useEffect, useRef, useState } from 'react'
 import { InstantAction, InstantActionsPayload, InstantActionsRequestBody } from '@/types/api/deviceControl'
-import { useUserStore } from '@repo/stores'
+import { useOrganizationStore, useUserStore } from '@repo/stores'
 import { useInstantAction } from '@/api/deviceControlApis'
 import { FlowArea, FlowCanvasWrap } from '../TaskFlowListDetailPage/styles'
 import { useGetTaskFlow } from '@/api/taskFlowApis'
 import TaskFlowReadonlyCanvas from '../TaskFlowCanvasPage/FlowCanvasViewer'
 import { useTranslation } from 'react-i18next'
 import { CenteredContent, Section } from './styles'
+import RobotControlTopPanel from './components/RobotControlTopPanel'
+
+const normalizeNullableValue = (value: unknown): string | null => {
+  if (value == null) return null
+  const next = String(value).trim()
+  if (!next || next === 'none' || next === 'all') return null
+  return next
+}
 
 const RobotDetailPage = () => {
   const { t } = useTranslation('tms')
@@ -19,6 +27,7 @@ const RobotDetailPage = () => {
   const initialized = useRef(false)
   const [selectedId, setSelectedId] = useState(-1)
   const { data: robotData, error: robotDataError, isLoading: robotDataLoading } = useDevice(robotId)
+  const { selectedOrgs } = useOrganizationStore()
   const { session } = useUserStore()
   const { mutate } = useInstantAction()
   const { data: taskFlowData } = useGetTaskFlow(selectedId)
@@ -120,6 +129,9 @@ const RobotDetailPage = () => {
     }
   ]
 
+  const resolvedGroupId = normalizeNullableValue(robotData?.provision?.groupId) ?? normalizeNullableValue(selectedOrgs?.[0])
+  const resolvedSiteId = normalizeNullableValue(robotData?.provision?.siteId) ?? normalizeNullableValue(selectedOrgs?.[1])
+
   console.log('taskFlowData', taskFlowData)
 
   return (
@@ -130,6 +142,12 @@ const RobotDetailPage = () => {
           <NoData>{t('list.noData')}</NoData>
         ) : (
           <>
+            <RobotControlTopPanel
+              groupId={resolvedGroupId}
+              siteId={resolvedSiteId}
+              deviceId={normalizeNullableValue(robotId) ?? ''}
+            />
+
             <CenteredContent>
               <TaskFlowList
                 taskFlowList={

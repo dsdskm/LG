@@ -271,6 +271,21 @@
     "title": "RobotsPage",
     "statusFilter": "로봇상태",
     "taskflowFilter": "taskflow",
+    "controlButton": "制御",
+    "controlPageTitle": "ロボット制御 - {{robotId}}",
+    "controlPageEmpty": "ロボット制御画面は準備中です。",
+    "controlTabs": {
+      "cloud": "クラウド",
+      "rf": "RF"
+    },
+    "controlInputPlaceholder": "送信する値を入力してください",
+    "controlSend": "Send",
+    "controlRequiredInput": "送信する値を入力してください。",
+    "controlInvalidRobot": "有効なロボットIDがありません。",
+    "controlBridgeUnavailable": "Androidネイティブブリッジが見つかりません。",
+    "controlCloudFailed": "クラウド制御リクエストの送信に失敗しました。",
+    "controlSentCloud": "クラウドに制御リクエストを送信しました。",
+    "controlSentRf": "Androidネイティブに送信しました。",
     "installedCount": "설치 TaskFlow",
     "recentRun": "최근 실행",
     "runningStatus": {

@@ -271,6 +271,21 @@
     "title": "RobotsPage",
     "statusFilter": "로봇상태",
     "taskflowFilter": "taskflow",
+    "controlButton": "제어",
+    "controlPageTitle": "로봇 제어 - {{robotId}}",
+    "controlPageEmpty": "로봇 제어 화면 준비 중입니다.",
+    "controlTabs": {
+      "cloud": "클라우드",
+      "rf": "RF"
+    },
+    "controlInputPlaceholder": "전달할 값을 입력하세요",
+    "controlSend": "Send",
+    "controlRequiredInput": "전달할 값을 입력해주세요.",
+    "controlInvalidRobot": "유효한 로봇 아이디가 없습니다.",
+    "controlBridgeUnavailable": "안드로이드 네이티브 브릿지를 찾을 수 없습니다.",
+    "controlCloudFailed": "클라우드 제어 요청에 실패했습니다.",
+    "controlSentCloud": "클라우드로 제어 요청을 전송했습니다.",
+    "controlSentRf": "안드로이드 네이티브로 전송했습니다.",
     "installedCount": "설치 TaskFlow",
     "recentRun": "최근 실행",
     "runningStatus": {

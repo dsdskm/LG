@@ -4,7 +4,6 @@ import RobotsPage from '@/pages/RobotsPage'
 import TaskFlowCanvasPage from '@/pages/TaskFlowCanvasPage'
 import TaskFlowListDetailPage from '@/pages/TaskFlowListDetailPage'
 import TaskFlowListPage from '@/pages/TaskFlowListPage'
-import { lazy, Suspense } from 'react'
 import { Navigate } from 'react-router-dom'
 
 export const appRoutes = [
