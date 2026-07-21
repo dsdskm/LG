@@ -56,7 +56,7 @@ const RobotDetailPage = () => {
   const onCommandClick = (command: string, taskFlowId: number) => {
     console.log('click button', command)
     const requestBody = createInstantActionsRequestBody(session?.userId, [
-      createInstantAction(command, { task_flow_id: taskFlowId }, 'HARD')
+      createInstantAction(command, { tms_id: taskFlowId }, 'HARD')
     ])
 
     console.log('request body', requestBody)
@@ -80,13 +80,11 @@ const RobotDetailPage = () => {
     console.log('deploy')
   }
 
-  const createInstantActionsRequestBody = (userId: string, actions: InstantAction[]): InstantActionsRequestBody => {
-    const payload: InstantActionsPayload = {
-      headerId: ++headerSeq.current,
-      timestamp: new Date().toISOString(),
-      instantActions: actions
+  const createInstantActionsRequestBody = (userId: string, actions: InstantAction[]): InstantActionsPayload => {
+    return {
+      userId: userId,
+      actions: actions
     }
-    return { userId, payload }
   }
 
   const createInstantAction = (
@@ -173,18 +171,20 @@ const RobotDetailPage = () => {
               />
             </CenteredContent>
 
-            <Section>
-              <FlowArea>
-                <FlowCanvasWrap>
-                  <TaskFlowReadonlyCanvas
-                    flowDefinition={taskFlowData?.flowDefinition}
-                    activeNodeList={activePath}
-                    displayOption="RUNNING_STATUS"
-                    flowName={taskFlowData?.name}
-                  />
-                </FlowCanvasWrap>
-              </FlowArea>
-            </Section>
+            <CenteredContent>
+              <Section>
+                <FlowArea>
+                  <FlowCanvasWrap>
+                    <TaskFlowReadonlyCanvas
+                      flowDefinition={taskFlowData?.flowDefinition}
+                      activeNodeList={activePath}
+                      displayOption="RUNNING_STATUS"
+                      flowName={taskFlowData?.name}
+                    />
+                  </FlowCanvasWrap>
+                </FlowArea>
+              </Section>
+            </CenteredContent>
           </>
         )}
       </StyledPageContent>

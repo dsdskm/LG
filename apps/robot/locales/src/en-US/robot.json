@@ -86,7 +86,7 @@
   "standby": "Standby",
   "charge": "Charging",
   "error": "Error",
-  "networkDisconnection": "Network Disconnected",
+  "networkDisconnection": "Offline",
   "regionStatus": "Region Status",
   "inspectionNotification": "Inspection Notification",
   "robotNameModTitle": "Modify Robot Name",
@@ -286,6 +286,9 @@
   "normal": "Normal",
   "saveOnly": "Save Only",
   "unconfirmed": "Unconfirmed",
+  "stable": "Stable",
+  "weak": "Weak",
+  "disconnected": "Disconnected",
   "map": {
     "guide2dMouse": "Drag: Move · Ctrl + Wheel: Zoom",
     "guide2dTouch": "Two fingers: Move · Pinch: Zoom",

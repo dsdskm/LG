@@ -139,8 +139,8 @@ const CardTitle = styled.div`
   align-items: center;
   gap: 7px;
   min-width: 0;
-  font-size: 1.35rem;
-  font-weight: 700;
+  font-size: 1.55rem;
+  font-weight: 600;
   color: #334155;
   word-break: keep-all;
   line-height: 1.2;
@@ -931,21 +931,22 @@ const DataCollectionSection = ({
         <SideCol>
           {/* 데이터 품질 추이 */}
           <Card style={{ flex: '1 1 0', minHeight: 0, overflow: 'hidden', paddingBottom: 8 }}>
-            <CardHead>
-              <CardTitle>
-                <InboxIcon />
-                {t('collection.qualityTitle')}
-              </CardTitle>
-            </CardHead>
+            {/* 제목을 좌측 컬럼 상단으로 → 차트가 우측에서 전체 높이로 정렬 */}
             <SideBody>
-              <SideLeft>
-                <BigValue>
-                  {quality.current}
-                  <ValueUnit>%</ValueUnit>
-                </BigValue>
-                <PeriodDelta style={{ alignSelf: 'flex-start' }}>
-                  + {Math.abs(quality.deltaPct).toFixed(quality.deltaPct % 1 === 0 ? 0 : 1)}% {prevMonthLabel}
-                </PeriodDelta>
+              <SideLeft style={{ justifyContent: 'space-between', flex: '0 0 auto', minWidth: 140, paddingBottom: 20 }}>
+                <CardTitle>
+                  <InboxIcon />
+                  {t('collection.qualityTitle')}
+                </CardTitle>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <BigValue>
+                    {quality.current}
+                    <ValueUnit>%</ValueUnit>
+                  </BigValue>
+                  <PeriodDelta style={{ alignSelf: 'flex-start' }}>
+                    + {Math.abs(quality.deltaPct).toFixed(quality.deltaPct % 1 === 0 ? 0 : 1)}% {prevMonthLabel}
+                  </PeriodDelta>
+                </div>
               </SideLeft>
               <SideViz $h={90}>
                 <AutoSize>
@@ -953,8 +954,10 @@ const DataCollectionSection = ({
                     const qAvg = quality.data.reduce((s, d) => s + d.rate, 0) / quality.data.length
                     const qRates = quality.data.map((d) => d.rate)
                     const qMaxIdx = qRates.lastIndexOf(Math.max(...qRates))
+                    // 상단 여백: 말풍선(위 표시)이 잘리지 않도록 확보. 우측 여백 축소로 그래프를 카드 우측에 정렬.
+                    const Q_TOP = 24
                     return (
-                    <ComposedChart data={quality.data} width={w} height={h} margin={{ top: 24, right: 26, bottom: 0, left: 26 }}>
+                    <ComposedChart data={quality.data} width={w} height={h} margin={{ top: Q_TOP, right: 6, bottom: 0, left: 8 }}>
                       <defs>
                         {/* 골드(Solid): 세로 그라데이션 */}
                         <linearGradient id="qGold" x1="0" y1="0" x2="0" y2="1">
@@ -975,6 +978,8 @@ const DataCollectionSection = ({
                         tickLine={false}
                         interval="preserveStartEnd"
                         minTickGap={6}
+                        height={20}
+                        tickMargin={3}
                       />
                       <YAxis hide width={0} domain={[88, 96]} />
                       <Tooltip content={<GenTooltip />} cursor={{ fill: 'rgba(139,92,246,0.06)' }} />
@@ -1004,6 +1009,7 @@ const DataCollectionSection = ({
                             const bg = isMax ? '#334155' : '#94a3b8'
                             const w = 52, h = 18
                             const cx = x + width / 2
+                            // 말풍선은 항상 막대 위에 표시 (상단 여백 Q_TOP로 잘림 방지)
                             const by = y - h - 6
                             return (
                               <g key={`ql-${value}`}>

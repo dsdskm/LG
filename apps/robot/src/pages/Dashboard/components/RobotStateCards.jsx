@@ -1,5 +1,6 @@
 import styled from 'styled-components'
 import { useTranslation } from 'react-i18next'
+import MarqueeText from '@/common/MarqueeText'
 import { MOCK_FLOOR_RATIO } from '@/apis/learning/mockData'
 import {
   OperationIcon,
@@ -42,7 +43,7 @@ const List = styled.div`
 const Row = styled.article`
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: ${({ $compact }) => ($compact ? '16px' : '12px')};
   flex: 1;
   min-height: 0;
   padding: ${({ $compact }) => ($compact ? '16px 20px' : '12px 16px')};
@@ -61,11 +62,15 @@ const Main = styled.div`
   flex: 1 1 auto;
   min-width: ${({ $compact }) => ($compact ? '96px' : '116px')};
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  /* 상태 라벨(좌) + 총 Unit 값(우)을 같은 행에 배치 */
+  flex-direction: ${({ $compact }) => ($compact ? 'row' : 'column')};
+  align-items: ${({ $compact }) => ($compact ? 'center' : 'stretch')};
+  gap: ${({ $compact }) => ($compact ? '8px' : '2px')};
 `
 
 const StateLabel = styled.span`
+  width: 94px;
+  min-height: 24px;
   font-size: 1.8rem;
   color: rgba(0, 0, 0, 0.5);
   font-weight: 500;
@@ -75,15 +80,23 @@ const StateLabel = styled.span`
   word-break: keep-all;
 `
 
+// 총 Unit 값 박스 (82×33): 숫자 + 단위를 baseline 정렬
+const ValueBox = styled.span`
+  display: inline-flex;
+  align-items: baseline;
+  width: 82px;
+  height: 33px;
+`
+
 const Total = styled.strong`
-  font-size: ${({ $compact }) => ($compact ? '2.4rem' : '2.8rem')};
+  font-size: ${({ $compact }) => ($compact ? '3.3rem' : '2.8rem')};
   font-weight: 800;
   color: #111;
   line-height: 1;
 `
 
 const TotalUnit = styled.span`
-  font-size: ${({ $compact }) => ($compact ? '1.3rem' : '1.5rem')};
+  font-size: ${({ $compact }) => ($compact ? '1.6rem' : '1.5rem')};
   font-weight: 600;
   color: #4e4e4e;
   margin-left: 3px;
@@ -98,7 +111,7 @@ const Floors = styled.div`
   flex-direction: column;
   gap: ${({ $compact }) => ($compact ? '5px' : '7px')};
   width: ${({ $compact, $wide }) =>
-    $compact ? '62px' : $wide ? '190px' : '108px'};
+    $compact ? '96px' : $wide ? '190px' : '108px'};
 `
 
 const FloorCol = styled.div`
@@ -106,7 +119,7 @@ const FloorCol = styled.div`
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  /* $fixed(compact 층 모드): 두 텍스트 폭 합이 62가 되도록 고정폭 부여 → 사이 여백 제거 */
+  /* $fixed(compact): 층이름(70)+유닛수(26)=96 고정폭 → 사이 여백 제거 */
   gap: ${({ $fixed }) => ($fixed ? '0' : '8px')};
   width: 100%;
 `
@@ -118,8 +131,8 @@ const FloorLabel = styled.span`
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
-  /* $fixed: 값(44px)을 뺀 나머지(≈18px)를 차지, 긴 영역명은 말줄임 → 층+값 폭 합 = 62 */
-  ${({ $fixed }) => $fixed && 'flex: 1;'}
+  /* $fixed(층이름): 70px 고정, 긴 영역명은 말줄임 */
+  ${({ $fixed }) => $fixed && 'flex: 0 0 70px; width: 70px;'}
 `
 
 const FloorVal = styled.span`
@@ -128,7 +141,8 @@ const FloorVal = styled.span`
   color: #333;
   white-space: nowrap;
   flex-shrink: 0;
-  ${({ $fixed }) => $fixed && 'flex: 0 0 44px; width: 44px; text-align: right;'}
+  /* $fixed(해당 층 Unit 수): 26px 고정, 우측 정렬. 단위 표기 없이 숫자만 */
+  ${({ $fixed }) => $fixed && 'flex: 0 0 26px; width: 26px; text-align: right;'}
 `
 
 // ── 대시보드용 가로 배치 (층별 없음, 최소 폭 유지 + 반응형 줄바꿈) ──
@@ -237,22 +251,24 @@ const RobotStateCards = ({ deviceCount = {}, onClickState, compact = false, row 
             data-value={state}
             onClick={onClickState ? () => onClickState(state) : undefined}
           >
-            <Icon size={compact ? 64 : 56} />
+            <Icon size={56} />
             <Main $compact={compact}>
               <StateLabel $compact={compact}>{t(labelKey)}</StateLabel>
-              <span>
+              <ValueBox>
                 <Total $compact={compact} id={`${key}_cnt`}>{total}</Total>
                 <TotalUnit $compact={compact}>{t('unit')}</TotalUnit>
-              </span>
+              </ValueBox>
             </Main>
             <Floors $compact={compact} $wide={useAreas}>
               {columns.map((c) => {
-                // 두 텍스트(층·영역/유닛) 폭 합 = 62px 고정: compact(TV) 뷰 전체
+                // 층이름(70)+유닛수(26)=96px 고정폭: compact(TV) 뷰 전체
                 const fixedW = compact
                 return (
                   <FloorCol key={c.key} $fixed={fixedW}>
-                    <FloorLabel $fixed={fixedW}>{c.label}</FloorLabel>
-                    <FloorVal $fixed={fixedW}>{c.value} {t('unit')}</FloorVal>
+                    <FloorLabel $fixed={fixedW}>
+                      <MarqueeText>{c.label}</MarqueeText>
+                    </FloorLabel>
+                    <FloorVal $fixed={fixedW}>{c.value}</FloorVal>
                   </FloorCol>
                 )
               })}

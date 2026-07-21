@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { Table, Modal, Button, ExpandableSection, SectionRobot as Section } from '@repo/ui'
 import { toYmdHmKST } from '@/utils/dateUtils'
-import { parseDeviceInfo, parseRobotData, getLocalizedName } from '@/utils/robotUtils'
+import { parseDeviceInfo, parseRobotData, getLocalizedName, getWifiStatus } from '@/utils/robotUtils'
 import { EditButton, PlayButton, StopButton, LiveSpan } from '@/utils/style'
 import { SectionList, ControlDiv, ControlBtn } from '../styles'
 import { useModalState } from '@repo/hooks'
@@ -108,7 +108,10 @@ const AssetInfo = ({ t, deviceId }) => {
     setShowMap(false)
     try {
       const data = await deviceApis.getDeviceInfo(deviceId)
-      setDeviceInfo(parseDeviceInfo(data))
+      setDeviceInfo({
+        ...parseDeviceInfo(data),
+        wifi: getWifiStatus(data.state)
+      })
       setRobotDatas([parseRobotData(data)])
       setRobotState(data?.state)
 
@@ -323,7 +326,10 @@ const AssetInfo = ({ t, deviceId }) => {
       if (data.updatedAt === c.updatedAt && st === c.st && conn === c.conn) return
 
       // 상단 정보(이름/배터리/상태/위치)는 변경 시 갱신
-      setDeviceInfo(parseDeviceInfo(data))
+      setDeviceInfo({
+        ...parseDeviceInfo(data),
+        wifi: getWifiStatus(data.state)
+      })
       setRobotDatas([parseRobotData(data)])
 
       // PartsStatusPanel용 robotState는 hw/sen/sw 타임스탬프가 바뀐 경우에만 갱신
@@ -485,8 +491,8 @@ const AssetInfo = ({ t, deviceId }) => {
               {
                 icon: Wifi,
                 label: t('network'),
-                value: '안정'
-                //warn: robot.network !== '안정'
+                value: t(deviceInfo.wifi?.label ?? 'noData'),
+                warn: deviceInfo.wifi?.warn ?? false
               },
               {
                 icon: OperationStatus,

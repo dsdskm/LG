@@ -286,6 +286,9 @@
   "normal": "일반",
   "saveOnly": "저장 전용",
   "unconfirmed": "미확인",
+  "stable": "안정",
+  "weak": "약함",
+  "disconnected": "끊김",
   "map": {
     "guide2dMouse": "드래그: 이동 · Ctrl + 휠: 확대/축소",
     "guide2dTouch": "두 손가락: 이동 · 핀치: 확대/축소",

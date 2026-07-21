@@ -281,7 +281,7 @@ export default function useLogReplayPlayer2D({
   useEffect(() => {
     let raf = 0
     const tick = () => {
-      if (loadPhase !== 'ready') {
+      if (loadPhaseRef.current !== 'ready') {
         raf = requestAnimationFrame(tick)
         return
       }

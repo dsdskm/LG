@@ -9,7 +9,7 @@ const pathDevices = ENDPOINTS.ROBOT.DEVICES
 
 async function instantAction(params: InstantActionsRequest) {
   console.log('deployTaskFlowAction parms', params)
-  return await axiosRobot.post(pathDevices + '/' + params.deviceId + '/control', params.body)
+  const response = await axiosRobot.post(pathDevices + '/' + params.deviceId + '/instantActions', params.body)
 }
 
 export function useInstantAction() {

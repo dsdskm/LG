@@ -15,13 +15,12 @@ export interface InstantAction {
 }
 
 export interface InstantActionsPayload {
-  headerId: number
-  timestamp: string // ISO8601 (new Date().toISOString())
-  instantActions: InstantAction[]
+  userId: string
+  actions: InstantAction[]
 }
 
 export interface InstantActionsRequestBody {
-  userId: string
+  //userId: string
   payload: InstantActionsPayload
 }
 

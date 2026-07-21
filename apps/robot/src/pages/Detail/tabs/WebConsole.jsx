@@ -129,9 +129,7 @@ const WebConsole = ({ t, deviceId }) => {
         path: '/3d-view',
         port: 3000,
         icon: '🎯',
-        isRealtime: true,
-        realtimePort: 9765,
-        realtimePath: '/ws/3d-stream'
+        realtimePort: 9765
       }
     },
     CONTROL: {

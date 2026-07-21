@@ -6,7 +6,7 @@ import { deviceApis } from '@/apis'
 import { toYmdHmKST } from '@/utils/dateUtils'
 import { getStatusInfo } from '@/utils/robotUtils'
 
-const SiteRobotList = ({ siteId }) => {
+const SiteRobotList = ({ siteId, isDefaultSite }) => {
   const { t } = useTranslation('robot')
   const { t: tCommon } = useTranslation('common')
   const { session } = useUserStore()
@@ -25,14 +25,22 @@ const SiteRobotList = ({ siteId }) => {
       } finally {
       }
     },
-    [siteId]
+    [siteId, isDefaultSite]
   )
 
   function setTableList(tList) {
     let loopList = []
     for (var i = 0; i < tList.length; i++) {
-      if (tList[i].provision.isDefaultSite || tList[i].provision?.siteId != siteId) {
-        continue
+      if (isDefaultSite) {
+        // 기본 사이트인 경우: provision.isDefaultSite가 true인 로봇들만 표시
+        if (!tList[i].provision.isDefaultSite) {
+          continue
+        }
+      } else {
+        // 기본 사이트가 아닌 경우: 기존과 동일한 필터링 로직
+        if (tList[i].provision.isDefaultSite || tList[i].provision?.siteId != siteId) {
+          continue
+        }
       }
       tList[i].registeredAt = toYmdHmKST(tList[i].registeredAt)
       loopList.push(tList[i])
@@ -43,7 +51,7 @@ const SiteRobotList = ({ siteId }) => {
 
   useEffect(() => {
     loadSiteRobotList()
-  }, [])
+  }, [siteId, isDefaultSite])
 
   const columns = [
     {

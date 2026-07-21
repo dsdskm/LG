@@ -286,6 +286,9 @@
   "normal": "一般",
   "saveOnly": "保存専用",
   "unconfirmed": "未確認",
+  "stable": "安定",
+  "weak": "微弱",
+  "disconnected": "切断",
   "map": {
     "guide2dMouse": "ドラッグ: 移動 · Ctrl + ホイール: 拡大/縮小",
     "guide2dTouch": "2本指: 移動 · ピンチ: 拡大/縮小",
