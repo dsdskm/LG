@@ -24,6 +24,17 @@ type UpdatePromptBody = {
   label?: string
 }
 
+type CreatePromptBody = {
+  appKey?: string
+  key?: string
+  routeKey?: string
+  promptType?: string
+  label?: string
+  content?: string
+  enabled?: boolean
+  category?: string
+}
+
 type UpsertCommonPromptBody = {
   content?: string
   enabled?: boolean
@@ -147,6 +158,10 @@ export class ChatSettingController {
       this.chatLog.list({ limit: 20 }),
     ])
 
+    this.logger.log(
+      `[chat_settings] getAll screens=${screens.length} prompts=${prompts.length} guidance=${guidance.length} ragDocs=${ragDocs.length} screenTools=${screenTools.length} actionTypes=${actionTypes.length}`,
+    )
+
     return ok({
       schema,
       values: { ...values, llmProvider },
@@ -189,6 +204,23 @@ export class ChatSettingController {
       content: body?.content,
       enabled: body?.enabled,
       label: body?.label,
+    })
+    return ok(row)
+  }
+
+  @Post('prompts')
+  @ApiOperation({ summary: '프롬프트 생성' })
+  @ApiOkResponse({ description: '생성된 프롬프트 반환' })
+  async createPrompt(@Body() body: CreatePromptBody) {
+    const row = await this.promptStore.createPrompt({
+      appKey: body?.appKey,
+      key: String(body?.key ?? ''),
+      routeKey: body?.routeKey,
+      promptType: body?.promptType,
+      label: body?.label,
+      content: body?.content,
+      enabled: body?.enabled,
+      category: body?.category,
     })
     return ok(row)
   }

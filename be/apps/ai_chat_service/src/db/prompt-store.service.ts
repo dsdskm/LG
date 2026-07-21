@@ -204,6 +204,43 @@ export class PromptStoreService implements OnModuleInit {
     return row
   }
 
+  async createPrompt(input: {
+    appKey?: string | null
+    key: string
+    routeKey?: string | null
+    promptType?: string | null
+    label?: string | null
+    content?: string | null
+    enabled?: boolean
+    category?: string | null
+  }) {
+    const key = String(input.key ?? '').trim()
+    const promptType = String(input.promptType ?? 'system').trim() || 'system'
+    if (!key) throw new Error('prompt key is required')
+
+    const existing = await this.promptRepo.findOne({ where: { key, promptType } })
+    if (existing) return existing
+
+    const appKey = String(input.appKey ?? '').trim() || key.split('/')[0] || key
+    const routeKey = String(input.routeKey ?? '').trim() || undefined
+
+    const row = this.promptRepo.create({
+      key,
+      appKey,
+      routeKey,
+      category: String(input.category ?? 'screen').trim() || 'screen',
+      promptType,
+      label: String(input.label ?? '').trim() || '화면 프롬프트',
+      content: String(input.content ?? ''),
+      sortOrder: 0,
+      enabled: input.enabled !== false,
+    })
+
+    await this.promptRepo.save(row)
+    await this.reload()
+    return row
+  }
+
   async upsertCommonPrompt(
     patch: { content?: string; enabled?: boolean; label?: string },
   ) {

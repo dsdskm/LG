@@ -10,18 +10,7 @@ import { safeJsonParse } from '../utils/utils'
 import type { ChatIntent, ChatTurn, IntentResult } from './pipeline.types'
 
 function buildSystemPrompt(screenName: string, hints?: string): string {
-  return [
-    `너는 로봇 관제 사이트의 "${screenName}" 화면 챗봇의 인텐트 분류기다.`,
-    '사용자 발화를 아래 3가지 중 하나로 분류한다.',
-    '',
-    '- "info": 개념/용어/사용법/의미에 대한 질문. 매뉴얼·문서로 답할 수 있는 것. (예: "Critical 등급 기준이 뭐야?", "이 화면 어떻게 써?")',
-    '- "data": 실제 데이터를 조회해야 답할 수 있는 것. 건수/목록/통계/필터 조회. ("이슈"는 "이벤트"와 같은 의미다.) (예: "오늘 Critical 이벤트 몇 건?", "최근 일주일 주행 실패 로그 보여줘", "주행 이슈 보여줘", "주행 기능 이슈 보여줘")',
-    '- "action": 즉시 수행해야 하는 명령/조치. (예: "이 이벤트 재부팅 조치 실행해줘", "1번 이벤트 조치 완료 처리해줘")',
-    hints ? `\n화면 추가 정보:\n${hints}` : '',
-    '',
-    '반드시 아래 JSON 만 출력한다(코드블록 금지):',
-    '{"intent":"info|data|action","confidence":0.0~1.0,"reason":"간단한 근거"}',
-  ].join('\n')
+  return [hints ? String(hints) : ''].filter(Boolean).join('\n')
 }
 
 export class IntentClassifier {

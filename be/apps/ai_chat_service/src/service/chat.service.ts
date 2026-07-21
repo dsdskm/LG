@@ -19,9 +19,9 @@ import { getPromptStore } from '../db/prompt-store.service'
 import { findPhraseMapMatch } from '../db/query-phrase-map.repo'
 import { ChatOrchestrator } from '../pipeline/chat.orchestrator'
 import { loadChatPipelineConfig } from '../pipeline/pipeline.config'
-import type { ToolContext } from '../pipeline/tool.type'
 import type { ChatReply, ChatTurn, SuggestedAction } from '../pipeline/pipeline.types'
 import { getScreenConfig } from '../pipeline/screen-registry'
+import { buildToolContextFromBody } from '../pipeline/tool-context.util'
 import { queryEvents } from '../screens/robot/ailog-event.datatools'
 
 type RuntimeEntry = {
@@ -31,6 +31,7 @@ type RuntimeEntry = {
 
 type ChatContext = {
   body: any
+  reqId: string
   llm: LlmRuntime
   orchestrator: ChatOrchestrator
   startedAt: number
@@ -76,9 +77,24 @@ export class ChatService {
     private readonly chatSetting: ChatSettingService,
   ) { }
 
-  private stageLog(stage: string, detail?: string) {
+  private stageLog(stage: string, detail?: string, reqId?: string) {
     const suffix = detail ? ` ${detail}` : ''
-    this.logger.log(`================= [chat-stage] ${stage}${suffix}`)
+    const normalizedReqId = String(reqId ?? '').trim() || '-'
+    this.logger.log(`================= [0단계:요청처리_진행상태] [reqId=${normalizedReqId}] ${stage}${suffix}`)
+  }
+
+  private ensureReqId(body: any): string {
+    const fromBody = String(body?.reqId ?? body?.requestId ?? '').trim()
+    if (fromBody) {
+      body.reqId = fromBody
+      return fromBody
+    }
+
+    const now = Date.now().toString(36)
+    const rand = Math.random().toString(36).slice(2, 8)
+    const reqId = `req-${now}-${rand}`
+    body.reqId = reqId
+    return reqId
   }
 
   private toDisplayText(value: unknown): string {
@@ -115,37 +131,38 @@ export class ChatService {
   }
 
   async handleChat(body: any): Promise<ChatReply> {
-    this.stageLog('handleChat:start', `currentApp=${this.normalize(body?.currentApp) || '-'} currentPath=${this.normalize(body?.currentPath) || '-'} key=${this.normalize(body?.key) || '-'} message=${this.normalize(body?.message) || '-'}`)
+    const reqId = this.ensureReqId(body)
+    this.stageLog('handleChat:start', `currentApp=${this.normalize(body?.currentApp) || '-'} currentPath=${this.normalize(body?.currentPath) || '-'} key=${this.normalize(body?.key) || '-'} message=${this.normalize(body?.message) || '-'}`, reqId)
 
     const runtime = await this.resolveRuntime()
-    this.stageLog('handleChat:runtime-resolved')
+    this.stageLog('handleChat:runtime-resolved', undefined, reqId)
     // this.logger.log(`[handleChat] runtime ${JSON.stringify(runtime)}`)
     // validation check
     runtime.llm.assertConfig()
-    this.stageLog('handleChat:runtime-validated')
+    this.stageLog('handleChat:runtime-validated', undefined, reqId)
 
     const ctx = await this.buildChatContext(body, runtime)
-    this.stageLog('handleChat:context-built', `routeKey=${ctx.key} historyTurns=${ctx.history.length}`)
+    this.stageLog('handleChat:context-built', `routeKey=${ctx.key} historyTurns=${ctx.history.length}`, reqId)
     // this.logger.log(`[handleChat] ctx ${JSON.stringify(ctx)}`)
 
     const ruleFirstReply = await this.tryRuleFirstEventQuery(ctx)
     if (ruleFirstReply) {
-      this.stageLog('handleChat:rule-first-handled', `chatAction=${ruleFirstReply.chat_action}`)
+      this.stageLog('handleChat:rule-first-handled', `chatAction=${ruleFirstReply.chat_action}`, reqId)
       return this.withSuggestedActions(ruleFirstReply, ctx)
     }
 
-    this.stageLog('handleChat:pipeline-begin')
+    this.stageLog('handleChat:pipeline-begin', undefined, reqId)
     const pipelineReply = await this.handleScreenPipeline(ctx)
     this.logger.log(`[handleChat] pipelineReply ${pipelineReply}`)
     if (pipelineReply) {
-      this.stageLog('handleChat:pipeline-handled', `chatAction=${pipelineReply.chat_action}`)
+      this.stageLog('handleChat:pipeline-handled', `chatAction=${pipelineReply.chat_action}`, reqId)
       return this.withSuggestedActions(pipelineReply, ctx)
     }
 
     // 미등록 화면 또는 pipeline 실패 시 기존 guidance 경로
-    this.stageLog('handleChat:guidance-fallback-begin')
+    this.stageLog('handleChat:guidance-fallback-begin', undefined, reqId)
     const guidanceReply = await this.handleGuidance(ctx)
-    this.stageLog('handleChat:guidance-fallback-done', `chatAction=${guidanceReply.chat_action}`)
+    this.stageLog('handleChat:guidance-fallback-done', `chatAction=${guidanceReply.chat_action}`, reqId)
     return this.withSuggestedActions(guidanceReply, ctx)
   }
 
@@ -245,10 +262,11 @@ export class ChatService {
   }
 
   private async buildChatContext(body: any, runtime: RuntimeEntry): Promise<ChatContext> {
+    const reqId = this.ensureReqId(body)
     const currentApp = this.normalize(body.currentApp)
     const currentPath = this.normalize(body.currentPath)
     const message = this.normalize(body.message)
-    const key = this.resolveRouteKey(body, currentApp, currentPath)
+    const key = this.resolveRouteKey(body, currentApp, currentPath, reqId)
     const author = this.resolveAuthor(body)
     const conversationId = this.resolveConversationId(body)
 
@@ -269,11 +287,12 @@ export class ChatService {
     })
 
     this.logger.log(
-      `[chat] history-context author=${author || '-'} conversationId=${conversationId || '-'} currentApp=${currentApp || '-'} turns=${history.length}`,
+      `[chat] [reqId=${reqId}] history-context author=${author || '-'} conversationId=${conversationId || '-'} currentApp=${currentApp || '-'} turns=${history.length}`,
     )
 
     return {
       body,
+      reqId,
       llm: runtime.llm,
       orchestrator: runtime.orchestrator,
       startedAt: Date.now(),
@@ -291,21 +310,43 @@ export class ChatService {
     return String(value ?? '').trim()
   }
 
-  private resolveRouteKey(body: any, currentApp: string, currentPath: string): string {
-    const explicit = this.normalize(body?.key)
-    if (explicit) return explicit
+  private resolveRouteKey(body: any, currentApp: string, currentPath: string, reqId?: string): string {
+    const explicitCandidates = [
+      { source: 'key', value: this.normalize(body?.key) },
+      { source: 'routeKey', value: this.normalize(body?.routeKey) },
+      { source: 'screenRouteKey', value: this.normalize(body?.screenRouteKey) },
+    ]
+
+    const explicit = explicitCandidates.find((candidate) => candidate.value)
+    if (explicit?.value) {
+      this.logger.log(
+        `[route-key] [reqId=${String(reqId ?? '-').trim() || '-'}] source=${explicit.source} key=${explicit.value} rawKey=${this.normalize(body?.key) || '-'} rawRouteKey=${this.normalize(body?.routeKey) || '-'} rawScreenRouteKey=${this.normalize(body?.screenRouteKey) || '-'} currentApp=${currentApp || '-'} currentPath=${currentPath || '-'}`,
+      )
+      return explicit.value
+    }
 
     const app = this.normalize(currentApp)
     const path = this.normalize(currentPath).replace(/^\/+/, '')
 
     if (app && path) {
       if (path === app || path.startsWith(`${app}/`)) {
+        this.logger.log(
+          `[route-key] [reqId=${String(reqId ?? '-').trim() || '-'}] source=currentPath key=${path} rawKey=${this.normalize(body?.key) || '-'} rawRouteKey=${this.normalize(body?.routeKey) || '-'} rawScreenRouteKey=${this.normalize(body?.screenRouteKey) || '-'} currentApp=${app} currentPath=${path}`,
+        )
         return path
       }
-      return `${app}/${path}`.replace(/\/+/g, '/')
+      const normalized = `${app}/${path}`.replace(/\/+/g, '/')
+      this.logger.log(
+        `[route-key] [reqId=${String(reqId ?? '-').trim() || '-'}] source=currentApp+currentPath key=${normalized} rawKey=${this.normalize(body?.key) || '-'} rawRouteKey=${this.normalize(body?.routeKey) || '-'} rawScreenRouteKey=${this.normalize(body?.screenRouteKey) || '-'} currentApp=${app} currentPath=${path}`,
+      )
+      return normalized
     }
 
-    return path || app
+    const fallback = path || app
+    this.logger.log(
+      `[route-key] [reqId=${String(reqId ?? '-').trim() || '-'}] source=fallback key=${fallback || '-'} rawKey=${this.normalize(body?.key) || '-'} rawRouteKey=${this.normalize(body?.routeKey) || '-'} rawScreenRouteKey=${this.normalize(body?.screenRouteKey) || '-'} currentApp=${app || '-'} currentPath=${path || '-'}`,
+    )
+    return fallback
   }
 
   private resolveAuthor(body: any): string {
@@ -337,12 +378,12 @@ export class ChatService {
    * 4. intent별 처리
    */
   private async handleScreenPipeline(ctx: ChatContext): Promise<ChatReply | null> {
-    this.stageLog('screen-pipeline:start', `requestedRoute=${ctx.key}`)
-    const matchedRouteKey = this.findNearestRegisteredRouteKey(ctx.key)
+    this.stageLog('screen-pipeline:start', `requestedRoute=${ctx.key}`, ctx.reqId)
+    const matchedRouteKey = this.findNearestRegisteredRouteKey(ctx.key, ctx.reqId)
 
     if (!matchedRouteKey) {
       this.logger.log(`[handleScreenPipeline] unregistered screen route=${ctx.key}`)
-      this.stageLog('screen-pipeline:unregistered', `requestedRoute=${ctx.key}`)
+      this.stageLog('screen-pipeline:unregistered', `requestedRoute=${ctx.key}`, ctx.reqId)
       return null
     }
 
@@ -364,11 +405,11 @@ export class ChatService {
       this.logger.log(
         `[handleScreenPipeline] route fallback original=${ctx.key} matched=${matchedRouteKey}`,
       )
-      this.stageLog('screen-pipeline:route-fallback', `original=${ctx.key} matched=${matchedRouteKey}`)
+      this.stageLog('screen-pipeline:route-fallback', `original=${ctx.key} matched=${matchedRouteKey}`, ctx.reqId)
     }
 
     this.logger.log(`[handleScreenPipeline] key=${routeCtx.key}`)
-    this.stageLog('screen-pipeline:dispatch', `route=${routeCtx.key}`)
+    this.stageLog('screen-pipeline:dispatch', `route=${routeCtx.key}`, ctx.reqId)
     try {
       if (routeCtx.key === 'robot/ailog/event') {
         return this.handleRobotAilogEventScreen(routeCtx)
@@ -387,34 +428,78 @@ export class ChatService {
       this.logger.error(
         `[chat] screen pipeline error route=${routeCtx.key} err=${e?.message ?? String(e)}`,
       )
-      this.stageLog('screen-pipeline:error', `route=${routeCtx.key} err=${e?.message ?? String(e)}`)
+      this.stageLog('screen-pipeline:error', `route=${routeCtx.key} err=${e?.message ?? String(e)}`, ctx.reqId)
       return null
     }
   }
 
-  private isRegisteredScreen(routeKey: string) {
-    return Boolean(getScreenConfig(routeKey))
+  private isRegisteredScreen(routeKey: string, reqId?: string) {
+    return Boolean(getScreenConfig(routeKey, reqId))
   }
 
-  private findNearestRegisteredRouteKey(routeKey: string): string | null {
+  private matchRouteTemplate(template: string, actual: string): boolean {
+    const tpl = String(template ?? '').trim().replace(/^\/+/, '')
+    const act = String(actual ?? '').trim().replace(/^\/+/, '')
+    if (!tpl || !act) return false
+
+    const tplSeg = tpl.split('/').filter(Boolean)
+    const actSeg = act.split('/').filter(Boolean)
+    if (tplSeg.length !== actSeg.length) return false
+
+    for (let i = 0; i < tplSeg.length; i += 1) {
+      const t = tplSeg[i]
+      const a = actSeg[i]
+      if (!t || !a) return false
+      if (t.startsWith(':')) continue
+      if (t !== a) return false
+    }
+
+    return true
+  }
+
+  private findParameterizedRegisteredRouteKey(routeKey: string): string | null {
     const normalized = String(routeKey ?? '').trim().replace(/^\/+/, '')
     if (!normalized) return null
 
-    if (this.isRegisteredScreen(normalized)) {
+    const store = getPromptStore()
+    const screens = store?.getEnabledScreens() ?? []
+
+    const matched = screens
+      .map((screen) => String(screen.key ?? '').trim())
+      .filter((key) => key && key.includes('/:'))
+      .filter((key) => this.matchRouteTemplate(key, normalized))
+      .sort((a, b) => b.length - a.length)[0]
+
+    return matched || null
+  }
+
+  private findNearestRegisteredRouteKey(routeKey: string, reqId?: string): string | null {
+    const normalized = String(routeKey ?? '').trim().replace(/^\/+/, '')
+    if (!normalized) return null
+
+    if (this.isRegisteredScreen(normalized, reqId)) {
       return normalized
+    }
+
+    const parameterized = this.findParameterizedRegisteredRouteKey(normalized)
+    if (parameterized && this.isRegisteredScreen(parameterized, reqId)) {
+      this.logger.log(
+        `[handleScreenPipeline] param route match original=${normalized} matched=${parameterized}`,
+      )
+      return parameterized
     }
 
     const segments = normalized.split('/').filter(Boolean)
     for (let i = segments.length - 1; i > 0; i -= 1) {
       const candidate = segments.slice(0, i).join('/')
-      if (this.isRegisteredScreen(candidate)) {
+      if (this.isRegisteredScreen(candidate, reqId)) {
         return candidate
       }
     }
 
     const heuristicCandidates = this.getHeuristicFallbackCandidates(normalized)
     for (const candidate of heuristicCandidates) {
-      if (this.isRegisteredScreen(candidate)) {
+      if (this.isRegisteredScreen(candidate, reqId)) {
         this.logger.log(
           `[handleScreenPipeline] heuristic route fallback original=${normalized} matched=${candidate}`,
         )
@@ -590,9 +675,10 @@ export class ChatService {
     ctx: ChatContext,
     intent: ScreenTask,
   ): Promise<ChatReply | null> {
-    this.stageLog('orchestrator:start', `route=${ctx.key} screenTask=${intent} message=${ctx.message}`)
+    this.stageLog('orchestrator:start', `route=${ctx.key} screenTask=${intent} message=${ctx.message}`, ctx.reqId)
     const pipelineBody = {
       ...ctx.body,
+      reqId: ctx.reqId,
       routeKey: ctx.key,
       screenRouteKey: ctx.key,
       screenTask: intent,
@@ -604,14 +690,14 @@ export class ChatService {
       pipelineBody,
     )
     this.logger.log(`[runOrchestrator] out ${JSON.stringify(out)}`)
-    this.stageLog('orchestrator:result', `handled=${String(out.handled)} hasReply=${String(Boolean(out.reply))}`)
+    this.stageLog('orchestrator:result', `handled=${String(out.handled)} hasReply=${String(Boolean(out.reply))}`, ctx.reqId)
     if (out.handled && out.reply) {
       await this.saveLog(ctx.body, out.reply, ctx)
-      this.stageLog('orchestrator:reply-saved', `chatAction=${out.reply.chat_action}`)
+      this.stageLog('orchestrator:reply-saved', `chatAction=${out.reply.chat_action}`, ctx.reqId)
       return out.reply
     }
 
-    this.stageLog('orchestrator:no-reply')
+    this.stageLog('orchestrator:no-reply', undefined, ctx.reqId)
     return null
   }
 
@@ -620,7 +706,7 @@ export class ChatService {
    * phrase map 에 매칭되는 robot/ailog/event 조회 문장은 LLM 없이 즉시 처리한다.
    */
   private async tryRuleFirstEventQuery(ctx: ChatContext): Promise<ChatReply | null> {
-    const matchedRouteKey = this.findNearestRegisteredRouteKey(ctx.key)
+    const matchedRouteKey = this.findNearestRegisteredRouteKey(ctx.key, ctx.reqId)
     const isAilogRoute =
       matchedRouteKey === 'robot/ailog/event' ||
       matchedRouteKey === 'robot/ailog' ||
@@ -637,7 +723,7 @@ export class ChatService {
       /(오늘|어제|일주일|한달|한\s*달|1개월|3개월|3달|\d{1,2}월\s*\d{1,2}일|부터|까지)/.test(normalizedMessage)
 
     if (!phraseMatch && !heuristicQuickQuery) {
-      this.stageLog('rule-first:miss', `route=${matchedRouteKey || ctx.key} message=${ctx.message}`)
+      this.stageLog('rule-first:miss', `route=${matchedRouteKey || ctx.key} message=${ctx.message}`, ctx.reqId)
       return null
     }
 
@@ -645,30 +731,20 @@ export class ChatService {
       this.stageLog(
         'rule-first:match',
         `route=${matchedRouteKey || ctx.key} matchType=${phraseMatch.matchType ?? 'exact'} intent=${phraseMatch.intentKey}`,
+        ctx.reqId,
       )
     } else {
-      this.stageLog('rule-first:heuristic', `route=${matchedRouteKey || ctx.key} message=${ctx.message}`)
+      this.stageLog('rule-first:heuristic', `route=${matchedRouteKey || ctx.key} message=${ctx.message}`, ctx.reqId)
     }
 
-    const bodyContext =
-      ctx.body?.context && typeof ctx.body.context === 'object' && !Array.isArray(ctx.body.context)
-        ? (ctx.body.context as Record<string, unknown>)
-        : {}
-
-    const toolCtx: ToolContext = {
-      accessToken: ctx.body?.accessToken,
-      apiBaseUrl: ctx.body?.apiBaseUrl,
-      eventAnalyzerUrl: ctx.body?.eventAnalyzerUrl,
-      configManagerUrl: ctx.body?.configManagerUrl,
-      context: {
-        ...bodyContext,
-        __userMessage: ctx.message,
-      },
+    const toolCtx = buildToolContextFromBody({
+      body: ctx.body,
+      message: ctx.message,
       log: {
         log: (m) => this.logger.log(m),
         error: (m) => this.logger.error(m),
       },
-    }
+    })
 
     try {
       const result = (await queryEvents.execute({}, toolCtx)) as any
@@ -677,7 +753,7 @@ export class ChatService {
         : undefined
       const summary = this.toDisplayText(result?.summary)
 
-      const screen = getScreenConfig('robot/ailog/event')
+      const screen = getScreenConfig('robot/ailog/event', ctx.reqId)
       const reply: ChatReply = {
         chat_action: screen?.chatActions.data ?? 'ailog/event/filter',
         chat_action_param: filters ? { filters } : undefined,
@@ -685,13 +761,13 @@ export class ChatService {
       }
 
       await this.saveLog(ctx.body, reply, ctx)
-      this.stageLog('rule-first:served', `route=${matchedRouteKey} chatAction=${reply.chat_action}`)
+      this.stageLog('rule-first:served', `route=${matchedRouteKey} chatAction=${reply.chat_action}`, ctx.reqId)
       return reply
     } catch (e: any) {
       this.logger.warn(
         `[rule-first] direct query failed route=${matchedRouteKey} err=${e?.message ?? String(e)}; fallback to pipeline`,
       )
-      this.stageLog('rule-first:error', `route=${matchedRouteKey} err=${e?.message ?? String(e)}`)
+      this.stageLog('rule-first:error', `route=${matchedRouteKey} err=${e?.message ?? String(e)}`, ctx.reqId)
       return null
     }
   }

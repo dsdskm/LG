@@ -17,6 +17,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { ChatService } from '../service/chat.service';
+import { resolveTaskflowContextSource } from '../pipeline/taskflow-context-source.util';
 
 @ApiTags('chat')
 @Controller('chat')
@@ -45,10 +46,15 @@ export class ChatController {
   async chatSiteAssistant(
     @Body() body: ChatPayload,
   ): Promise<ApiResponse<unknown>> {
-    this.logger.log(`[chatSiteAssitant] message=${body.message} currentPath=${body.currentPath}`)
+    const reqId = String((body as any)?.reqId ?? (body as any)?.requestId ?? '').trim() || '-'
+    const selectedTaskflowContext = resolveTaskflowContextSource(body?.context)
+    this.logger.log(`[chatSiteAssitant] [reqId=${reqId}] message=${body.message} currentPath=${body.currentPath}`)
     this.logger.log(`[chatSiteAssitant] apiBaseUrl=${body.apiBaseUrl} eventAnalyzerUrl=${body.eventAnalyzerUrl} configManager=${body.configManagerUrl}`)
     this.logger.log(`[chatSiteAssitant] context=${JSON.stringify(body.context)}`)
-    this.logger.log(`[chatSiteAssitant] key=${body.key}`)
+    this.logger.log(`[chatSiteAssitant] [reqId=${reqId}] taskflowContextSource=${selectedTaskflowContext.source}`)
+    this.logger.log(
+      `[chatSiteAssitant] [reqId=${reqId}] keyVars key=${String((body as any)?.key ?? '') || '-'} routeKey=${String((body as any)?.routeKey ?? '') || '-'} screenRouteKey=${String((body as any)?.screenRouteKey ?? '') || '-'} currentApp=${String((body as any)?.currentApp ?? '') || '-'} currentPath=${String((body as any)?.currentPath ?? '') || '-'}`,
+    )
     // this.logger.log(`[chatSiteAssitant] history=${JSON.stringify(body.history)}`)
 
     const reply = await this.chatService.handleChat(body);

@@ -91,9 +91,16 @@ export class RagService {
 
     let hits: RetrievedChunk[] = []
     let usedCollection: string | undefined
-    this.logger.log(`names ${JSON.stringify(names)}`)
+    this.logger.log(`================= [3-1단계:RAG_컬렉션후보] names=${JSON.stringify(names)} message=${JSON.stringify(message)} historyTurns=${history.length}`)
     for (const name of names) {
+      const resolvedCollection = this.resolveCollection(name)
+      this.logger.log(
+        `================= [3-1-1단계:RAG_컬렉션원문] collection=${name} exists=${Boolean(resolvedCollection)} scope=${resolvedCollection?.scope ?? '-'} chunkCount=${Array.isArray(resolvedCollection?.chunks) ? resolvedCollection?.chunks.length : 0} chunks=${JSON.stringify(resolvedCollection?.chunks ?? [])}`,
+      )
       const found = this.retrieve(name, message)
+      this.logger.log(
+        `================= [3-2단계:RAG_컬렉션탐색] collection=${name} hitCount=${found.length} hits=${JSON.stringify(found.map((row) => ({ id: row.chunk.id, title: row.chunk.title, keywords: row.chunk.keywords, body: row.chunk.body, score: row.score })))} `,
+      )
       if (found.length) {
         hits = found
         usedCollection = name
@@ -101,6 +108,7 @@ export class RagService {
       }
     }
     if (hits.length === 0) {
+      this.logger.log('================= [3-3단계:RAG_탐색결과] no-hit')
       return { text: '', usedChunks: [] }
     }
 
@@ -112,23 +120,18 @@ export class RagService {
 
     const commonSystem = getPromptStore()?.getPromptContent('common', 'system') ?? ''
 
-    const ragSystem = [
-      `너는 "${collection?.scope ?? ''}" 화면의 안내 챗봇이다.`,
-      '아래 문서 내용에만 근거해 한국어로 간결하게(2~4문장) 답한다.',
-      '문서에 없는 내용은 지어내지 말고, 모르면 그렇게 말한다.',
-      '',
-      '=== 문서 ===',
-      context,
-    ].join('\n')
+    const ragSystem = context
 
     const system = [commonSystem, ragSystem].filter(Boolean).join('\n\n')
 
     this.logger.log(
-      `[ragService] prompt-apply collection=${usedCollection ?? '-'} commonSystemApplied=${Boolean(commonSystem)} systemLen=${system.length}`,
+      `================= [3-4단계:RAG_프롬프트생성] collection=${usedCollection ?? '-'} usedChunkCount=${hits.length} commonSystemApplied=${Boolean(commonSystem)} systemLen=${system.length}`,
     )
-    this.logger.log(`[ragService] prompt-apply commonSystemText=${JSON.stringify(commonSystem)}`)
+    this.logger.log(`================= [3-5단계:RAG_공통프롬프트원문] commonSystemText=${JSON.stringify(commonSystem)}`)
+    this.logger.log(`================= [3-5-1단계:RAG_주입컨텍스트원문] collection=${usedCollection ?? '-'} ragSystemText=${JSON.stringify(ragSystem)}`)
+    this.logger.log(`================= [3-5-2단계:RAG_최종시스템프롬프트원문] collection=${usedCollection ?? '-'} systemText=${JSON.stringify(system)}`)
 
-    this.logger.log(`[ragService] system ${system}`)
+    // this.logger.log(`[ragService] system ${system}`)
 
     const res = await this.client.generateContent({
       messages: [
@@ -140,6 +143,9 @@ export class RagService {
     })
 
     const text = (res.text ?? '').trim()
+    this.logger.log(
+      `================= [3-6단계:RAG_응답생성완료] collection=${usedCollection ?? '-'} textLength=${text.length} usedChunks=${JSON.stringify(hits.map((h) => h.chunk.id))}`,
+    )
     return {
       text,
       usedCollection,
