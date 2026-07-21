@@ -800,9 +800,34 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
   loadTasks: async (groupId: string | null, siteId: string | null) => {
     set({ loadingTasks: true })
     try {
+      console.log('[TASK_PANEL][LOAD_START]', {
+        groupId,
+        siteId,
+      })
+
       const rawTasks = await listTasks({ groupId, siteId, include: 'contents' })
+      console.log('[TASK_PANEL][LOAD_RAW]', {
+        count: rawTasks.length,
+        tasks: rawTasks.map((task) => ({
+          id: task.id,
+          name: task.name,
+          taskType: task.taskType,
+          contentsCount: Array.isArray((task as any)?.contents) ? (task as any).contents.length : 0,
+        })),
+      })
+
       const tasks = rawTasks.map(normalizeTaskPayload)
       const { palette, contentsList } = buildPaletteAndCatalog(tasks)
+
+      console.log('[TASK_PANEL][LOAD_BUILT]', {
+        taskCount: tasks.length,
+        paletteCount: palette.length,
+        contentsCount: contentsList.length,
+        controlTaskCount: tasks.filter((task) => task.taskType === TASK_TYPE_CONTROL).length,
+        actionTaskCount: tasks.filter((task) => task.taskType === 'ACTION').length,
+        rootTaskCount: tasks.filter((task) => task.taskType === TASK_TYPE_ROOT).length,
+      })
+
       // tasks 로드 전에 캔버스가 먼저 초기화된 경우, 지금 start 노드에 ROOT task 정보를 반영한다.
       set((state) => ({
         tasks,
@@ -815,6 +840,10 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
       set({ tasks: [], palette: [], contentsList: [] })
     } finally {
       set({ loadingTasks: false })
+      console.log('[TASK_PANEL][LOAD_END]', {
+        groupId,
+        siteId,
+      })
     }
   },
 

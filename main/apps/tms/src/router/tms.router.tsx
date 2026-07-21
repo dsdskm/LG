@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { Routes, Route } from 'react-router-dom'
-import { MainLayout } from '@repo/ui'
+import { AiAssistantPanel, MainLayout } from '@repo/ui'
 import RouteSync from './tms.routeSync'
 
 type RouteItem = {
@@ -40,7 +40,21 @@ const Router = ({ allRoutes, appPrefix, processedAppRoutes, headerRoutes, appT }
               path={item.path}
               element={
                 isFullscreen ? (
-                  item.element
+                  <>
+                    {item.element}
+                    <div
+                      style={{
+                        position: 'fixed',
+                        right: 0,
+                        top: 0,
+                        height: '100vh',
+                        display: 'flex',
+                        zIndex: 850,
+                      }}
+                    >
+                      <AiAssistantPanel />
+                    </div>
+                  </>
                 ) : (
                   <MainLayout
                     currentApp={appPrefix}

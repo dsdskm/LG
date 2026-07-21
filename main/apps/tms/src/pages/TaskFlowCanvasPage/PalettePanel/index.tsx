@@ -77,6 +77,23 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
   const [openMap, setOpenMap] = useState<Record<number, boolean>>({})
   const [defaultOpen, setDefaultOpen] = useState(false)
 
+  useEffect(() => {
+    console.log('[TASK_PANEL][VISIBLE_LIST]', {
+      loading,
+      totalTasks: tasks.length,
+      controlTaskCount: controlTasks.length,
+      actionTaskCount: otherTasks.length,
+      directActionTaskCount: directActionTasks.length,
+      expandableTaskCount: expandableTasks.length,
+      visibleTasks: tasks.map((task) => ({
+        id: task.id,
+        name: task.name,
+        taskType: task.taskType,
+        contentsCount: Array.isArray(task.contents) ? task.contents.length : 0,
+      })),
+    })
+  }, [loading, tasks, controlTasks.length, otherTasks.length, directActionTasks.length, expandableTasks.length])
+
   return (
     <PanelRoot>
       <HeaderRow>

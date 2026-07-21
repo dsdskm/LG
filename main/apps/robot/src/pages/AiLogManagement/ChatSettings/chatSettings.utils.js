@@ -53,6 +53,50 @@ export const getScreenTitle = (group) => {
 export const groupScreenSettings = (screens, prompts, guidance, ragDocs, screenTools) => {
     const map = new Map()
 
+    const buildLookupRouteKeys = (routeKey) => {
+        const normalized = normalizeRoute(routeKey)
+        if (!normalized) return ['common']
+
+        const segments = normalized.split('/').filter(Boolean)
+        const parents = Array.from({ length: Math.max(segments.length - 1, 0) }, (_, idx) =>
+            segments.slice(0, segments.length - 1 - idx).join('/')
+        )
+
+        return [normalized, ...parents, 'common'].filter(Boolean)
+    }
+
+    const buildInheritedTools = (routeKey) => {
+        const lookupKeys = buildLookupRouteKeys(routeKey)
+        const priority = new Map(lookupKeys.map((key, idx) => [key, idx]))
+
+        const candidates = (Array.isArray(screenTools) ? screenTools : [])
+            .filter((tool) => tool?.enabled !== false)
+            .map((tool) => {
+                const key = normalizeRoute(tool?.key ?? tool?.routeKey)
+                return { tool, key, priority: priority.get(key) }
+            })
+            .filter((item) => item.priority !== undefined)
+            .sort((left, right) => {
+                if (left.priority !== right.priority) return Number(left.priority) - Number(right.priority)
+                if (Number(left.tool?.sortOrder ?? 0) !== Number(right.tool?.sortOrder ?? 0)) {
+                    return Number(left.tool?.sortOrder ?? 0) - Number(right.tool?.sortOrder ?? 0)
+                }
+                return String(left.tool?.toolName ?? '').localeCompare(String(right.tool?.toolName ?? ''))
+            })
+
+        const seen = new Set()
+        const merged = []
+
+        for (const item of candidates) {
+            const toolName = String(item.tool?.toolName ?? '').trim()
+            if (!toolName || seen.has(toolName)) continue
+            seen.add(toolName)
+            merged.push(item.tool)
+        }
+
+        return merged
+    }
+
     for (const item of screens) {
         const routeKey = getScreenRouteKey(item)
         map.set(routeKey, {
@@ -150,7 +194,7 @@ export const groupScreenSettings = (screens, prompts, guidance, ragDocs, screenT
             prompts: group.prompts.slice().sort((left, right) => Number(left.sortOrder ?? 0) - Number(right.sortOrder ?? 0)),
             guidance: group.guidance.slice().sort((left, right) => String(left.key).localeCompare(String(right.key))),
             ragDocs: group.ragDocs.slice().sort((left, right) => Number(left.sortOrder ?? 0) - Number(right.sortOrder ?? 0)),
-            tools: group.tools.slice().sort((left, right) => String(left.toolName).localeCompare(String(right.toolName))),
+            tools: buildInheritedTools(group.routeKey),
         }))
         .sort((left, right) => getScreenTitle(left).localeCompare(getScreenTitle(right)))
 }

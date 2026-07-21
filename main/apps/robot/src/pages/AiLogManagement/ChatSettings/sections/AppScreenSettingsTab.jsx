@@ -83,6 +83,7 @@ export const AppScreenSettingsTab = ({
     commonPromptDraft,
     actionTypes,
     promptDrafts,
+    creatingPromptRouteKey,
     guidanceDrafts,
     ragDrafts,
     toolDrafts,
@@ -96,6 +97,7 @@ export const AppScreenSettingsTab = ({
     savingToolKey,
     onPromptChange,
     onSavePrompt,
+    onCreatePrompt,
     onGuidanceChange,
     onSaveGuidance,
     onCreateGuidance,
@@ -132,6 +134,7 @@ export const AppScreenSettingsTab = ({
                         commonPromptDraft={commonPromptDraft}
                         actionTypes={actionTypes}
                         promptDrafts={promptDrafts}
+                        creatingPromptRouteKey={creatingPromptRouteKey}
                         guidanceDrafts={guidanceDrafts}
                         ragDrafts={ragDrafts}
                         toolDrafts={toolDrafts}
@@ -145,6 +148,7 @@ export const AppScreenSettingsTab = ({
                         savingToolKey={savingToolKey}
                         onPromptChange={onPromptChange}
                         onSavePrompt={onSavePrompt}
+                        onCreatePrompt={onCreatePrompt}
                         onGuidanceChange={onGuidanceChange}
                         onSaveGuidance={onSaveGuidance}
                         onCreateGuidance={onCreateGuidance}
@@ -181,6 +185,7 @@ const ScreenSettingGroup = ({
     commonPromptDraft,
     actionTypes,
     promptDrafts,
+    creatingPromptRouteKey,
     guidanceDrafts,
     ragDrafts,
     toolDrafts,
@@ -194,6 +199,7 @@ const ScreenSettingGroup = ({
     savingToolKey,
     onPromptChange,
     onSavePrompt,
+    onCreatePrompt,
     onGuidanceChange,
     onSaveGuidance,
     onCreateGuidance,
@@ -225,11 +231,16 @@ const ScreenSettingGroup = ({
                 <ScreenPromptList
                     commonPromptItem={commonPromptItem}
                     commonPromptDraft={commonPromptDraft}
+                    appKey={String(group.routeKey ?? '').split('/')[0] || ''}
+                    routeKey={group.routeKey}
+                    routeParentKey={group.routeParentKey}
                     prompts={group.prompts}
                     promptDrafts={promptDrafts}
                     savingPromptKey={savingPromptKey}
+                    creatingPromptRouteKey={creatingPromptRouteKey}
                     onPromptChange={onPromptChange}
                     onSavePrompt={onSavePrompt}
+                    onCreatePrompt={onCreatePrompt}
                 />
                 <ScreenGuidanceList
                     appKey={String(group.routeKey ?? '').split('/')[0] || ''}
@@ -276,8 +287,34 @@ const ScreenSettingGroup = ({
     )
 }
 
-const ScreenPromptList = ({ commonPromptItem, commonPromptDraft, prompts, promptDrafts, savingPromptKey, onPromptChange, onSavePrompt }) => {
+const ScreenPromptList = ({ commonPromptItem, commonPromptDraft, appKey, routeKey, routeParentKey, prompts, promptDrafts, savingPromptKey, creatingPromptRouteKey, onPromptChange, onSavePrompt, onCreatePrompt }) => {
     const [previewOpen, setPreviewOpen] = useState(false)
+    const [createOpen, setCreateOpen] = useState(false)
+    const [createDraft, setCreateDraft] = useState({
+        label: '화면 프롬프트',
+        content: '',
+        enabled: true,
+    })
+
+    const normalizedRouteKey = String(routeKey ?? '').trim()
+    const isCreatingHere = creatingPromptRouteKey === normalizedRouteKey
+
+    const handleCreateSubmit = async () => {
+        const ok = await onCreatePrompt({
+            appKey,
+            routeKey: normalizedRouteKey,
+            routeParentKey,
+            content: createDraft.content,
+            label: createDraft.label,
+            promptType: 'system',
+            enabled: createDraft.enabled,
+        })
+
+        if (ok) {
+            setCreateOpen(false)
+            setCreateDraft({ label: '화면 프롬프트', content: '', enabled: true })
+        }
+    }
 
     return (
         <div style={{ display: 'grid', gap: '12px' }}>
@@ -287,14 +324,55 @@ const ScreenPromptList = ({ commonPromptItem, commonPromptDraft, prompts, prompt
                     <ComingSoonBadge>공통 1개 + 화면 {prompts.length}개</ComingSoonBadge>
                 </CardHeader>
 
-                <SecondaryTextButton type="button" onClick={() => setPreviewOpen(true)}>
-                    공통 프롬프트 미리보기
-                </SecondaryTextButton>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <SecondaryTextButton type="button" onClick={() => setPreviewOpen(true)}>
+                        공통 프롬프트 미리보기
+                    </SecondaryTextButton>
+                    <PrimaryButton type="button" onClick={() => setCreateOpen((prev) => !prev)} disabled={!normalizedRouteKey || isCreatingHere}>
+                        {isCreatingHere ? '생성 중...' : createOpen ? '닫기' : '화면 프롬프트 추가'}
+                    </PrimaryButton>
+                </div>
             </SectionTitleRow>
 
             <PageDescription>
                 실제 호출 시 공통 프롬프트가 먼저 적용되고, 아래 화면 프롬프트가 이어서 함께 전달됩니다.
             </PageDescription>
+
+            {(createOpen || prompts.length === 0) ? (
+                <PromptCard>
+                    <PromptMeta>
+                        <span>{prompts[0]?.label || '화면 프롬프트'}</span>
+                        <span>key: {normalizedRouteKey || '-'}</span>
+                        <span>type: system</span>
+                    </PromptMeta>
+
+                    <FieldLabel>프롬프트</FieldLabel>
+                    <PromptTextarea
+                        value={createDraft.content}
+                        onChange={(e) => setCreateDraft((prev) => ({ ...prev, content: e.target.value }))}
+                        placeholder="이 화면에 적용할 프롬프트를 입력하세요."
+                        style={{ minHeight: '160px' }}
+                    />
+
+                    <PromptFooter>
+                        <ToggleButton
+                            type="button"
+                            $active={createDraft.enabled}
+                            onClick={() => setCreateDraft((prev) => ({ ...prev, enabled: !prev.enabled }))}
+                        >
+                            {createDraft.enabled ? '활성' : '비활성'}
+                        </ToggleButton>
+
+                        <SecondaryTextButton type="button" onClick={() => setCreateOpen(false)}>
+                            취소
+                        </SecondaryTextButton>
+
+                        <PrimaryButton type="button" onClick={handleCreateSubmit} disabled={isCreatingHere}>
+                            {isCreatingHere ? '저장 중...' : '저장'}
+                        </PrimaryButton>
+                    </PromptFooter>
+                </PromptCard>
+            ) : null}
 
             <OptionList>
                 {prompts.length > 0 ? (
@@ -346,7 +424,7 @@ const ScreenPromptList = ({ commonPromptItem, commonPromptDraft, prompts, prompt
                         )
                     })
                 ) : (
-                    <PageDescription>이 화면 전용 프롬프트가 없습니다. 현재는 공통 프롬프트만 적용됩니다.</PageDescription>
+                    <PageDescription>이 화면 전용 프롬프트가 없습니다. 위 입력칸에서 새 프롬프트를 추가할 수 있습니다.</PageDescription>
                 )}
             </OptionList>
 

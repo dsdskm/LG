@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   createCommonChatScreenTool,
   createChatGuidance,
+  createChatPrompt,
   createChatRagDoc,
   createChatScreenTool,
   getChatSettings,
@@ -85,6 +86,7 @@ const ChatSettings = () => {
 
   const [saving, setSaving] = useState(false)
   const [savingPromptKey, setSavingPromptKey] = useState('')
+  const [creatingPromptRouteKey, setCreatingPromptRouteKey] = useState('')
   const [savingCommonPrompt, setSavingCommonPrompt] = useState(false)
   const [savingGuidanceKey, setSavingGuidanceKey] = useState('')
   const [creatingGuidanceRouteKey, setCreatingGuidanceRouteKey] = useState('')
@@ -123,6 +125,15 @@ const ChatSettings = () => {
         actionTypes: Array.isArray(nextManagement.actionTypes) ? nextManagement.actionTypes : [],
         history: Array.isArray(nextManagement.history) ? nextManagement.history : [],
       }
+
+      console.info('[chat-settings] management payload summary', {
+        screens: normalizedManagement.screens.length,
+        prompts: normalizedManagement.prompts.length,
+        guidance: normalizedManagement.guidance.length,
+        ragDocs: normalizedManagement.ragDocs.length,
+        screenTools: normalizedManagement.screenTools.length,
+        actionTypes: normalizedManagement.actionTypes.length,
+      })
 
       setManagement(normalizedManagement)
 
@@ -367,6 +378,41 @@ const ChatSettings = () => {
     },
     [load, promptDrafts]
   )
+
+  const handleCreatePrompt = useCallback(async ({ appKey, routeKey, routeParentKey, content, label, promptType, enabled }) => {
+    const normalizedRouteKey = String(routeKey ?? '').trim()
+    if (!normalizedRouteKey) return false
+
+    setCreatingPromptRouteKey(normalizedRouteKey)
+    setError('')
+
+    try {
+      const res = await createChatPrompt({
+        appKey: String(appKey ?? '').trim(),
+        key: normalizedRouteKey,
+        routeKey: String(routeParentKey ?? '').trim(),
+        promptType: String(promptType ?? 'system').trim() || 'system',
+        label: String(label ?? '화면 프롬프트').trim() || '화면 프롬프트',
+        content: String(content ?? ''),
+        enabled: Boolean(enabled),
+      })
+
+      if (Number(res?.code ?? 0) !== 200) {
+        throw new Error(String(res?.message ?? '화면 프롬프트 생성 응답이 올바르지 않습니다.'))
+      }
+
+      const next = res?.data ?? {}
+      setSavedMessage(`${String(next.label ?? next.key ?? '화면 프롬프트')}가 생성되었습니다.`)
+      setSavedOpen(true)
+      await load()
+      return true
+    } catch (e) {
+      setError(e?.message || '화면 프롬프트 생성에 실패했습니다.')
+      return false
+    } finally {
+      setCreatingPromptRouteKey('')
+    }
+  }, [load])
 
   const handleGuidanceChange = useCallback((id, field, nextValue) => {
     setGuidanceDrafts((prev) => ({
@@ -990,6 +1036,7 @@ const ChatSettings = () => {
                 ragDrafts={ragDrafts}
                 toolDrafts={toolDrafts}
                 savingPromptKey={savingPromptKey}
+                creatingPromptRouteKey={creatingPromptRouteKey}
                 savingGuidanceKey={savingGuidanceKey}
                 creatingGuidanceRouteKey={creatingGuidanceRouteKey}
                 savingRagKey={savingRagKey}
@@ -999,6 +1046,7 @@ const ChatSettings = () => {
                 savingToolKey={savingToolKey}
                 onPromptChange={handlePromptChange}
                 onSavePrompt={handleSavePrompt}
+                onCreatePrompt={handleCreatePrompt}
                 onGuidanceChange={handleGuidanceChange}
                 onSaveGuidance={handleSaveGuidance}
                 onCreateGuidance={handleCreateGuidance}

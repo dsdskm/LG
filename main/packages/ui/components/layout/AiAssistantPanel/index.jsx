@@ -42,6 +42,9 @@ import { postSiteAssistantChat } from '@repo/apis/ai/chat.js'
 
 const ENABLE_QUICK_COMMANDS = true
 const ENABLE_MESSAGE_SUGGESTED_ACTIONS = false
+const AI_TASKFLOW_CANVAS_EVENT = 'ai-assistant:taskflow-canvas-draft'
+const AI_TASKFLOW_CANVAS_CLARIFY_EVENT = 'ai-assistant:taskflow-canvas-clarify'
+const AI_TASKFLOW_CANVAS_COMMAND_EVENT = 'ai-assistant:taskflow-canvas-command'
 
 const SENDING_STAGE = {
   IDLE: 'idle',
@@ -74,6 +77,26 @@ const pickRandomItems = (items, count) => {
 
 const normalizeRouteKey = (value) => String(value ?? '').trim().replace(/^\/+/, '')
 
+const routeTemplateMatches = (templateKey, currentPath) => {
+  const template = normalizeRouteKey(templateKey)
+  const target = normalizeRouteKey(currentPath)
+  if (!template || !target) return false
+
+  const templateSegments = template.split('/').filter(Boolean)
+  const targetSegments = target.split('/').filter(Boolean)
+  if (templateSegments.length > targetSegments.length) return false
+
+  for (let i = 0; i < templateSegments.length; i += 1) {
+    const tpl = templateSegments[i]
+    const cur = targetSegments[i]
+    if (!cur) return false
+    if (tpl.startsWith(':')) continue
+    if (tpl !== cur) return false
+  }
+
+  return true
+}
+
 const findGuidanceExamplesForPath = (guidanceItems, pathname) => {
   const normalizedPath = normalizeRouteKey(pathname)
   if (!normalizedPath) return []
@@ -95,14 +118,16 @@ const findGuidanceExamplesForPath = (guidanceItems, pathname) => {
     })
   }
 
-  const candidates = (Array.isArray(guidanceItems) ? guidanceItems : [])
+  const entries = (Array.isArray(guidanceItems) ? guidanceItems : [])
     .map((item) => {
       const key = normalizeRouteKey(item?.key ?? item?.routeKey)
       const examples = Array.isArray(item?.examples) ? item.examples : []
       return { key, examples }
     })
     .filter((item) => item.key && item.examples.length > 0)
-    .filter((item) => normalizedPath === item.key || normalizedPath.startsWith(`${item.key}/`))
+
+  const candidates = entries
+    .filter((item) => routeTemplateMatches(item.key, normalizedPath))
     .sort((left, right) => right.key.length - left.key.length)
 
   const matched = candidates[0]
@@ -115,7 +140,7 @@ const findGuidanceExamplesForPath = (guidanceItems, pathname) => {
     const appPrefix = normalizedPath.split('/')[0] ?? ''
     if (!appPrefix) return []
 
-    const appExamples = candidates
+    const appExamples = entries
       .filter((item) => item.key.startsWith(`${appPrefix}/`))
       .flatMap((item) => extractExampleTexts(item.examples))
 
@@ -143,6 +168,274 @@ const buildRouteContext = (location) => ({
   appPrefix: normalizeAppPrefix(location.pathname),
   title: typeof document !== 'undefined' ? document.title : '',
 })
+
+const isTmsCanvasPath = (pathname) => /^\/tms\/taskflows\/[^/]+\/canvas(?:\/|$)/.test(String(pathname ?? '').trim())
+
+const parseTaskflowIdFromPath = (pathname) => {
+  const matched = String(pathname ?? '').trim().match(/^\/tms\/taskflows\/(\d+)\/canvas(?:\/|$)/)
+  if (!matched) return null
+  const id = Number(matched[1])
+  return Number.isFinite(id) && id > 0 ? id : null
+}
+
+const normalizeNodeLabel = (node) => {
+  const data = node?.data ?? {}
+  return String(data.label ?? data.contentName ?? data.taskName ?? '').trim()
+}
+
+const buildLinearOrderLabels = (nodes, edges) => {
+  const byId = new Map(nodes.map((node) => [String(node.id), node]))
+  const outgoing = new Map()
+
+  for (const edge of Array.isArray(edges) ? edges : []) {
+    const source = String(edge?.source ?? '')
+    const target = String(edge?.target ?? '')
+    if (!byId.has(source) || !byId.has(target)) continue
+    const list = outgoing.get(source) ?? []
+    list.push(target)
+    outgoing.set(source, list)
+  }
+
+  const visited = new Set()
+  const ordered = []
+  let cursor = 'start'
+
+  while (cursor && !visited.has(cursor)) {
+    visited.add(cursor)
+    const outs = outgoing.get(cursor) ?? []
+    if (!Array.isArray(outs) || outs.length !== 1) break
+    const nextId = String(outs[0])
+    if (nextId === 'start') break
+    const node = byId.get(nextId)
+    if (!node) break
+    const label = normalizeNodeLabel(node)
+    if (label) ordered.push(label)
+    cursor = nextId
+  }
+
+  return ordered
+}
+
+const buildTaskListFromTaskPanel = (items) => {
+  const uniq = new Map()
+
+  for (const item of (Array.isArray(items) ? items : [])) {
+    const taskId = Number(item?.taskId)
+    if (!Number.isFinite(taskId) || taskId <= 0) continue
+
+    const taskName = String(item?.taskName ?? '').trim()
+    const label = String(item?.label ?? taskName).trim()
+    const key = `${taskId}:${taskName || label}`
+    if (!label || uniq.has(key)) continue
+
+    uniq.set(key, {
+      taskId,
+      label,
+      taskName: taskName || undefined,
+    })
+  }
+
+  return Array.from(uniq.values())
+}
+
+const buildTaskContentsFromTaskPanel = (items) => {
+  const uniq = new Map()
+
+  for (const item of (Array.isArray(items) ? items : [])) {
+    const taskId = Number(item?.taskId)
+    const label = String(item?.label ?? '').trim()
+    if (!Number.isFinite(taskId) || taskId <= 0 || !label) continue
+
+    const taskName = String(item?.taskName ?? '').trim()
+    const contentIdRaw = Number(item?.contentId)
+    const contentId = Number.isFinite(contentIdRaw) && contentIdRaw > 0 ? contentIdRaw : undefined
+    const contentName = String(item?.contentName ?? '').trim() || undefined
+    const kind = String(item?.kind ?? '').trim()
+
+    const key = `${taskId}:${contentId ?? '-'}:${label}:${taskName}`
+    if (uniq.has(key)) continue
+
+    uniq.set(key, {
+      kind,
+      taskId,
+      taskName: taskName || undefined,
+      label,
+      contentId,
+      contentName,
+    })
+  }
+
+  return Array.from(uniq.values())
+}
+
+const buildTaskflowFlowContext = (pathname) => {
+  if (!isTmsCanvasPath(pathname)) return undefined
+  if (typeof window === 'undefined') return undefined
+
+  const taskFlowId = parseTaskflowIdFromPath(pathname)
+  if (!taskFlowId) return undefined
+
+  try {
+    const runtimeContext = window.__AI_TASKFLOW_CONTEXT__
+    if (!runtimeContext || Number(runtimeContext?.taskFlowId ?? 0) !== Number(taskFlowId)) {
+      return undefined
+    }
+
+    const nodes = Array.isArray(runtimeContext?.nodes) ? runtimeContext.nodes : []
+    const taskNodes = nodes.filter((node) => String(node?.id ?? '') !== 'start')
+    const edges = Array.isArray(runtimeContext?.edges) ? runtimeContext.edges : []
+    if (nodes.length === 0) return undefined
+
+    const addableNodes = Array.isArray(runtimeContext?.addableNodes)
+      ? runtimeContext.addableNodes
+      : []
+    const taskList = Array.isArray(runtimeContext?.taskList)
+      ? runtimeContext.taskList
+      : buildTaskListFromTaskPanel(addableNodes)
+    const taskContents = Array.isArray(runtimeContext?.taskContents)
+      ? runtimeContext.taskContents
+      : Array.isArray(runtimeContext?.taskcontents)
+        ? runtimeContext.taskcontents
+      : buildTaskContentsFromTaskPanel(addableNodes)
+
+    const outgoingCount = new Map(nodes.map((node) => [String(node.id), 0]))
+    for (const edge of edges) {
+      const source = String(edge?.source ?? '')
+      if (!outgoingCount.has(source)) continue
+      outgoingCount.set(source, Number(outgoingCount.get(source) ?? 0) + 1)
+    }
+
+    const tails = taskNodes
+      .filter((node) => Number(outgoingCount.get(String(node.id)) ?? 0) === 0)
+      .map((node) => normalizeNodeLabel(node))
+      .filter(Boolean)
+
+    const branchingCount = Array.from(outgoingCount.values()).filter((count) => count > 1).length
+
+    return {
+      taskFlowId,
+      nodeCount: nodes.length,
+      edgeCount: edges.length,
+      tails: tails.slice(0, 8),
+      branchingCount,
+      ambiguousInsertion: tails.length !== 1 || branchingCount > 0,
+      linearOrder: buildLinearOrderLabels(nodes, edges),
+      addableNodes,
+      taskList,
+      taskContents,
+      nodes: nodes
+        .map((node) => ({
+          id: String(node?.id ?? '').trim(),
+          label: normalizeNodeLabel(node) || (String(node?.id ?? '') === 'start' ? 'start' : ''),
+          nodeType: String(node?.type ?? '').trim(),
+          taskName: String(node?.data?.taskName ?? '').trim(),
+          contentName: String(node?.data?.contentName ?? '').trim(),
+        }))
+        .filter((node) => node.id)
+        ,
+      flowDefinition: {
+        nodes,
+        edges,
+        viewport:
+          runtimeContext?.viewport && typeof runtimeContext.viewport === 'object' && !Array.isArray(runtimeContext.viewport)
+            ? runtimeContext.viewport
+            : { x: 0, y: 0, zoom: 1 },
+        flowMode: runtimeContext?.flowMode === 'tree' ? 'tree' : 'default',
+      },
+      fullFlow: {
+        nodes,
+        edges,
+        viewport:
+          runtimeContext?.viewport && typeof runtimeContext.viewport === 'object' && !Array.isArray(runtimeContext.viewport)
+            ? runtimeContext.viewport
+            : { x: 0, y: 0, zoom: 1 },
+        flowMode: runtimeContext?.flowMode === 'tree' ? 'tree' : 'default',
+      },
+    }
+  } catch {
+    return undefined
+  }
+}
+
+const buildTaskflowRequestContext = (flowContext) => {
+  if (!flowContext || typeof flowContext !== 'object') return undefined
+
+  return {
+    taskFlowId: Number(flowContext?.taskFlowId ?? 0) || undefined,
+    flowMode: String(flowContext?.flowDefinition?.flowMode ?? flowContext?.flowMode ?? 'default'),
+    nodeCount: Number(flowContext?.nodeCount ?? 0),
+    edgeCount: Number(flowContext?.edgeCount ?? 0),
+    branchingCount: Number(flowContext?.branchingCount ?? 0),
+    tails: Array.isArray(flowContext?.tails) ? flowContext.tails : [],
+    ambiguousInsertion: Boolean(flowContext?.ambiguousInsertion),
+    linearOrder: Array.isArray(flowContext?.linearOrder) ? flowContext.linearOrder : [],
+    taskList: Array.isArray(flowContext?.taskList) ? flowContext.taskList : [],
+    taskContents: Array.isArray(flowContext?.taskContents) ? flowContext.taskContents : [],
+    currentNodeList: Array.isArray(flowContext?.nodes) ? flowContext.nodes : [],
+    currentEdgeList: Array.isArray(flowContext?.flowDefinition?.edges)
+      ? flowContext.flowDefinition.edges.map((edge) => ({
+          id: String(edge?.id ?? ''),
+          source: String(edge?.source ?? ''),
+          target: String(edge?.target ?? ''),
+          sourceHandle: String(edge?.sourceHandle ?? ''),
+          targetHandle: String(edge?.targetHandle ?? ''),
+        }))
+      : [],
+    nodes: Array.isArray(flowContext?.nodes) ? flowContext.nodes : [],
+    edges: Array.isArray(flowContext?.flowDefinition?.edges) ? flowContext.flowDefinition.edges : [],
+    flowDefinition:
+      flowContext?.flowDefinition && typeof flowContext.flowDefinition === 'object'
+        ? flowContext.flowDefinition
+        : undefined,
+    fullFlow:
+      flowContext?.fullFlow && typeof flowContext.fullFlow === 'object'
+        ? flowContext.fullFlow
+        : undefined,
+    addableNodes: Array.isArray(flowContext?.addableNodes) ? flowContext.addableNodes : [],
+  }
+}
+
+const extractTaskflowDraftParam = (value) => {
+  if (!value || typeof value !== 'object') return null
+
+  const row = value
+
+  if (row.canvasDraft && typeof row.canvasDraft === 'object') return row.canvasDraft
+  if (row.taskflowDraft && typeof row.taskflowDraft === 'object') return row.taskflowDraft
+  if (row.canvas && typeof row.canvas === 'object') return row.canvas
+  if (row.flowDefinition && typeof row.flowDefinition === 'object') return row.flowDefinition
+
+  if (row.toolResult && typeof row.toolResult === 'object') {
+    const nested = extractTaskflowDraftParam(row.toolResult)
+    if (nested) return nested
+  }
+
+  if (row.executed && typeof row.executed === 'object') {
+    const nested = extractTaskflowDraftParam(row.executed)
+    if (nested) return nested
+  }
+
+  return null
+}
+
+const extractTaskflowCanvasCommandParam = (value) => {
+  if (!value || typeof value !== 'object') return null
+
+  const row = value
+  if (row.canvasCommand && typeof row.canvasCommand === 'object') return row.canvasCommand
+
+  if (row.toolResult && typeof row.toolResult === 'object') {
+    const nested = extractTaskflowCanvasCommandParam(row.toolResult)
+    if (nested) return nested
+  }
+
+  if (row.executed && typeof row.executed === 'object') {
+    const nested = extractTaskflowCanvasCommandParam(row.executed)
+    if (nested) return nested
+  }
+
+  return null
+}
 
 const extractAssistantText = (result) => {
   const payload = result?.data ?? result ?? null
@@ -335,6 +628,7 @@ const AiAssistantPanel = ({ greetingExtra }) => {
   const closePanel = useAiAssistantStore((state) => state.closePanel)
   const messages = useAiAssistantStore((state) => state.messages)
   const appendMessage = useAiAssistantStore((state) => state.appendMessage)
+  const updateMessageById = useAiAssistantStore((state) => state.updateMessageById)
   const resetMessages = useAiAssistantStore((state) => state.resetMessages)
 
   const [draft, setDraft] = useState('')
@@ -546,9 +840,104 @@ const AiAssistantPanel = ({ greetingExtra }) => {
     }, 0)
   }
 
+  useEffect(() => {
+    const onTaskflowClarify = (event) => {
+      const custom = event
+      const message = String(custom?.detail?.message ?? '').trim()
+      const replaceMessageId = String(custom?.detail?.assistantMessageId ?? '').trim()
+      if (!message) return
+
+      if (replaceMessageId) {
+        updateMessageById(replaceMessageId, {
+          content: message,
+          createdAt: new Date().toISOString(),
+          context: routeContext,
+        })
+        return
+      }
+
+      appendMessage({
+        id: buildMessageId(),
+        role: 'assistant',
+        content: message,
+        createdAt: new Date().toISOString(),
+        context: routeContext,
+      })
+    }
+
+    window.addEventListener(AI_TASKFLOW_CANVAS_CLARIFY_EVENT, onTaskflowClarify)
+    return () => {
+      window.removeEventListener(AI_TASKFLOW_CANVAS_CLARIFY_EVENT, onTaskflowClarify)
+    }
+  }, [appendMessage, updateMessageById, routeContext])
+
   // chat_action 분기 처리.
   const handleChatAction = useCallback(
-    (chatAction, param) => {
+    (chatAction, param, assistantMessage, assistantMessageId) => {
+      const taskflowDraft = extractTaskflowDraftParam(param)
+      const taskflowCommand = extractTaskflowCanvasCommandParam(param)
+      console.log('[AI_TASKFLOW][CHAT_ACTION]', {
+        chatAction,
+        hasParam: Boolean(param),
+        hasTaskflowDraft: Boolean(taskflowDraft),
+        hasTaskflowCommand: Boolean(taskflowCommand),
+        isTmsCanvas: isTmsCanvasPath(location.pathname),
+        paramKeys: param && typeof param === 'object' ? Object.keys(param) : [],
+      })
+      if (taskflowCommand && isTmsCanvasPath(location.pathname)) {
+        window.dispatchEvent(
+          new CustomEvent(AI_TASKFLOW_CANVAS_COMMAND_EVENT, {
+            detail: {
+              command: taskflowCommand,
+              chatAction,
+              rawParam: param,
+              message: String(assistantMessage ?? '').trim(),
+              assistantMessageId: String(assistantMessageId ?? '').trim(),
+            },
+          })
+        )
+      }
+      if (taskflowDraft && isTmsCanvasPath(location.pathname)) {
+        let handled = false
+        try {
+          const applyDraft = window.__AI_TASKFLOW_CANVAS_APPLY__
+          if (typeof applyDraft === 'function') {
+            console.log('[AI_TASKFLOW][DIRECT_APPLY]', {
+              chatAction,
+              pathname: location.pathname,
+              draftKeys: Object.keys(taskflowDraft || {}),
+            })
+            applyDraft({
+              ...taskflowDraft,
+              message: String(assistantMessage ?? '').trim(),
+            })
+            handled = true
+          }
+        } catch (error) {
+          console.warn('[AI_TASKFLOW][SETTER_DISPATCH_FAIL]', error)
+        }
+
+        console.log('[AI_TASKFLOW][DISPATCH_DRAFT]', {
+          chatAction,
+          pathname: location.pathname,
+          draftKeys: Object.keys(taskflowDraft || {}),
+          handledBySetter: handled,
+        })
+        if (!handled) {
+          window.dispatchEvent(
+            new CustomEvent(AI_TASKFLOW_CANVAS_EVENT, {
+              detail: {
+                draft: taskflowDraft,
+                chatAction,
+                rawParam: param,
+                message: String(assistantMessage ?? '').trim(),
+                assistantMessageId: String(assistantMessageId ?? '').trim(),
+              },
+            })
+          )
+        }
+        return
+      }
 
       switch (chatAction) {
         // 화면 이동
@@ -614,6 +1003,13 @@ const AiAssistantPanel = ({ greetingExtra }) => {
     const content = (text ?? draft).trim()
     if (!content || isSending) return
 
+    const latestAssistantMessage = [...(Array.isArray(messages) ? messages : [])]
+      .reverse()
+      .find((item) => item?.role === 'assistant' && String(item?.content ?? '').trim())?.content
+    const scopedLastAssistantMessage = isTmsCanvasPath(routeContext.pathname)
+      ? String(latestAssistantMessage ?? '').trim() || undefined
+      : undefined
+
     const createdAt = new Date().toISOString()
     const now = new Date()
     const conversationId = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
@@ -678,6 +1074,40 @@ const AiAssistantPanel = ({ greetingExtra }) => {
     abortRef.current = controller
 
     try {
+      const flowContext = buildTaskflowFlowContext(routeContext.pathname)
+      const taskflowContext = buildTaskflowRequestContext(flowContext)
+      console.log('[AI_TASKFLOW][1단계:컨텍스트_구성]', {
+        pathname: routeContext.pathname,
+        taskFlowId: flowContext?.taskFlowId,
+        nodeCount: Number(flowContext?.nodeCount ?? 0),
+        edgeCount: Number(flowContext?.edgeCount ?? 0),
+        taskListCount: Array.isArray(flowContext?.taskList) ? flowContext.taskList.length : 0,
+        taskContentsCount: Array.isArray(flowContext?.taskContents) ? flowContext.taskContents.length : 0,
+        currentNodeListCount: Array.isArray(flowContext?.nodes) ? flowContext.nodes.length : 0,
+        flowDefinitionNodeCount: Array.isArray(flowContext?.flowDefinition?.nodes)
+          ? flowContext.flowDefinition.nodes.length
+          : 0,
+        flowDefinitionEdgeCount: Array.isArray(flowContext?.flowDefinition?.edges)
+          ? flowContext.flowDefinition.edges.length
+          : 0,
+        taskList: Array.isArray(flowContext?.taskList) ? flowContext.taskList : [],
+        taskContents: Array.isArray(flowContext?.taskContents) ? flowContext.taskContents : [],
+        currentNodeList: Array.isArray(flowContext?.nodes) ? flowContext.nodes : [],
+      })
+
+      console.log('[AI_TASKFLOW][2단계:요청페이로드_검증]', {
+        hasTaskflowContext: Boolean(taskflowContext),
+        hasFlowDefinition: Boolean(taskflowContext?.flowDefinition),
+        hasFullFlow: Boolean(taskflowContext?.fullFlow),
+        taskflowNodeCount: Array.isArray(taskflowContext?.flowDefinition?.nodes)
+          ? taskflowContext.flowDefinition.nodes.length
+          : 0,
+        taskflowEdgeCount: Array.isArray(taskflowContext?.flowDefinition?.edges)
+          ? taskflowContext.flowDefinition.edges.length
+          : 0,
+        taskflowFlowDefinition: taskflowContext?.flowDefinition,
+      })
+
       const result = await postSiteAssistantChat({
         message: content,
         currentPath: pageContextOn ? routeContext.pathname : undefined,
@@ -691,9 +1121,12 @@ const AiAssistantPanel = ({ greetingExtra }) => {
         eventAnalyzerUrl: import.meta.env.VITE_EVENT_ANALYZER_URL,
         configManagerUrl: import.meta.env.VITE_CONFIG_MANAGER_URL,
         previousFilters: lastFiltersRef.current || undefined,
+        lastAssistantMessage: scopedLastAssistantMessage,
         context: {
           groupId: selectedOrgs?.[0],
           siteId: selectedOrgs?.[1],
+          taskflow: taskflowContext,
+          flowContext,
         },
         signal: controller.signal,
       })
@@ -710,17 +1143,25 @@ const AiAssistantPanel = ({ greetingExtra }) => {
       await sleep(280)
 
       if (!hasNavigationParams) {
+        const assistantMessageId = buildMessageId()
         appendMessage({
-          id: buildMessageId(),
+          id: assistantMessageId,
           role: 'assistant',
           content: extractAssistantText(result),
           suggestedActions,
           createdAt: new Date().toISOString(),
           context,
         })
-      }
 
-      handleChatAction(chat_action, chat_action_param)
+        handleChatAction(
+          chat_action,
+          chat_action_param,
+          extractAssistantText(result),
+          assistantMessageId,
+        )
+      } else {
+        handleChatAction(chat_action, chat_action_param, extractAssistantText(result))
+      }
 
     } catch (error) {
       // 사용자가 "중지" 를 눌러 취소한 경우: 에러 메시지 대신 안내만.
