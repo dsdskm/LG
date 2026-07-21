@@ -46,19 +46,17 @@ export default React.memo(function SensorChart({
     return sensor.t.map((v) => v + baseSec)
   }, [sensor, baseSec])
 
-  useEffect(() => {
-    if (!chartRef.current || !sensor) return
-    if (!Array.isArray(sensor.t) || sensor.t.length === 0) return
+  const hasData = !!(sensor && Array.isArray(sensor.t) && sensor.t.length > 0)
 
-    // ✅ 이미 존재하면 setData()로 갱신 (깜빡임 방지)
-    if (plotRef.current) {
-      try {
-        plotRef.current.setData([xTime, sensor.x, sensor.y, sensor.z])
-      } catch {
-        /* 크기 불일치 등 → 아래서 재생성 */
-      }
-      return
-    }
+  // x축 고정 범위(전체 주행 구간, 절대 초). 정해지면 plot을 이 범위로 "잠가" setData 시 x가 재-autorange 되지 않게 한다.
+  const xMin = Array.isArray(xRange) ? xRange[0] : null
+  const xMax = Array.isArray(xRange) ? xRange[1] : null
+
+  // 1) 생성/파기: 구조적 옵션(제목/시리즈/타임베이스/x고정범위)이나 "데이터 유무"가 바뀔 때만.
+  //    데이터 "값" 변경으로는 재생성하지 않는다(아래 setData 이펙트가 처리) → 매 갱신마다
+  //    uPlot을 파괴·재생성하던 깜빡임/성능 문제 해결.
+  useEffect(() => {
+    if (!chartRef.current || !hasData) return
 
     // ✅ 재생 위치 절대 초(= 상대초 + base). 차트 x축(xTime)과 동일 스케일.
     const getPlayheadAbsSec = () => {
@@ -71,11 +69,16 @@ export default React.memo(function SensorChart({
       title: sampleMode ? `${title} (Sample)` : title,
       width: chartRef.current.clientWidth,
       height: chartRef.current.clientHeight,
+      // ✅ [top,right,bottom,left] px. 루트 .uplot은 width:min-content라 플롯이 컨테이너에
+      //    딱 붙어(flush) x축 마지막 눈금 라벨이 오른쪽으로 삐져나가 카드 overflow:hidden에
+      //    잘린다. 오른쪽에 여백을 확보해 라벨이 안쪽에 그려지도록 한다.
+      //    (bottom/left는 null=축 크기 기준 자동 계산)
+      padding: [8, 24, null, null],
       scales: {
         x: {
           time: baseSec > 0,
-          // 전체 주행 구간으로 x축 고정(있으면). 차트마다 데이터 범위가 달라도 동일 축 → 커서 일관 표시
-          ...(Array.isArray(xRange) && xRange.length === 2 ? { range: [xRange[0], xRange[1]] } : null)
+          // 전체 주행 구간으로 x축 고정(있으면). 정적 range면 setData(resetScales)로도 x가 안 흔들림.
+          ...(Number.isFinite(xMin) && Number.isFinite(xMax) ? { range: [xMin, xMax] } : null)
         }
       },
       cursor: { x: false, y: false },
@@ -88,30 +91,66 @@ export default React.memo(function SensorChart({
       ]
     }
 
-    const data = [xTime, sensor.x, sensor.y, sensor.z]
-
-    plotRef.current = new uPlot(opts, data, chartRef.current)
+    const plot = new uPlot(opts, [xTime, sensor.x, sensor.y, sensor.z], chartRef.current)
+    plotRef.current = plot
 
     const resize = () => {
-      if (!plotRef.current) return
-      plotRef.current.setSize({
-        width: chartRef.current.clientWidth,
-        height: chartRef.current.clientHeight
-      })
+      const el = chartRef.current
+      if (!el) return
+      const w = el.clientWidth
+      const totalH = el.clientHeight
+      // 컨테이너가 일시적으로 0px일 때(숨김/전환 중) setSize 하면 캔버스가 찌그러진다 → 무시
+      if (w <= 0 || totalH <= 0) return
+      // ✅ uPlot의 height 옵션은 플롯 영역(.u-wrap)만 지정한다. 제목(.u-title)과
+      //    범례(.u-legend)는 그 바깥에 흐름상 추가로 쌓이므로, 이들을 빼지 않으면
+      //    (제목 + height + 범례)가 컨테이너를 넘쳐 스크롤/겹침이 생긴다.
+      const titleH = plot.root.querySelector('.u-title')?.offsetHeight || 0
+      const legendH = plot.root.querySelector('.u-legend')?.offsetHeight || 0
+      const plotH = Math.max(40, totalH - titleH - legendH)
+      // 동일 크기면 불필요한 재그리기 방지
+      if (plot.width === w && plot.height === plotH) return
+      plot.setSize({ width: w, height: plotH })
     }
 
+    // ✅ 생성 직후 1회 보정: opts.height는 크롬(제목/범례) DOM이 생기기 전 값이라
+    //    전체 높이로 잡혀 있으므로, DOM이 준비된 지금 즉시 크롬을 빼고 다시 맞춘다.
+    resize()
+
+    // ✅ window resize만으로는 컨테이너 자체의 크기 변화(디버그/설정 패널 개폐,
+    //    스크롤바 출현, 사이드바 토글 등)를 감지하지 못해 차트가 옛 크기로 남아 잘린다.
+    //    ResizeObserver로 컨테이너를 직접 관찰해 어떤 원인이든 크기 변화에 반응한다.
+    let ro = null
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => resize())
+      ro.observe(chartRef.current)
+    }
+    // 구형 환경 폴백 겸 안전망
     window.addEventListener('resize', resize)
 
     return () => {
+      if (ro) ro.disconnect()
       window.removeEventListener('resize', resize)
-      plotRef.current?.destroy()
-      plotRef.current = null
+      plot.destroy()
+      if (plotRef.current === plot) plotRef.current = null
     }
-  }, [sensor, sampleMode, title, labels, colors, baseSec])
+    // xTime/sensor는 생성 시점 스냅샷으로만 사용(값 변경은 아래 setData 이펙트가 처리).
+    // xMin/xMax가 바뀌면(로드당 1회) x고정범위를 opts에 박아 재생성 → x축이 잠긴다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sampleMode, title, labels, colors, baseSec, hasData, xMin, xMax])
 
-  // ✅ x축 고정 범위가 바뀌면(로그 변경 등) 스케일을 갱신 (재생성 없이 setData만 타는 경우 대비)
-  const xMin = Array.isArray(xRange) ? xRange[0] : null
-  const xMax = Array.isArray(xRange) ? xRange[1] : null
+  // 2) 데이터 값 갱신: 인스턴스 재생성 없이 setData만 → 깜빡임 없음.
+  useEffect(() => {
+    const plot = plotRef.current
+    if (!plot || !hasData) return
+    try {
+      plot.setData([xTime, sensor.x, sensor.y, sensor.z])
+    } catch {
+      /* uPlot.setData는 길이 변화에 안전. 예외 시 무시(다음 구조 변경 시 재생성) */
+    }
+  }, [xTime, sensor, hasData])
+
+  // ✅ 재생성 없이 x고정범위를 재확인(방어적). 생성 effect가 xMin/xMax를 opts.range로 이미 잠그지만,
+  //    혹시 재생성 사이 setData가 먼저 타는 경우를 대비해 스케일을 다시 고정한다.
   useEffect(() => {
     const plot = plotRef.current
     if (plot && Number.isFinite(xMin) && Number.isFinite(xMax)) {
@@ -134,6 +173,12 @@ export default React.memo(function SensorChart({
       style={{
         width: '100%',
         height: '100%',
+        // ✅ 그리드 아이템 기본 min-width/min-height: auto(콘텐츠 min-content = uPlot 명시 폭/높이)라
+        //    트랙(minmax(0,1fr))보다 넓게 오버플로우할 수 있다. 0으로 풀어 트랙 크기까지 줄어들게 하고,
+        //    혹시 남는 미세 오버플로우는 여기서 클립(카드까지 넘어가 잘리는 것 방지).
+        minWidth: 0,
+        minHeight: 0,
+        overflow: 'hidden',
         background: '#fff',
         border: '1px solid #ccc',
         borderRadius: 6,

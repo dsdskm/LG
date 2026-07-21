@@ -40,6 +40,7 @@
     "three": "^0.182.0",
     "three-mesh-bvh": "^0.9.11",
     "urdf-loader": "^0.12.7",
+    "vaul": "^1.1.2",
     "vite-plugin-svgr": "^4.5.0",
     "yaml": "^2.9.0",
     "zustand": "^5.0.10"

@@ -10,7 +10,7 @@ import { parseRobotData, buildDeviceMerger } from '@/utils/robotUtils'
 import DataCollectionSection from '../Dashboard/components/DataCollectionSection'
 import RobotStateCards from '../Dashboard/components/RobotStateCards'
 import Location from '../Dashboard/KakaoMap'
-import SiteMap3D from '../../common/SiteMap3D'
+import SiteMap3D, { DASHBOARD_MAP_VIEW_KEY } from '../../common/SiteMap3D'
 
 // ── 기준 해상도 (Figma 프레임 = 1920×1080 과 1:1) ─────────────────
 const BASE_W = 1920
@@ -274,8 +274,8 @@ const BottomCard = styled.div`
   flex-direction: row;
   gap: 20px;
   background: ${BODY_BG};
-  border-radius: 12px;
-  padding: 20px;
+  border-radius: 8px;
+  padding: 20px 20px 12px;
   box-shadow: 4px 4px 10px rgba(0, 0, 0, 0.1);
 `
 
@@ -303,12 +303,12 @@ const SectionHead = styled.div`
   /* 상태 패널(텍스트만)과 맵 패널(영역 칩) 헤더 높이를 통일해 하단 콘텐츠 상단 정렬 */
   min-height: 28px;
   flex-shrink: 0;
-  margin-bottom: 12px;
+  margin-bottom: 18px;
 `
 
 const SectionTitle = styled.h3`
   font-family: ${FONT_UI};
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 700;
   color: ${TITLE_COLOR};
   margin: 0;
@@ -318,12 +318,12 @@ const TotalRobots = styled.span`
   margin-left: auto;
   font-family: ${FONT_UI};
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
   color: #64748b;
 
   strong {
-    color: #4f46e5;
-    font-weight: 800;
+    color: #8e6228;
+    font-weight: 700;
     margin: 0 2px;
   }
 `
@@ -349,13 +349,18 @@ const BuildingName = styled.span`
 
 const AreaChips = styled.div`
   display: flex;
-  gap: 6px;
+  gap: 12px;
   flex-wrap: wrap;
 `
 
 const AreaChip = styled.span`
-  padding: 4px 12px;
-  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 60px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 4px;
   font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
@@ -505,14 +510,11 @@ const TVDashboard = () => {
     }
   }, [])
 
+  // 디바이스 정보만 1초마다 폴링 (사이트 정보는 아래에서 진입 시 1회만 조회)
   const loadData = useCallback(async () => {
     try {
       const siteId = hasSite ? paramSite : undefined
-      const [robotRes, siteRes] = await Promise.all([
-        deviceApis.getDevices(siteId ? { siteId } : {}),
-        siteApis.getSites({})
-      ])
-      setSites(siteRes.content)
+      const robotRes = await deviceApis.getDevices(siteId ? { siteId } : {})
 
       const { hasChange, merger } = buildDeviceMerger(robotRes.content, deviceTsRef.current)
       if (hasChange) setDevices(merger)
@@ -523,6 +525,14 @@ const TVDashboard = () => {
 
   useEffect(() => {
     loadData()
+  }, [])
+
+  // 사이트 목록은 TV 모드 진입 시 1회만 조회 (권역 마커 좌표용 — 실시간 갱신 불필요)
+  useEffect(() => {
+    siteApis
+      .getSites({})
+      .then((res) => setSites(res.content))
+      .catch((err) => console.error('TVDashboard loadSites:', err))
   }, [])
 
   // 사이트 계층(빌딩/층/영역) 조회
@@ -672,6 +682,7 @@ const TVDashboard = () => {
           <CollectionWrap>
             <DataCollectionSection
               chartHeight={90}
+              embedded
               showSectionTitle={false}
               showForgeBar={false}
               line={theme.line}
@@ -733,6 +744,8 @@ const TVDashboard = () => {
                     robotDatas={areaMode ? areaRobotDatas : siteRobotDatas}
                     clickRobot={false}
                     height="100%"
+                    viewModeKey={DASHBOARD_MAP_VIEW_KEY}
+                    showControls={false}
                   />
                 ) : (
                   <Location markers={markers} />

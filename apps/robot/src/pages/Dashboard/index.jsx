@@ -29,7 +29,7 @@ import { parseRobotData, buildDeviceMerger } from '@/utils/robotUtils'
 import Location from './KakaoMap'
 import TableAlarm from './AlarmTable'
 // import SiteMap from '../../common/SiteMap'
-import SiteMap3D from '../../common/SiteMap3D'
+import SiteMap3D, { DASHBOARD_MAP_VIEW_KEY } from '../../common/SiteMap3D'
 import LocationSelector from '../../common/LocationSelector'
 import DataCollectionSection from './components/DataCollectionSection'
 import RobotStateCards from './components/RobotStateCards'
@@ -500,7 +500,7 @@ const Dashboard = () => {
                   {!hasSite ? (
                     <Location markers={markers} />
                   ) : useImageMap ? (
-                    <SiteMap3D mapData={mapData} mapServer={mapServer} robotDatas={robotDatas} clickRobot={true} />
+                    <SiteMap3D mapData={mapData} mapServer={mapServer} robotDatas={robotDatas} clickRobot={true} viewModeKey={DASHBOARD_MAP_VIEW_KEY} />
                   ) : (
                     <div
                       style={{

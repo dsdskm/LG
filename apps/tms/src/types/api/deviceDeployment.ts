@@ -1,8 +1,7 @@
 export interface DeviceLatestDeploymentRequest {
-  groupId: string
-  siteId: string
+  groupId: string | null
+  siteId: string | null
   taskflowId: number
-  robotId: string[]
 }
 export interface DeviceLatestDeploymentResponse {
   content: Content[]

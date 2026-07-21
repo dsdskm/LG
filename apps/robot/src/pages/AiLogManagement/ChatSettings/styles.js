@@ -147,7 +147,7 @@ export const ActionRow = styled.div`
 `
 
 export const PrimaryButton = styled.button`
-  height: 42px;
+  height: 36px;
   padding: 0 16px;
   border-radius: 12px;
   border: 1px solid #2563eb;

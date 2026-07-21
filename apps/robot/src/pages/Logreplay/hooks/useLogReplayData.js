@@ -7,9 +7,6 @@ import {
   loadPosesFromMcapUrl,
   loadRosoutFromMcapUrl,
   loadPosesSparseFromMcapUrl,
-  loadCostmapWindowFromMcapUrl,
-  loadPathWindowFromMcapUrl,
-  loadGoalPoseWindowFromMcapUrl,
   loadOccupancyGridFromMcapUrl
 } from '../mcap/mcapLoader.js'
 import { toUtcFromLocalDateTime } from '@/utils/dateUtils'
@@ -57,6 +54,43 @@ function dedupeSortedByTSec(arr) {
 const EMPTY_OPTION = { id: '__empty__', label: '파일 없음' }
 const INITIAL_HINT = 'mcap 파일 선택 후 조회 버튼을 눌러주세요'
 
+// ✅ 맵 통합 로더: pose 윈도우를 읽는 "같은 청크 스캔"에 costmap/path/goal을 편승시켜
+//   같은 청크를 토픽마다 반복 압축해제하던 낭비를 제거한다(ReplayControls 편승 패턴 이식).
+//   편승 대상 토픽(kind별 후보 + 다운샘플).
+const MAP_EXTRA_TOPICS = [
+  {
+    kind: 'costmap',
+    downsampleMs: 250,
+    candidates: [
+      '/local_costmap/costmap',
+      '/global_costmap/costmap',
+      '/debug/dwa_local_costmap',
+      '/debug/dwa_global_costmap',
+      '/local_costmap',
+      '/global_costmap',
+      '/costmap'
+    ]
+  },
+  {
+    kind: 'path',
+    downsampleMs: 200,
+    candidates: [
+      '/plan',
+      '/transformed_global_plan',
+      '/master_service/path',
+      '/path',
+      '/trajectory',
+      '/planned_path',
+      '/plan_smoothed'
+    ]
+  },
+  {
+    kind: 'goal',
+    downsampleMs: 0,
+    candidates: ['/goal_pose', '/move_base_simple/goal', '/debug/dwa_goal', '/dwa_goal', '/goal']
+  }
+]
+
 export default function useLogReplayData({
   setPathPoints,
   setGridData,
@@ -75,7 +109,9 @@ export default function useLogReplayData({
   // ✅ [ADD] 플레이바 현재 재생 위치(초)를 가져오는 콜백 (0 ~ durationSec)
   getPlayTimeSec,
   // ✅ [ADD] 실제 재생 중 여부 — seek/재생 판정을 추측이 아닌 상태로 하기 위함
-  getIsPlaying
+  getIsPlaying,
+  // ✅ [ADD] 사용자 seek 카운터 getter — 변화 감지 시 pose 누적 캐시 리셋(연속 재생은 누적 유지)
+  getSeekEpoch
 }) {
   // 스트리밍 상태 ref
   const expectedDurationSecRef = useRef(0)
@@ -93,6 +129,11 @@ export default function useLogReplayData({
   // ✅ [ADD][Option A] pose window 결과 캐시(플레이바 이동 시 네트워크 없이 여기서 선택)
   const poseWindowCacheRef = useRef([]) // [{x,y,yaw,tSec}]  (tSec: playback-relative sec)
   const lastPoseApplyIdxRef = useRef(-1)
+  // ✅ 직전에 관측한 seek 카운터 — 값이 바뀌면 사용자 seek → 누적 캐시 리셋
+  const lastSeekEpochRef = useRef(0)
+  // ✅ seek 직후 첫 리로드에서 "데이터 없는 overlay 표시 비우기"를 1회 수행하기 위한 플래그.
+  //    (seek 시 표시를 즉시 비우면 깜박임 → hold-last. 대신 리로드 후 빈 overlay만 정리해 ghost 방지)
+  const overlayResyncPendingRef = useRef(false)
 
   // ✅ [ADD] odom(=pose) 기반 센서 차트 데이터 (uPlot용: {t[], x[], y[], z[]})
   const [odomChart1, setOdomChart1] = useState(null) // vx/vy/speed
@@ -155,6 +196,9 @@ export default function useLogReplayData({
   const requestLogWindowRef = useRef(null)
   const activeLogWindowRef = useRef({ startSec: null, endSec: null })
   const logWindowSeqRef = useRef(0)
+  // ✅ in-flight 가드: 고배속 폴링에서 log 윈도우가 동시 다발로 실행돼 fetch 큐를 점유하고
+  //    pose 로더를 굶기는 것을 방지(한 번에 하나만). pose(poseInflightRef)와 동일 패턴.
+  const logWindowInflightRef = useRef(false)
   const logWindowCacheRef = useRef([]) // [{tSec, epochMs, level, text}] sorted
   const lastLogApplyIdxRef = useRef(-1)
   const appliedKeywordRef = useRef('')
@@ -168,11 +212,10 @@ export default function useLogReplayData({
   const applyLogsByPlayheadRef = useRef(null)
   // ── 공통 overlay window refs (costmap / path / goalPose) ──
   const overlayRef = useRef({
-    costmap: { seq: 0, cache: [], active: { s: null, e: null }, lastIdx: -1 },
-    path: { seq: 0, cache: [], active: { s: null, e: null }, lastIdx: -1 },
-    goalPose: { seq: 0, cache: [], active: { s: null, e: null }, lastIdx: -1 }
+    costmap: { seq: 0, cache: [], active: { s: null, e: null }, lastIdx: -1, inflight: false },
+    path: { seq: 0, cache: [], active: { s: null, e: null }, lastIdx: -1, inflight: false },
+    goalPose: { seq: 0, cache: [], active: { s: null, e: null }, lastIdx: -1, inflight: false }
   })
-  const requestOverlayWindowRef = useRef(null)
   const requestChartOverviewRef = useRef(null)
 
   const timebaseReadyRef = useRef(false)
@@ -187,11 +230,12 @@ export default function useLogReplayData({
 
     requestPoseWindowRef.current = null
     requestLogWindowRef.current = null
-    requestOverlayWindowRef.current = null
 
     activePoseWindowRef.current = { startSec: null, endSec: null }
     poseInflightRef.current = false
+    logWindowInflightRef.current = false
     activeLogWindowRef.current = { startSec: null, endSec: null }
+    for (const key of Object.keys(overlayRef.current)) overlayRef.current[key].inflight = false
 
     poseWindowCacheRef.current = []
     logWindowCacheRef.current = []
@@ -407,25 +451,26 @@ export default function useLogReplayData({
         centerAdj < Math.max(0.5, typicalStep * 0.5)
 
       // ✅ 5) seek 판정(핵심):
-      // - backward 점프는 강한 seek 신호
-      // - forward 점프는 "평소 step" 대비 과도할 때만 seek
-      //   (고배속에서 diffSec가 커지는 정상 재생을 seek으로 오인하지 않도록)
-      const forwardSeekThreshold = Math.max(3.0, typicalStep * 8) // ★ 핵심 파라미터
-      // ✅ backward seek 임계도 typicalStep 기반으로 상향(작은 jitter는 seek 아님)
+      // - 재생 중 forward 점프는 "아무리 커도" 정상 고속재생 → seek 아님(playhead/누적).
+      //   (과거: forward diffSec가 임계 초과면 seek으로 봤는데, 10배속의 큰 step을 seek으로
+      //    오판해 캐시가 ±2s window로 REPLACE되며 누적 경로가 끊기고 로봇이 점프했다.)
+      // - 사용자의 forward 드래그 seek은 handleProgressPointerDown이 isPlaying=false로 만들어
+      //   아래 `!playing` 분기가 잡으므로, 재생 중 forward-seek 휴리스틱은 불필요.
+      // - 재생 중에도 backward 점프는 loop/수동 이동 신호로 유지.
       const backwardSeekThreshold = Math.max(1.5, typicalStep * 6)
 
-      // ✅ 재생 중이 아닌데 playhead가 움직였다 = 사용자 seek (점프 크기 무관)
-      //    재생 중이면 기존 휴리스틱(큰 backward/forward 점프 = loop/수동 이동)을 유지
-      const heuristicSeek =
-        !wrapped && Number.isFinite(last) && (diffSec < -backwardSeekThreshold || diffSec > forwardSeekThreshold)
-      const isSeek = !playing ? Number.isFinite(last) : heuristicSeek
+      const heuristicSeek = !wrapped && Number.isFinite(last) && diffSec < -backwardSeekThreshold
+
+      // ✅ 일시정지(!playing) 상태에서도 "실제 점프"만 seek으로 본다.
+      //    멈춤 직후 남는 마지막 1스텝(≈typicalStep)을 seek으로 오판하면 pose 캐시를
+      //    ±2s window로 REPLACE해 누적 궤적("지나온 경로")이 사라진다(사용자 신고 현상).
+      //    사용자 드래그/프레임점프 같은 큰 이동만 seek으로 처리한다.
+      const pausedSeekJump = Math.max(1.0, typicalStep * 3)
+      const isSeek = !playing ? Number.isFinite(last) && Math.abs(diffSec) > pausedSeekJump : heuristicSeek
 
       // pose window는 재생 중에도 계속 호출(커버되면 loader가 skip)
+      // overlay(costmap/path/goal)는 pose 스캔에 편승해 함께 로드되므로 개별 요청 불필요.
       requestPoseWindowRef.current?.(center, isSeek ? 'seek' : 'playhead')
-      // ── overlay topics (공통 window) ──
-      requestOverlayWindowRef.current?.('costmap', center, isSeek ? 'seek' : 'playhead')
-      requestOverlayWindowRef.current?.('path', center, isSeek ? 'seek' : 'playhead')
-      requestOverlayWindowRef.current?.('goalPose', center, isSeek ? 'seek' : 'playhead')
       // ✅ 6) log window 모드 전환
       if (isSeek) {
         // seek → 누적 리셋, 해당 시점 윈도우만 표시
@@ -600,13 +645,15 @@ export default function useLogReplayData({
   // ✅ [REPLACE] applyPoseByPlayhead
   const applyPoseByPlayhead = useCallback(
     (playSec) => {
-      const poses = poseWindowCacheRef.current
-      if (!Array.isArray(poses) || poses.length === 0) {
-        return
-      }
-
       const t = Number(playSec)
       if (!Number.isFinite(t)) return
+
+      const poses = poseWindowCacheRef.current
+      if (!Array.isArray(poses) || poses.length === 0) {
+        // 캐시가 비어 있으면(초기/seek 직후) 현재 위치 윈도우를 요청해 다시 채운다.
+        requestPoseWindowRef.current?.(t, 'seek')
+        return
+      }
 
       const minT = Number(poses[0]?.tSec)
       const maxT = Number(poses[poses.length - 1]?.tSec)
@@ -748,6 +795,33 @@ export default function useLogReplayData({
       try {
         const t = Number(getPlayTimeSec())
         if (Number.isFinite(t)) {
+          // ✅ 사용자 seek 감지(중앙화): epoch가 바뀌면 pose + overlay 캐시를 일괄 리셋한다.
+          //    - pose만 리셋하면 goalPose/costmap 캐시가 남아, 시작으로 되감아도 과거 goal이
+          //      nearest 픽으로 표시돼 "첫 로드와 목표 지점 유무가 다름" 불일치가 났다.
+          //    - 연속 재생 중에는 epoch가 안 바뀌므로 누적/궤적이 그대로 유지된다.
+          if (typeof getSeekEpoch === 'function') {
+            const ep = getSeekEpoch()
+            if (ep !== lastSeekEpochRef.current) {
+              lastSeekEpochRef.current = ep
+              // ✅ hold-last: 표시(pathPoints/costmap/path/goal)는 즉시 비우지 않는다.
+              //    캐시/커버리지만 리셋해 새 위치부터 재누적하고, 새 데이터가 도착하면 apply*가 교체.
+              //    (즉시 blank하면 seek마다 한 프레임 빈 화면 = 깜박임)
+              // pose
+              poseWindowCacheRef.current = []
+              lastPoseApplyIdxRef.current = -1
+              poseWindowSeqRef.current++ // 진행 중이던 이전 위치 로드는 seq 불일치로 폐기
+              // overlay (costmap/path/goalPose) — 캐시/커버리지 리셋
+              const ov = overlayRef.current
+              for (const k of Object.keys(ov)) {
+                ov[k].cache = []
+                ov[k].active = { s: null, e: null }
+                ov[k].lastIdx = -1
+                ov[k].inflight = false
+              }
+              // hold-last: 표시는 유지하고, 리로드 완료 후 데이터 없는 overlay만 정리(깜박임 없음 + ghost 방지)
+              overlayResyncPendingRef.current = true
+            }
+          }
           applyPoseByPlayhead(t)
           applyOverlayByPlayhead(t) // ✅ ADD
         }
@@ -756,7 +830,7 @@ export default function useLogReplayData({
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [getPlayTimeSec, applyPoseByPlayhead, applyOverlayByPlayhead])
+  }, [getPlayTimeSec, applyPoseByPlayhead, applyOverlayByPlayhead, getSeekEpoch])
 
   // 다운로드
   const [isPreparingDownload, setIsPreparingDownload] = useState(false)
@@ -930,6 +1004,7 @@ export default function useLogReplayData({
     logWindowSeqRef.current = 0
     logWindowCacheRef.current = []
     lastLogApplyIdxRef.current = -1
+    logWindowInflightRef.current = false
 
     // ✅ [ADD] 누적 모드 리셋
     logAccModeRef.current = 'seek'
@@ -942,6 +1017,7 @@ export default function useLogReplayData({
       ov[key].cache = []
       ov[key].active = { s: null, e: null }
       ov[key].lastIdx = -1
+      ov[key].inflight = false
     }
     // [Step1] tar.gz 사전 로드 (병렬 시작: await 하지 않음)
     // tar.gz 프리패치(비동기)
@@ -968,7 +1044,10 @@ export default function useLogReplayData({
 
       // ✅ 초기 로딩은 작은 윈도우(±3s)로 빠르게 표시, 이후 ±12s
       const HALF = reason === 'grid-ready' ? 3 : reason === 'seek' ? 2 : 12
-      const isAcc = logAccModeRef.current === 'accumulate'
+      // ✅ pose 캐시는 "항상 누적"한다("지나온 경로" 보존). 과거엔 logAccModeRef(로그 전용 ref)에
+      //    묶여 있었는데, 재생 중 이 값이 seek/accumulate로 flip되면서 로드 완료 시점에 seek이면
+      //    캐시를 통째로 REPLACE해 궤적이 사라졌다(정지 시 특히 두드러짐). flippy 신호에서 분리.
+      const isAcc = true
       const startSec = Math.max(0, centerSec - HALF)
       const endSec = exp > 0 ? Math.min(exp, centerSec + HALF) : centerSec + HALF
 
@@ -1003,6 +1082,8 @@ export default function useLogReplayData({
       const seq = ++poseWindowSeqRef.current
 
       try {
+        // 편승으로 같이 받아온 overlay를 임시로 모았다가, 최신 요청일 때만 캐시에 반영
+        const extraTmp = { costmap: [], path: [], goal: [] }
         const raw = await loadPosesFromMcapUrl(url, {
           startSec,
           endSec,
@@ -1010,7 +1091,11 @@ export default function useLogReplayData({
           previewLimit: Infinity,
           maxMillis: Infinity,
           downsample: 1,
-          timeDownsampleMs: 50
+          timeDownsampleMs: 50,
+          extraTopics: MAP_EXTRA_TOPICS,
+          onExtraMessage: (kind, rec) => {
+            if (extraTmp[kind]) extraTmp[kind].push(rec)
+          }
         })
 
         if (!currentMcapUrlRef.current) return
@@ -1039,17 +1124,52 @@ export default function useLogReplayData({
         }
 
         // 최신 요청만 반영
-        if (seq !== poseWindowSeqRef.current) return
+        if (seq !== poseWindowSeqRef.current) {
+          return
+        }
 
         // ✅ cache + 화면 반영
 
-        if (logAccModeRef.current === 'accumulate') {
+        // ✅ 항상 누적 + 메모리 상한(오래된 앞부분부터 잘라 무한 성장 방지)
+        {
           const merged = poseWindowCacheRef.current.concat(norm)
           merged.sort((a, b) => a.tSec - b.tSec)
-          poseWindowCacheRef.current = dedupeSortedByTSec(merged)
-        } else {
-          // seek 모드
-          poseWindowCacheRef.current = norm
+          let deduped = dedupeSortedByTSec(merged)
+          const POSE_CACHE_MAX = 20000
+          if (deduped.length > POSE_CACHE_MAX) deduped = deduped.slice(deduped.length - POSE_CACHE_MAX)
+          poseWindowCacheRef.current = deduped
+        }
+
+        // ▼ 편승으로 받은 overlay(costmap/path/goal)를 각 캐시에 누적(+상한). 캐시 구조는 기존과 동일.
+        {
+          const ov = overlayRef.current
+          const mergeOverlay = (state, arr, cap) => {
+            if (!state || !arr || !arr.length) return
+            const merged = state.cache.concat(arr)
+            merged.sort((a, b) => (a.tSec ?? 0) - (b.tSec ?? 0))
+            let d = dedupeSortedByTSec(merged)
+            if (d.length > cap) d = d.slice(d.length - cap)
+            state.cache = d
+            state.lastIdx = -1
+          }
+          // costmap grid는 무거우므로 상한을 낮게(현재 프레임만 표시 → 긴 히스토리 불필요).
+          // path/goal은 가벼워 여유 있게. seek 시 어차피 전체 리셋된다.
+          mergeOverlay(ov.costmap, extraTmp.costmap, 400)
+          mergeOverlay(ov.path, extraTmp.path, 800)
+          mergeOverlay(ov.goalPose, extraTmp.goal, 800)
+
+          // ✅ seek 직후 첫 리로드: 새 위치에 데이터가 없는 overlay만 표시를 비운다(잔상 방지).
+          //    데이터가 있으면 applyOverlayByPlayhead가 다음 프레임에 자연스럽게 교체 → 깜박임 없음.
+          if (overlayResyncPendingRef.current) {
+            overlayResyncPendingRef.current = false
+            if (poseWindowCacheRef.current.length === 0) setPathPoints?.([])
+            if (ov.costmap.cache.length === 0) {
+              setLocalCostmapData?.(null)
+              setLocalCostmapFrames?.([])
+            }
+            if (ov.path.cache.length === 0) setPlannedPathPoints?.([])
+            if (ov.goalPose.cache.length === 0) setDwaGoals?.([])
+          }
         }
 
         lastPoseApplyIdxRef.current = -1
@@ -1113,9 +1233,13 @@ export default function useLogReplayData({
         }
       }
 
+      // ✅ in-flight 가드: 이미 로드 중이면 skip(동시 다발 방지 → pose 로더 starvation 방지)
+      if (logWindowInflightRef.current) return
+
       activeLogWindowRef.current = { startSec, endSec }
       const seq = ++logWindowSeqRef.current
 
+      logWindowInflightRef.current = true
       setIsLoadingLogs(true)
       try {
         const res = await loadRosoutFromMcapUrl(url, {
@@ -1184,79 +1308,12 @@ export default function useLogReplayData({
         setLogLines([])
         setFilteredLines(['표시할 로그가 없습니다.'])
       } finally {
+        logWindowInflightRef.current = false
         setIsLoadingLogs(false)
       }
     }
     // 외부(polling)에서 호출할 수 있게 ref 연결
     requestLogWindowRef.current = requestLogWindow
-    // ── 공통 overlay window loader (costmap / path / goalPose) ──
-    const OVERLAY_LOADERS = {
-      costmap: {
-        load: loadCostmapWindowFromMcapUrl,
-        opts: { timeDownsampleMs: 250, maxFrames: 2000 },
-        extract: (res) => res?.frames ?? []
-      },
-      path: {
-        load: loadPathWindowFromMcapUrl,
-        opts: { timeDownsampleMs: 200, maxMsgs: 800 },
-        extract: (res) => res?.plans ?? []
-      },
-      goalPose: {
-        load: loadGoalPoseWindowFromMcapUrl,
-        opts: { maxGoals: 800 },
-        extract: (res) => res?.goals ?? []
-      }
-    }
-
-    const requestOverlayWindow = async (key, centerSec, reason) => {
-      const url = currentMcapUrlRef.current
-      if (!url) return
-
-      const cfg = OVERLAY_LOADERS[key]
-      if (!cfg) return
-
-      const state = overlayRef.current[key]
-      if (!state) return
-
-      const exp = Number(expectedDurationSecRef.current) || 0
-      if (!Number.isFinite(centerSec)) return
-
-      const baseMs = t0EpochMsRef.current
-      if (!(Number.isFinite(baseMs) && baseMs > 0)) return
-
-      const HALF = reason === 'grid-ready' ? 3 : reason === 'seek' ? 2 : 12
-      const startSec = Math.max(0, centerSec - HALF)
-      const endSec = exp > 0 ? Math.min(exp, centerSec + HALF) : centerSec + HALF
-
-      // skip if covered
-      const { s, e } = state.active
-      if (s != null && e != null && centerSec >= s && centerSec <= e) return
-
-      state.active = { s: startSec, e: endSec }
-      const seq = ++state.seq
-
-      try {
-        const loaderFn = cfg.load
-        if (typeof loaderFn !== 'function') {
-          console.warn(`[Logreplay] overlay 로더 없음(${key})`)
-          return
-        }
-
-        const raw = await loaderFn(url, { ...cfg.opts, startSec, endSec })
-
-        if (seq !== state.seq) return // stale
-
-        const arr = cfg.extract(raw)
-        arr.sort((a, b) => (a.tSec ?? 0) - (b.tSec ?? 0))
-
-        state.cache = arr
-        state.lastIdx = -1
-      } catch (err) {
-        console.warn(`[Logreplay] overlay 윈도우 로드 실패(${key}):`, err)
-      }
-    }
-
-    requestOverlayWindowRef.current = requestOverlayWindow
 
     // ✅ Overview 차트 (전체 범위, 1회)
     // - chartOverviewStarted: onTimeBounds/그리드 완료 양쪽에서 호출될 수 있어 중복 실행 방지
@@ -1340,12 +1397,9 @@ export default function useLogReplayData({
 
             setTimeout(async () => {
               // 1) 재생/표시에 즉시 필요한 critical 로더 먼저 (pose window는 단독 await)
+              //    overlay(costmap/path/goal)는 pose 편승으로 함께 로드됨 → 별도 요청 불필요.
               await requestPoseWindowRef.current?.(0, 'grid-ready')
               requestLogWindowRef.current?.(0, 'grid-ready')
-              // ── overlay topics ──
-              requestOverlayWindowRef.current?.('costmap', 0, 'grid-ready')
-              requestOverlayWindowRef.current?.('path', 0, 'grid-ready')
-              requestOverlayWindowRef.current?.('goalPose', 0, 'grid-ready')
               // 2) 차트 overview는 마지막에 시작(critical 로더와 메인스레드 경쟁 최소화)
               requestChartOverviewRef.current?.()
             }, 0)

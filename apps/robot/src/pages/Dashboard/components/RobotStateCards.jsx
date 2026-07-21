@@ -21,20 +21,15 @@ const splitFloors = (total) => {
   return { '1F': f1, '2F': f2, '3F': f3 }
 }
 
-// Figma 순서 + 원본 아이콘 매핑. box = 64px 배지 기준 아이콘 박스 크기(w,h)
-// → 배지 크기에 비례해 렌더하면 아이콘별 시각 크기가 Figma대로 일치.
-const BADGE_REF = 64
+// Figma 순서 + 원본 아이콘 매핑. 아이콘 SVG 안에 원형 배지 배경까지 포함돼 별도 틴트 불필요.
 const STATE_DEFS = [
-  { key: 'opr', state: 'OPERATION', labelKey: 'operation',            tint: 'rgba(197,192,181,0.4)', Icon: OperationIcon, box: [36, 36] },
-  { key: 'lrn', state: 'LEARNING',  labelKey: 'learning',             tint: 'rgba(199,211,245,0.4)', Icon: LearningIcon,   box: [24, 24] },
-  { key: 'sta', state: 'STANDBY',   labelKey: 'standby',              tint: 'rgba(226,224,218,0.6)', Icon: StandbyIcon,    box: [20, 28] },
-  { key: 'chr', state: 'CHARGE',    labelKey: 'charge',               tint: 'rgba(34,165,108,0.12)', Icon: ChargeIcon,     box: [36, 36] },
-  { key: 'off', state: 'OFFLINE',   labelKey: 'networkDisconnection', tint: 'rgba(119,119,114,0.12)', Icon: NetworkIcon,   box: [50, 50] },
-  { key: 'err', state: 'ERROR',     labelKey: 'error',                tint: 'rgba(234,25,23,0.1)',   Icon: ErrorIcon,      box: [32, 32] },
+  { key: 'opr', state: 'OPERATION', labelKey: 'operation',            Icon: OperationIcon },
+  { key: 'lrn', state: 'LEARNING',  labelKey: 'learning',             Icon: LearningIcon },
+  { key: 'sta', state: 'STANDBY',   labelKey: 'standby',              Icon: StandbyIcon },
+  { key: 'chr', state: 'CHARGE',    labelKey: 'charge',               Icon: ChargeIcon },
+  { key: 'off', state: 'OFFLINE',   labelKey: 'networkDisconnection', Icon: NetworkIcon },
+  { key: 'err', state: 'ERROR',     labelKey: 'error',                Icon: ErrorIcon },
 ]
-
-// 배지 크기에 맞춰 아이콘 글리프 w·h 계산 (Figma 64px 배지 기준 비율)
-const glyphSize = (box, badge) => ({ w: (box[0] / BADGE_REF) * badge, h: (box[1] / BADGE_REF) * badge })
 
 const List = styled.div`
   display: flex;
@@ -50,7 +45,7 @@ const Row = styled.article`
   gap: 12px;
   flex: 1;
   min-height: 0;
-  padding: ${({ $compact }) => ($compact ? '8px 14px' : '12px 16px')};
+  padding: ${({ $compact }) => ($compact ? '16px 20px' : '12px 16px')};
   border: 1px solid rgba(197, 192, 181, 0.4);
   border-radius: 12px;
   background: #fff;
@@ -62,18 +57,6 @@ const Row = styled.article`
   }
 `
 
-// Figma: 원형(rounded 50) 틴트 배경 64px + 아이콘 36px
-const IconBadge = styled.div`
-  flex: 0 0 auto;
-  width: ${({ $compact }) => ($compact ? '44px' : '56px')};
-  height: ${({ $compact }) => ($compact ? '44px' : '56px')};
-  border-radius: 50%;
-  background: ${({ $tint }) => $tint};
-  display: flex;
-  align-items: center;
-  justify-content: center;
-`
-
 const Main = styled.div`
   flex: 1 1 auto;
   min-width: ${({ $compact }) => ($compact ? '96px' : '116px')};
@@ -83,9 +66,9 @@ const Main = styled.div`
 `
 
 const StateLabel = styled.span`
-  font-size: ${({ $compact }) => ($compact ? '1.4rem' : '1.8rem')};
-  color: #1a1a1a;
-  font-weight: 700;
+  font-size: 1.8rem;
+  color: rgba(0, 0, 0, 0.5);
+  font-weight: 500;
   line-height: 1.2;
   /* 긴 영문 라벨(예: Network Disconnected)이 카드를 넘지 않도록 단어 단위 줄바꿈 */
   white-space: normal;
@@ -115,7 +98,7 @@ const Floors = styled.div`
   flex-direction: column;
   gap: ${({ $compact }) => ($compact ? '5px' : '7px')};
   width: ${({ $compact, $wide }) =>
-    $wide ? ($compact ? '160px' : '190px') : ($compact ? '90px' : '108px')};
+    $compact ? '62px' : $wide ? '190px' : '108px'};
 `
 
 const FloorCol = styled.div`
@@ -123,7 +106,8 @@ const FloorCol = styled.div`
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  /* $fixed(compact 층 모드): 두 텍스트 폭 합이 62가 되도록 고정폭 부여 → 사이 여백 제거 */
+  gap: ${({ $fixed }) => ($fixed ? '0' : '8px')};
   width: 100%;
 `
 
@@ -134,6 +118,8 @@ const FloorLabel = styled.span`
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+  /* $fixed: 값(44px)을 뺀 나머지(≈18px)를 차지, 긴 영역명은 말줄임 → 층+값 폭 합 = 62 */
+  ${({ $fixed }) => $fixed && 'flex: 1;'}
 `
 
 const FloorVal = styled.span`
@@ -142,6 +128,7 @@ const FloorVal = styled.span`
   color: #333;
   white-space: nowrap;
   flex-shrink: 0;
+  ${({ $fixed }) => $fixed && 'flex: 0 0 44px; width: 44px; text-align: right;'}
 `
 
 // ── 대시보드용 가로 배치 (층별 없음, 최소 폭 유지 + 반응형 줄바꿈) ──
@@ -203,9 +190,8 @@ const RobotStateCards = ({ deviceCount = {}, onClickState, compact = false, row 
   if (row) {
     return (
       <RowWrap>
-        {STATE_DEFS.map(({ key, state, labelKey, tint, Icon, box }) => {
+        {STATE_DEFS.map(({ key, state, labelKey, Icon }) => {
           const total = deviceCount[key] ?? 0
-          const g = glyphSize(box, 56)
           return (
             <RowCard
               key={key}
@@ -213,9 +199,7 @@ const RobotStateCards = ({ deviceCount = {}, onClickState, compact = false, row 
               data-value={state}
               onClick={onClickState ? () => onClickState(state) : undefined}
             >
-              <IconBadge $tint={tint}>
-                <Icon w={g.w} h={g.h} />
-              </IconBadge>
+              <Icon size={56} />
               <RowMain>
                 <RowLabel>{t(labelKey)}</RowLabel>
                 <span>
@@ -232,10 +216,9 @@ const RobotStateCards = ({ deviceCount = {}, onClickState, compact = false, row 
 
   return (
     <List $compact={compact}>
-      {STATE_DEFS.map(({ key, state, labelKey, tint, Icon, box }) => {
+      {STATE_DEFS.map(({ key, state, labelKey, Icon }) => {
         const total = deviceCount[key] ?? 0
         const byFloor = splitFloors(total)
-        const g = glyphSize(box, compact ? 44 : 56)
         // 브레이크다운 컬럼: 영역 제공 시 영역별(각 상태의 실제 로봇 수), 없으면 층별(mock)
         const columns = useAreas
           ? areaColumns.map((a) => ({
@@ -254,9 +237,7 @@ const RobotStateCards = ({ deviceCount = {}, onClickState, compact = false, row 
             data-value={state}
             onClick={onClickState ? () => onClickState(state) : undefined}
           >
-            <IconBadge $tint={tint} $compact={compact}>
-              <Icon w={g.w} h={g.h} />
-            </IconBadge>
+            <Icon size={compact ? 64 : 56} />
             <Main $compact={compact}>
               <StateLabel $compact={compact}>{t(labelKey)}</StateLabel>
               <span>
@@ -265,12 +246,16 @@ const RobotStateCards = ({ deviceCount = {}, onClickState, compact = false, row 
               </span>
             </Main>
             <Floors $compact={compact} $wide={useAreas}>
-              {columns.map((c) => (
-                <FloorCol key={c.key}>
-                  <FloorLabel>{c.label}</FloorLabel>
-                  <FloorVal>{c.value} {t('unit')}</FloorVal>
-                </FloorCol>
-              ))}
+              {columns.map((c) => {
+                // 두 텍스트(층·영역/유닛) 폭 합 = 62px 고정: compact(TV) 뷰 전체
+                const fixedW = compact
+                return (
+                  <FloorCol key={c.key} $fixed={fixedW}>
+                    <FloorLabel $fixed={fixedW}>{c.label}</FloorLabel>
+                    <FloorVal $fixed={fixedW}>{c.value} {t('unit')}</FloorVal>
+                  </FloorCol>
+                )
+              })}
             </Floors>
           </Row>
         )

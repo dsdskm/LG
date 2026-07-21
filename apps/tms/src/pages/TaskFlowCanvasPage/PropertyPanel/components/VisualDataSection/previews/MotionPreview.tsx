@@ -1,4 +1,4 @@
-import { Suspense, useMemo, useRef } from 'react'
+import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { Canvas, useFrame, useLoader } from '@react-three/fiber'
 import { Center, OrbitControls } from '@react-three/drei'
 import URDFLoader, { URDFRobot } from 'urdf-loader'
@@ -7,6 +7,8 @@ import { PreviewProps } from './types.preview'
 import { parseMotionYaml } from '@/utils/motionParser'
 import { MotionData, ParsedTrajectory, TrajectoryPoint } from '@/types/motion'
 import { MotionCollision } from './MotionCollision'
+import { useContentTaskStore } from '@/pages/TaskFlowCanvasPage/store/useContentTaskStore'
+import { data } from 'react-router-dom'
 const URDF_BASE = '/tms/urdf/cloid_description_1k'
 
 const motion_yaml = `
@@ -64,7 +66,8 @@ function useUrdfRobot(url: string) {
 
 interface RobotProps {
   urdfUrl: string
-  motionData: MotionData | null
+  motionData: MotionData | undefined
+  nodeId: string | undefined
 }
 
 // YAML(aging.py)의 관절 이름을 URDF 실제 관절 이름으로 매핑
@@ -88,14 +91,27 @@ function sampleFrame(frames: MotionData['frames'], t: number): Record<string, nu
   return joints
 }
 
-function Robot({ urdfUrl, motionData }: RobotProps) {
+function Robot({ urdfUrl, motionData, nodeId }: RobotProps) {
   const robot = useUrdfRobot(urdfUrl)
   const robotRef = useRef<URDFRobot>(null!)
   const timeRef = useRef(0)
 
+  const updatePlayStatus = useContentTaskStore((state) => state.updatePlayStatus)
+
   const duration = motionData?.frames[motionData?.frames.length - 1].t ?? 1
 
+  useEffect(() => {
+    timeRef.current = 0
+    console.log('time is initialized')
+  }, [nodeId])
+
   useFrame((_, delta) => {
+    console.log('paly time', timeRef.current, ' duration ', duration)
+    if (timeRef.current > duration) {
+      updatePlayStatus(nodeId, 'COMPLETED')
+    } else {
+      updatePlayStatus(nodeId, 'PLAYING')
+    }
     console.log('delta', delta)
     timeRef.current = timeRef.current + delta
     const joints = sampleFrame(motionData?.frames ?? [], timeRef.current)
@@ -113,7 +129,7 @@ function Robot({ urdfUrl, motionData }: RobotProps) {
   )
 }
 
-export default function MotionPreview({ node }: PreviewProps) {
+export default function MotionPreview({ node, nodeId }: PreviewProps) {
   const motion = useMemo(() => parseMotionYaml(motion_yaml), [])
   console.log('motion data', motion)
   if (!node || !node.data) {
@@ -128,7 +144,7 @@ export default function MotionPreview({ node }: PreviewProps) {
         <Suspense fallback={null}>
           <Center>
             <group rotation={[-Math.PI / 2, 0, -Math.PI / 2]}>
-              <Robot urdfUrl={`${URDF_BASE}/model/cloid_v1_hand.urdf`} motionData={motion} />
+              <Robot urdfUrl={`${URDF_BASE}/model/cloid_v1_hand.urdf`} motionData={motion} nodeId={nodeId} />
             </group>
           </Center>
         </Suspense>

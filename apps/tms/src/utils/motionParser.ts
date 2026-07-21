@@ -24,6 +24,5 @@ export function parseMotionYaml(yamlText: string) {
     }
   } catch (error) {
     console.error('YAML 파싱 실패:', error)
-    return null
   }
 }

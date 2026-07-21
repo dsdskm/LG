@@ -1,15 +1,30 @@
 const BASE_URL = import.meta.env.VITE_AI_CHAT_SERVICE_URL
+let __chatSettingsBaseUrlLogged = false
 
 /**
  * 채팅 설정 전체 + 스키마 조회
  * @returns {Promise<{ code:number, data:{ schema:Array, values:Object } }>}
  */
 export async function getChatSettings() {  
+  if (!__chatSettingsBaseUrlLogged) {
+    console.info('[chat-settings] VITE_AI_CHAT_SERVICE_URL =', BASE_URL)
+    __chatSettingsBaseUrlLogged = true
+  }
+
   const response = await fetch(`${BASE_URL}/chat/settings`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
   })
-  return response.json()
+
+  const json = await response.json()
+  console.info('[chat-settings] GET /chat/settings', {
+    status: response.status,
+    ok: response.ok,
+    screens: Array.isArray(json?.data?.management?.screens) ? json.data.management.screens.length : 0,
+    screenTools: Array.isArray(json?.data?.management?.screenTools) ? json.data.management.screenTools.length : 0,
+    actionTypes: Array.isArray(json?.data?.management?.actionTypes) ? json.data.management.actionTypes.length : 0,
+  })
+  return json
 }
 
 /**
@@ -31,6 +46,15 @@ export async function updateChatSettings(payload) {
 export async function updateChatPrompt(id, payload) {
   const response = await fetch(`${BASE_URL}/chat/settings/prompts/${encodeURIComponent(String(id))}`, {
     method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return response.json()
+}
+
+export async function createChatPrompt(payload) {
+  const response = await fetch(`${BASE_URL}/chat/settings/prompts`, {
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })

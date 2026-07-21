@@ -230,6 +230,13 @@ function OccupancyGridMesh({ gridData }) {
     return new THREE.PlaneGeometry(width * resolution, height * resolution)
   }, [gridData])
 
+  // gridData 변경/언마운트 시 이전 지오메트리 해제 (GPU 누수 방지 — PathLine과 동일 패턴)
+  useEffect(() => {
+    return () => {
+      if (geometry) geometry.dispose()
+    }
+  }, [geometry])
+
   const position = useMemo(() => {
     if (!gridData) return [0, 0, 0]
     const { width, height, resolution, origin } = gridData
@@ -465,6 +472,18 @@ function CostmapOverlay({ localCostmapFrames, playbackCutoffSec, pathPoints }) {
     if (!geometry) return null
     return new THREE.EdgesGeometry(geometry)
   }, [geometry])
+
+  // 프레임 변경/언마운트 시 이전 지오메트리 해제 (GPU 누수 방지)
+  useEffect(() => {
+    return () => {
+      if (geometry) geometry.dispose()
+    }
+  }, [geometry])
+  useEffect(() => {
+    return () => {
+      if (edgeGeometry) edgeGeometry.dispose()
+    }
+  }, [edgeGeometry])
 
   if (!texture || !geometry) return null
 
@@ -766,6 +785,14 @@ function GoalMarker({ dwaGoals, pathPoints, playbackCutoffSec, markerSize = 0.3,
   const barXGeo = useMemo(() => new THREE.BoxGeometry(armLen, armHeight, armThick), [armLen, armThick])
   const barZGeo = useMemo(() => new THREE.BoxGeometry(armThick, armHeight, armLen), [armLen, armThick])
 
+  // markerSize 변경/언마운트 시 이전 지오메트리 해제 (GPU 누수 방지)
+  useEffect(() => {
+    return () => {
+      barXGeo.dispose()
+      barZGeo.dispose()
+    }
+  }, [barXGeo, barZGeo])
+
   if (!pickedPose) return null
 
   return (
@@ -800,6 +827,13 @@ function RobotMarker({ pathPoints, playbackCutoffSec, markerSize = 0.4 }) {
     geo.computeVertexNormals()
     return geo
   }, [markerSize])
+
+  // markerSize 변경/언마운트 시 이전 지오메트리 해제 (GPU 누수 방지)
+  useEffect(() => {
+    return () => {
+      if (geometry) geometry.dispose()
+    }
+  }, [geometry])
 
   if (!pose) return null
 

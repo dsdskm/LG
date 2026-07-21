@@ -197,10 +197,9 @@ const DeployPage = () => {
     }
 
     return {
-      groupId: taskFlowData.groupId ?? '',
-      siteId: taskFlowData.siteId ?? '',
-      taskflowId: taskFlowData.id ?? 0,
-      robotId: devicesData.content.map((device) => device.deviceId) ?? []
+      groupId: taskFlowData.groupId,
+      siteId: taskFlowData.siteId,
+      taskflowId: taskFlowData.id ?? -1
     }
   }, [taskFlowData, devicesData])
 

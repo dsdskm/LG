@@ -123,7 +123,8 @@ export function useLogReplayLogic({ initialDate, deviceId }) {
     setPoses3d,
     durationSec,
     currentTimeSec,
-    resetPlaybackRefs
+    resetPlaybackRefs,
+    seekEpochRef
   } = player
 
   // ✅ ref로 읽어서 함수 참조를 안정화 (무한 렌더 루프 방지)
@@ -143,6 +144,9 @@ export function useLogReplayLogic({ initialDate, deviceId }) {
   }, [isPlaying])
   const getIsPlaying = useCallback(() => !!isPlayingValRef.current, [])
 
+  // ✅ 사용자 seek 발생 카운터 getter (데이터 훅이 변화 감지 → pose 캐시 리셋)
+  const getSeekEpoch = useCallback(() => Number(seekEpochRef?.current) || 0, [seekEpochRef])
+
   // 데이터/검색/서버/다운로드
   const data = useLogReplayData({
     setPathPoints,
@@ -161,7 +165,8 @@ export function useLogReplayLogic({ initialDate, deviceId }) {
     deviceId,
     // ✅ ADD
     getPlayTimeSec,
-    getIsPlaying
+    getIsPlaying,
+    getSeekEpoch
   })
 
   const {

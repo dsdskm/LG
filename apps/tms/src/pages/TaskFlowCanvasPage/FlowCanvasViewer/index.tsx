@@ -80,6 +80,15 @@ import { validateSemantics } from '@/bt/validation'
 import type { BtAstNode } from '@/bt/types'
 import { SimulationExecutor } from '@/bt/execution/simulationExecutor'
 import { EMPTY_SNAPSHOT, type ExecSnapshot, type ExecStatus, type FlowExecutor } from '@/bt/execution/executor'
+import VisualDataSection from '../PropertyPanel/components/VisualDataSection'
+import PoiPreview from '../PropertyPanel/components/VisualDataSection/previews/PoiPreview'
+import MotionPreview from '../PropertyPanel/components/VisualDataSection/previews/MotionPreview'
+import FacePreview from '../PropertyPanel/components/VisualDataSection/previews/FacePreview'
+import SoundPreview from '../PropertyPanel/components/VisualDataSection/previews/SoundPreview'
+import { PlayStatus } from '../PropertyPanel/components/VisualDataSection/previews/types.preview'
+import { useContentTaskStore } from '../store/useContentTaskStore'
+import { useResponsiveStore } from '@repo/stores'
+import { MobilePropertySheet } from '../components/MobilePropertySheet'
 
 // 로컬 개발 환경 여부. .env.local 의 VITE_ENV=local 로 판별(빌드 환경엔 없음).
 const IS_LOCAL_ENV = import.meta.env.VITE_ENV === 'local'
@@ -171,11 +180,53 @@ function PropertyPanel({
   )
 }
 
+function ContentsPanel({ selectedNode }: { selectedNode: any | null }) {
+  const [contentTypes, setContentTypes] = useState<Map<number, any>>(new Map())
+  const addContentTask = useContentTaskStore((state) => state.addContentTask)
+  console.log('selectedNode info ', selectedNode)
+
+  useEffect(() => {
+    if (!selectedNode?.data?.contentTypeId) return
+    const typeId = selectedNode?.data?.contentTypeId
+    if (!typeId) return
+
+    setContentTypes((prev) => {
+      if (prev.get(typeId) === selectedNode) return prev
+      const next = new Map(prev)
+      next.set(typeId, selectedNode)
+      return next
+    })
+    addContentTask({
+      nodeId: selectedNode.id,
+      playStatus: 'READY'
+    })
+  }, [selectedNode, addContentTask])
+
+  const poiContent = contentTypes.get(1)
+  const motionContent = contentTypes.get(2)
+  const faceContent = contentTypes.get(6)
+  const soundContent = contentTypes.get(5)
+
+  return (
+    <>
+      <div style={{ display: 'flex', flexDirection: 'column', overflow: 'auto', gap: 10, padding: '8px 4px 0px 0px' }}>
+        {poiContent && <PoiPreview node={{ data: poiContent?.data ?? {} }} nodeId={poiContent?.id} />}
+        {motionContent && <MotionPreview node={{ data: motionContent?.data ?? {} }} nodeId={motionContent?.id} />}
+        {faceContent && <FacePreview node={{ data: faceContent?.data ?? {} }} nodeId={faceContent?.id} />}
+        {soundContent && <SoundPreview node={{ data: soundContent?.data ?? {} }} nodeId={soundContent?.id} />}
+      </div>
+    </>
+  )
+}
+
 function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, flowName }: Props) {
   const { t } = useTranslation('tms')
 
+  const getPlayStatusById = useContentTaskStore((state) => state.getPlayStatusById)
+
   const wrapperRef = useRef<HTMLDivElement | null>(null)
   const rfRef = useRef<ReactFlowInstance<any, any> | null>(null)
+  const refContentsStatus = useRef(new Map<string, PlayStatus>())
   const updateNodeInternals = useUpdateNodeInternals()
 
   const [mode, setMode] = useState<CanvasMode>('view')
@@ -212,6 +263,11 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
   useEffect(() => {
     tickRateRef.current = tickRate
   }, [tickRate])
+  // showAst 도 resolveResult(=executor) 재생성 없이 실시간으로 읽기 위해 ref 로 미러링
+  const showAstRef = useRef(showAst)
+  useEffect(() => {
+    showAstRef.current = showAst
+  }, [showAst])
 
   // ReactFlow wrapper 크기를 관찰해 미니맵 크기를 비례 조정한다.
   useLayoutEffect(() => {
@@ -268,8 +324,28 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
     const forced = nodeConfigsRef.current[nodeId]?.forced ?? DEFAULT_NODE_CONFIG.forced
     if (forced === 'FAILURE') return 'FAILURE'
     if (forced === 'RUNNING') return 'RUNNING'
+    if (forced === 'NORMAL') return showAstRef.current ? 'SUCCESS' : checkViaContentsStatus(nodeId, 'SUCCESS')
+
     return 'SUCCESS'
   }, [])
+
+  const checkViaContentsStatus = (nodeId: string, defaultValue: ExecStatus) => {
+    const contentStatus = getPlayStatusById(nodeId)
+    console.log('play status', contentStatus)
+    let result = defaultValue
+    switch (contentStatus) {
+      case 'PLAYING':
+        result = 'RUNNING'
+        break
+      case 'READY':
+        result = 'RUNNING'
+        break
+      case 'COMPLETED':
+        result = 'SUCCESS'
+        break
+    }
+    return result
+  }
 
   // 실행기: 지금은 시뮬레이터. 실제 로봇 연결 시 DeviceExecutor 로 교체만 하면 FE 는 그대로 동작.
   // flow / START 노드가 바뀌면 새 실행기를 만든다.
@@ -439,6 +515,7 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
     (_event: React.MouseEvent, node: Node) => {
       setSelectedNodeId(node.id)
       setPropertyTab('task')
+      setPanelOpen(true)
       // 점검 모드에서는 START(ROOT) 를 제외한 노드 클릭 시 점검 설정 팝업을 연다.
       if (mode === 'inspect' && node.type !== 'startNode') {
         setConfigNodeId(node.id)
@@ -597,12 +674,20 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
     return rawNodes.find((n: any) => String(n.id) === configNodeId) ?? null
   }, [configNodeId, rawNodes])
 
+  const { responsiveMode } = useResponsiveStore()
+  const isMobile = responsiveMode !== 'PC' ? true : false
+  const [isPanelOpen, setPanelOpen] = useState(false)
+
+  // useEffect(() => {
+  //   setPanelOpen(selectedNode)
+  // }, [selectedNode])
+
   return (
     <InspectShell>
-      <CanvasRoot>
+      <CanvasRoot $isPanelOpen={!!selectedNode && !isMobile}>
         <CanvasMain>
           {displayOption === 'RUNNING_STATUS' && (
-            <FlowTitleBar>
+            <FlowTitleBar style={{ flexWrap: 'wrap', rowGap: '8px' }}>
               <FlowTitle>
                 <FlowTitleLabel>선택한 Task Flow</FlowTitleLabel>
                 {flowName && (
@@ -677,10 +762,14 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
           </CanvasFlowWrap>
         </CanvasMain>
 
-        {IS_LOCAL_ENV && showAst && mode === 'inspect' ? (
+        {mode === 'view' ? (
+          <PropertyPanel selectedNode={selectedNode} tab={propertyTab} onChangeTab={setPropertyTab} />
+        ) : IS_LOCAL_ENV && showAst ? (
+          // inspect 모드 + 로컬 환경 + AST 토글 ON: AST(BT) 뷰
           <AstView model={compiledModel} statusById={simStatusById} startNodeId={startNodeId} error={compileError} />
         ) : (
-          <PropertyPanel selectedNode={selectedNode} tab={propertyTab} onChangeTab={setPropertyTab} />
+          // inspect 모드 기본: 콘텐츠 프리뷰 패널
+          <ContentsPanel selectedNode={selectedNode} />
         )}
       </CanvasRoot>
 
@@ -789,6 +878,25 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
             </ControlsGroup>
           )}
         </InspectBar>
+      )}
+      {/* 모바일에서만 바텀시트로 같은 패널을 렌더링 */}
+      {isMobile && (
+        <MobilePropertySheet
+          isOpen={isPanelOpen}
+          onClose={() => {
+            setPanelOpen(false)
+          }}
+        >
+          {mode === 'view' ? (
+            <PropertyPanel selectedNode={selectedNode} tab={propertyTab} onChangeTab={setPropertyTab} />
+          ) : IS_LOCAL_ENV && showAst ? (
+            // inspect 모드 + 로컬 환경 + AST 토글 ON: AST(BT) 뷰
+            <AstView model={compiledModel} statusById={simStatusById} startNodeId={startNodeId} error={compileError} />
+          ) : (
+            // inspect 모드 기본: 콘텐츠 프리뷰 패널
+            <ContentsPanel selectedNode={selectedNode} />
+          )}
+        </MobilePropertySheet>
       )}
 
       <NodeInspectDialog

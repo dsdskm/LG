@@ -21,7 +21,7 @@ export async function listTasks(options: {
   params.set('siteId', String(options.siteId))
   const qs = params.toString()
   const url = `${path}${qs ? `?${qs}` : ''}`
-  const res = await axiosClient.get(url)
+  const res = await axiosClient.get(url, { timeout: 10 * 60 * 1000 })
   const rawItems = Array.isArray(res.content) ? res.content : []
   return rawItems as Task[]
 }

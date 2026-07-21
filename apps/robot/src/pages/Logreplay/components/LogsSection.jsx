@@ -296,7 +296,6 @@ function VirtualLogList({ lines, detectLevel, highlight, containerRefExternal, i
 function LogsSection({
   selectedLabel,
   selectedDate,
-  selectedMapId,
   isLoadingLogs,
   logError,
   logLines,
@@ -314,7 +313,7 @@ function LogsSection({
   loadPhase
 }) {
   const highlight = useHighlighter(appliedKeyword)
-  const sessionKey = `${selectedLabel || ''}||${selectedDate || ''}||${selectedMapId || ''}`
+  const sessionKey = `${selectedLabel || ''}||${selectedDate || ''}`
 
   const allOn =
     !!levelFilter.INFO && !!levelFilter.WARN && !!levelFilter.ERROR && !!levelFilter.DEBUG && !!levelFilter.FATAL
@@ -365,9 +364,6 @@ function LogsSection({
 
   const showInit = loadPhase === 'init' && !isLoadingLogs
   const showEmpty = loadPhase !== 'init' && !isLoadingLogs && (effectiveLines?.length ?? 0) === 0
-  {
-    showEmpty && <div style={S.logLine}>{emptyLogMessage || '표시할 로그가 없습니다.'}</div>
-  }
 
   const useVirtual = (effectiveLines?.length || 0) > VIRTUAL_THRESHOLD
 
@@ -377,7 +373,7 @@ function LogsSection({
         <div style={S.logHeader}>
           <span>로그</span>
           <span style={S.logMeta}>
-            {selectedLabel} · {formatDate(selectedDate)} · {selectedMapId}
+            {selectedLabel} · {formatDate(selectedDate)}
           </span>
         </div>
 
@@ -444,8 +440,8 @@ function LogsSection({
 }
 
 export default memo(LogsSection, (p, n) => {
-  const pKey = `${p.selectedLabel || ''}||${p.selectedDate || ''}||${p.selectedMapId || ''}`
-  const nKey = `${n.selectedLabel || ''}||${n.selectedDate || ''}||${n.selectedMapId || ''}`
+  const pKey = `${p.selectedLabel || ''}||${p.selectedDate || ''}`
+  const nKey = `${n.selectedLabel || ''}||${n.selectedDate || ''}`
   if (pKey !== nKey) return false
 
   if (p.isLoadingLogs !== n.isLoadingLogs) return false

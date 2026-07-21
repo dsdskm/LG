@@ -105,6 +105,7 @@ const RobotItem = ({
           <div style={{ flex: 1 }}>
             <div
               style={{
+                flexWrap: 'wrap',
                 marginBottom: '8px',
                 display: 'flex',
                 alignItems: 'center',
@@ -175,7 +176,9 @@ const RobotItem = ({
                 color: '#4b5563'
               }}
             >
-              <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '10px' }}>
+              <div
+                style={{ display: 'flex', flexWrap: 'wrap', flexDirection: 'row', alignItems: 'center', gap: '10px' }}
+              >
                 <div style={{ display: 'flex', flexDirection: 'row' }}>
                   <span>{t('common:group')}:</span>
                   <span style={{ color: '#9ca3af' }}>
@@ -194,28 +197,28 @@ const RobotItem = ({
                     <Div />
                     <div style={{ display: 'flex', flexDirection: 'row', gap: '10px' }}>
                       <span>{t('deploy.robot.supportedSkills')}:</span>
-                    {robot.skills.map((skill, idx) => (
-                      <span
-                        key={idx}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px'
-                        }}
-                      >
-                        {skill === 'NAVIGATION' ? (
-                          <>
-                            <Navigation size={14} color="#2563eb" />
-                            <span>{t('deploy.skill.navigation')}</span>
-                          </>
-                        ) : (
-                          <>
-                            <Hand size={14} color="#9333ea" />
-                            <span>{t('deploy.skill.manipulation')}</span>
-                          </>
-                        )}
-                      </span>
-                    ))}
+                      {robot.skills.map((skill, idx) => (
+                        <span
+                          key={idx}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          {skill === 'NAVIGATION' ? (
+                            <>
+                              <Navigation size={14} color="#2563eb" />
+                              <span>{t('deploy.skill.navigation')}</span>
+                            </>
+                          ) : (
+                            <>
+                              <Hand size={14} color="#9333ea" />
+                              <span>{t('deploy.skill.manipulation')}</span>
+                            </>
+                          )}
+                        </span>
+                      ))}
                     </div>
                   </>
                 )}

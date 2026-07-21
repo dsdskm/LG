@@ -21,7 +21,7 @@ const gnbButtonStyles = css`
   &.active {
     font-weight: 700;
     letter-spacing: -0.05em;
-    background: var(--color-neutral-10);
+    background: #e9e7e1;
     color: var(--color-neutral-90);
   }
 

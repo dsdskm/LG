@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
 // ─── Field specs ──────────────────────────────────────────────────────────────
@@ -197,6 +198,9 @@ function parseRobotState(robotState) {
 
 // ─── Utils ────────────────────────────────────────────────────────────────────
 
+// 한국어일 때만 labelKo, 그 외 언어는 labelEn 사용
+const pickLabel = (item, lang) => (String(lang || '').toLowerCase().startsWith('ko') ? item.labelKo : item.labelEn)
+
 const CATEGORY_META = {
   HW_COMPONENTS: { labelKo: 'HW 컴포넌트', labelEn: 'HW Components' },
   SENSORS: { labelKo: '센서', labelEn: 'Sensors' },
@@ -225,13 +229,9 @@ function formatDate(isoStr) {
 
 const Grid = styled.div`
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(305px, 1fr));
   gap: 16px;
   width: 100%;
-
-  @media (max-width: 900px) {
-    grid-template-columns: 1fr;
-  }
 `
 
 const CategoryCard = styled.div`
@@ -304,6 +304,7 @@ const StatusDot = styled.div`
 const ModuleName = styled.span`
   flex: 1;
   font-size: 14px;
+  line-height: 1.5;
   font-weight: 500;
   color: #111827;
   white-space: nowrap;
@@ -447,18 +448,21 @@ const CATEGORY_ICONS = {
 // detail 데이터는 이미 module 객체 안에 포함되어 있으므로 별도 fetch 불필요
 
 const ModuleDetailPanel = ({ module, updatedAt }) => {
+  const { t, i18n } = useTranslation('robot')
   const specs = getFieldSpecs(module.id)
 
   return (
     <DetailPanel>
       <DetailMeta>
         <LastCheck>
-          {updatedAt ? `마지막 업데이트: ${formatDate(updatedAt)}` : `마지막 조회: ${formatDate(module.lastCheck)}`}
+          {updatedAt
+            ? `${t('lastUpdate')}: ${formatDate(updatedAt)}`
+            : `${t('partsLastCheck')}: ${formatDate(module.lastCheck)}`}
         </LastCheck>
       </DetailMeta>
 
       {specs.length === 0 ? (
-        <EmptyText>표시할 항목이 없습니다.</EmptyText>
+        <EmptyText>{t('partsNoItems')}</EmptyText>
       ) : (
         <FieldTable>
           {specs.map((spec) => {
@@ -468,7 +472,7 @@ const ModuleDetailPanel = ({ module, updatedAt }) => {
               raw === undefined || raw === null || raw === '' ? '—' : `${raw}${spec.unit ? ` ${spec.unit}` : ''}`
             return (
               <FieldRow key={spec.key}>
-                <FieldLabel>{spec.labelKo}</FieldLabel>
+                <FieldLabel>{pickLabel(spec, i18n.language)}</FieldLabel>
                 <FieldValue $warn={isWarn}>{display}</FieldValue>
               </FieldRow>
             )
@@ -501,6 +505,7 @@ const ModuleItem = ({ module, updatedAt }) => {
 // ─── CategorySection ──────────────────────────────────────────────────────────
 
 const CategorySection = ({ categoryKey, modules, updatedAt }) => {
+  const { t, i18n } = useTranslation('robot')
   const meta = CATEGORY_META[categoryKey]
 
   return (
@@ -508,13 +513,13 @@ const CategorySection = ({ categoryKey, modules, updatedAt }) => {
       <CategoryHeader>
         <CategoryTitle>
           <CategoryIconWrap>{CATEGORY_ICONS[categoryKey]}</CategoryIconWrap>
-          {meta.labelKo}
+          {pickLabel(meta, i18n.language)}
         </CategoryTitle>
-        <CategoryCount>{modules.length}개</CategoryCount>
+        <CategoryCount>{t('partsModuleCount', { n: modules.length })}</CategoryCount>
       </CategoryHeader>
       <ModuleList>
         {modules.length === 0 ? (
-          <EmptyText>데이터가 없습니다.</EmptyText>
+          <EmptyText>{t('partsNoData')}</EmptyText>
         ) : (
           modules.map((m) => <ModuleItem key={m.id} module={m} updatedAt={updatedAt} />)
         )}

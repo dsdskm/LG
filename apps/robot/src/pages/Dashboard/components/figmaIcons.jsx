@@ -8,12 +8,13 @@ import cumulativeRaw from '@/assets/icons/figma/card_cumulative.svg?raw'
 import targetRaw from '@/assets/icons/figma/card_target.svg?raw'
 import inboxRaw from '@/assets/icons/figma/card_inbox.svg?raw'
 
-import operationRaw from '@/assets/icons/figma/state_operation.svg?raw'
-import learningRaw from '@/assets/icons/figma/state_learning.svg?raw'
-import standbyRaw from '@/assets/icons/figma/state_standby.svg?raw'
-import chargeRaw from '@/assets/icons/figma/state_charge.svg?raw'
-import networkRaw from '@/assets/icons/figma/state_network.svg?raw'
-import errorRaw from '@/assets/icons/figma/state_error.svg?raw'
+// 상태 아이콘: Figma export SVG(원형 배지 배경 + 글리프 포함)를 URL 로 로드해 그대로 <img> 렌더
+import operationUrl from '@/assets/icons/figma/state_operation.svg?url'
+import learningUrl from '@/assets/icons/figma/state_learning.svg?url'
+import standbyUrl from '@/assets/icons/figma/state_standby.svg?url'
+import chargeUrl from '@/assets/icons/figma/state_charge.svg?url'
+import networkUrl from '@/assets/icons/figma/state_network.svg?url'
+import errorUrl from '@/assets/icons/figma/state_error.svg?url'
 
 // ── 카드 제목 아이콘: 어두운 칩 + 흰색 아이콘 (Figma: #454749 / rounded 2 / 24px) ──
 const CardChip = styled.span`
@@ -48,27 +49,18 @@ export const InboxIcon = ({ size, ...p }) => (
   <CardChip $size={size} dangerouslySetInnerHTML={whiteGlyph(inboxRaw)} {...p} />
 )
 
-// ── 상태 아이콘: 원형 배지 안에서 렌더 (색상은 Figma 그대로) ──────
-// 아이콘마다 Figma 박스 크기가 달라(네트워크 50 / 에러 32 등) w·h 를 개별 지정 →
-// 시각적 글리프 크기가 서로 맞고, 박스 비율대로 렌더해 왜곡도 없음.
-const StateGlyph = styled.span`
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+// ── 상태 아이콘: export SVG(64×64, 원형 배지 배경 포함)를 <img> 로 그대로 렌더 ──
+// 배지 배경·글리프가 SVG 안에 모두 포함돼 별도 래퍼/틴트 배경이 필요 없음.
+const StateImg = styled.img`
+  display: block;
   flex-shrink: 0;
-  width: ${({ $w }) => $w || 36}px;
-  height: ${({ $h }) => $h || 36}px;
-
-  svg {
-    width: 100% !important;
-    height: 100% !important;
-    display: block;
-  }
+  width: ${({ $size }) => $size || 56}px;
+  height: ${({ $size }) => $size || 56}px;
 `
 
-export const OperationIcon = ({ w, h }) => <StateGlyph $w={w} $h={h} dangerouslySetInnerHTML={{ __html: operationRaw }} />
-export const LearningIcon = ({ w, h }) => <StateGlyph $w={w} $h={h} dangerouslySetInnerHTML={{ __html: learningRaw }} />
-export const StandbyIcon = ({ w, h }) => <StateGlyph $w={w} $h={h} dangerouslySetInnerHTML={{ __html: standbyRaw }} />
-export const ChargeIcon = ({ w, h }) => <StateGlyph $w={w} $h={h} dangerouslySetInnerHTML={{ __html: chargeRaw }} />
-export const NetworkIcon = ({ w, h }) => <StateGlyph $w={w} $h={h} dangerouslySetInnerHTML={{ __html: networkRaw }} />
-export const ErrorIcon = ({ w, h }) => <StateGlyph $w={w} $h={h} dangerouslySetInnerHTML={{ __html: errorRaw }} />
+export const OperationIcon = ({ size, ...p }) => <StateImg src={operationUrl} $size={size} alt="" {...p} />
+export const LearningIcon = ({ size, ...p }) => <StateImg src={learningUrl} $size={size} alt="" {...p} />
+export const StandbyIcon = ({ size, ...p }) => <StateImg src={standbyUrl} $size={size} alt="" {...p} />
+export const ChargeIcon = ({ size, ...p }) => <StateImg src={chargeUrl} $size={size} alt="" {...p} />
+export const NetworkIcon = ({ size, ...p }) => <StateImg src={networkUrl} $size={size} alt="" {...p} />
+export const ErrorIcon = ({ size, ...p }) => <StateImg src={errorUrl} $size={size} alt="" {...p} />

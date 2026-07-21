@@ -38,14 +38,14 @@ export const StyledAiFloatingTrigger = styled.button`
   width: 4.4rem;
   height: 4.4rem;
   border-radius: 50% 0 0 50%;
-  background: var(--t-ai-gradient);
+  background: linear-gradient(135deg, #7b5ef8 0%, #5b8dee 100%);
   color: #fff;
   border: none;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1.8rem;
-  box-shadow: -3px 3px 14px rgba(var(--t-ai-accent-rgb),0.45);
+  box-shadow: -3px 3px 14px rgba(123, 94, 248, 0.45);
   cursor: grab;
   user-select: none;
   touch-action: none;
@@ -53,7 +53,7 @@ export const StyledAiFloatingTrigger = styled.button`
   transition: box-shadow 0.15s, opacity 0.15s;
 
   &:hover {
-    box-shadow: -4px 4px 18px rgba(var(--t-ai-accent-rgb),0.6);
+    box-shadow: -4px 4px 18px rgba(123, 94, 248, 0.6);
     opacity: 0.95;
   }
 
@@ -90,7 +90,7 @@ export const StyledAiBotAvatar = styled.div`
   width: 2.8rem;
   height: 2.8rem;
   border-radius: 50%;
-  background: var(--t-ai-gradient);
+  background: linear-gradient(135deg, #7b5ef8 0%, #5b8dee 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -246,12 +246,49 @@ export const StyledAiAssistantMessageBubble = styled.div`
   border-radius: ${({ $role }) => ($role === 'user' ? '1.6rem 1.6rem 0.4rem 1.6rem' : '1.6rem 1.6rem 1.6rem 0.4rem')};
   padding: 1rem 1.3rem;
   background: ${({ $role }) =>
-    $role === 'user' ? 'var(--t-ai-gradient)' : 'var(--color-secondary-10, #f4f5f7)'};
+    $role === 'user' ? 'linear-gradient(135deg,#7b5ef8,#5b8dee)' : 'var(--color-secondary-10, #f4f5f7)'};
   color: ${({ $role }) => ($role === 'user' ? '#ffffff' : 'var(--color-secondary-90, #262f44)')};
   font-size: 1.3rem;
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
+`
+
+export const StyledAiActionCards = styled.div`
+  width: 90%;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.6rem;
+`
+
+export const StyledAiActionCard = styled.button`
+  width: 100%;
+  border: 1px solid var(--color-secondary-20, #dadde2);
+  border-radius: 10px;
+  background: #ffffff;
+  text-align: left;
+  padding: 0.9rem 1rem;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+
+  &:hover {
+    border-color: var(--color-secondary-30, #c0c4cc);
+    background: var(--color-secondary-10, #f4f5f7);
+  }
+`
+
+export const StyledAiActionCardTitle = styled.div`
+  font-size: 1.22rem;
+  font-weight: 700;
+  color: var(--color-secondary-90, #262f44);
+  line-height: 1.45;
+`
+
+export const StyledAiActionCardKeyword = styled.div`
+  margin-top: 0.2rem;
+  font-size: 1.12rem;
+  color: var(--color-secondary-60, #6b7280);
+  line-height: 1.45;
 `
 
 export const StyledAiAssistantEmpty = styled.div`
@@ -269,11 +306,44 @@ const aiDotBounce = keyframes`
   40%           { transform: translateY(-4px); opacity: 1; }
 `
 
+const resolveLoadingTone = (stage) => {
+  switch (stage) {
+    case 'requesting':
+      return '59, 130, 246'
+    case 'thinking':
+      return '37, 99, 235'
+    case 'generating':
+      return '30, 64, 175'
+    case 'completed':
+      return '29, 78, 216'
+    default:
+      return '100, 116, 139'
+  }
+}
+
+const resolveLoadingStrength = (elapsed) => {
+  const sec = Number.isFinite(Number(elapsed)) ? Number(elapsed) : 0
+  return Math.min(1, 0.28 + sec * 0.12)
+}
+
 export const StyledAiAssistantLoadingBubble = styled.div`
   max-width: 90%;
   border-radius: 1.6rem 1.6rem 1.6rem 0.4rem;
   padding: 1rem 1.3rem;
-  background: var(--color-secondary-10, #f4f5f7);
+  background: ${({ $stage, $elapsed }) => {
+    const tone = resolveLoadingTone($stage)
+    const strength = resolveLoadingStrength($elapsed)
+    const lightAlpha = (0.08 + strength * 0.08).toFixed(3)
+    const strongAlpha = (0.14 + strength * 0.14).toFixed(3)
+    return `linear-gradient(135deg, rgba(${tone}, ${lightAlpha}), rgba(${tone}, ${strongAlpha}))`
+  }};
+  border: 1px solid ${({ $stage, $elapsed }) => {
+    const tone = resolveLoadingTone($stage)
+    const strength = resolveLoadingStrength($elapsed)
+    const borderAlpha = (0.16 + strength * 0.22).toFixed(3)
+    return `rgba(${tone}, ${borderAlpha})`
+  }};
+  transition: background 0.22s ease, border-color 0.22s ease;
 `
 
 export const StyledAiAssistantLoadingRow = styled.div`
@@ -291,8 +361,14 @@ export const StyledAiAssistantLoadingDots = styled.div`
     width: 0.65rem;
     height: 0.65rem;
     border-radius: 50%;
-    background: var(--color-secondary-50, #848c9d);
+    background: ${({ $stage, $elapsed }) => {
+      const tone = resolveLoadingTone($stage)
+      const strength = resolveLoadingStrength($elapsed)
+      const alpha = (0.42 + strength * 0.52).toFixed(3)
+      return `rgba(${tone}, ${alpha})`
+    }};
     animation: ${aiDotBounce} 1.2s infinite ease-in-out;
+    transition: background 0.18s ease;
   }
 
   & > span:nth-child(1) { animation-delay: 0s; }
@@ -302,7 +378,13 @@ export const StyledAiAssistantLoadingDots = styled.div`
 
 export const StyledAiAssistantLoadingText = styled.div`
   font-size: 1.2rem;
-  color: var(--color-secondary-50, #848c9d);
+  color: ${({ $stage, $elapsed }) => {
+    const tone = resolveLoadingTone($stage)
+    const strength = resolveLoadingStrength($elapsed)
+    const alpha = (0.48 + strength * 0.5).toFixed(3)
+    return `rgba(${tone}, ${alpha})`
+  }};
+  transition: color 0.18s ease;
 `
 
 /* ─── Composer ────────────────────────────────────────────────── */
@@ -323,8 +405,8 @@ export const StyledAiComposerBox = styled.div`
   transition: border-color 0.15s, box-shadow 0.15s;
 
   &:focus-within {
-    border-color: var(--t-ai-accent);
-    box-shadow: 0 0 0 3px rgba(var(--t-ai-accent-rgb),0.12);
+    border-color: #7b5ef8;
+    box-shadow: 0 0 0 3px rgba(123, 94, 248, 0.12);
   }
 `
 
@@ -363,18 +445,18 @@ export const StyledAiContextChips = styled.div`
 export const StyledAiContextChip = styled.button`
   padding: 0.4rem 0.9rem;
   border-radius: 20px;
-  border: 1px solid ${({ $active }) => ($active ? 'var(--t-ai-accent)' : 'var(--color-secondary-20, #dadde2)')};
-  background: ${({ $active }) => ($active ? 'rgba(var(--t-ai-accent-rgb), 0.08)' : 'transparent')};
-  color: ${({ $active }) => ($active ? 'var(--t-ai-accent)' : 'var(--color-secondary-50, #848c9d)')};
+  border: 1px solid ${({ $active }) => ($active ? '#7b5ef8' : 'var(--color-secondary-20, #dadde2)')};
+  background: ${({ $active }) => ($active ? 'rgba(123,94,248,0.08)' : 'transparent')};
+  color: ${({ $active }) => ($active ? '#7b5ef8' : 'var(--color-secondary-50, #848c9d)')};
   font-size: 1.15rem;
   cursor: pointer;
   transition: all 0.15s;
   white-space: nowrap;
 
   &:hover {
-    border-color: var(--t-ai-accent);
-    color: var(--t-ai-accent);
-    background: rgba(var(--t-ai-accent-rgb),0.06);
+    border-color: #7b5ef8;
+    color: #7b5ef8;
+    background: rgba(123, 94, 248, 0.06);
   }
 `
 
@@ -383,7 +465,7 @@ export const StyledAiSendButton = styled.button`
   height: 3.2rem;
   border-radius: 50%;
   border: none;
-  background: ${({ disabled }) => (disabled ? 'var(--color-secondary-20, #dadde2)' : 'var(--t-ai-gradient)')};
+  background: ${({ disabled }) => (disabled ? 'var(--color-secondary-20, #dadde2)' : 'linear-gradient(135deg,#7b5ef8,#5b8dee)')};
   color: ${({ disabled }) => (disabled ? 'var(--color-secondary-40, #adb5bd)' : '#fff')};
   display: flex;
   align-items: center;

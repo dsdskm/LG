@@ -20,5 +20,16 @@ export const useAiAssistantStore = create((set) => ({
     set(({ messages }) => ({
       messages: [...messages, message]
     })),
+  updateMessageById: (id, patch) =>
+    set(({ messages }) => ({
+      messages: messages.map((message) =>
+        String(message?.id ?? '') === String(id ?? '')
+          ? {
+              ...message,
+              ...(patch && typeof patch === 'object' ? patch : {})
+            }
+          : message
+      )
+    })),
   resetMessages: () => set({ messages: initialMessages })
 }))

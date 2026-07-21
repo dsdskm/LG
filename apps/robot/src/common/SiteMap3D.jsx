@@ -761,6 +761,10 @@ const guideText = (t, mode, touch) => {
 
 // ─── main component ───────────────────────────────────────────────────────────
 
+// 대시보드/TV 대시보드가 공유하는 2D/3D 뷰 설정 localStorage 키.
+// 대시보드에서 고른 값을 저장하면 TV 대시보드가 같은 값을 읽어 그대로 표시한다.
+export const DASHBOARD_MAP_VIEW_KEY = 'robot.dashboardMapViewMode'
+
 const SiteMap3D = ({
   mapData,
   robotDatas = [],
@@ -768,7 +772,9 @@ const SiteMap3D = ({
   clickRobot = false,
   height = '500px',
   only2D = false,
-  mapApplyControl = null
+  mapApplyControl = null,
+  viewModeKey = null, // 지정 시 2D/3D 선택을 localStorage에 저장·복원 (대시보드↔TV 공유)
+  showControls = true // false면 2D/3D 토글·전체화면 버튼 숨김 (TV 대시보드)
 }) => {
   const { t, i18n } = useTranslation('robot')
   const [svgText, setSvgText] = useState(null)
@@ -776,7 +782,13 @@ const SiteMap3D = ({
   const [multigrid, setMultigrid] = useState(null)
   const [pngUrl, setPngUrl] = useState(null)
   const [loading, setLoading] = useState(false)
-  const [viewMode, setViewMode] = useState('2D')
+  const [viewMode, setViewMode] = useState(() => {
+    if (viewModeKey && typeof window !== 'undefined') {
+      const saved = window.localStorage.getItem(viewModeKey)
+      if (saved === '2D' || saved === '3D') return saved
+    }
+    return '2D'
+  })
   const [dragging, setDragging] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const [isTouch, setIsTouch] = useState(false)
@@ -791,6 +803,25 @@ const SiteMap3D = ({
   useEffect(() => {
     setIsTouch(isTouchDevice())
   }, [])
+
+  // viewModeKey가 있으면 2D/3D 선택을 localStorage에 저장 (대시보드가 고른 값 유지)
+  useEffect(() => {
+    if (viewModeKey && typeof window !== 'undefined') {
+      window.localStorage.setItem(viewModeKey, viewMode)
+    }
+  }, [viewMode, viewModeKey])
+
+  // 다른 탭/화면(예: 대시보드)에서 값이 바뀌면 반영 → TV 대시보드가 실시간으로 따라감
+  useEffect(() => {
+    if (!viewModeKey || typeof window === 'undefined') return
+    const onStorage = (e) => {
+      if (e.key === viewModeKey && (e.newValue === '2D' || e.newValue === '3D')) {
+        setViewMode(e.newValue)
+      }
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [viewModeKey])
 
   // Exit fullscreen with Esc
   useEffect(() => {
@@ -1003,35 +1034,39 @@ const SiteMap3D = ({
 
   const content = (
     <Wrapper $fullscreen={fullscreen} $height={height}>
-      <TopRightTools>
-        {!only2D && (
-          <ViewToggle>
-            <ViewToggleButton $active={viewMode === '2D'} onClick={() => setViewMode('2D')}>
-              2D
-            </ViewToggleButton>
-            <ViewToggleButton $active={viewMode === '3D'} onClick={() => setViewMode('3D')}>
-              3D
-            </ViewToggleButton>
-          </ViewToggle>
-        )}
-        {mapApplyControl && (
-          <ViewToggle>
-            <ViewToggleButton $active={mapApplyControl.applied} onClick={() => mapApplyControl.onChange(true)}>
-              사용자
-            </ViewToggleButton>
-            <ViewToggleButton $active={!mapApplyControl.applied} onClick={() => mapApplyControl.onChange(false)}>
-              원본
-            </ViewToggleButton>
-          </ViewToggle>
-        )}
-        <IconButton
-          onClick={() => setFullscreen((v) => !v)}
-          title={fullscreen ? t('map.exitFullscreen') : t('map.fullscreen')}
-          aria-label={fullscreen ? t('map.exitFullscreen') : t('map.fullscreen')}
-        >
-          {fullscreen ? <CompressIcon /> : <ExpandIcon />}
-        </IconButton>
-      </TopRightTools>
+      {(showControls || mapApplyControl) && (
+        <TopRightTools>
+          {!only2D && showControls && (
+            <ViewToggle>
+              <ViewToggleButton $active={viewMode === '2D'} onClick={() => setViewMode('2D')}>
+                2D
+              </ViewToggleButton>
+              <ViewToggleButton $active={viewMode === '3D'} onClick={() => setViewMode('3D')}>
+                3D
+              </ViewToggleButton>
+            </ViewToggle>
+          )}
+          {mapApplyControl && (
+            <ViewToggle>
+              <ViewToggleButton $active={mapApplyControl.applied} onClick={() => mapApplyControl.onChange(true)}>
+                사용자
+              </ViewToggleButton>
+              <ViewToggleButton $active={!mapApplyControl.applied} onClick={() => mapApplyControl.onChange(false)}>
+                원본
+              </ViewToggleButton>
+            </ViewToggle>
+          )}
+          {showControls && (
+            <IconButton
+              onClick={() => setFullscreen((v) => !v)}
+              title={fullscreen ? t('map.exitFullscreen') : t('map.fullscreen')}
+              aria-label={fullscreen ? t('map.exitFullscreen') : t('map.fullscreen')}
+            >
+              {fullscreen ? <CompressIcon /> : <ExpandIcon />}
+            </IconButton>
+          )}
+        </TopRightTools>
+      )}
 
       {viewMode === '2D' ? (
         // 2D: reuse the crisp vector SVG renderer (true colors, canvas-fit, HTML markers)

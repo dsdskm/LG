@@ -4,6 +4,7 @@ import {
   CanvasWrapper as DrawCanvasWrapper,
   FlowFill as DrawFlowFill
 } from '../DrawPanel/styles'
+import { Drawer } from 'vaul'
 
 export const PanelRoot = DrawPanelRoot
 export const CanvasWrapper = DrawCanvasWrapper
@@ -19,10 +20,10 @@ export const InspectShell = styled.div`
   min-height: 0;
 `
 
-export const CanvasRoot = styled.div`
+export const CanvasRoot = styled.div<{ $isPanelOpen: boolean }>`
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) ${({ $isPanelOpen }) => ($isPanelOpen ? '320px' : '0px')};
+  gap: ${({ $isPanelOpen }) => ($isPanelOpen ? '16px' : '0px')};
   width: 100%;
   flex: 1;
   min-height: 0;
@@ -475,4 +476,43 @@ export const InfoRowValue = styled.div`
 
 export const ContentWrap = styled.div`
   padding: 16px;
+`
+export const StyledOverlay = styled(Drawer.Overlay)`
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+`
+
+export const StyledContent = styled(Drawer.Content)`
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 10002;
+  display: flex;
+  flex-direction: column;
+  /* snapPoints 사용 시 vaul 이 (windowHeight - 스냅높이)만큼 translateY 로 밀어 스냅 높이만 노출한다.
+     따라서 콘텐츠는 뷰포트 전체 높이여야 하며, max-height 로 줄이면 화면 밖으로 밀려 안 보인다. */
+  height: 100%;
+  border-radius: 16px 16px 0 0;
+  background: white;
+`
+
+export const SheetHandle = styled.div`
+  width: 40px;
+  height: 6px;
+  margin: 12px auto 8px;
+  border-radius: 999px;
+  background: #d1d1d1;
+`
+
+export const SheetTitle = styled(Drawer.Title)`
+  padding: 0 16px;
+  font-size: 18px;
+  font-weight: 500;
+`
+
+export const SheetBody = styled.div`
+  padding: 16px;
+  overflow-y: auto;
 `

@@ -398,9 +398,22 @@ function MapPanels({
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateRows: '1fr 1fr',
+                    // ✅ 세로: '1fr'은 트랙 최소값이 auto(콘텐츠 min-content)라, uPlot이 setSize로
+                    //    루트에 박는 명시적 높이가 트랙 최소값이 되어 "전체 높이로 고착"된다.
+                    //    minmax(0,1fr)로 최소값 0 고정 → 각 차트가 정확히 절반.
+                    gridTemplateRows: 'minmax(0, 1fr) minmax(0, 1fr)',
+                    // ✅ 가로: 컬럼을 명시하지 않으면 암시적 컬럼이 auto라 uPlot 명시 폭보다
+                    //    작게 줄지 못해, 컨테이너가 좁아져도 옛 넓은 폭에 고착(우측 잘림)된다.
+                    //    minmax(0,1fr)로 컬럼도 0까지 줄 수 있게 한다.
+                    gridTemplateColumns: 'minmax(0, 1fr)',
                     gap: 12,
-                    width: '100%'
+                    width: '100%',
+                    height: '100%',
+                    // ✅ 부모(mapBody)가 flex row이므로 이 그리드는 flex 아이템이다.
+                    //    flex 아이템 기본 min-width/min-height: auto(콘텐츠 min-content)라
+                    //    콘텐츠(uPlot 명시 폭/높이)보다 작게 못 줄어든다 → 0으로 풀어 shrink 허용.
+                    minWidth: 0,
+                    minHeight: 0
                   }}
                 >
                   <SensorChart

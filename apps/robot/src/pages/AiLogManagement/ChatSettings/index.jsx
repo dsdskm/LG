@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   createCommonChatScreenTool,
   createChatGuidance,
+  createChatPrompt,
   createChatRagDoc,
   createChatScreenTool,
   getChatSettings,
@@ -85,6 +86,7 @@ const ChatSettings = () => {
 
   const [saving, setSaving] = useState(false)
   const [savingPromptKey, setSavingPromptKey] = useState('')
+  const [creatingPromptRouteKey, setCreatingPromptRouteKey] = useState('')
   const [savingCommonPrompt, setSavingCommonPrompt] = useState(false)
   const [savingGuidanceKey, setSavingGuidanceKey] = useState('')
   const [creatingGuidanceRouteKey, setCreatingGuidanceRouteKey] = useState('')
@@ -124,6 +126,15 @@ const ChatSettings = () => {
         history: Array.isArray(nextManagement.history) ? nextManagement.history : [],
       }
 
+      console.info('[chat-settings] management payload summary', {
+        screens: normalizedManagement.screens.length,
+        prompts: normalizedManagement.prompts.length,
+        guidance: normalizedManagement.guidance.length,
+        ragDocs: normalizedManagement.ragDocs.length,
+        screenTools: normalizedManagement.screenTools.length,
+        actionTypes: normalizedManagement.actionTypes.length,
+      })
+
       setManagement(normalizedManagement)
 
       const nextCommonPrompt = normalizedManagement.prompts.find(
@@ -154,11 +165,7 @@ const ChatSettings = () => {
             String(item.id),
             {
               id: item.id,
-              screenName: String(item.screenName ?? ''),
-              fallbackText: String(item.fallbackText ?? ''),
-              sectionsText: JSON.stringify(item.sections ?? [], null, 2),
               examplesText: JSON.stringify(item.examples ?? [], null, 2),
-              enabled: item.enabled !== false,
             },
           ])
         )
@@ -191,6 +198,10 @@ const ChatSettings = () => {
               apiName: String(item.apiName ?? ''),
               method: String(item.method ?? ''),
               endpoint: String(item.endpoint ?? ''),
+              baseUrl: String(item.baseUrl ?? ''),
+              requestHeadersText: JSON.stringify(item.requestHeaders ?? {}, null, 2),
+              requestQueryText: JSON.stringify(item.requestQuery ?? {}, null, 2),
+              requestBodyText: JSON.stringify(item.requestBody ?? {}, null, 2),
               contextParamsText: JSON.stringify(item.contextParams ?? [], null, 2),
               requestParamsText: JSON.stringify(item.requestParams ?? [], null, 2),
               staticPayloadText: JSON.stringify(item.staticPayload ?? {}, null, 2),
@@ -368,6 +379,41 @@ const ChatSettings = () => {
     [load, promptDrafts]
   )
 
+  const handleCreatePrompt = useCallback(async ({ appKey, routeKey, routeParentKey, content, label, promptType, enabled }) => {
+    const normalizedRouteKey = String(routeKey ?? '').trim()
+    if (!normalizedRouteKey) return false
+
+    setCreatingPromptRouteKey(normalizedRouteKey)
+    setError('')
+
+    try {
+      const res = await createChatPrompt({
+        appKey: String(appKey ?? '').trim(),
+        key: normalizedRouteKey,
+        routeKey: String(routeParentKey ?? '').trim(),
+        promptType: String(promptType ?? 'system').trim() || 'system',
+        label: String(label ?? '화면 프롬프트').trim() || '화면 프롬프트',
+        content: String(content ?? ''),
+        enabled: Boolean(enabled),
+      })
+
+      if (Number(res?.code ?? 0) !== 200) {
+        throw new Error(String(res?.message ?? '화면 프롬프트 생성 응답이 올바르지 않습니다.'))
+      }
+
+      const next = res?.data ?? {}
+      setSavedMessage(`${String(next.label ?? next.key ?? '화면 프롬프트')}가 생성되었습니다.`)
+      setSavedOpen(true)
+      await load()
+      return true
+    } catch (e) {
+      setError(e?.message || '화면 프롬프트 생성에 실패했습니다.')
+      return false
+    } finally {
+      setCreatingPromptRouteKey('')
+    }
+  }, [load])
+
   const handleGuidanceChange = useCallback((id, field, nextValue) => {
     setGuidanceDrafts((prev) => ({
       ...prev,
@@ -417,7 +463,7 @@ const ChatSettings = () => {
     [guidanceDrafts, load]
   )
 
-  const handleCreateGuidance = useCallback(async ({ appKey, routeKey, routeParentKey, screenName, initialExamples, fallbackText }) => {
+  const handleCreateGuidance = useCallback(async ({ appKey, routeKey, routeParentKey, initialExamples }) => {
     const normalizedRouteKey = String(routeKey ?? '').trim()
     if (!normalizedRouteKey) return false
 
@@ -439,7 +485,7 @@ const ChatSettings = () => {
 
       const examples = Array.isArray(initialExamples) ? initialExamples : []
 
-      if (next?.id && (examples.length > 0 || fallbackText !== undefined)) {
+      if (next?.id && examples.length > 0) {
         const updateRes = await updateChatGuidance(next.id, {
           examples,
         })
@@ -449,7 +495,7 @@ const ChatSettings = () => {
         }
       }
 
-      setSavedMessage(`${String(screenName ?? normalizedRouteKey)} 추천 메세지 설정이 생성되었습니다.`)
+      setSavedMessage(`${normalizedRouteKey} 추천 메세지 설정이 생성되었습니다.`)
       setSavedOpen(true)
       await load()
       return true
@@ -703,13 +749,19 @@ const ChatSettings = () => {
 
       let contextParams = []
       let requestParams = []
+      let requestHeaders = {}
+      let requestQuery = {}
+      let requestBody = {}
       let staticPayload = {}
       try {
         contextParams = JSON.parse(String(draft.contextParamsText ?? '[]'))
         requestParams = JSON.parse(String(draft.requestParamsText ?? '[]'))
+        requestHeaders = JSON.parse(String(draft.requestHeadersText ?? '{}'))
+        requestQuery = JSON.parse(String(draft.requestQueryText ?? '{}'))
+        requestBody = JSON.parse(String(draft.requestBodyText ?? '{}'))
         staticPayload = JSON.parse(String(draft.staticPayloadText ?? '{}'))
       } catch {
-        setError('툴 JSON 필드(context/request/staticPayload) 형식이 올바르지 않습니다.')
+        setError('툴 JSON 필드(context/request/headers/query/body/staticPayload) 형식이 올바르지 않습니다.')
         return
       }
 
@@ -724,6 +776,10 @@ const ChatSettings = () => {
           apiName: String(draft.apiName ?? ''),
           method: String(draft.method ?? ''),
           endpoint: String(draft.endpoint ?? ''),
+          baseUrl: String(draft.baseUrl ?? ''),
+          requestHeaders,
+          requestQuery,
+          requestBody,
           contextParams,
           requestParams,
           staticPayload,
@@ -764,7 +820,7 @@ const ChatSettings = () => {
       return false
     }
 
-    setSavingCreateScreenTool(true)
+    setSavingCreateCommonTool(true)
     setError('')
 
     try {
@@ -784,7 +840,7 @@ const ChatSettings = () => {
       setError(e?.message || '공통 액션 추가에 실패했습니다.')
       return false
     } finally {
-      setSavingCreateScreenTool(false)
+      setSavingCreateCommonTool(false)
     }
   }, [load])
 
@@ -842,18 +898,24 @@ const ChatSettings = () => {
 
     let contextParams = []
     let requestParams = []
+    let requestHeaders = {}
+    let requestQuery = {}
+    let requestBody = {}
     let staticPayload = {}
 
     try {
       contextParams = JSON.parse(String(draft?.contextParamsText ?? '[]'))
       requestParams = JSON.parse(String(draft?.requestParamsText ?? '[]'))
+      requestHeaders = JSON.parse(String(draft?.requestHeadersText ?? '{}'))
+      requestQuery = JSON.parse(String(draft?.requestQueryText ?? '{}'))
+      requestBody = JSON.parse(String(draft?.requestBodyText ?? '{}'))
       staticPayload = JSON.parse(String(draft?.staticPayloadText ?? '{}'))
     } catch {
-      setError('신규 화면 액션 JSON 필드(context/request/staticPayload) 형식이 올바르지 않습니다.')
+      setError('신규 화면 액션 JSON 필드(context/request/headers/query/body/staticPayload) 형식이 올바르지 않습니다.')
       return false
     }
 
-    setSavingCreateCommonTool(true)
+    setSavingCreateScreenTool(true)
     setError('')
 
     try {
@@ -866,6 +928,10 @@ const ChatSettings = () => {
         displayName,
         description: String(draft?.description ?? ''),
         endpoint: String(draft?.endpoint ?? ''),
+        baseUrl: String(draft?.baseUrl ?? ''),
+        requestHeaders,
+        requestQuery,
+        requestBody,
         contextParams,
         requestParams,
         staticPayload,
@@ -881,7 +947,7 @@ const ChatSettings = () => {
       setError(e?.message || '화면 액션 추가에 실패했습니다.')
       return false
     } finally {
-      setSavingCreateCommonTool(false)
+      setSavingCreateScreenTool(false)
     }
   }, [load])
 
@@ -970,6 +1036,7 @@ const ChatSettings = () => {
                 ragDrafts={ragDrafts}
                 toolDrafts={toolDrafts}
                 savingPromptKey={savingPromptKey}
+                creatingPromptRouteKey={creatingPromptRouteKey}
                 savingGuidanceKey={savingGuidanceKey}
                 creatingGuidanceRouteKey={creatingGuidanceRouteKey}
                 savingRagKey={savingRagKey}
@@ -979,6 +1046,7 @@ const ChatSettings = () => {
                 savingToolKey={savingToolKey}
                 onPromptChange={handlePromptChange}
                 onSavePrompt={handleSavePrompt}
+                onCreatePrompt={handleCreatePrompt}
                 onGuidanceChange={handleGuidanceChange}
                 onSaveGuidance={handleSaveGuidance}
                 onCreateGuidance={handleCreateGuidance}

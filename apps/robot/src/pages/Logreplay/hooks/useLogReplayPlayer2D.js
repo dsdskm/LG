@@ -78,7 +78,12 @@ export default function useLogReplayPlayer2D({
   // ⚠️ 렌더러는 playTimeSecRef.current를 참조한다.
   // 상태만 0으로 리셋하면 첫 렌더 프레임에서 ref가 예전 값으로 남아
   // "이미 재생된 상태(연두색)"로 보일 수 있으므로 동기화해 준다.
+  // ⛔ 단, 재생 중에는 RAF 루프가 playTimeSecRef를 "소유"(전진)한다.
+  //    throttle(50ms)된 state로 ref를 덮으면 RAF 전진분이 되감겨, 고배속에서
+  //    재생헤드/플레이바/차트가 앞뒤로 튄다(부하 시 커밋 역전으로 state까지 역행).
+  //    seek/step/reset은 각자 ref를 직접 세팅하므로 재생 중 동기화는 불필요.
   useEffect(() => {
+    if (isPlayingRef.current) return
     playTimeSecRef.current = Number(playTimeSec) || 0
   }, [playTimeSec])
 
@@ -454,6 +459,11 @@ export default function useLogReplayPlayer2D({
   // RAF 재생 루프
   const rafRef = useRef(0)
 
+  // ✅ 사용자 seek(진행바 드래그/프레임 이동/끝→처음 재시작) 발생 카운터.
+  //    데이터 훅이 이 값의 변화를 감지해 pose 누적 캐시를 리셋한다.
+  //    (연속 재생 중에는 증가하지 않으므로 궤적이 계속 누적된다.)
+  const seekEpochRef = useRef(0)
+
   // ✅ UI state 커밋 스로틀(너무 잦은 setState로 depth exceeded 방지)
   const lastUiCommitMsRef = useRef(0)
 
@@ -586,6 +596,7 @@ export default function useLogReplayPlayer2D({
       wasPlayingRef.current = isPlayingRef.current
       setIsPlaying(false)
       setIsScrubbing(true)
+      seekEpochRef.current++ // 사용자 seek 시작 → 데이터 훅이 pose 캐시 리셋
 
       const getRatio = (clientX) => {
         const rect = bar.getBoundingClientRect()
@@ -625,6 +636,8 @@ export default function useLogReplayPlayer2D({
             : 0
 
       if (dur <= 0) return
+
+      seekEpochRef.current++ // 프레임 이동 = seek → 데이터 훅이 pose 캐시 리셋
 
       const rate = Math.max(0.01, Math.min(10, Number(playbackRateRef.current) || 1))
       const baseStepSec = Number(stepSecondsRef.current) || 1
@@ -684,6 +697,7 @@ export default function useLogReplayPlayer2D({
       if (!p) {
         const atEnd = typeof playIndexRef.current === 'number' && playIndexRef.current >= 499 - 0.001
         if (atEnd) {
+          seekEpochRef.current++ // 끝→처음 재시작 = seek → 데이터 훅이 pose 캐시 리셋
           playTimeSecRef.current = 0
           setPlayTimeSec(0)
           playIndexRef.current = 0
@@ -912,6 +926,7 @@ export default function useLogReplayPlayer2D({
     setPoses3d,
     durationSec,
     currentTimeSec,
-    resetPlaybackRefs
+    resetPlaybackRefs,
+    seekEpochRef
   }
 }
