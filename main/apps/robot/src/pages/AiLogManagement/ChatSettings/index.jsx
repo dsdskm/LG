@@ -46,6 +46,31 @@ import { CommonSettingsTab } from './sections/CommonSettingsTab'
 import { AppScreenSettingsTab } from './sections/AppScreenSettingsTab'
 import { HistoryTab } from './sections/HistoryTab'
 
+const normalizeKeywordArray = (value) => {
+  const rows = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(',')
+      : []
+
+  const normalized = rows
+    .map((item) => String(item ?? '').trim())
+    .filter(Boolean)
+
+  return Array.from(new Set(normalized))
+}
+
+const parseKeywordsFallback = (value) => {
+  if (Array.isArray(value)) return normalizeKeywordArray(value)
+
+  try {
+    const parsed = JSON.parse(String(value ?? '[]'))
+    return Array.isArray(parsed) ? normalizeKeywordArray(parsed) : []
+  } catch {
+    return []
+  }
+}
+
 /**
  * AI 챗봇(ai_chat_service) 설정 페이지.
  * AI Assistant 패널의 설정(⚙) 아이콘에서 진입한다.
@@ -73,7 +98,7 @@ const ChatSettings = () => {
     chunkKey: '',
     title: '공통 RAG',
     body: '',
-    keywordsText: '[]',
+    keywords: [],
     enabled: true,
   })
   const [promptDrafts, setPromptDrafts] = useState({})
@@ -179,7 +204,7 @@ const ChatSettings = () => {
               id: item.id,
               title: String(item.title ?? ''),
               body: String(item.body ?? ''),
-              keywordsText: JSON.stringify(item.keywords ?? [], null, 2),
+              keywords: normalizeKeywordArray(item.keywords ?? []),
               enabled: item.enabled !== false,
             },
           ])
@@ -525,18 +550,7 @@ const ChatSettings = () => {
   }, [])
 
   const handleCreateCommonRag = useCallback(async () => {
-    let keywords = []
-    try {
-      keywords = JSON.parse(String(newCommonRagDraft.keywordsText ?? '[]'))
-    } catch {
-      setError('공통 RAG keywords는 JSON 배열 형식이어야 합니다.')
-      return
-    }
-
-    if (!Array.isArray(keywords)) {
-      setError('공통 RAG keywords는 JSON 배열 형식이어야 합니다.')
-      return
-    }
+    const keywords = normalizeKeywordArray(newCommonRagDraft.keywords)
 
     const chunkKey = String(newCommonRagDraft.chunkKey ?? '').trim()
     if (!chunkKey) {
@@ -561,7 +575,7 @@ const ChatSettings = () => {
         chunkKey: '',
         title: '공통 RAG',
         body: '',
-        keywordsText: '[]',
+        keywords: [],
         enabled: true,
       })
       setSavedMessage(`${String(next.title ?? '공통 RAG')} 청크가 등록되었습니다.`)
@@ -615,18 +629,11 @@ const ChatSettings = () => {
   }, [load])
 
   const handleCreateScreenRag = useCallback(async (draft) => {
-    let keywords = []
-    try {
-      keywords = JSON.parse(String(draft?.keywordsText ?? '[]'))
-    } catch {
-      setError('화면 RAG keywords는 JSON 배열 형식이어야 합니다.')
-      return false
-    }
-
-    if (!Array.isArray(keywords)) {
-      setError('화면 RAG keywords는 JSON 배열 형식이어야 합니다.')
-      return false
-    }
+    const keywords = normalizeKeywordArray(
+      Array.isArray(draft?.keywords)
+        ? draft?.keywords
+        : parseKeywordsFallback(draft?.keywordsText),
+    )
 
     setSavingCreateScreenRag(true)
     setError('')
@@ -659,19 +666,11 @@ const ChatSettings = () => {
     async (item) => {
       const draftKey = String(item.id)
       const draft = ragDrafts[draftKey] ?? {}
-
-      let keywords = []
-      try {
-        keywords = JSON.parse(String(draft.keywordsText ?? '[]'))
-      } catch {
-        setError('RAG keywords는 JSON 배열 형식이어야 합니다.')
-        return
-      }
-
-      if (!Array.isArray(keywords)) {
-        setError('RAG keywords는 JSON 배열 형식이어야 합니다.')
-        return
-      }
+      const keywords = normalizeKeywordArray(
+        Array.isArray(draft.keywords)
+          ? draft.keywords
+          : parseKeywordsFallback(draft.keywordsText),
+      )
 
       setSavingRagKey(draftKey)
       setError('')

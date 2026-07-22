@@ -76,6 +76,73 @@ const parseJsonObject = (value, fallback = {}) => {
     }
 }
 
+const normalizeKeywordArray = (value) => {
+    const rows = Array.isArray(value) ? value : []
+    const normalized = rows
+        .map((item) => String(item ?? '').trim())
+        .filter(Boolean)
+    return Array.from(new Set(normalized))
+}
+
+const KeywordListEditor = ({ keywords, onChange, hint }) => {
+    const [newKeyword, setNewKeyword] = useState('')
+    const list = Array.isArray(keywords) ? keywords : []
+
+    const addKeyword = () => {
+        const value = String(newKeyword ?? '').trim()
+        if (!value) return
+        onChange([...list, value])
+        setNewKeyword('')
+    }
+
+    return (
+        <div style={{ display: 'grid', gap: '8px' }}>
+            {list.length > 0 ? (
+                <div style={{ display: 'grid', gap: '6px' }}>
+                    {list.map((keyword, index) => (
+                        <InlineFields key={`keyword-row-${index}`}>
+                            <TextInput
+                                value={keyword}
+                                onChange={(e) => {
+                                    const next = list.slice()
+                                    next[index] = e.target.value
+                                    onChange(next)
+                                }}
+                                placeholder="키워드"
+                            />
+                            <SecondaryTextButton
+                                type="button"
+                                onClick={() => onChange(list.filter((_, idx) => idx !== index))}
+                            >
+                                삭제
+                            </SecondaryTextButton>
+                        </InlineFields>
+                    ))}
+                </div>
+            ) : null}
+
+            <InlineFields>
+                <TextInput
+                    value={newKeyword}
+                    onChange={(e) => setNewKeyword(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault()
+                            addKeyword()
+                        }
+                    }}
+                    placeholder="키워드 입력 후 Enter 또는 추가"
+                />
+                <PrimaryButton type="button" onClick={addKeyword} style={{ height: '36px' }}>
+                    추가
+                </PrimaryButton>
+            </InlineFields>
+
+            {hint ? <FieldHint>{hint}</FieldHint> : null}
+        </div>
+    )
+}
+
 export const AppScreenSettingsTab = ({
     activeRouteKey,
     screenGroups,
@@ -649,7 +716,7 @@ const ScreenRagList = ({
     const [newRagDraft, setNewRagDraft] = useState({
         title: '',
         body: '',
-        keywordsText: '[]',
+        keywords: [],
         enabled: true,
     })
 
@@ -672,7 +739,7 @@ const ScreenRagList = ({
         ? ragDrafts[activeRagKey] ?? {
             title: String(activeRagDoc.title ?? ''),
             body: String(activeRagDoc.body ?? ''),
-            keywordsText: JSON.stringify(activeRagDoc.keywords ?? [], null, 2),
+            keywords: normalizeKeywordArray(activeRagDoc.keywords ?? []),
             enabled: activeRagDoc.enabled !== false,
         }
         : null
@@ -685,7 +752,7 @@ const ScreenRagList = ({
             ...newRagDraft,
         })
         if (ok) {
-            setNewRagDraft({ title: '', body: '', keywordsText: '[]', enabled: true })
+            setNewRagDraft({ title: '', body: '', keywords: [], enabled: true })
             setCreatingOpen(false)
         }
     }
@@ -777,13 +844,12 @@ const ScreenRagList = ({
                             />
                             <FieldHint>질문 의도와 바로 연결되는 제목으로 작성하세요.</FieldHint>
 
-                            <FieldLabel>keywords (JSON 배열)</FieldLabel>
-                            <PromptTextarea
-                                value={activeRagDraft.keywordsText}
-                                onChange={(e) => onRagChange(activeRagKey, 'keywordsText', e.target.value)}
-                                style={{ minHeight: '96px' }}
+                            <FieldLabel>keywords</FieldLabel>
+                            <KeywordListEditor
+                                keywords={activeRagDraft.keywords}
+                                onChange={(next) => onRagChange(activeRagKey, 'keywords', next)}
+                                hint="동의어와 프론트 화면 표현까지 넣으면 조회 정확도가 좋아집니다."
                             />
-                            <FieldHint>동의어와 프론트 화면 표현까지 넣으면 조회 정확도가 좋아집니다.</FieldHint>
 
                             <FieldLabel>body</FieldLabel>
                             <PromptTextarea
@@ -839,11 +905,10 @@ const ScreenRagList = ({
                                 style={{ minHeight: '56px' }}
                             />
 
-                            <FieldLabel>keywords (JSON 배열)</FieldLabel>
-                            <PromptTextarea
-                                value={newRagDraft.keywordsText}
-                                onChange={(e) => setNewRagDraft((prev) => ({ ...prev, keywordsText: e.target.value }))}
-                                style={{ minHeight: '96px' }}
+                            <FieldLabel>keywords</FieldLabel>
+                            <KeywordListEditor
+                                keywords={newRagDraft.keywords}
+                                onChange={(next) => setNewRagDraft((prev) => ({ ...prev, keywords: next }))}
                             />
 
                             <FieldLabel>body</FieldLabel>

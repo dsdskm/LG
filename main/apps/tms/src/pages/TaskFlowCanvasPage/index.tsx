@@ -1287,6 +1287,8 @@ export default function TaskFlowCanvasPage() {
         siteId: orgInfo.siteId
       })
 
+      console.log('[SAVE] flowDefinition:', payload.flowDefinition)
+
       if (isNewFlow) {
         const created = await createTaskFlowAsync(payload)
         setSaveDoneOpen(true)

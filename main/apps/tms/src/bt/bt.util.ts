@@ -170,6 +170,8 @@ export function getNodePropertyValue(node: any, ...keys: string[]): unknown {
 
 export function getNodeNumberPropertyValue(node: any, fallback: number, ...keys: string[]): number {
   const value = getNodePropertyValue(node, ...keys)
+  if (value === null || value === undefined) return fallback
+  if (typeof value === 'string' && value.trim() === '') return fallback
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : fallback
 }

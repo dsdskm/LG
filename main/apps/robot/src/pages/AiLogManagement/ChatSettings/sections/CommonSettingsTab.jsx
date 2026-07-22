@@ -30,6 +30,88 @@ import {
 
 import { formatDateTime } from '../chatSettings.utils'
 
+const normalizeKeywordArray = (value) => {
+    const rows = Array.isArray(value) ? value : []
+    const normalized = rows
+        .map((item) => String(item ?? '').trim())
+        .filter(Boolean)
+    return Array.from(new Set(normalized))
+}
+
+const KeywordListEditor = ({ keywords, onChange, hint }) => {
+    const [newKeyword, setNewKeyword] = useState('')
+    const list = Array.isArray(keywords) ? keywords : []
+
+    const addKeyword = () => {
+        const value = String(newKeyword ?? '').trim()
+        if (!value) return
+        onChange([...list, value])
+        setNewKeyword('')
+    }
+
+    return (
+        <div style={{ display: 'grid', gap: '8px' }}>
+            {list.length > 0 ? (
+                <div style={{ display: 'grid', gap: '6px' }}>
+                    {list.map((keyword, index) => (
+                        <div key={`keyword-row-${index}`} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px', alignItems: 'center' }}>
+                            <input
+                                value={keyword}
+                                onChange={(e) => {
+                                    const next = list.slice()
+                                    next[index] = e.target.value
+                                    onChange(next)
+                                }}
+                                style={{
+                                    width: '100%',
+                                    border: '1px solid #dbe3ef',
+                                    borderRadius: '10px',
+                                    padding: '8px 10px',
+                                    fontSize: '13px',
+                                    color: '#1f2937',
+                                }}
+                            />
+                            <SecondaryTextButton
+                                type="button"
+                                onClick={() => onChange(list.filter((_, idx) => idx !== index))}
+                            >
+                                삭제
+                            </SecondaryTextButton>
+                        </div>
+                    ))}
+                </div>
+            ) : null}
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px', alignItems: 'center' }}>
+                <input
+                    value={newKeyword}
+                    onChange={(e) => setNewKeyword(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault()
+                            addKeyword()
+                        }
+                    }}
+                    placeholder="키워드 입력 후 Enter 또는 추가"
+                    style={{
+                        width: '100%',
+                        border: '1px solid #dbe3ef',
+                        borderRadius: '10px',
+                        padding: '8px 10px',
+                        fontSize: '13px',
+                        color: '#1f2937',
+                    }}
+                />
+                <PrimaryButton type="button" onClick={addKeyword} style={{ height: '36px' }}>
+                    추가
+                </PrimaryButton>
+            </div>
+
+            {hint ? <FieldHint>{hint}</FieldHint> : null}
+        </div>
+    )
+}
+
 export const CommonSettingsTab = ({
     providerItem,
     values,
@@ -270,7 +352,7 @@ const CommonRagManagementCard = ({
         ? ragDrafts[activeRagKey] ?? {
             title: String(activeRagDoc.title ?? ''),
             body: String(activeRagDoc.body ?? ''),
-            keywordsText: JSON.stringify(activeRagDoc.keywords ?? [], null, 2),
+            keywords: normalizeKeywordArray(activeRagDoc.keywords ?? []),
             enabled: activeRagDoc.enabled !== false,
         }
         : null
@@ -361,11 +443,11 @@ const CommonRagManagementCard = ({
                                 style={{ minHeight: '56px' }}
                             />
 
-                            <FieldLabel>keywords (JSON 배열)</FieldLabel>
-                            <PromptTextarea
-                                value={newCommonRagDraft.keywordsText}
-                                onChange={(e) => onNewCommonRagChange('keywordsText', e.target.value)}
-                                style={{ minHeight: '96px' }}
+                            <FieldLabel>keywords</FieldLabel>
+                            <KeywordListEditor
+                                keywords={newCommonRagDraft.keywords}
+                                onChange={(next) => onNewCommonRagChange('keywords', next)}
+                                hint="동의어/사용자 표현까지 넣어야 조회 정확도가 올라갑니다."
                             />
 
                             <FieldLabel>body</FieldLabel>
@@ -408,13 +490,12 @@ const CommonRagManagementCard = ({
                             />
                             <FieldHint>질문 의도와 바로 연결되는 제목으로 작성하세요.</FieldHint>
 
-                            <FieldLabel>keywords (JSON 배열)</FieldLabel>
-                            <PromptTextarea
-                                value={activeRagDraft.keywordsText}
-                                onChange={(e) => onRagChange(activeRagKey, 'keywordsText', e.target.value)}
-                                style={{ minHeight: '96px' }}
+                            <FieldLabel>keywords</FieldLabel>
+                            <KeywordListEditor
+                                keywords={activeRagDraft.keywords}
+                                onChange={(next) => onRagChange(activeRagKey, 'keywords', next)}
+                                hint="동의어/사용자 표현까지 넣어야 조회 정확도가 올라갑니다."
                             />
-                            <FieldHint>동의어/사용자 표현까지 넣어야 조회 정확도가 올라갑니다.</FieldHint>
 
                             <FieldLabel>body</FieldLabel>
                             <PromptTextarea
@@ -487,11 +568,10 @@ const CommonRagManagementCard = ({
                                 style={{ minHeight: '56px' }}
                             />
 
-                            <FieldLabel>keywords (JSON 배열)</FieldLabel>
-                            <PromptTextarea
-                                value={newCommonRagDraft.keywordsText}
-                                onChange={(e) => onNewCommonRagChange('keywordsText', e.target.value)}
-                                style={{ minHeight: '96px' }}
+                            <FieldLabel>keywords</FieldLabel>
+                            <KeywordListEditor
+                                keywords={newCommonRagDraft.keywords}
+                                onChange={(next) => onNewCommonRagChange('keywords', next)}
                             />
 
                             <FieldLabel>body</FieldLabel>

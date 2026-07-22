@@ -20,6 +20,11 @@ function getNodeLabel(node: any): string {
   return String(data.label ?? data.taskName ?? data.name ?? node?.id ?? '')
 }
 
+function getNodeTaskName(node: any): string {
+  const data = node?.data ?? {}
+  return String(data.taskName ?? data.name ?? '').trim() || 'UNKNOWN'
+}
+
 /**
  * Parallel 노드 선택 시, 좌측(분기)으로 연결된 자식 노드들을 나열하고
  * 그 중 main 노드를 다중 선택한다. 선택값은 properties.main_nodes(string[])로 저장된다.
@@ -94,7 +99,7 @@ export default function ParallelMainNodesSection({ readOnly = false }: Props) {
             {childNodes.map((node) => (
               <Checkbox
                 key={node.id}
-                label={getNodeLabel(node)}
+                label={`${getNodeLabel(node)} (Task Name: ${getNodeTaskName(node)})`}
                 checked={isMain(String(node.id))}
                 disabled={readOnly}
                 onChange={() => toggle(String(node.id))}
