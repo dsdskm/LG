@@ -39,6 +39,7 @@ export type RetrievedChunk = { chunk: RagChunk; score: number }
 export type RagLogger = {
   log: (msg: string) => void
   error: (msg: string) => void
+  debug?: (msg: string) => void
 }
 export class RagService {
   constructor(
@@ -47,6 +48,10 @@ export class RagService {
     private readonly topK: number,
     private readonly logger: RagLogger,
   ) { }
+
+  private stageLog(stage: string, status: string, reason: string, reqId = '-') {
+    this.logger.log(`================= [${stage}] [reqId=${reqId}] status=${status} reason=${reason}`)
+  }
 
   private resolveCollection(collectionName: string): { scope: string; chunks: RagChunk[] } | undefined {
     const dbCollection = getPromptStore()?.getCollection(collectionName)
@@ -86,20 +91,28 @@ export class RagService {
     collectionNames: string | string[],
     message: string,
     history: ChatTurn[] = [],
+    reqId = '-',
   ): Promise<{ text: string; usedCollection?: string; usedChunks: string[] }> {
     const names = Array.isArray(collectionNames) ? collectionNames : [collectionNames]
 
     let hits: RetrievedChunk[] = []
     let usedCollection: string | undefined
-    this.logger.log(`================= [3-1단계:RAG_컬렉션후보] names=${JSON.stringify(names)} message=${JSON.stringify(message)} historyTurns=${history.length}`)
+    this.stageLog('3-1단계:RAG_컬렉션후보', 'loaded', `후보 컬렉션 ${names.length}개를 순차 탐색`, reqId)
+    this.logger.debug?.(
+      `================= [3-1단계:RAG_컬렉션후보_추적] [reqId=${reqId}] names=${JSON.stringify(names)} messageLen=${String(message ?? '').length} historyTurns=${history.length}`,
+    )
     for (const name of names) {
       const resolvedCollection = this.resolveCollection(name)
-      this.logger.log(
-        `================= [3-1-1단계:RAG_컬렉션원문] collection=${name} exists=${Boolean(resolvedCollection)} scope=${resolvedCollection?.scope ?? '-'} chunkCount=${Array.isArray(resolvedCollection?.chunks) ? resolvedCollection?.chunks.length : 0} chunks=${JSON.stringify(resolvedCollection?.chunks ?? [])}`,
+      this.stageLog(
+        '3-1-1단계:RAG_컬렉션상태',
+        resolvedCollection ? 'ready' : 'missing',
+        `collection=${name} 존재 여부 확인`,
+        reqId,
       )
       const found = this.retrieve(name, message)
-      this.logger.log(
-        `================= [3-2단계:RAG_컬렉션탐색] collection=${name} hitCount=${found.length} hits=${JSON.stringify(found.map((row) => ({ id: row.chunk.id, title: row.chunk.title, keywords: row.chunk.keywords, body: row.chunk.body, score: row.score })))} `,
+      this.stageLog('3-2단계:RAG_컬렉션탐색', found.length > 0 ? 'matched' : 'miss', `collection=${name} 탐색 완료(hitCount=${found.length})`, reqId)
+      this.logger.debug?.(
+        `================= [3-2단계:RAG_컬렉션탐색_추적] [reqId=${reqId}] collection=${name} hits=${JSON.stringify(found.map((row) => ({ id: row.chunk.id, score: row.score })))}`,
       )
       if (found.length) {
         hits = found
@@ -108,9 +121,14 @@ export class RagService {
       }
     }
     if (hits.length === 0) {
-      this.logger.log('================= [3-3단계:RAG_탐색결과] no-hit')
+      this.stageLog('3-3단계:RAG_탐색결과', 'empty', '모든 컬렉션에서 근거 문서를 찾지 못함', reqId)
       return { text: '', usedChunks: [] }
     }
+
+    const referencedChunks = hits.map((h) => `${h.chunk.id}:${h.chunk.title}`).join(', ')
+    this.logger.log(
+      `================= [3-3-1단계:RAG_참조청크] [reqId=${reqId}] status=selected reason=collection=${usedCollection ?? '-'} referencedChunks=[${referencedChunks}]`,
+    )
 
     const collection = usedCollection ? this.resolveCollection(usedCollection) : undefined
 
@@ -124,12 +142,15 @@ export class RagService {
 
     const system = [commonSystem, ragSystem].filter(Boolean).join('\n\n')
 
-    this.logger.log(
-      `================= [3-4단계:RAG_프롬프트생성] collection=${usedCollection ?? '-'} usedChunkCount=${hits.length} commonSystemApplied=${Boolean(commonSystem)} systemLen=${system.length}`,
+    this.stageLog(
+      '3-4단계:RAG_프롬프트생성',
+      'ready',
+      `collection=${usedCollection ?? '-'} 근거 ${hits.length}개로 프롬프트 구성`,
+      reqId,
     )
-    this.logger.log(`================= [3-5단계:RAG_공통프롬프트원문] commonSystemText=${JSON.stringify(commonSystem)}`)
-    this.logger.log(`================= [3-5-1단계:RAG_주입컨텍스트원문] collection=${usedCollection ?? '-'} ragSystemText=${JSON.stringify(ragSystem)}`)
-    this.logger.log(`================= [3-5-2단계:RAG_최종시스템프롬프트원문] collection=${usedCollection ?? '-'} systemText=${JSON.stringify(system)}`)
+    this.logger.debug?.(
+      `================= [3-4단계:RAG_프롬프트생성_추적] [reqId=${reqId}] commonSystemApplied=${Boolean(commonSystem)} systemLen=${system.length}`,
+    )
 
     // this.logger.log(`[ragService] system ${system}`)
 
@@ -143,8 +164,17 @@ export class RagService {
     })
 
     const text = (res.text ?? '').trim()
+    this.stageLog(
+      '3-6단계:RAG_응답생성완료',
+      text ? 'completed' : 'empty',
+      `collection=${usedCollection ?? '-'} 응답 생성 완료`,
+      reqId,
+    )
     this.logger.log(
-      `================= [3-6단계:RAG_응답생성완료] collection=${usedCollection ?? '-'} textLength=${text.length} usedChunks=${JSON.stringify(hits.map((h) => h.chunk.id))}`,
+      `================= [3-6-1단계:RAG_참조청크_최종] [reqId=${reqId}] status=used reason=collection=${usedCollection ?? '-'} usedChunkIds=[${hits.map((h) => h.chunk.id).join(', ')}]`,
+    )
+    this.logger.debug?.(
+      `================= [3-6단계:RAG_응답생성완료_추적] [reqId=${reqId}] textLength=${text.length} usedChunks=${JSON.stringify(hits.map((h) => h.chunk.id))}`,
     )
     return {
       text,

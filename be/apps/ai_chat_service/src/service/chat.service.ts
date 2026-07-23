@@ -77,10 +77,9 @@ export class ChatService {
     private readonly chatSetting: ChatSettingService,
   ) { }
 
-  private stageLog(stage: string, detail?: string, reqId?: string) {
-    const suffix = detail ? ` ${detail}` : ''
+  private stageLog(stage: string, status: string, reason: string, reqId?: string) {
     const normalizedReqId = String(reqId ?? '').trim() || '-'
-    this.logger.log(`================= [0단계:요청처리_진행상태] [reqId=${normalizedReqId}] ${stage}${suffix}`)
+    this.logger.log(`================= [${stage}] [reqId=${normalizedReqId}] status=${status} reason=${reason}`)
   }
 
   private ensureReqId(body: any): string {
@@ -132,37 +131,41 @@ export class ChatService {
 
   async handleChat(body: any): Promise<ChatReply> {
     const reqId = this.ensureReqId(body)
-    this.stageLog('handleChat:start', `currentApp=${this.normalize(body?.currentApp) || '-'} currentPath=${this.normalize(body?.currentPath) || '-'} key=${this.normalize(body?.key) || '-'} message=${this.normalize(body?.message) || '-'}`, reqId)
+    this.stageLog('1단계:요청수신', 'received', '채팅 요청 수신 및 파이프라인 시작', reqId)
 
     const runtime = await this.resolveRuntime()
-    this.stageLog('handleChat:runtime-resolved', undefined, reqId)
+    this.stageLog('1-1단계:런타임확보', 'ready', 'LLM/오케스트레이터 런타임 확보 완료', reqId)
     // this.logger.log(`[handleChat] runtime ${JSON.stringify(runtime)}`)
     // validation check
     runtime.llm.assertConfig()
-    this.stageLog('handleChat:runtime-validated', undefined, reqId)
+    this.stageLog('1-2단계:런타임검증', 'validated', 'LLM 설정 유효성 검증 완료', reqId)
 
     const ctx = await this.buildChatContext(body, runtime)
-    this.stageLog('handleChat:context-built', `routeKey=${ctx.key} historyTurns=${ctx.history.length}`, reqId)
+    this.stageLog('2단계:컨텍스트구성', 'built', `routeKey=${ctx.key} 기준 대화 컨텍스트 구성 완료`, reqId)
     // this.logger.log(`[handleChat] ctx ${JSON.stringify(ctx)}`)
 
     const ruleFirstReply = await this.tryRuleFirstEventQuery(ctx)
     if (ruleFirstReply) {
-      this.stageLog('handleChat:rule-first-handled', `chatAction=${ruleFirstReply.chat_action}`, reqId)
+      this.stageLog('3단계:룰우선처리', 'served', 'phrase-map/휴리스틱 우선 처리로 응답 완료', reqId)
       return this.withSuggestedActions(ruleFirstReply, ctx)
     }
 
-    this.stageLog('handleChat:pipeline-begin', undefined, reqId)
+    this.stageLog('4단계:화면파이프라인', 'running', '등록 화면 파이프라인 처리 시작', reqId)
     const pipelineReply = await this.handleScreenPipeline(ctx)
-    this.logger.log(`[handleChat] pipelineReply ${pipelineReply}`)
     if (pipelineReply) {
-      this.stageLog('handleChat:pipeline-handled', `chatAction=${pipelineReply.chat_action}`, reqId)
+      const fallbackReply = await this.tryComposeTaskflowFallback(ctx, pipelineReply)
+      if (fallbackReply) {
+        this.stageLog('4-1단계:화면파이프라인', 'completed', '화면 파이프라인 후 태스크플로우 draft 폴백 반영 완료', reqId)
+        return this.withSuggestedActions(fallbackReply, ctx)
+      }
+      this.stageLog('4-1단계:화면파이프라인', 'completed', '화면 파이프라인에서 응답 생성 완료', reqId)
       return this.withSuggestedActions(pipelineReply, ctx)
     }
 
     // 미등록 화면 또는 pipeline 실패 시 기존 guidance 경로
-    this.stageLog('handleChat:guidance-fallback-begin', undefined, reqId)
+    this.stageLog('5단계:가이던스폴백', 'fallback', '등록 화면 처리 불가로 기본 안내 경로 진입', reqId)
     const guidanceReply = await this.handleGuidance(ctx)
-    this.stageLog('handleChat:guidance-fallback-done', `chatAction=${guidanceReply.chat_action}`, reqId)
+    this.stageLog('5-1단계:가이던스폴백', 'completed', '기본 안내 응답 생성 완료', reqId)
     return this.withSuggestedActions(guidanceReply, ctx)
   }
 
@@ -228,6 +231,15 @@ export class ChatService {
   }
 
   private withSuggestedActions(reply: ChatReply, ctx: ChatContext): ChatReply {
+    if (
+      this.isTmsCanvasRoute(ctx.key) &&
+      this.looksLikeTaskflowComposeMessage(ctx.message) &&
+      !this.hasCanvasDraftParam(reply)
+    ) {
+      // 구성 요청인데 draft 없는 응답을 suggested_actions로 덮어 실패를 감추지 않도록 한다.
+      return reply
+    }
+
     const suggestions = this.buildNavigationSuggestions(ctx)
     if (suggestions.length === 0) return reply
 
@@ -235,6 +247,101 @@ export class ChatService {
     return {
       ...reply,
       chat_action_param: nextParam,
+    }
+  }
+
+  private isTmsCanvasRoute(routeKey: string): boolean {
+    const normalized = this.normalizeRouteLike(routeKey)
+    return /^tms\/taskflows\/[^/]+\/canvas(?:\/|$)/.test(normalized)
+  }
+
+  private looksLikeTaskflowComposeMessage(message: string): boolean {
+    const text = this.normalize(message)
+    if (!text) return false
+
+    const asksCompose = /(구성해줘|구성해\s*줘|만들어줘|만들어\s*줘|태스크\s*플로우|태스크플로우|taskflow)/i.test(text)
+    if (!asksCompose) return false
+
+    return /(이동|move|->|→|거쳐|들러|갔다가|에서\s*.+\s*로)/i.test(text)
+  }
+
+  private hasCanvasDraftParam(reply: ChatReply | null | undefined): boolean {
+    if (!reply?.chat_action_param || typeof reply.chat_action_param !== 'object') return false
+
+    const param = reply.chat_action_param as Record<string, unknown>
+    if (param.canvasDraft && typeof param.canvasDraft === 'object') return true
+
+    const toolResult =
+      param.toolResult && typeof param.toolResult === 'object'
+        ? (param.toolResult as Record<string, unknown>)
+        : undefined
+
+    return Boolean(toolResult?.canvasDraft && typeof toolResult.canvasDraft === 'object')
+  }
+
+  private async tryComposeTaskflowFallback(
+    ctx: ChatContext,
+    reply: ChatReply,
+  ): Promise<ChatReply | null> {
+    if (!this.isTmsCanvasRoute(ctx.key)) return null
+    if (!this.looksLikeTaskflowComposeMessage(ctx.message)) return null
+    if (this.hasCanvasDraftParam(reply)) return null
+
+    const actionParam = reply?.chat_action_param && typeof reply.chat_action_param === 'object'
+      ? (reply.chat_action_param as Record<string, unknown>)
+      : undefined
+    const directClarification = String(actionParam?.clarification ?? '').trim()
+    const nestedClarification =
+      actionParam?.toolResult && typeof actionParam.toolResult === 'object'
+        ? String((actionParam.toolResult as Record<string, unknown>).clarification ?? '').trim()
+        : ''
+    if (directClarification || nestedClarification) return null
+
+    const screen = getScreenConfig(ctx.key, ctx.reqId)
+    const composeTool = screen?.actionTools?.find(
+      (tool) => tool?.declaration?.name === 'compose_linear_taskflow',
+    )
+    if (!composeTool) {
+      this.stageLog('4-7단계:태스크플로우폴백', 'skipped', 'compose_linear_taskflow 도구를 찾지 못해 폴백 불가', ctx.reqId)
+      return null
+    }
+
+    const toolCtx = buildToolContextFromBody({
+      body: ctx.body,
+      message: ctx.message,
+      actionRunnerUrl: this.pipelineCfg.actionRunnerUrl,
+      log: {
+        log: (m) => this.logger.log(m),
+        error: (m) => this.logger.error(m),
+      },
+    })
+
+    try {
+      const result = await composeTool.execute({}, toolCtx)
+      if (!result || typeof result !== 'object') {
+        this.stageLog('4-7단계:태스크플로우폴백', 'miss', 'compose 도구 응답이 객체 형식이 아님', ctx.reqId)
+        return null
+      }
+
+      const objectResult = result as Record<string, unknown>
+      const canvasDraft = objectResult.canvasDraft
+      if (!canvasDraft || typeof canvasDraft !== 'object') {
+        this.stageLog('4-7단계:태스크플로우폴백', 'miss', 'compose 도구 응답에 canvasDraft 없음', ctx.reqId)
+        return null
+      }
+
+      this.stageLog('4-7단계:태스크플로우폴백', 'applied', 'pipeline 응답에 draft가 없어 compose 도구 결과를 강제 반영', ctx.reqId)
+      return {
+        ...reply,
+        chat_action_param: {
+          toolName: 'compose_linear_taskflow',
+          toolResult: objectResult,
+        },
+        text: String(objectResult.assistantText ?? '').trim() || '요청을 캔버스에 반영했습니다.',
+      }
+    } catch (e: any) {
+      this.stageLog('4-7단계:태스크플로우폴백', 'error', `compose 도구 실행 실패(${e?.message ?? String(e)})`, ctx.reqId)
+      return null
     }
   }
 
@@ -287,7 +394,10 @@ export class ChatService {
     })
 
     this.logger.log(
-      `[chat] [reqId=${reqId}] history-context author=${author || '-'} conversationId=${conversationId || '-'} currentApp=${currentApp || '-'} turns=${history.length}`,
+      `[chat] [reqId=${reqId}] status=loaded reason=대화 히스토리 컨텍스트 조회 완료`,
+    )
+    this.logger.debug(
+      `[chat] [trace][reqId=${reqId}] author=${author || '-'} conversationId=${conversationId || '-'} currentApp=${currentApp || '-'} turns=${history.length}`,
     )
 
     return {
@@ -320,7 +430,10 @@ export class ChatService {
     const explicit = explicitCandidates.find((candidate) => candidate.value)
     if (explicit?.value) {
       this.logger.log(
-        `[route-key] [reqId=${String(reqId ?? '-').trim() || '-'}] source=${explicit.source} key=${explicit.value} rawKey=${this.normalize(body?.key) || '-'} rawRouteKey=${this.normalize(body?.routeKey) || '-'} rawScreenRouteKey=${this.normalize(body?.screenRouteKey) || '-'} currentApp=${currentApp || '-'} currentPath=${currentPath || '-'}`,
+        `[route-key] [reqId=${String(reqId ?? '-').trim() || '-'}] status=resolved reason=명시적 route 입력값(${explicit.source}) 사용`,
+      )
+      this.logger.debug(
+        `[route-key] [trace][reqId=${String(reqId ?? '-').trim() || '-'}] source=${explicit.source} key=${explicit.value} currentApp=${currentApp || '-'} currentPath=${currentPath || '-'}`,
       )
       return explicit.value
     }
@@ -331,21 +444,24 @@ export class ChatService {
     if (app && path) {
       if (path === app || path.startsWith(`${app}/`)) {
         this.logger.log(
-          `[route-key] [reqId=${String(reqId ?? '-').trim() || '-'}] source=currentPath key=${path} rawKey=${this.normalize(body?.key) || '-'} rawRouteKey=${this.normalize(body?.routeKey) || '-'} rawScreenRouteKey=${this.normalize(body?.screenRouteKey) || '-'} currentApp=${app} currentPath=${path}`,
+          `[route-key] [reqId=${String(reqId ?? '-').trim() || '-'}] status=resolved reason=currentPath가 app prefix 규칙을 만족`,
         )
+        this.logger.debug(`[route-key] [trace][reqId=${String(reqId ?? '-').trim() || '-'}] source=currentPath key=${path}`)
         return path
       }
       const normalized = `${app}/${path}`.replace(/\/+/g, '/')
       this.logger.log(
-        `[route-key] [reqId=${String(reqId ?? '-').trim() || '-'}] source=currentApp+currentPath key=${normalized} rawKey=${this.normalize(body?.key) || '-'} rawRouteKey=${this.normalize(body?.routeKey) || '-'} rawScreenRouteKey=${this.normalize(body?.screenRouteKey) || '-'} currentApp=${app} currentPath=${path}`,
+        `[route-key] [reqId=${String(reqId ?? '-').trim() || '-'}] status=resolved reason=currentApp/currentPath 결합 규칙으로 route 생성`,
       )
+      this.logger.debug(`[route-key] [trace][reqId=${String(reqId ?? '-').trim() || '-'}] source=currentApp+currentPath key=${normalized}`)
       return normalized
     }
 
     const fallback = path || app
     this.logger.log(
-      `[route-key] [reqId=${String(reqId ?? '-').trim() || '-'}] source=fallback key=${fallback || '-'} rawKey=${this.normalize(body?.key) || '-'} rawRouteKey=${this.normalize(body?.routeKey) || '-'} rawScreenRouteKey=${this.normalize(body?.screenRouteKey) || '-'} currentApp=${app || '-'} currentPath=${path || '-'}`,
+      `[route-key] [reqId=${String(reqId ?? '-').trim() || '-'}] status=fallback reason=명시적 route 정보가 없어 fallback 규칙 적용`,
     )
+    this.logger.debug(`[route-key] [trace][reqId=${String(reqId ?? '-').trim() || '-'}] source=fallback key=${fallback || '-'}`)
     return fallback
   }
 
@@ -378,12 +494,11 @@ export class ChatService {
    * 4. intent별 처리
    */
   private async handleScreenPipeline(ctx: ChatContext): Promise<ChatReply | null> {
-    this.stageLog('screen-pipeline:start', `requestedRoute=${ctx.key}`, ctx.reqId)
+    this.stageLog('4-1단계:화면매칭', 'running', `requestedRoute=${ctx.key} 화면 매칭 시작`, ctx.reqId)
     const matchedRouteKey = this.findNearestRegisteredRouteKey(ctx.key, ctx.reqId)
 
     if (!matchedRouteKey) {
-      this.logger.log(`[handleScreenPipeline] unregistered screen route=${ctx.key}`)
-      this.stageLog('screen-pipeline:unregistered', `requestedRoute=${ctx.key}`, ctx.reqId)
+      this.stageLog('4-1단계:화면매칭', 'not-found', '등록된 화면을 찾지 못해 guidance 폴백 예정', ctx.reqId)
       return null
     }
 
@@ -402,14 +517,11 @@ export class ChatService {
           }
 
     if (matchedRouteKey !== ctx.key) {
-      this.logger.log(
-        `[handleScreenPipeline] route fallback original=${ctx.key} matched=${matchedRouteKey}`,
-      )
-      this.stageLog('screen-pipeline:route-fallback', `original=${ctx.key} matched=${matchedRouteKey}`, ctx.reqId)
+      this.stageLog('4-2단계:라우트보정', 'adjusted', '요청 route가 미등록이라 근접 등록 route로 보정', ctx.reqId)
+      this.logger.debug(`[handleScreenPipeline] [trace] original=${ctx.key} matched=${matchedRouteKey}`)
     }
 
-    this.logger.log(`[handleScreenPipeline] key=${routeCtx.key}`)
-    this.stageLog('screen-pipeline:dispatch', `route=${routeCtx.key}`, ctx.reqId)
+    this.stageLog('4-3단계:화면디스패치', 'dispatched', `route=${routeCtx.key} 화면 핸들러로 분기`, ctx.reqId)
     try {
       if (routeCtx.key === 'robot/ailog/event') {
         return this.handleRobotAilogEventScreen(routeCtx)
@@ -428,7 +540,7 @@ export class ChatService {
       this.logger.error(
         `[chat] screen pipeline error route=${routeCtx.key} err=${e?.message ?? String(e)}`,
       )
-      this.stageLog('screen-pipeline:error', `route=${routeCtx.key} err=${e?.message ?? String(e)}`, ctx.reqId)
+      this.stageLog('4-3단계:화면디스패치', 'error', '화면 핸들러 처리 중 예외 발생', ctx.reqId)
       return null
     }
   }
@@ -546,7 +658,7 @@ export class ChatService {
     const task = this.classifyRobotAilogEventTask(ctx.message)
 
     this.logger.log(
-      `[handleRobotAilogEventScreen] screen=robot/ailog/event task=${task} message=${ctx.message}`,
+      `[handleRobotAilogEventScreen] [reqId=${ctx.reqId}] status=classified reason=robot/ailog/event 전용 task 분류 완료`,
     )
     return this.runOrchestrator(ctx, task)
   }
@@ -584,7 +696,7 @@ export class ChatService {
     const intent = this.classifyGenericScreenTask(ctx.message)
 
     this.logger.log(
-      `[chat] screen=${ctx.key} intent=${intent} message=${ctx.message}`,
+      `[chat] [reqId=${ctx.reqId}] status=classified reason=자식 화면의 generic task 분류 완료`,
     )
 
     return this.runOrchestrator(ctx, intent)
@@ -603,7 +715,7 @@ export class ChatService {
     const intent = this.classifyGenericScreenTask(ctx.message)
 
     this.logger.log(
-      `[chat] screen=${ctx.key} intent=${intent} message=${ctx.message}`,
+      `[chat] [reqId=${ctx.reqId}] status=classified reason=robot 일반 화면의 generic task 분류 완료`,
     )
 
     return this.runOrchestrator(ctx, intent)
@@ -617,7 +729,7 @@ export class ChatService {
     const intent = this.classifyGenericScreenTask(ctx.message)
 
     this.logger.log(
-      `[chat] screen=${ctx.key} intent=${intent} message=${ctx.message}`,
+      `[chat] [reqId=${ctx.reqId}] status=classified reason=등록 화면의 generic task 분류 완료`,
     )
 
     return this.runOrchestrator(ctx, intent)
@@ -675,7 +787,7 @@ export class ChatService {
     ctx: ChatContext,
     intent: ScreenTask,
   ): Promise<ChatReply | null> {
-    this.stageLog('orchestrator:start', `route=${ctx.key} screenTask=${intent} message=${ctx.message}`, ctx.reqId)
+    this.stageLog('4-4단계:오케스트레이터실행', 'running', `route=${ctx.key} screenTask=${intent} 실행 시작`, ctx.reqId)
     const pipelineBody = {
       ...ctx.body,
       reqId: ctx.reqId,
@@ -689,15 +801,14 @@ export class ChatService {
       ctx.message,
       pipelineBody,
     )
-    this.logger.log(`[runOrchestrator] out ${JSON.stringify(out)}`)
-    this.stageLog('orchestrator:result', `handled=${String(out.handled)} hasReply=${String(Boolean(out.reply))}`, ctx.reqId)
+    this.stageLog('4-5단계:오케스트레이터결과', 'completed', `handled=${String(out.handled)} hasReply=${String(Boolean(out.reply))}`, ctx.reqId)
     if (out.handled && out.reply) {
       await this.saveLog(ctx.body, out.reply, ctx)
-      this.stageLog('orchestrator:reply-saved', `chatAction=${out.reply.chat_action}`, ctx.reqId)
+      this.stageLog('4-6단계:응답저장', 'saved', '오케스트레이터 응답을 chat_log에 저장 완료', ctx.reqId)
       return out.reply
     }
 
-    this.stageLog('orchestrator:no-reply', undefined, ctx.reqId)
+    this.stageLog('4-6단계:응답저장', 'skipped', '오케스트레이터에서 유효 응답이 없어 저장 생략', ctx.reqId)
     return null
   }
 
@@ -723,18 +834,19 @@ export class ChatService {
       /(오늘|어제|일주일|한달|한\s*달|1개월|3개월|3달|\d{1,2}월\s*\d{1,2}일|부터|까지)/.test(normalizedMessage)
 
     if (!phraseMatch && !heuristicQuickQuery) {
-      this.stageLog('rule-first:miss', `route=${matchedRouteKey || ctx.key} message=${ctx.message}`, ctx.reqId)
+      this.stageLog('3단계:룰우선처리', 'miss', '매칭 규칙이 없어 일반 파이프라인으로 진행', ctx.reqId)
       return null
     }
 
     if (phraseMatch) {
       this.stageLog(
-        'rule-first:match',
-        `route=${matchedRouteKey || ctx.key} matchType=${phraseMatch.matchType ?? 'exact'} intent=${phraseMatch.intentKey}`,
+        '3단계:룰우선처리',
+        'matched',
+        `phrase-map 매칭 성공(matchType=${phraseMatch.matchType ?? 'exact'})`,
         ctx.reqId,
       )
     } else {
-      this.stageLog('rule-first:heuristic', `route=${matchedRouteKey || ctx.key} message=${ctx.message}`, ctx.reqId)
+      this.stageLog('3단계:룰우선처리', 'heuristic', '휴리스틱 조건 만족으로 즉시 조회 처리', ctx.reqId)
     }
 
     const toolCtx = buildToolContextFromBody({
@@ -761,13 +873,13 @@ export class ChatService {
       }
 
       await this.saveLog(ctx.body, reply, ctx)
-      this.stageLog('rule-first:served', `route=${matchedRouteKey} chatAction=${reply.chat_action}`, ctx.reqId)
+      this.stageLog('3단계:룰우선처리', 'served', '룰 기반 직접 조회 응답 반환 완료', ctx.reqId)
       return reply
     } catch (e: any) {
       this.logger.warn(
         `[rule-first] direct query failed route=${matchedRouteKey} err=${e?.message ?? String(e)}; fallback to pipeline`,
       )
-      this.stageLog('rule-first:error', `route=${matchedRouteKey} err=${e?.message ?? String(e)}`, ctx.reqId)
+      this.stageLog('3단계:룰우선처리', 'error', '직접 조회 실패로 일반 파이프라인으로 폴백', ctx.reqId)
       return null
     }
   }
@@ -792,9 +904,11 @@ export class ChatService {
       : [...ctx.history, { role: 'user' as const, content: ctx.message }]
 
     this.logger.log(
-      `[chat] default-llm-api-called commonSystemApplied=${Boolean(commonSystem)} route=${routeKey || '-'} routeHintApplied=${Boolean(routeHint)}`,
+      `[chat] [reqId=${ctx.reqId}] status=fallback reason=guidance 경로에서 기본 LLM 호출`,
     )
-    this.logger.log(`[chat] default-llm commonSystemText=${JSON.stringify(commonSystem)}`)
+    this.logger.debug(
+      `[chat] [trace][reqId=${ctx.reqId}] commonSystemApplied=${Boolean(commonSystem)} route=${routeKey || '-'} routeHintApplied=${Boolean(routeHint)}`,
+    )
 
     const result = await ctx.llm.client.generateContent({
       messages,
