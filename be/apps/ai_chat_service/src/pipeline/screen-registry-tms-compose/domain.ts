@@ -3,6 +3,7 @@ export {
   detectSaveCommand,
   inferLinearDraftPlanFromMessage,
   isDeleteAllNodesMessage,
+  isDocentFlowComposeMessage,
   isAlignRequestMessage,
   isAmbiguousModeChangeMessage,
   isAmbiguousSaveMessage,
@@ -14,6 +15,7 @@ export {
 } from './domain/tms'
 
 export {
+  buildDocentFlowDraftFromMessage,
   buildMoveParallelFlowDraftFromMessage,
   buildPickupPutDownFlowDraftFromMessage,
   buildPlayMotionParallelFlowDraftFromMessage,

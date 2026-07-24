@@ -16,11 +16,20 @@ export type GuidanceData = {
   fallbackText: string
 }
 
-export type RagChunkData = { id: string; title: string; keywords: string[]; body: string }
+export type RagChunkIntentType = 'info' | 'action' | 'both'
+export type RagImageAttachMode = 'auto' | 'always' | 'never'
+export type RagChunkData = {
+  id: string
+  title: string
+  keywords: string[]
+  body: string
+  sortOrder: number
+  imageUrl?: string
+  imageAttachMode: RagImageAttachMode
+  intentType: RagChunkIntentType
+}
 export type RagCollectionData = {
   key: string
-  routeKey?: string | null
-  scope: string
   chunks: RagChunkData[]
 }
 
@@ -39,6 +48,22 @@ export class PromptStoreService implements OnModuleInit {
   private collections = new Map<string, RagCollectionData>()
   private tools = new Map<string, ChatScreenToolEntity>()
   private screens = new Map<string, ChatScreenEntity>()
+
+  private normalizeRagIntentType(value: unknown): RagChunkIntentType {
+    const normalized = String(value ?? '').trim().toLowerCase()
+    if (normalized === 'info' || normalized === 'action' || normalized === 'both') {
+      return normalized
+    }
+    return 'both'
+  }
+
+  private normalizeRagImageAttachMode(value: unknown): RagImageAttachMode {
+    const normalized = String(value ?? '').trim().toLowerCase()
+    if (normalized === 'auto' || normalized === 'always' || normalized === 'never') {
+      return normalized
+    }
+    return 'auto'
+  }
 
   constructor(
     @InjectRepository(ChatScreenEntity) private readonly screenRepo: Repository<ChatScreenEntity>,
@@ -75,8 +100,17 @@ export class PromptStoreService implements OnModuleInit {
     const byCollection = new Map<string, RagCollectionData>()
     for (const r of rag) {
       if (r.enabled === false) continue
-      const col = byCollection.get(r.key) ?? { key: r.key, routeKey: r.routeKey, scope: r.scope ?? '', chunks: [] }
-      col.chunks.push({ id: r.chunkKey, title: r.title ?? '', keywords: r.keywords ?? [], body: r.body })
+      const col = byCollection.get(r.key) ?? { key: r.key, chunks: [] }
+      col.chunks.push({
+        id: r.chunkKey,
+        title: r.title ?? '',
+        keywords: r.keywords ?? [],
+        body: r.body,
+        sortOrder: Number(r.sortOrder ?? 0),
+        imageUrl: String(r.imageUrl ?? '').trim() || undefined,
+        imageAttachMode: this.normalizeRagImageAttachMode(r.imageAttachMode),
+        intentType: this.normalizeRagIntentType(r.intentType),
+      })
       byCollection.set(r.key, col)
     }
     this.collections = byCollection
@@ -315,24 +349,49 @@ export class PromptStoreService implements OnModuleInit {
   async listRag(key?: string) {
     return this.ragRepo.find({
       where: key ? { key } : {},
-      order: { appKey: 'ASC', routeKey: 'ASC', key: 'ASC', sortOrder: 'ASC', chunkKey: 'ASC' },
+      order: { appKey: 'ASC', key: 'ASC', sortOrder: 'ASC', chunkKey: 'ASC' },
     })
   }
 
   async updateRagChunk(
     id: number,
-    patch: { title?: string; keywords?: string[]; body?: string; enabled?: boolean },
+    patch: {
+      title?: string
+      keywords?: string[]
+      body?: string
+      imageUrl?: string | null
+      imageAttachMode?: RagImageAttachMode
+      enabled?: boolean
+      intentType?: string
+    },
   ) {
     const row = await this.ragRepo.findOne({ where: { id } })
     if (!row) throw new Error('rag chunk not found')
     Object.assign(row, patch)
+    if (patch.imageUrl !== undefined) {
+      row.imageUrl = String(patch.imageUrl ?? '').trim() || null
+    }
+    if (patch.imageAttachMode !== undefined) {
+      row.imageAttachMode = this.normalizeRagImageAttachMode(patch.imageAttachMode)
+    }
+    if (patch.intentType !== undefined) {
+      row.intentType = this.normalizeRagIntentType(patch.intentType)
+    }
     await this.ragRepo.save(row)
     await this.reload()
     return row
   }
 
   async upsertCommonRagDoc(
-    patch: { title?: string; keywords?: string[]; body?: string; enabled?: boolean },
+    patch: {
+      title?: string
+      keywords?: string[]
+      body?: string
+      imageUrl?: string | null
+      imageAttachMode?: RagImageAttachMode
+      intentType?: string
+      enabled?: boolean
+    },
   ) {
     const existing = await this.ragRepo.findOne({ where: { key: 'common', chunkKey: 'common' } })
     const row =
@@ -340,8 +399,6 @@ export class PromptStoreService implements OnModuleInit {
       this.ragRepo.create({
         appKey: 'common',
         key: 'common',
-        routeKey: 'common',
-        scope: '로봇 관제 사이트 공통',
         chunkKey: 'common',
         title: '공통 RAG',
         keywords: [],
@@ -353,6 +410,9 @@ export class PromptStoreService implements OnModuleInit {
     if (patch.title !== undefined) row.title = patch.title
     if (patch.keywords !== undefined) row.keywords = patch.keywords
     if (patch.body !== undefined) row.body = patch.body
+    if (patch.imageUrl !== undefined) row.imageUrl = String(patch.imageUrl ?? '').trim() || null
+    if (patch.imageAttachMode !== undefined) row.imageAttachMode = this.normalizeRagImageAttachMode(patch.imageAttachMode)
+    if (patch.intentType !== undefined) row.intentType = this.normalizeRagIntentType(patch.intentType)
     if (patch.enabled !== undefined) row.enabled = patch.enabled
 
     await this.ragRepo.save(row)
@@ -361,15 +421,23 @@ export class PromptStoreService implements OnModuleInit {
   }
 
   async createCommonRagChunk(input: {
-    chunkKey: string
+    chunkKey?: string
     title?: string
     keywords?: string[]
     body?: string
+    imageUrl?: string | null
+    imageAttachMode?: RagImageAttachMode
+    intentType?: string
     enabled?: boolean
     sortOrder?: number
   }) {
-    const chunkKey = String(input.chunkKey ?? '').trim()
-    if (!chunkKey) throw new Error('chunkKey is required')
+    const requestedChunkKey = String(input.chunkKey ?? '').trim()
+    const title = String(input.title ?? '').trim()
+    const baseChunkKey = requestedChunkKey || title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+    const chunkKey = baseChunkKey || `chunk-${Date.now()}`
 
     const existing = await this.ragRepo.findOne({ where: { key: 'common', chunkKey } })
     if (existing) throw new Error('common rag chunk already exists')
@@ -377,12 +445,13 @@ export class PromptStoreService implements OnModuleInit {
     const row = this.ragRepo.create({
       appKey: 'common',
       key: 'common',
-      routeKey: 'common',
-      scope: '로봇 관제 사이트 공통',
       chunkKey,
-      title: input.title ?? chunkKey,
+      title: title || chunkKey,
       keywords: input.keywords ?? [],
       body: input.body ?? '',
+      imageUrl: String(input.imageUrl ?? '').trim() || null,
+      imageAttachMode: this.normalizeRagImageAttachMode(input.imageAttachMode),
+      intentType: this.normalizeRagIntentType(input.intentType),
       sortOrder: Number(input.sortOrder ?? 0),
       enabled: input.enabled !== false,
     })
@@ -395,11 +464,13 @@ export class PromptStoreService implements OnModuleInit {
   async createRagChunk(input: {
     appKey: string
     key: string
-    routeKey?: string | null
     chunkKey?: string
     title?: string
     keywords?: string[]
     body?: string
+    imageUrl?: string | null
+    imageAttachMode?: RagImageAttachMode
+    intentType?: string
     enabled?: boolean
     sortOrder?: number
   }) {
@@ -428,12 +499,13 @@ export class PromptStoreService implements OnModuleInit {
     const row = this.ragRepo.create({
       appKey: String(input.appKey ?? '').trim() || key.split('/')[0] || undefined,
       key,
-      routeKey: String(input.routeKey ?? '').trim() || undefined,
-      scope: key,
       chunkKey,
       title: title || chunkKey,
       keywords: Array.isArray(input.keywords) ? input.keywords : [],
       body: String(input.body ?? ''),
+      imageUrl: String(input.imageUrl ?? '').trim() || null,
+      imageAttachMode: this.normalizeRagImageAttachMode(input.imageAttachMode),
+      intentType: this.normalizeRagIntentType(input.intentType),
       sortOrder: nextSortOrder,
       enabled: input.enabled !== false,
     })

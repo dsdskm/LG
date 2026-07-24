@@ -19,23 +19,41 @@ function tokenize(text: string): string[] {
 function scoreChunk(chunk: RagChunk, queryTokens: string[], rawQuery: string): number {
   const q = rawQuery.toLowerCase()
   let score = 0
+  const isAsciiToken = (value: string) => /^[a-z0-9]+$/.test(value)
+
+  const keywordTokenLooselyMatches = (keyword: string): boolean => {
+    const keywordTokens = tokenize(keyword)
+    if (keywordTokens.length === 0) return false
+
+    return queryTokens.some((queryToken) => keywordTokens.some((keywordToken) => {
+      if (queryToken === keywordToken) return true
+
+      // ASCII 토큰(예: ifthen vs ifthenelse)은 부분 일치로 보지 않는다.
+      if (isAsciiToken(queryToken) && isAsciiToken(keywordToken) && queryToken.length >= 4 && keywordToken.length >= 4) {
+        return false
+      }
+
+      return keywordToken.includes(queryToken) || queryToken.includes(keywordToken)
+    }))
+  }
 
   // 키워드 정확/부분 매칭 (가중치 높음)
   for (const kw of chunk.keywords) {
     const k = kw.toLowerCase()
     if (q.includes(k)) score += 3
-    else if (queryTokens.some((t) => k.includes(t) || t.includes(k))) score += 1.5
+    else if (keywordTokenLooselyMatches(k)) score += 1.5
   }
 
-  // 제목/본문 토큰 겹침
-  const haystack = `${chunk.title} ${chunk.body}`.toLowerCase()
+  // 제목/본문 토큰 겹침(정확 토큰 기준)
+  const haystackTokens = new Set(tokenize(`${chunk.title} ${chunk.body}`))
   for (const t of queryTokens) {
-    if (haystack.includes(t)) score += 0.5
+    if (haystackTokens.has(t)) score += 0.5
   }
   return score
 }
 
 export type RetrievedChunk = { chunk: RagChunk; score: number }
+export type RagIntentType = 'info' | 'action'
 export type RagLogger = {
   log: (msg: string) => void
   error: (msg: string) => void
@@ -53,11 +71,10 @@ export class RagService {
     this.logger.log(`================= [${stage}] [reqId=${reqId}] status=${status} reason=${reason}`)
   }
 
-  private resolveCollection(collectionName: string): { scope: string; chunks: RagChunk[] } | undefined {
+  private resolveCollection(collectionName: string): { chunks: RagChunk[] } | undefined {
     const dbCollection = getPromptStore()?.getCollection(collectionName)
     if (dbCollection) {
       return {
-        scope: dbCollection.scope,
         chunks: dbCollection.chunks.map((chunk) => ({
           id: chunk.id,
           title: chunk.title,
@@ -70,12 +87,21 @@ export class RagService {
     return getStaticCollection(collectionName)
   }
 
-  retrieve(collectionName: string, query: string): RetrievedChunk[] {
+  private supportsIntent(chunk: RagChunk, intentType?: RagIntentType): boolean {
+    if (!intentType) return true
+
+    const raw = String((chunk as any).intentType ?? '').trim().toLowerCase()
+    if (!raw || raw === 'both') return true
+    return raw === intentType
+  }
+
+  retrieve(collectionName: string, query: string, intentType?: RagIntentType): RetrievedChunk[] {
     const collection = this.resolveCollection(collectionName)
     if (!collection) return []
 
     const tokens = tokenize(query)
     return collection.chunks
+      .filter((chunk) => this.supportsIntent(chunk, intentType))
       .map((chunk) => ({ chunk, score: scoreChunk(chunk, tokens, query) }))
       .filter((r) => r.score > 0)
       .sort((a, b) => b.score - a.score)
@@ -92,6 +118,7 @@ export class RagService {
     message: string,
     history: ChatTurn[] = [],
     reqId = '-',
+    options?: { intentType?: RagIntentType },
   ): Promise<{ text: string; usedCollection?: string; usedChunks: string[] }> {
     const names = Array.isArray(collectionNames) ? collectionNames : [collectionNames]
 
@@ -109,10 +136,10 @@ export class RagService {
         `collection=${name} 존재 여부 확인`,
         reqId,
       )
-      const found = this.retrieve(name, message)
+      const found = this.retrieve(name, message, options?.intentType)
       this.stageLog('3-2단계:RAG_컬렉션탐색', found.length > 0 ? 'matched' : 'miss', `collection=${name} 탐색 완료(hitCount=${found.length})`, reqId)
       this.logger.debug?.(
-        `================= [3-2단계:RAG_컬렉션탐색_추적] [reqId=${reqId}] collection=${name} hits=${JSON.stringify(found.map((row) => ({ id: row.chunk.id, score: row.score })))}`,
+        `================= [3-2단계:RAG_컬렉션탐색_추적] [reqId=${reqId}] collection=${name} intent=${options?.intentType ?? 'any'} hits=${JSON.stringify(found.map((row) => ({ id: row.chunk.id, score: row.score })))}`,
       )
       if (found.length) {
         hits = found

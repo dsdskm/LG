@@ -824,9 +824,10 @@ export default function TaskFlowCanvasPage() {
   const canUndo = useFlowEditorStoreHook((s) => s.canUndo)
   const canRedo = useFlowEditorStoreHook((s) => s.canRedo)
   const palette = useFlowEditorStoreHook((s) => s.palette)
-  const loadFromFlowDefinition = useFlowEditorStoreHook((s) => s.loadFromFlowDefinition)
+  const applyFlowDefinitionWithHistory = useFlowEditorStoreHook((s) => s.applyFlowDefinitionWithHistory)
   const setFlowModeFromStore = useFlowEditorStoreHook((s) => s.setFlowMode)
   const alignSelectedNodesAuto = useFlowEditorStoreHook((s) => s.alignSelectedNodesAuto)
+  const clearAllNodesExceptStart = useFlowEditorStoreHook((s) => s.clearAllNodesExceptStart)
 
   const numericFlowId = Number(taskFlowId)
   const isNewFlow = Number.isFinite(numericFlowId) && numericFlowId <= 0
@@ -938,14 +939,14 @@ export default function TaskFlowCanvasPage() {
       if (!next || !Array.isArray((next as any).nodes) || (next as any).nodes.length === 0) return
 
       logAppliedAiNodes(next as Record<string, unknown>, String((draft as any)?.message ?? ''))
-      loadFromFlowDefinition(next as Record<string, unknown>)
+      applyFlowDefinitionWithHistory(next as Record<string, unknown>)
     }
 
     window.addEventListener(AI_TASKFLOW_CANVAS_EVENT, onTaskflowDraft)
     return () => {
       window.removeEventListener(AI_TASKFLOW_CANVAS_EVENT, onTaskflowDraft)
     }
-  }, [nodes, edges, viewport, palette, loadFromFlowDefinition])
+  }, [nodes, edges, viewport, palette, applyFlowDefinitionWithHistory])
 
   useEffect(() => {
     const pending = pendingDraftRef.current
@@ -983,8 +984,8 @@ export default function TaskFlowCanvasPage() {
     if (!next || !Array.isArray((next as any).nodes) || (next as any).nodes.length === 0) return
 
     logAppliedAiNodes(next as Record<string, unknown>, String((pending as any)?.message ?? ''))
-    loadFromFlowDefinition(next as Record<string, unknown>)
-  }, [palette, nodes, edges, viewport, loadFromFlowDefinition])
+    applyFlowDefinitionWithHistory(next as Record<string, unknown>)
+  }, [palette, nodes, edges, viewport, applyFlowDefinitionWithHistory])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -1169,6 +1170,7 @@ export default function TaskFlowCanvasPage() {
 
   const [saveMode, setSaveMode] = useState<SaveMode>('save')
   const [submitState, setSubmitState] = useState<SubmitState>(null)
+  const [resetAllNodesConfirmOpen, setResetAllNodesConfirmOpen] = useState(false)
 
   const [infoDialogOpen, setInfoDialogOpen] = useState(false)
   const saveAfterInfoRef = useRef<SaveMode | null>(null)
@@ -1450,6 +1452,13 @@ export default function TaskFlowCanvasPage() {
   return (
     <PageRoot>
       <TaskFlowCanvasHeader
+        onBack={() => {
+          if (Number.isFinite(numericFlowId) && numericFlowId > 0) {
+            navigate(`/tms/taskflows/${numericFlowId}/detail`)
+            return
+          }
+          navigate('/tms')
+        }}
         description={flowDescription}
         title={isNewFlow ? flowName || t('canvas.page.newFlowTitle') : flowName || t('canvas.page.defaultTitle')}
         status={(selectedFlow as any)?.status}
@@ -1461,6 +1470,7 @@ export default function TaskFlowCanvasPage() {
         onTempSave={onTempSave}
         onUndo={undo}
         onRedo={redo}
+        onResetAllNodes={() => setResetAllNodesConfirmOpen(true)}
         canUndo={canUndo}
         canRedo={canRedo}
         saving={saving && saveMode === 'save'}
@@ -1547,6 +1557,24 @@ export default function TaskFlowCanvasPage() {
 
           setBtModalOpen(false)
           setBtModalMode(null)
+        }}
+      />
+
+      <ConfirmModal
+        open={resetAllNodesConfirmOpen}
+        title="전체 노드 초기화"
+        description="Start 노드를 제외한 모든 노드와 연결선을 삭제하시겠습니까?"
+        confirmText="초기화"
+        cancelText="취소"
+        closeOnOverlayClick={!saving}
+        onCancel={() => {
+          if (saving) return
+          setResetAllNodesConfirmOpen(false)
+        }}
+        onConfirm={() => {
+          if (saving) return
+          clearAllNodesExceptStart()
+          setResetAllNodesConfirmOpen(false)
         }}
       />
 

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
 import { Repository } from 'typeorm'
 
@@ -28,7 +28,7 @@ const CACHE_TTL_MS = 30_000
  * - upsert 시 캐시를 무효화해 다음 요청에서 즉시 반영된다.
  */
 @Injectable()
-export class ChatSettingService {
+export class ChatSettingService implements OnModuleInit {
   private readonly logger = new Logger(ChatSettingService.name)
 
   private cache: Map<string, unknown> | null = null
@@ -38,6 +38,10 @@ export class ChatSettingService {
     @InjectRepository(ChatSettingEntity)
     private readonly repo: Repository<ChatSettingEntity>,
   ) {}
+
+  async onModuleInit() {
+    activeChatSettingService = this
+  }
 
   private invalidate() {
     this.cache = null
@@ -101,4 +105,9 @@ export class ChatSettingService {
 
     throw new Error('chat_setting.llmProvider row is missing or invalid')
   }
+}
+
+let activeChatSettingService: ChatSettingService | null = null
+export function getChatSettingService(): ChatSettingService | null {
+  return activeChatSettingService
 }

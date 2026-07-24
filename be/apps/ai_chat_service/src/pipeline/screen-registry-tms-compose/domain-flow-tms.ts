@@ -1,4 +1,5 @@
 export {
+  buildDocentFlowDraftFromMessage,
   buildMoveParallelFlowDraftFromMessage,
   buildPickupPutDownFlowDraftFromMessage,
   buildPlayMotionParallelFlowDraftFromMessage,

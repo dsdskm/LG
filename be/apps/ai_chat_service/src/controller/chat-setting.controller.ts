@@ -99,6 +99,9 @@ type UpdateRagDocBody = {
   title?: string
   keywords?: string[]
   body?: string
+  imageUrl?: string | null
+  imageAttachMode?: 'auto' | 'always' | 'never'
+  intentType?: 'info' | 'action' | 'both'
   enabled?: boolean
 }
 
@@ -106,6 +109,9 @@ type UpsertCommonRagDocBody = {
   title?: string
   keywords?: string[]
   body?: string
+  imageUrl?: string | null
+  imageAttachMode?: 'auto' | 'always' | 'never'
+  intentType?: 'info' | 'action' | 'both'
   enabled?: boolean
 }
 
@@ -114,6 +120,9 @@ type CreateCommonRagDocBody = {
   title?: string
   keywords?: string[]
   body?: string
+  imageUrl?: string | null
+  imageAttachMode?: 'auto' | 'always' | 'never'
+  intentType?: 'info' | 'action' | 'both'
   enabled?: boolean
   sortOrder?: number
 }
@@ -121,11 +130,13 @@ type CreateCommonRagDocBody = {
 type CreateRagDocBody = {
   appKey?: string
   key?: string
-  routeKey?: string
   chunkKey?: string
   title?: string
   keywords?: string[]
   body?: string
+  imageUrl?: string | null
+  imageAttachMode?: 'auto' | 'always' | 'never'
+  intentType?: 'info' | 'action' | 'both'
   enabled?: boolean
   sortOrder?: number
 }
@@ -335,6 +346,9 @@ export class ChatSettingController {
       title: body?.title,
       keywords: body?.keywords,
       body: body?.body,
+      imageUrl: body?.imageUrl,
+      imageAttachMode: body?.imageAttachMode,
+      intentType: body?.intentType,
       enabled: body?.enabled,
     })
     return ok(row)
@@ -348,6 +362,9 @@ export class ChatSettingController {
       title: body?.title,
       keywords: body?.keywords,
       body: body?.body,
+      imageUrl: body?.imageUrl,
+      imageAttachMode: body?.imageAttachMode,
+      intentType: body?.intentType,
       enabled: body?.enabled,
     })
     return ok(row)
@@ -362,6 +379,9 @@ export class ChatSettingController {
       title: body?.title,
       keywords: body?.keywords,
       body: body?.body,
+      imageUrl: body?.imageUrl,
+      imageAttachMode: body?.imageAttachMode,
+      intentType: body?.intentType,
       enabled: body?.enabled,
       sortOrder: body?.sortOrder,
     })
@@ -375,11 +395,13 @@ export class ChatSettingController {
     const row = await this.promptStore.createRagChunk({
       appKey: String(body?.appKey ?? ''),
       key: String(body?.key ?? ''),
-      routeKey: String(body?.routeKey ?? ''),
       chunkKey: String(body?.chunkKey ?? ''),
       title: body?.title,
       keywords: body?.keywords,
       body: body?.body,
+      imageUrl: body?.imageUrl,
+      imageAttachMode: body?.imageAttachMode,
+      intentType: body?.intentType,
       enabled: body?.enabled,
       sortOrder: body?.sortOrder,
     })

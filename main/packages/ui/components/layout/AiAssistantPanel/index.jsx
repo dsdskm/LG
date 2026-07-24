@@ -17,6 +17,12 @@ import {
   StyledAiAssistantLoadingText,
   StyledAiAssistantMessage,
   StyledAiAssistantMessageBubble,
+  StyledAiAssistantImage,
+  StyledAiAssistantImageCaption,
+  StyledAiAssistantImageCard,
+  StyledAiAssistantImageList,
+  StyledAiAssistantImageText,
+  StyledAiAssistantImageTitle,
   StyledAiAssistantMessageList,
   StyledAiAssistantMessageMeta,
   StyledAiAssistantTextarea,
@@ -45,20 +51,65 @@ const ENABLE_MESSAGE_SUGGESTED_ACTIONS = false
 const AI_TASKFLOW_CANVAS_EVENT = 'ai-assistant:taskflow-canvas-draft'
 const AI_TASKFLOW_CANVAS_CLARIFY_EVENT = 'ai-assistant:taskflow-canvas-clarify'
 const AI_TASKFLOW_CANVAS_COMMAND_EVENT = 'ai-assistant:taskflow-canvas-command'
+const AI_CHAT_SERVICE_URL = String(import.meta.env.VITE_AI_CHAT_SERVICE_URL ?? '').trim().replace(/\/$/, '')
 
 const SENDING_STAGE = {
   IDLE: 'idle',
   REQUESTING: 'requesting',
-  THINKING: 'thinking',
-  GENERATING: 'generating',
+  SCREEN_CHECK: 'screen-check',
+  INTENT: 'intent',
+  INFO_RAG: 'info-rag',
+  COMMON_RAG: 'common-rag',
+  TOOL: 'tool',
+  ASSEMBLING: 'assembling',
   COMPLETED: 'completed',
 }
 
 const SENDING_STAGE_LABEL = {
   [SENDING_STAGE.REQUESTING]: '요청중',
-  [SENDING_STAGE.THINKING]: '생각중',
-  [SENDING_STAGE.GENERATING]: '응답생성중',
+  [SENDING_STAGE.SCREEN_CHECK]: '화면/컨텍스트 확인중',
+  [SENDING_STAGE.INTENT]: '의도 분기중',
+  [SENDING_STAGE.INFO_RAG]: '해당 화면의 RAG 조회중...',
+  [SENDING_STAGE.COMMON_RAG]: '공통 RAG 조회중...',
+  [SENDING_STAGE.TOOL]: '공통 action 툴 확인중...',
+  [SENDING_STAGE.ASSEMBLING]: '응답 조립중...',
   [SENDING_STAGE.COMPLETED]: '응답완료',
+}
+
+const inferSendingMode = (message) => {
+  const text = String(message ?? '').trim()
+  if (!text) return 'info'
+
+  if (/\b(taskflow|parallel|ifthenelse|repeat|move|navigate|node|노드|이동|연결|병렬|반복|추가|생성|수정|삭제|저장|실행|바꿔|변경)\b/i.test(text)) {
+    return 'action'
+  }
+
+  return 'info'
+}
+
+const buildSendingStagePlan = (message) => {
+  const mode = inferSendingMode(message)
+
+  if (mode === 'action') {
+    return [
+      SENDING_STAGE.REQUESTING,
+      SENDING_STAGE.SCREEN_CHECK,
+      SENDING_STAGE.INTENT,
+      SENDING_STAGE.INFO_RAG,
+      SENDING_STAGE.COMMON_RAG,
+      SENDING_STAGE.TOOL,
+      SENDING_STAGE.ASSEMBLING,
+    ]
+  }
+
+  return [
+    SENDING_STAGE.REQUESTING,
+    SENDING_STAGE.SCREEN_CHECK,
+    SENDING_STAGE.INTENT,
+    SENDING_STAGE.INFO_RAG,
+    SENDING_STAGE.COMMON_RAG,
+    SENDING_STAGE.ASSEMBLING,
+  ]
 }
 
 const TYPEWRITER_INTERVAL_MS = 110
@@ -452,6 +503,48 @@ const extractAssistantText = (result) => {
   }
 }
 
+const extractPipelineTrace = (result) => {
+  const payload = result?.data ?? result ?? null
+  if (!payload || typeof payload !== 'object') return ''
+
+  const directTrace = String(payload?.pipelineTrace ?? payload?.pipeline_trace ?? '').trim()
+  if (directTrace) return directTrace
+
+  const param = payload?.chat_action_param
+  if (!param || typeof param !== 'object') return ''
+
+  return String(param?.pipelineTrace ?? param?.pipeline_trace ?? '').trim()
+}
+
+const resolveAssistantAssetUrl = (src) => {
+  const value = String(src ?? '').trim()
+  if (!value) return ''
+  if (/^(https?:)?\/\//i.test(value) || value.startsWith('data:')) return value
+  if (value.startsWith('/')) return AI_CHAT_SERVICE_URL ? `${AI_CHAT_SERVICE_URL}${value}` : value
+  return AI_CHAT_SERVICE_URL ? `${AI_CHAT_SERVICE_URL}/${value.replace(/^\/+/, '')}` : value
+}
+
+const extractAssistantImages = (result) => {
+  const payload = result?.data ?? result ?? null
+  const list = Array.isArray(payload?.images) ? payload.images : []
+
+  return list
+    .map((item, idx) => {
+      const src = resolveAssistantAssetUrl(item?.src ?? item?.url ?? item?.path)
+      if (!src) return null
+
+      return {
+        id: String(item?.id ?? `assistant-image-${idx + 1}`),
+        src,
+        alt: String(item?.alt ?? item?.title ?? 'assistant image').trim(),
+        title: String(item?.title ?? '').trim(),
+        caption: String(item?.caption ?? '').trim(),
+      }
+    })
+    .filter(Boolean)
+    .slice(0, 1)
+}
+
 const extractSuggestedActions = (result) => {
   if (!ENABLE_MESSAGE_SUGGESTED_ACTIONS) return []
 
@@ -617,7 +710,7 @@ function FloatingTrigger({ onClick }) {
   )
 }
 
-const AiAssistantPanel = ({ greetingExtra }) => {
+const AiAssistantPanel = ({ greetingExtra, className }) => {
   const navigate = useNavigate()
   const location = useLocation()
   const session = useUserStore((state) => state.session)
@@ -646,6 +739,13 @@ const AiAssistantPanel = ({ greetingExtra }) => {
   const abortRef = useRef(null)
   const sendingStartedAtRef = useRef(null)
   const assistantTypingTimerRef = useRef(null)
+  const sendingStagePlanRef = useRef(buildSendingStagePlan(''))
+  const displayedStageRef = useRef(SENDING_STAGE.IDLE)
+  const stageQueueRef = useRef([])
+  const stageTypingTimerRef = useRef(null)
+  const stageAdvanceTimerRef = useRef(null)
+  const stageTypingIndexRef = useRef(0)
+  const stageHoldUntilRef = useRef(0)
   // 멀티턴: 직전에 이벤트 표에 적용된 필터. 후속 발화("심각도 높음만") 병합 기준.
   const lastFiltersRef = useRef(null)
 
@@ -655,6 +755,45 @@ const AiAssistantPanel = ({ greetingExtra }) => {
     () => pickRandomItems(screenSuggestions, Math.min(3, screenSuggestions.length)),
     [screenSuggestions, isOpen]
   )
+
+  const enqueueSendingStage = (stage) => {
+    if (!stage || stage === SENDING_STAGE.IDLE) return
+    if (displayedStageRef.current === stage) return
+    if (stageQueueRef.current.includes(stage)) return
+    stageQueueRef.current.push(stage)
+  }
+
+  const processSendingStageQueue = () => {
+    if (!isSending) return
+    if (stageTypingTimerRef.current || stageAdvanceTimerRef.current) return
+
+    const nextStage = stageQueueRef.current.shift()
+    if (!nextStage) return
+
+    displayedStageRef.current = nextStage
+    const fullLabel = SENDING_STAGE_LABEL[nextStage] || '작업중'
+    stageTypingIndexRef.current = 0
+    setTypedStageLabel('')
+    stageHoldUntilRef.current = Date.now() + Math.max(260, fullLabel.length * TYPEWRITER_INTERVAL_MS)
+
+    stageTypingTimerRef.current = setInterval(() => {
+      stageTypingIndexRef.current += 1
+      setTypedStageLabel(fullLabel.slice(0, stageTypingIndexRef.current))
+
+      if (stageTypingIndexRef.current >= fullLabel.length) {
+        if (stageTypingTimerRef.current) {
+          clearInterval(stageTypingTimerRef.current)
+          stageTypingTimerRef.current = null
+        }
+
+        const wait = Math.max(0, stageHoldUntilRef.current - Date.now())
+        stageAdvanceTimerRef.current = window.setTimeout(() => {
+          stageAdvanceTimerRef.current = null
+          processSendingStageQueue()
+        }, wait)
+      }
+    }, TYPEWRITER_INTERVAL_MS)
+  }
 
   const hasConversation = messages.some((m) => m.role === 'user')
 
@@ -673,23 +812,45 @@ const AiAssistantPanel = ({ greetingExtra }) => {
   }, [isOpen])
 
   useEffect(() => {
+    return () => {
+      if (stageTypingTimerRef.current) {
+        clearInterval(stageTypingTimerRef.current)
+        stageTypingTimerRef.current = null
+      }
+      if (stageAdvanceTimerRef.current) {
+        clearTimeout(stageAdvanceTimerRef.current)
+        stageAdvanceTimerRef.current = null
+      }
+    }
+  }, [])
+
+  useEffect(() => {
     if (!isSending) return undefined
 
-    const toThinking = setTimeout(() => {
-      setSendingStage((prev) => (prev === SENDING_STAGE.REQUESTING ? SENDING_STAGE.THINKING : prev))
-    }, 350)
+    const startedAt = Number(sendingStartedAtRef.current)
+    if (!Number.isFinite(startedAt) || startedAt <= 0) return undefined
 
-    const toGenerating = setTimeout(() => {
-      setSendingStage((prev) => (
-        prev === SENDING_STAGE.REQUESTING || prev === SENDING_STAGE.THINKING
-          ? SENDING_STAGE.GENERATING
-          : prev
-      ))
-    }, 1100)
+    const tick = () => {
+      const elapsedMs = Math.max(0, Date.now() - startedAt)
+      const plan = Array.isArray(sendingStagePlanRef.current) && sendingStagePlanRef.current.length > 0
+        ? sendingStagePlanRef.current
+        : buildSendingStagePlan('')
+      const thresholds = [0, 450, 1100, 1800, 2600, 3600, 4800]
+
+      let nextIndex = 0
+      for (let index = 0; index < thresholds.length; index += 1) {
+        if (elapsedMs >= thresholds[index]) nextIndex = index
+      }
+
+      const nextStage = plan[Math.min(nextIndex, plan.length - 1)] ?? SENDING_STAGE.REQUESTING
+      setSendingStage(nextStage)
+    }
+
+    tick()
+    const timer = setInterval(tick, 180)
 
     return () => {
-      clearTimeout(toThinking)
-      clearTimeout(toGenerating)
+      clearInterval(timer)
     }
   }, [isSending])
 
@@ -720,25 +881,26 @@ const AiAssistantPanel = ({ greetingExtra }) => {
 
   useEffect(() => {
     if (!isSending) {
+      stageQueueRef.current = []
+      displayedStageRef.current = SENDING_STAGE.IDLE
+      stageTypingIndexRef.current = 0
+      stageHoldUntilRef.current = 0
       setTypedStageLabel('')
+      if (stageTypingTimerRef.current) {
+        clearInterval(stageTypingTimerRef.current)
+        stageTypingTimerRef.current = null
+      }
+      if (stageAdvanceTimerRef.current) {
+        clearTimeout(stageAdvanceTimerRef.current)
+        stageAdvanceTimerRef.current = null
+      }
       return undefined
     }
 
-    const fullLabel = SENDING_STAGE_LABEL[sendingStage] || '작업중'
-    let index = 0
-    setTypedStageLabel('')
+    enqueueSendingStage(sendingStage)
+    processSendingStageQueue()
 
-    const timer = setInterval(() => {
-      index += 1
-      setTypedStageLabel(fullLabel.slice(0, index))
-      if (index >= fullLabel.length) {
-        clearInterval(timer)
-      }
-    }, TYPEWRITER_INTERVAL_MS)
-
-    return () => {
-      clearInterval(timer)
-    }
+    return undefined
   }, [isSending, sendingStage])
 
   useEffect(() => {
@@ -1069,6 +1231,13 @@ const AiAssistantPanel = ({ greetingExtra }) => {
     setSendingElapsedSec(0)
     setIsSending(true)
     setSendingStage(SENDING_STAGE.REQUESTING)
+    sendingStagePlanRef.current = buildSendingStagePlan(content)
+    stageQueueRef.current = buildSendingStagePlan(content).slice(1)
+    displayedStageRef.current = SENDING_STAGE.IDLE
+      if (stageAdvanceTimerRef.current) {
+        clearTimeout(stageAdvanceTimerRef.current)
+        stageAdvanceTimerRef.current = null
+      }
 
     const controller = new AbortController()
     abortRef.current = controller
@@ -1135,9 +1304,14 @@ const AiAssistantPanel = ({ greetingExtra }) => {
       const data = result?.data ?? {}
       const chat_action = data.chat_action
       const chat_action_param = data.chat_action_param
+      const pipelineTrace = extractPipelineTrace(result)
+      if (pipelineTrace) {
+        console.log(`[AI_CHAT][PIPELINE_TRACE] ${pipelineTrace}`)
+      }
       const navigationPath = String(chat_action_param?.path ?? '').trim().replace(/^\/+/, '')
       const hasNavigationParams = chat_action === 'navigation' && extractPathParams(navigationPath).length > 0
       const suggestedActions = chat_action === 'ailog/event/filter' ? [] : extractSuggestedActions(result)
+      const images = extractAssistantImages(result)
 
       setSendingStage(SENDING_STAGE.COMPLETED)
       await sleep(280)
@@ -1148,6 +1322,7 @@ const AiAssistantPanel = ({ greetingExtra }) => {
           id: assistantMessageId,
           role: 'assistant',
           content: extractAssistantText(result),
+          images,
           suggestedActions,
           createdAt: new Date().toISOString(),
           context,
@@ -1190,6 +1365,9 @@ const AiAssistantPanel = ({ greetingExtra }) => {
       abortRef.current = null
       setIsSending(false)
       setSendingStage(SENDING_STAGE.IDLE)
+      sendingStagePlanRef.current = buildSendingStagePlan('')
+      stageQueueRef.current = []
+      displayedStageRef.current = SENDING_STAGE.IDLE
       sendingStartedAtRef.current = null
       textareaRef.current?.focus()
     }
@@ -1209,7 +1387,7 @@ const AiAssistantPanel = ({ greetingExtra }) => {
   }
 
   return (
-    <StyledAiAssistantDock $isOpen={isOpen}>
+    <StyledAiAssistantDock className={className} $isOpen={isOpen}>
       {/* ── Header ── */}
       <StyledAiAssistantDockHeader>
         <StyledAiHeaderLeft>
@@ -1318,6 +1496,20 @@ const AiAssistantPanel = ({ greetingExtra }) => {
                       ? (typedAssistantMessages[m.id] ?? m.content)
                       : m.content}
                   </StyledAiAssistantMessageBubble>
+
+                  {m.role === 'assistant' && Array.isArray(m.images) && m.images[0] ? (
+                    <StyledAiAssistantImageList>
+                      <StyledAiAssistantImageCard key={m.images[0].id || m.images[0].src}>
+                        <StyledAiAssistantImage src={m.images[0].src} alt={m.images[0].alt || m.images[0].title || 'assistant image'} loading="lazy" />
+                        {(m.images[0].title || m.images[0].caption) ? (
+                          <StyledAiAssistantImageCaption>
+                            {m.images[0].title ? <StyledAiAssistantImageTitle>{m.images[0].title}</StyledAiAssistantImageTitle> : null}
+                            {m.images[0].caption ? <StyledAiAssistantImageText>{m.images[0].caption}</StyledAiAssistantImageText> : null}
+                          </StyledAiAssistantImageCaption>
+                        ) : null}
+                      </StyledAiAssistantImageCard>
+                    </StyledAiAssistantImageList>
+                  ) : null}
 
                   {ENABLE_MESSAGE_SUGGESTED_ACTIONS && m.role === 'assistant' && Array.isArray(m.suggestedActions) && m.suggestedActions.length > 0 && (
                     <>

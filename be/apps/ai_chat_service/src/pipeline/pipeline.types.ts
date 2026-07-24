@@ -18,10 +18,20 @@ export type ChatTurn = {
 }
 
 /** 프론트로 반환하는 최종 응답. getMockReply 가 기대하던 포맷과 동일. */
+export type ChatReplyImage = {
+  id: string
+  src: string
+  alt: string
+  title?: string
+  caption?: string
+}
+
 export type ChatReply = {
   chat_action: string
   chat_action_param?: Record<string, unknown>
   text: string
+  pipelineTrace?: string
+  images?: ChatReplyImage[]
 }
 
 export type SuggestedAction = {

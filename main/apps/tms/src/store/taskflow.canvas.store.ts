@@ -730,6 +730,8 @@ type FlowEditorState = {
   pushHistoryCheckpoint: () => void
   getSelectedNode: () => RFNode | null
   loadFromFlowDefinition: (def: Record<string, unknown>) => void
+  // 외부(예: AI draft)에서 full flow를 적용하되, 현재 상태를 undo 히스토리에 남긴다.
+  applyFlowDefinitionWithHistory: (def: Record<string, unknown>) => void
 
   // flowKey 기준으로 localStorage 에 저장된 히스토리가 있으면 복원, 없으면 def 로 초기화
   initFlowEditor: (flowKey: string, def: Record<string, unknown>) => void
@@ -743,6 +745,8 @@ type FlowEditorState = {
 
   deleteSelectedNode: () => void
   deleteSelectedEdge: () => void
+  // Start 노드를 제외한 모든 노드/엣지를 제거한다. (undo 가능)
+  clearAllNodesExceptStart: () => void
   // 선택된 엣지의 시각 유형(곡선/직선/꺾은선) 변경
   setSelectedEdgeType: (edgeType: EdgeVisualType) => void
 
@@ -983,6 +987,34 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
       canUndo: false,
       canRedo: false
     })
+  },
+
+  applyFlowDefinitionWithHistory: (def) => {
+    const tasks = get().tasks
+    const safeDef = ensureStartNode(def, tasks)
+
+    const rawNodes = Array.isArray((safeDef as any).nodes) ? ((safeDef as any).nodes as RFNode[]) : []
+    const nodes = applyRootTaskToStartNode(rawNodes, tasks)
+
+    const edges = Array.isArray((safeDef as any).edges) ? ((safeDef as any).edges as RFEdge[]) : []
+    const viewport = normalizeViewport((safeDef as any).viewport)
+    const flowMode = normalizeFlowMode((safeDef as any).flowMode)
+
+    const prev = makeSnapshot(get().nodes, get().edges, get().viewport, get().flowMode)
+
+    set((state) => ({
+      nodes,
+      edges,
+      viewport,
+      flowMode,
+      positionsByMode: {},
+      helperLineVertical: undefined,
+      helperLineHorizontal: undefined,
+      selectedNodeId: null,
+      selectedEdgeId: null,
+      selectedPalette: null,
+      ...pushHistory(state.historyPast, prev)
+    }))
   },
 
   initFlowEditor: (flowKey, def) => {
@@ -1256,6 +1288,25 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
     set((state) => ({
       edges: edges.filter((edge) => edge.id !== selectedEdgeId),
       selectedEdgeId: null,
+      ...pushHistory(state.historyPast, prev)
+    }))
+  },
+
+  clearAllNodesExceptStart: () => {
+    const { nodes, edges, viewport } = get()
+
+    const nextNodes = nodes.filter((node) => isStartNodeId(node.id))
+    const hasChanges = nextNodes.length !== nodes.length || edges.length > 0
+    if (!hasChanges) return
+
+    const prev = makeSnapshot(nodes, edges, viewport, get().flowMode)
+
+    set((state) => ({
+      nodes: nextNodes,
+      edges: [],
+      selectedNodeId: null,
+      selectedEdgeId: null,
+      selectedPalette: null,
       ...pushHistory(state.historyPast, prev)
     }))
   },

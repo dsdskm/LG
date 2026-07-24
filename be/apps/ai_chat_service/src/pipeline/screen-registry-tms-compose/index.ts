@@ -3,6 +3,7 @@ import {
   type ComposeToolDeps,
   type LinearTaskflowStep,
   buildDraftFromRagTemplate,
+  buildDocentFlowDraftFromMessage,
   buildLinearFlowDraftFromSteps,
   buildMoveParallelFlowDraftFromMessage,
   buildPickupPutDownFlowDraftFromMessage,
@@ -11,7 +12,9 @@ import {
   detectRequestedFlowMode,
   detectSaveCommand,
   inferLinearDraftPlanFromMessage,
+  isContentTaskContent,
   isDeleteAllNodesMessage,
+  isDocentFlowComposeMessage,
   isAlignRequestMessage,
   isAmbiguousModeChangeMessage,
   isAmbiguousSaveMessage,
@@ -22,6 +25,8 @@ import {
   isPlayMotionFlowComposeMessage,
   loadRagTaskflowTemplates,
   pickRagTaskflowTemplate,
+  pickTaskContentByStep,
+  normalizeNameKey,
   resolveFlowContextSummary,
   resolveMoveFlowContext,
   toLinearTaskflowStep,
@@ -43,6 +48,32 @@ function toFlowDefinitionFromDraft(draft: Record<string, unknown> | null | undef
         : { x: 0, y: 0, zoom: 1 },
     flowMode: draft.flowMode === 'tree' ? 'tree' : 'default',
   }
+}
+
+function resolveComposeUserMessage(
+  contextRow: Record<string, unknown>,
+  steps: LinearTaskflowStep[],
+): string {
+  const candidates = [
+    contextRow?.__userMessage,
+    contextRow?.userMessage,
+    contextRow?.message,
+    contextRow?.query,
+    contextRow?.input,
+    contextRow?.prompt,
+  ]
+
+  for (const candidate of candidates) {
+    const text = String(candidate ?? '').trim()
+    if (text) return text
+  }
+
+  const docentLike = steps.some((step) => /도슨트|docent/i.test(
+    `${String(step.label ?? '')} ${String(step.contentName ?? '')} ${String(step.taskName ?? '')}`,
+  ))
+  if (docentLike) return '도슨트 태스크플로우 구성해줘'
+
+  return ''
 }
 
 export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefinition {
@@ -87,7 +118,7 @@ export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefi
         .filter((item): item is LinearTaskflowStep => Boolean(item))
 
       const contextRow = (ctx.context as Record<string, unknown>)
-      const userMessage = String(contextRow?.__userMessage ?? '').trim()
+      const userMessage = resolveComposeUserMessage(contextRow, normalized)
       const { flowContext, source } = resolveFlowContextSummary(contextRow)
 
       if (isAmbiguousModeChangeMessage(userMessage)) {
@@ -303,6 +334,36 @@ export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefi
         }
       }
 
+      if (isDocentFlowComposeMessage(userMessage)) {
+        deps.logger.log(
+          `================= [3단계:의도분기] [reqId=${reqId}] status=matched reason=도슨트 요청으로 판단되어 이동/안내 교차 Parallel 조립 경로 선택`,
+        )
+        const docentFlowContext = flowContext ?? resolveMoveFlowContext(contextRow)
+        const docentDraft = buildDocentFlowDraftFromMessage(
+          docentFlowContext ?? flowContext ?? {},
+          userMessage,
+          args?.flowMode === 'tree' ? 'tree' : 'default',
+        )
+        if (docentDraft) {
+          deps.logger.log(
+            `================= [4단계:드래프트구성] [reqId=${reqId}] status=success reason=도슨트 태스크플로우를 이동 Parallel과 안내 Parallel 교차 시퀀스로 구성 완료`,
+          )
+          return {
+            canvasDraft: docentDraft,
+            assistantText: '도슨트 태스크플로우를 이동 Parallel과 안내 Parallel이 교차되는 시퀀스로 구성했습니다.',
+          }
+        }
+
+        deps.logger.log(
+          `================= [4단계:드래프트구성] [reqId=${reqId}] status=blocked reason=도슨트 시퀀스에 필요한 MoveTo/PlayMotion/Tts/PlayFace/PlaySound/Parallel을 찾지 못함`,
+        )
+
+        return {
+          clarification: '도슨트 태스크플로우를 구성할 수 없습니다. TaskPanel에 MoveTo, PlayMotion, Tts, PlayFace, PlaySound, Parallel이 있는지 확인해 주세요.',
+          needUserInput: true,
+        }
+      }
+
       if (isMoveFlowComposeMessage(userMessage)) {
         const inferredMoveSteps = inferLinearDraftPlanFromMessage(userMessage).steps ?? []
         const explicitMoveSteps = inferredMoveSteps.filter((step) => !isGenericNodePlaceholder(step.label))
@@ -311,7 +372,7 @@ export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefi
             `================= [3단계:의도분기] [reqId=${reqId}] status=blocked reason=이동 목적지 정보가 없어 구성 전 재안내 필요`,
           )
           return {
-            clarification: '이동 목적지를 알려주세요. 예: 위치1에서 위치2로 가는 이동 태스크 플로우 만들어줘',
+            clarification: '이동 목적지를 알려주세요.\n예: 위치1에서 위치2로 가는 이동 태스크 플로우 만들어줘',
             needUserInput: true,
           }
         }
@@ -320,6 +381,38 @@ export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefi
           `================= [3단계:의도분기] [reqId=${reqId}] status=matched reason=이동 경로 기반 요청으로 판단되어 Parallel 시퀀스 조립 경로 선택`,
         )
         const moveFlowContext = flowContext ?? resolveMoveFlowContext(contextRow)
+        const moveTaskContents = Array.isArray(moveFlowContext?.taskContents)
+          ? moveFlowContext.taskContents
+          : []
+        const moveCandidates = moveTaskContents.filter((item) => {
+          if (!isContentTaskContent(item)) return false
+          const task = normalizeNameKey(item.taskName)
+          return task === 'moveto' || task.includes('moveto')
+        })
+        const explicitMoveStepsForMatch = explicitMoveSteps.map((step) => ({ ...step, taskName: 'MoveTo' }))
+        const matchedMoveStepCount = explicitMoveStepsForMatch
+          .filter((step) => Boolean(pickTaskContentByStep(moveCandidates, step)))
+          .length
+        const replacedWithFallbackExample =
+          explicitMoveStepsForMatch.length > 0 &&
+          moveCandidates.length > 0 &&
+          matchedMoveStepCount < explicitMoveStepsForMatch.length
+
+        if (replacedWithFallbackExample) {
+          const availableMoveNodeNames = Array.from(new Set(
+            moveCandidates
+              .map((item) => String(item.contentName ?? item.label ?? '').trim())
+              .filter(Boolean),
+          ))
+          const availablePreview = availableMoveNodeNames.slice(0, 8).join(', ')
+          return {
+            clarification: availablePreview
+              ? `요청하신 이동 노드 이름을 TaskPanel에서 찾지 못했습니다. 사용 가능한 MoveTo 노드 이름으로 다시 알려주세요. 예: ${availablePreview}`
+              : '요청하신 이동 노드 이름을 TaskPanel에서 찾지 못했습니다. 사용 가능한 MoveTo 노드 이름으로 다시 알려주세요.',
+            needUserInput: true,
+          }
+        }
+
         const moveParallelDraft = buildMoveParallelFlowDraftFromMessage(
           moveFlowContext ?? flowContext ?? {},
           userMessage,
@@ -346,7 +439,7 @@ export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefi
       }
 
       const inferred = inferLinearDraftPlanFromMessage(
-        contextRow?.__userMessage,
+        userMessage,
       )
       const steps = (normalized.length > 0 ? normalized : (inferred.steps ?? [])).slice(0, 12)
 
@@ -356,6 +449,27 @@ export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefi
 
       const ambiguousStep = candidateSteps.find((step) => isGenericNodePlaceholder(step.label))
       if (ambiguousStep) {
+        if (/도슨트|docent/i.test(userMessage)) {
+          const docentFlowContext = flowContext ?? resolveMoveFlowContext(contextRow)
+          const docentDraft = buildDocentFlowDraftFromMessage(
+            docentFlowContext ?? flowContext ?? {},
+            userMessage,
+            args?.flowMode === 'tree' ? 'tree' : 'default',
+          )
+
+          if (docentDraft) {
+            return {
+              canvasDraft: docentDraft,
+              assistantText: '도슨트 태스크플로우를 이동 Parallel과 안내 Parallel이 교차되는 시퀀스로 구성했습니다.',
+            }
+          }
+
+          return {
+            clarification: '도슨트 태스크플로우를 구성할 수 없습니다. TaskPanel에 MoveTo, PlayMotion, Tts, PlayFace, PlaySound, Parallel이 있는지 확인해 주세요.',
+            needUserInput: true,
+          }
+        }
+
         deps.logger.log(
           `================= [3단계:의도분기] [reqId=${reqId}] status=blocked reason=요청 대상 노드명이 일반 표현이라 명확화 필요`,
         )
@@ -375,6 +489,27 @@ export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefi
         : null
 
       if (steps.length > 0 && !replaceFlowDraft) {
+        if (/도슨트|docent/i.test(userMessage)) {
+          const docentFlowContext = flowContext ?? resolveMoveFlowContext(contextRow)
+          const docentDraft = buildDocentFlowDraftFromMessage(
+            docentFlowContext ?? flowContext ?? {},
+            userMessage,
+            args?.flowMode === 'tree' ? 'tree' : 'default',
+          )
+
+          if (docentDraft) {
+            return {
+              canvasDraft: docentDraft,
+              assistantText: '도슨트 태스크플로우를 이동 Parallel과 안내 Parallel이 교차되는 시퀀스로 구성했습니다.',
+            }
+          }
+
+          return {
+            clarification: '도슨트 태스크플로우를 구성할 수 없습니다. TaskPanel에 MoveTo, PlayMotion, Tts, PlayFace, PlaySound, Parallel이 있는지 확인해 주세요.',
+            needUserInput: true,
+          }
+        }
+
         return {
           clarification: '요청하신 단계를 TaskPanel의 taskContents에서 찾지 못했습니다. taskContents에 있는 task/content 이름으로 다시 요청해 주세요.',
           needUserInput: true,

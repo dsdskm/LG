@@ -2,20 +2,20 @@
  * 탭 챗봇 오케스트레이터.
  *
  * 화면(routeKey)에 등록된 ScreenConfig 기준으로 pipeline intent를 분류하고,
- * info(RAG) / data(조회 tool) / action(실행 tool) 핸들러로 분기한다.
+ * info(RAG) / action(통합 tool 실행) 경로로 처리한다.
  *
  * 주의:
  * - screenTask: ChatService에서 화면별로 먼저 분류한 사용자 작업 단위
  *   예) list, analyze, recommend_action, run_action, create, update
  *
  * - pipelineIntent: Orchestrator 내부에서 처리 경로를 정하기 위한 분기 단위
- *   예) info, data, action
+ *   예) info, data, action (data/action은 action 경로로 통합 처리)
  */
 
 import { Logger } from '@nestjs/common'
 
 import type { LlmClient } from '../llm/llm.types'
-import type { ToolContext } from './tool.type'
+import type { ToolContext, ToolDefinition } from './tool.type'
 import { IntentClassifier } from './intent.classifier'
 import { RagService } from './rag/rag.service'
 import { ToolAgent, type ExecutedCall } from './agent/tool-agent'
@@ -24,6 +24,7 @@ import { COMMON_COLLECTION } from './rag/rag.docs'
 import type { ChatIntent, ChatReply, ChatTurn } from './pipeline.types'
 import type { ChatPipelineConfig } from './pipeline.config'
 import { getPromptStore } from '../db/prompt-store.service'
+import { getChatSettingService } from '../db/chat-setting.service'
 import { buildToolContextFromBody } from './tool-context.util'
 
 export type OrchestrationOutput = {
@@ -52,12 +53,26 @@ type ScreenTask =
   | 'update'
   | 'delete'
 
+type FallbackIntentConfig = {
+  actionKeywords: string[]
+  actionScreenTasks: ScreenTask[]
+}
+
+const DEFAULT_FALLBACK_ACTION_KEYWORDS = [
+  '실행', '수행', '처리', '조치', '액션', '이동', '열어', 'navigate', 'action', 'run',
+  '추가', '생성', '수정', '변경', '삭제', '제거', '편집', '노드', '태스크플로우', '태스크플로', '태스크 플로우', '태스크 플로', 'taskflow',
+  '저장', '임시저장', '정렬', '가로모드', '세로모드', '컨트롤', 'control', '예시',
+  'or', 'parallel', 'ifthenelse', 'ifthen', 'repeat', '병렬', '반복',
+]
+
+const DEFAULT_FALLBACK_ACTION_SCREEN_TASKS: ScreenTask[] = ['create', 'update', 'delete', 'run_action', 'recommend_action']
+
 export class ChatOrchestrator {
   /**
    * pipeline intent 분류기.
    *
-   * 여기서 말하는 intent는 화면별 세부 작업이 아니라,
-   * 최종 처리 경로인 info/data/action을 의미한다.
+  * 여기서 말하는 intent는 화면별 세부 작업이 아니라,
+  * 최종 처리 경로(info 또는 action 우선순위)를 정하는 기준이다.
    */
   private readonly classifier: IntentClassifier
   private readonly rag: RagService
@@ -113,17 +128,17 @@ export class ChatOrchestrator {
     return text || undefined
   }
 
-  private decideFallbackIntent(message: string, canRunAction: boolean, screenTask?: ScreenTask): ChatIntent {
+  private decideFallbackIntent(
+    message: string,
+    canRunAction: boolean,
+    screenTask: ScreenTask | undefined,
+    config: FallbackIntentConfig,
+  ): ChatIntent {
     const text = String(message ?? '').toLowerCase()
-    const actionKeywords = [
-      '실행', '수행', '처리', '조치', '액션', '이동', '열어', 'navigate', 'action', 'run',
-      '추가', '생성', '수정', '변경', '삭제', '제거', '편집', '노드', '태스크플로우', '태스크플로', '태스크 플로우', '태스크 플로', 'taskflow',
-      '저장', '임시저장', '정렬', '가로모드', '세로모드', '컨트롤', 'control', '예시',
-      'or', 'parallel', 'ifthenelse', 'ifthen', 'repeat', '병렬', '반복',
-    ]
+    const actionKeywords = config.actionKeywords
     const actionRequested = actionKeywords.some((keyword) => text.includes(keyword))
 
-    const actionScreenTask = new Set<ScreenTask>(['create', 'update', 'delete', 'run_action', 'recommend_action'])
+    const actionScreenTask = new Set<ScreenTask>(config.actionScreenTasks)
     if (canRunAction && screenTask && actionScreenTask.has(screenTask)) {
       return 'action'
     }
@@ -133,6 +148,78 @@ export class ChatOrchestrator {
     }
 
     return 'info'
+  }
+
+  private normalizeActionKeywords(raw: unknown): string[] {
+    if (!Array.isArray(raw)) return []
+    const normalized = raw
+      .map((item) => String(item ?? '').trim().toLowerCase())
+      .filter(Boolean)
+    return Array.from(new Set(normalized))
+  }
+
+  private normalizeActionScreenTasks(raw: unknown): ScreenTask[] {
+    if (!Array.isArray(raw)) return []
+
+    const allowed = new Set<ScreenTask>([
+      'unknown',
+      'guide',
+      'list',
+      'search',
+      'summary',
+      'analyze',
+      'recommend_action',
+      'run_action',
+      'settings',
+      'create',
+      'update',
+      'delete',
+    ])
+
+    const normalized = raw
+      .map((item) => String(item ?? '').trim() as ScreenTask)
+      .filter((item) => allowed.has(item))
+
+    return Array.from(new Set(normalized))
+  }
+
+  private async resolveFallbackIntentConfig(screenKey: string): Promise<FallbackIntentConfig> {
+    const settings = getChatSettingService()
+    if (!settings) {
+      return {
+        actionKeywords: DEFAULT_FALLBACK_ACTION_KEYWORDS,
+        actionScreenTasks: DEFAULT_FALLBACK_ACTION_SCREEN_TASKS,
+      }
+    }
+
+    const routeKey = String(screenKey ?? '').trim()
+    const screenKeywordKey = routeKey ? `intentFallback.${routeKey}.actionKeywords` : ''
+    const screenTaskKey = routeKey ? `intentFallback.${routeKey}.actionScreenTasks` : ''
+
+    const [screenKeywordsRaw, globalKeywordsRaw, screenTasksRaw, globalTasksRaw] = await Promise.all([
+      screenKeywordKey ? settings.get(screenKeywordKey) : Promise.resolve(undefined),
+      settings.get('intentFallback.actionKeywords'),
+      screenTaskKey ? settings.get(screenTaskKey) : Promise.resolve(undefined),
+      settings.get('intentFallback.actionScreenTasks'),
+    ])
+
+    const screenKeywords = this.normalizeActionKeywords(screenKeywordsRaw)
+    const globalKeywords = this.normalizeActionKeywords(globalKeywordsRaw)
+    const screenTasks = this.normalizeActionScreenTasks(screenTasksRaw)
+    const globalTasks = this.normalizeActionScreenTasks(globalTasksRaw)
+
+    return {
+      actionKeywords: screenKeywords.length > 0
+        ? screenKeywords
+        : globalKeywords.length > 0
+          ? globalKeywords
+          : DEFAULT_FALLBACK_ACTION_KEYWORDS,
+      actionScreenTasks: screenTasks.length > 0
+        ? screenTasks
+        : globalTasks.length > 0
+          ? globalTasks
+          : DEFAULT_FALLBACK_ACTION_SCREEN_TASKS,
+    }
   }
 
   private findLatestAssistantTurn(history: ChatTurn[]): string {
@@ -249,31 +336,6 @@ export class ChatOrchestrator {
     return result
   }
 
-  private async tryRagFallback(
-    collections: string[],
-    message: string,
-    history: ChatTurn[],
-    reqId = '-',
-  ): Promise<{ text?: string; usedCollection?: string; usedChunks: string[] }> {
-    const ordered = this.uniqueCollections(collections)
-    if (ordered.length === 0) {
-      return { text: undefined, usedCollection: undefined, usedChunks: [] }
-    }
-
-    const result = await this.rag.answer(ordered, message, history, reqId)
-    const text = (result.text ?? '').trim()
-
-    if (result.usedChunks.length === 0 || !text) {
-      return { text: undefined, usedCollection: undefined, usedChunks: [] }
-    }
-
-    return {
-      text,
-      usedCollection: result.usedCollection,
-      usedChunks: result.usedChunks,
-    }
-  }
-
   /**
    * 등록된 화면이면 처리하고, 아니면 handled:false로 반환한다.
    * handled:false는 ChatService에서 guidance fallback으로 이어진다.
@@ -328,13 +390,21 @@ export class ChatOrchestrator {
       `================= [2-3단계:의도분류_원결과_추적] [reqId=${reqId}] reasonText=${pipelineIntentResult.reason}`,
     )
 
+    const fallbackIntentConfig = await this.resolveFallbackIntentConfig(screen.key)
+
     let pipelineIntent: ChatIntent = pipelineIntentResult.intent
-    let ragCollections = this.uniqueCollections([screen.ragCollection, screen.appKey, COMMON_COLLECTION])
+    let infoRagCollections = this.uniqueCollections([screen.ragCollection, screen.appKey, COMMON_COLLECTION])
+    const actionRagCollections = this.uniqueCollections([screen.ragCollection, screen.appKey, COMMON_COLLECTION])
     this.stageLog('2-4단계:의도분류_초안', reqId, `status=drafted reason=초기 의도=${pipelineIntent}`)
     // 의도 분석 실패(저신뢰도) 시 common action 또는 common RAG로 우선 복구한다.
     if (pipelineIntentResult.confidence < this.pipeline.intentMinConfidence) {
-      pipelineIntent = this.decideFallbackIntent(effectiveMessage, screen.actionTools.length > 0, screenTask)
-      ragCollections = this.uniqueCollections([COMMON_COLLECTION, screen.ragCollection, screen.appKey])
+      pipelineIntent = this.decideFallbackIntent(
+        effectiveMessage,
+        screen.actionTools.length > 0,
+        screenTask,
+        fallbackIntentConfig,
+      )
+      infoRagCollections = this.uniqueCollections([COMMON_COLLECTION, screen.ragCollection, screen.appKey])
       this.stageLog(
         '2-5단계:저신뢰도_보정',
         reqId,
@@ -342,12 +412,8 @@ export class ChatOrchestrator {
       )
     }
 
-    // 해당 tool이 없는 화면이면 RAG(info)로 처리한다.
-    if (pipelineIntent === 'data' && screen.dataTools.length === 0) {
-      pipelineIntent = 'info'
-    }
-
-    if (pipelineIntent === 'action' && screen.actionTools.length === 0) {
+    // 실행 가능 tool이 없는 화면이면 info(RAG)로 처리한다.
+    if (pipelineIntent !== 'info' && screen.dataTools.length === 0 && screen.actionTools.length === 0) {
       pipelineIntent = 'info'
     }
 
@@ -366,27 +432,36 @@ export class ChatOrchestrator {
       )
     }
 
+    if (pipelineIntent === 'data') {
+      pipelineIntent = 'action'
+      this.stageLog(
+        '2-6-2단계:데이터의도_통합',
+        reqId,
+        'status=merged reason=data intent를 action 처리 경로로 통합',
+      )
+    }
+
     this.stageLog(
       '2-6단계:최종의도_확정',
       reqId,
-      `status=confirmed reason=screenTask=${screenTask}, intent=${pipelineIntent}, ragCollectionCount=${ragCollections.length}`,
+      `status=confirmed reason=screenTask=${screenTask}, intent=${pipelineIntent}, infoRagCollectionCount=${infoRagCollections.length}`,
     )
     this.stageLog(
       '2-7단계:의도요약',
       reqId,
-      `status=classified reason=${pipelineIntent === 'action' ? '액션 요청' : pipelineIntent === 'data' ? '데이터 조회' : '정보 문의'}`,
+      `status=classified reason=${pipelineIntent === 'action' ? '액션 요청' : '정보 문의'}`,
     )
 
     this.logger.debug(
-      `================= [2-6단계:최종의도_확정_추적] [reqId=${reqId}] confidence=${pipelineIntentResult.confidence} classifierReason=${pipelineIntentResult.reason} ragCollections=${ragCollections.join(',')}`,
+      `================= [2-6단계:최종의도_확정_추적] [reqId=${reqId}] confidence=${pipelineIntentResult.confidence} classifierReason=${pipelineIntentResult.reason} infoRagCollections=${infoRagCollections.join(',')}`,
     )
 
     const toolCtx = this.buildToolCtx(body, effectiveMessage)
 
     let output: OrchestrationOutput
     switch (pipelineIntent) {
-      case 'data':
-        output = await this.handleData(
+      case 'action':
+        output = await this.handleExecution(
           screen,
           effectiveMessage,
           toolCtx,
@@ -394,20 +469,7 @@ export class ChatOrchestrator {
           history,
           screenTask,
           previousFilters,
-          ragCollections,
-          reqId,
-        )
-        break
-
-      case 'action':
-        output = await this.handleAction(
-          screen,
-          effectiveMessage,
-          toolCtx,
-          pipelineIntentResult,
-          history,
-          screenTask,
-          ragCollections,
+          actionRagCollections,
           reqId,
         )
         break
@@ -420,7 +482,7 @@ export class ChatOrchestrator {
           pipelineIntentResult,
           history,
           screenTask,
-          ragCollections,
+          infoRagCollections,
           reqId,
         )
         break
@@ -545,7 +607,14 @@ export class ChatOrchestrator {
     const text = String(message ?? '').trim()
     if (!text) return false
 
-    return /(태스크\s*플로우|태스크\s*플로|태스크플로우|태스크플로|taskflow|노드|이동|이후에|추가|삭제|지워|제거|에서\s+.+\s+로\s*(이동|가|가는)?|수정|바꿔|저장|임시\s*저장|정렬|가로|세로|컨트롤|control|or\s*노드|parallel|ifthenelse|ifthen|repeat|병렬|반복|예시)/i.test(text)
+    if (/(어떻게\s*써|어떻게\s*사용|사용법|뜻|의미|설명|알려줘|알려주|뭐야|무엇|왜\s*|무슨|예시\s*있|어떤\s*경우)/i.test(text)) {
+      return false
+    }
+
+    const taskflowSubject = /(태스크\s*플로우|태스크\s*플로|태스크플로우|태스크플로|taskflow|노드|이동|parallel|병렬|ifthenelse|ifthen|repeat|or\s*노드|컨트롤|control)/i.test(text)
+    if (!taskflowSubject) return false
+
+    return /(구성해|구성|만들어|만들|생성해|생성|추가해|추가|삭제해|삭제|지워|제거해|제거|수정해|수정|바꿔|바꿔줘|저장해|저장|정렬|연결해|이어|붙여|넣어|이동해|가\s*는|가\s*줘|이동\s*태스크)/i.test(text)
   }
 
   private async tryDeterministicTaskflowDraft(
@@ -607,13 +676,15 @@ export class ChatOrchestrator {
     )
 
     // response chain:
-    // 1. app/common RAG collection
-    // 2. default LLM
+    // 1. screen/app RAG collection
+    // 2. common RAG collection
+    // 3. default LLM
     const { text, usedCollection, usedChunks } = await this.rag.answer(
       ragCollections,
       message,
       history,
       reqId,
+      { intentType: 'info' },
     )
 
     const defaultLlmText =
@@ -639,209 +710,292 @@ export class ChatOrchestrator {
     }
   }
 
-  private async handleData(
+  private async handleExecution(
     screen: ScreenConfig,
     message: string,
     toolCtx: ToolContext,
     pipelineIntentResult: unknown,
     history: ChatTurn[],
     screenTask: ScreenTask,
-    previousFilters?: Record<string, unknown>,
-    ragCollections?: string[],
+    previousFilters: Record<string, unknown> | undefined,
+    actionRagCollections: string[],
     reqId = '-',
   ): Promise<OrchestrationOutput> {
-    // 직전 필터를 시스템 프롬프트에 실어,
-    // 후속 발화가 이를 이어받아 병합하도록 한다.
-    const systemPrompt = previousFilters
-      ? [
-        screen.dataSystemPrompt,
-        `직전에 적용된 필터(JSON): ${JSON.stringify(previousFilters)}`,
-        '사용자가 조건 추가/좁히기/변경을 요청하면 위 필터를 기준으로 병합하되, 유지할 값도 tool 인자로 다시 명시한다. 완전히 새로운 조회면 무시한다.',
-      ].join('\n')
-      : screen.dataSystemPrompt
+    const executionTools = this.resolveExecutionTools(screen)
+    const actionToolNames = new Set([
+      ...screen.actionTools,
+      ...(Array.isArray(screen.commonActionTools) ? screen.commonActionTools : []),
+    ].map((tool) => tool.declaration.name))
+    const hasExecutionTool = executionTools.length > 0
 
-    this.stageLog('3단계:DATA처리_툴실행', reqId, `status=running reason=데이터성 질의로 data tool 실행`)
-    this.logger.debug(
-      `================= [3단계:DATA처리_툴실행_추적] [reqId=${reqId}] route=${screen.key} dataPromptLen=${screen.dataSystemPrompt.length} mergedPromptLen=${systemPrompt.length}`,
-    )
-
-    const { text, executed } = await this.agent.run(
-      systemPrompt,
-      message,
-      screen.dataTools,
-      toolCtx,
-      history,
-    )
-
-    const noExecution = executed.length === 0 || executed.every((call) => Boolean(call.error))
-    const ragFallback = noExecution
-      ? await this.tryRagFallback(ragCollections ?? [COMMON_COLLECTION, screen.ragCollection], message, history, reqId)
-      : { text: undefined, usedCollection: undefined, usedChunks: [] }
-    const defaultLlmText = (noExecution || !text?.trim())
-      ? await this.generateDefaultLlmReply(screen, message, history, noExecution ? 'data-no-execution-and-no-rag-hit' : 'data-empty-text', reqId)
-      : undefined
-    const finalText = text?.trim() || ragFallback.text || defaultLlmText || ''
-
-    const resolvedFilters = pickResolvedFilters(executed)
-
-    return {
-      handled: true,
-      reply: {
-        chat_action: screen.chatActions.data,
-        chat_action_param: resolvedFilters ? { filters: resolvedFilters } : undefined,
-        text: finalText,
-      },
-      meta: {
-        screenTask,
-        pipelineIntent: 'data',
-        pipelineIntentResult,
-        executed: summarizeCalls(executed),
-        ragFallbackUsed: Boolean(ragFallback.text),
-        ragFallbackCollection: ragFallback.usedCollection,
-        ragFallbackChunks: ragFallback.usedChunks,
-        defaultLlmFallback: Boolean(defaultLlmText),
-      },
-    }
-  }
-
-  private async handleAction(
-    screen: ScreenConfig,
-    message: string,
-    toolCtx: ToolContext,
-    pipelineIntentResult: unknown,
-    history: ChatTurn[],
-    screenTask: ScreenTask,
-    ragCollections?: string[],
-    reqId = '-',
-  ): Promise<OrchestrationOutput> {
-    const isTaskflowComposeRequest = this.looksLikeTaskflowEditMessage(message)
-    this.stageLog('3단계:ACTION처리_툴실행', reqId, `status=running reason=액션성 질의로 action tool 실행`)
-    this.logger.debug(
-      `================= [3단계:ACTION처리_툴실행_추적] [reqId=${reqId}] route=${screen.key} actionPromptLen=${screen.actionSystemPrompt.length}`,
-    )
-
-    const { text, executed } = await this.agent.run(
-      screen.actionSystemPrompt,
-      message,
-      screen.actionTools,
-      toolCtx,
-      history,
-    )
-
-    const noExecution = executed.length === 0 || executed.every((call) => Boolean(call.error))
-    const deterministicTaskflowParam = await this.tryDeterministicTaskflowDraft(screen, message, toolCtx)
-    const deterministicApplied = Boolean(deterministicTaskflowParam)
-    const deterministicClarification = this.extractActionClarification(deterministicTaskflowParam)
-
-    if (deterministicClarification) {
-      this.stageLog(
-        '3-1단계:ACTION_사용자추가입력요청',
-        reqId,
-        'status=blocked reason=compose_linear_taskflow 명확화가 있어 RAG/기본LLM 폴백 없이 즉시 반환',
-      )
-
+    if (!hasExecutionTool) {
+      const fallbackText = String(screen.fallbackText ?? '').trim() || '실행 가능한 도구가 없습니다.'
+      this.stageLog('3단계:ACTION처리_툴없음', reqId, 'status=blocked reason=현재 화면에 실행 가능한 tool이 없음')
       return {
         handled: true,
         reply: {
-          chat_action: screen.chatActions.action,
-          chat_action_param: deterministicTaskflowParam,
-          text: deterministicClarification,
+          chat_action: screen.chatActions.info,
+          text: fallbackText,
         },
         meta: {
           screenTask,
           pipelineIntent: 'action',
           pipelineIntentResult,
-          executed: summarizeCalls(executed),
-          ragFallbackUsed: false,
-          ragFallbackCollection: undefined,
-          ragFallbackChunks: [],
-          defaultLlmFallback: false,
+          executed: [],
+          fallbackTextUsed: true,
         },
       }
     }
 
-    const inferredNavigation = noExecution
-      ? this.inferNavigationFromScreenName(message, screen.appKey)
-      : undefined
-
-    if (inferredNavigation) {
-      this.stageLog('4단계:네비게이션_추론', reqId, 'status=matched reason=툴 실행 결과가 없어 화면명 기반 이동 경로를 추론')
-      this.logger.debug(
-        `================= [4단계:네비게이션_추론_추적] [reqId=${reqId}] route=${screen.key} path=${inferredNavigation.path} screenName=${inferredNavigation.screenName ?? ''}`,
-      )
-    }
-
-    const ragFallback = !deterministicApplied && noExecution
-      ? inferredNavigation
-        ? { text: undefined, usedCollection: undefined, usedChunks: [] }
-        : await this.tryRagFallback(ragCollections ?? [COMMON_COLLECTION, screen.ragCollection], message, history, reqId)
-      : { text: undefined, usedCollection: undefined, usedChunks: [] }
-    const defaultLlmText = !deterministicApplied && (noExecution || !text?.trim())
-      ? inferredNavigation
-        ? undefined
-        : await this.generateDefaultLlmReply(screen, message, history, noExecution ? 'action-no-execution-and-no-rag-hit' : 'action-empty-text', reqId)
-      : undefined
-    const finalText =
-      text?.trim() ||
-      (deterministicApplied ? '요청을 캔버스에 반영했습니다.' : '') ||
-      (inferredNavigation ? `${inferredNavigation.screenName ?? inferredNavigation.path} 화면으로 이동하겠습니다.` : '') ||
-      ragFallback.text ||
-      defaultLlmText ||
-      ''
-
-    const ran = executed.find((c) => c.name === 'run_action')
-    const navigation = this.findNavigationResult(executed) ?? inferredNavigation
-    const navigationText = navigation ? `${navigation.path} 화면으로 이동하겠습니다.` : undefined
-    const actionParam = deterministicTaskflowParam ?? this.buildActionParam(executed, ran)
-    const clarificationText = this.extractActionClarification(actionParam)
-    const assistantToolText = this.extractActionAssistantText(actionParam)
-    const actionText = clarificationText || assistantToolText || text?.trim()
-    const needsTaskflowDraftButMissing =
-      isTaskflowComposeRequest &&
-      !navigation &&
-      !actionParam
-
-    if (needsTaskflowDraftButMissing) {
+    const actionRag = this.retrieveActionRagContext(actionRagCollections, message)
+    if (actionRag.usedChunks.length > 0) {
       this.stageLog(
-        '3-2단계:ACTION_반영실패안내',
+        '3-0단계:ACTION처리_RAG조회',
         reqId,
-        'status=blocked reason=태스크플로우 요청이지만 캔버스 반영 결과(canvasDraft/actionParam)를 만들지 못함',
+        `status=matched reason=collection=${actionRag.usedCollection ?? '-'} hitCount=${actionRag.usedChunks.length}`,
+      )
+    } else {
+      this.stageLog(
+        '3-0단계:ACTION처리_RAG조회',
+        reqId,
+        'status=miss reason=액션 전용 RAG 매칭 결과 없음',
       )
     }
 
-    if (clarificationText) {
-      this.stageLog('3-1단계:ACTION_사용자추가입력요청', reqId, 'status=blocked reason=액션 실행 전 사용자 추가 입력 필요')
-      this.logger.debug(
-        `================= [3-1단계:ACTION_사용자추가입력요청_추적] [reqId=${reqId}] route=${screen.key} clarification=${clarificationText}`,
-      )
+    const systemPrompt = this.buildExecutionPrompt(screen, previousFilters, actionRag.context)
+
+    this.stageLog('3단계:ACTION처리_툴실행', reqId, 'status=running reason=action 통합 경로로 tool 실행')
+    this.logger.debug(
+      `================= [3단계:ACTION처리_툴실행_추적] [reqId=${reqId}] route=${screen.key} promptLen=${systemPrompt.length} toolCount=${executionTools.length}`,
+    )
+
+    const { text, executed } = await this.agent.run(
+      systemPrompt,
+      message,
+      executionTools,
+      toolCtx,
+      history,
+    )
+    const evaluateExecution = async (executionText: string, executionCalls: ExecutedCall[], source: 'screen' | 'common') => {
+      const noExecution = executionCalls.length === 0 || executionCalls.every((call) => Boolean(call.error))
+      const deterministicTaskflowParam = await this.tryDeterministicTaskflowDraft(screen, message, toolCtx)
+      const deterministicApplied = Boolean(deterministicTaskflowParam)
+      const deterministicClarification = this.extractActionClarification(deterministicTaskflowParam)
+
+      if (deterministicClarification) {
+        return {
+          handled: true,
+          reply: {
+            chat_action: screen.chatActions.action,
+            chat_action_param: deterministicTaskflowParam,
+            text: deterministicClarification,
+          },
+          meta: {
+            screenTask,
+            pipelineIntent: 'action',
+            pipelineIntentResult,
+            executed: summarizeCalls(executionCalls),
+            fallbackTextUsed: false,
+            actionAttemptSource: source,
+          },
+        } as OrchestrationOutput
+      }
+
+      const inferredNavigation = noExecution
+        ? this.inferNavigationFromScreenName(message, screen.appKey)
+        : undefined
+
+      const ran = executionCalls.find((c) => c.name === 'run_action')
+      const navigation = this.findNavigationResult(executionCalls) ?? inferredNavigation
+      const actionParam = deterministicTaskflowParam ?? this.buildActionParam(executionCalls, ran)
+      const clarificationText = this.extractActionClarification(actionParam)
+      const assistantToolText = this.extractActionAssistantText(actionParam)
+      const successfulActionCall = [...executionCalls].reverse().find((call) => !call.error && actionToolNames.has(call.name))
+      const hasSiteAction = Boolean(deterministicApplied || navigation || successfulActionCall)
+
+      const resolvedFilters = pickResolvedFilters(executionCalls)
+      const fallbackReason = this.resolveExecutionFallbackReason(executionCalls)
+      const fallbackText = this.buildExecutionFallbackText(String(screen.fallbackText ?? ''), fallbackReason)
+
+      if (noExecution && !navigation) {
+        this.stageLog('3-2단계:ACTION_폴백텍스트', reqId, `status=fallback reason=${fallbackReason} source=${source}`)
+      }
+
+      const finalText =
+        clarificationText ||
+        assistantToolText ||
+        executionText?.trim() ||
+        (navigation ? `${navigation.screenName ?? navigation.path} 화면으로 이동하겠습니다.` : '') ||
+        (noExecution ? fallbackText : '') ||
+        (hasSiteAction ? '요청을 처리했습니다.' : '조회 결과를 확인했습니다.')
+
+      return {
+        handled: true,
+        reply: {
+          chat_action: navigation
+            ? 'navigation'
+            : screen.chatActions.action,
+          chat_action_param: navigation
+            ? { path: navigation.path, app: navigation.app }
+            : hasSiteAction
+              ? actionParam
+              : resolvedFilters
+                ? { filters: resolvedFilters }
+                : undefined,
+          text: finalText,
+        },
+        meta: {
+          screenTask,
+          pipelineIntent: 'action',
+          pipelineIntentResult,
+          executed: summarizeCalls(executionCalls),
+          hasSiteAction,
+          actionRagCollection: actionRag.usedCollection,
+          actionRagChunks: actionRag.usedChunks,
+          actionAttemptSource: source,
+          fallbackReason: noExecution && !navigation ? fallbackReason : undefined,
+          fallbackTextUsed: Boolean(noExecution && !navigation),
+        },
+      } satisfies OrchestrationOutput
     }
 
-    return {
-      handled: true,
-      reply: {
-        chat_action: navigation ? 'navigation' : screen.chatActions.action,
-        chat_action_param: navigation
-          ? { path: navigation.path, app: navigation.app }
-          : needsTaskflowDraftButMissing
-            ? { clarification: '요청을 해석했지만 캔버스 반영 결과를 만들지 못했습니다. 목적지 이름을 정확히 다시 입력해 주세요.' }
-          : actionParam,
-        text:
-          actionText ||
-          (needsTaskflowDraftButMissing
-            ? '요청을 해석했지만 캔버스 반영 결과를 만들지 못했습니다. 목적지 이름을 정확히 다시 입력해 주세요.'
-            : finalText || navigationText || '요청을 처리했습니다.'),
-      },
-      meta: {
-        screenTask,
-        pipelineIntent: 'action',
-        pipelineIntentResult,
-        executed: summarizeCalls(executed),
-        ragFallbackUsed: Boolean(ragFallback.text),
-        ragFallbackCollection: ragFallback.usedCollection,
-        ragFallbackChunks: ragFallback.usedChunks,
-        defaultLlmFallback: Boolean(defaultLlmText),
-      },
+    const firstAttempt = await evaluateExecution(text, executed, 'screen')
+    if (firstAttempt.reply && firstAttempt.meta && firstAttempt.meta.fallbackTextUsed !== true) {
+      return firstAttempt
     }
+
+    const commonActionTools = Array.isArray(screen.commonActionTools) ? screen.commonActionTools : []
+    if (commonActionTools.length > 0) {
+      this.stageLog(
+        '3-1단계:ACTION_공통재시도',
+        reqId,
+        `status=running reason=screen action 실패 후 common action tool 재시도(commonTools=${commonActionTools.length})`,
+      )
+
+      const commonRetryPrompt = [
+        systemPrompt,
+        '위 action 도구 실행이 실패했다. 이제 공통 action 도구만 기준으로 다시 판단하라.',
+        '가능하면 공통 action 도구를 우선 선택하고, 실패하면 그때만 fallback 문구로 내려가라.',
+      ].join('\n\n')
+
+      const commonAttempt = await this.agent.run(
+        commonRetryPrompt,
+        message,
+        commonActionTools,
+        toolCtx,
+        history,
+      )
+
+      const commonResult = await evaluateExecution(commonAttempt.text, commonAttempt.executed, 'common')
+      if (commonResult.reply) {
+        return commonResult
+      }
+    }
+
+    return firstAttempt
+  }
+
+  private retrieveActionRagContext(
+    collectionNames: string[],
+    query: string,
+  ): { context: string; usedCollection?: string; usedChunks: string[] } {
+    for (const name of collectionNames) {
+      const hits = this.rag.retrieve(name, query, 'action')
+      if (hits.length === 0) continue
+
+      const context = hits
+        .map((hit, index) => `[액션 문서 ${index + 1}] ${hit.chunk.title}\n${hit.chunk.body}`)
+        .join('\n\n')
+
+      return {
+        context,
+        usedCollection: name,
+        usedChunks: hits.map((hit) => hit.chunk.id),
+      }
+    }
+
+    return { context: '', usedChunks: [] }
+  }
+
+  private resolveExecutionFallbackReason(executed: ExecutedCall[]): 'tool-not-selected' | 'missing-params' | 'permission-denied' | 'tool-execution-failed' {
+    if (executed.length === 0) {
+      return 'tool-not-selected'
+    }
+
+    const errors = executed
+      .map((call) => String(call.error ?? '').trim().toLowerCase())
+      .filter(Boolean)
+
+    if (errors.length === 0) {
+      return 'tool-not-selected'
+    }
+
+    if (errors.some((msg) => /401|403|unauthorized|forbidden|permission|권한|인가/.test(msg))) {
+      return 'permission-denied'
+    }
+
+    if (errors.some((msg) => /missing|required|invalid|argument|args|schema|param|context param missing|필수|파라미터/.test(msg))) {
+      return 'missing-params'
+    }
+
+    return 'tool-execution-failed'
+  }
+
+  private buildExecutionFallbackText(
+    baseFallbackText: string,
+    reason: 'tool-not-selected' | 'missing-params' | 'permission-denied' | 'tool-execution-failed',
+  ): string {
+    const guidanceByReason: Record<typeof reason, string> = {
+      'tool-not-selected': '요청을 조금 더 구체적으로 입력해 주세요.',
+      'missing-params': '필수 입력값이 부족할 수 있어요. 대상 이름/조건을 포함해 다시 요청해 주세요.',
+      'permission-denied': '권한 확인이 필요합니다. 권한 또는 토큰 상태를 점검해 주세요.',
+      'tool-execution-failed': '일시적인 실행 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.',
+    }
+
+    const base = String(baseFallbackText ?? '').trim() || '요청을 처리할 수 있는 도구를 찾지 못했습니다.'
+    return `${base} ${guidanceByReason[reason]}`.trim()
+  }
+
+  private resolveExecutionTools(screen: ScreenConfig): ToolDefinition[] {
+    const ordered = [...screen.actionTools, ...screen.dataTools]
+
+    const seen = new Set<string>()
+    const unique: ToolDefinition[] = []
+
+    for (const tool of ordered) {
+      const name = String(tool?.declaration?.name ?? '').trim()
+      if (!name || seen.has(name)) continue
+      seen.add(name)
+      unique.push(tool)
+    }
+
+    return unique
+  }
+
+  private buildExecutionPrompt(
+    screen: ScreenConfig,
+    previousFilters?: Record<string, unknown>,
+    actionRagContext?: string,
+  ): string {
+    const basePrompt = [screen.dataSystemPrompt, screen.actionSystemPrompt].filter(Boolean).join('\n\n')
+    const promptBlocks: string[] = [basePrompt]
+
+    if (String(actionRagContext ?? '').trim()) {
+      promptBlocks.push([
+        '다음은 action 실행 시 참고해야 하는 액션 RAG 문서다.',
+        '문서에 나온 파라미터 규칙/정책/우선순위를 가능한 범위에서 tool 인자 구성에 반영하라.',
+        String(actionRagContext ?? '').trim(),
+      ].join('\n\n'))
+    }
+
+    if (previousFilters) {
+      promptBlocks.push([
+        `직전에 적용된 필터(JSON): ${JSON.stringify(previousFilters)}`,
+        '사용자가 조건 추가/좁히기/변경을 요청하면 위 필터를 기준으로 병합하되, 유지할 값도 tool 인자로 다시 명시한다. 완전히 새로운 조회면 무시한다.',
+      ].join('\n'))
+    }
+
+    return promptBlocks.filter(Boolean).join('\n\n')
   }
 
   private buildActionParam(

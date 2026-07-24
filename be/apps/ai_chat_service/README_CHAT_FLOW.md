@@ -28,11 +28,12 @@
 
 1. `ChatOrchestrator`가 화면 설정(`ScreenConfig`)을 로드한다.
 2. 멀티턴 보정(`buildContinuationMessage`)으로 clarification 후속 발화를 실행 가능한 문장으로 재작성할 수 있다.
-3. intent classifier 결과 또는 fallback 키워드로 `info | data | action` 경로를 확정한다.
-4. 경로별 처리:
-	 - `info`: RAG 기반 응답
-	 - `data`: 조회성 tool 실행
-	 - `action`: 실행성 tool 실행
+3. intent classifier 결과 또는 fallback 키워드로 `info | data | action` 라벨을 확정한다.
+4. 최종 처리 경로는 `info | action` 두 갈래다. (`data` 라벨은 action 경로로 통합 처리)
+5. 경로별 처리:
+	 - `info`: RAG 조회 -> RAG 미충족 시 기본 LLM 호출 -> 응답 생성
+	 - `action`: 통합 액션 프롬프트 적용 -> 통합 액션 툴 실행
+6. 액션 RAG는 향후 확장 포인트로 정의되어 있으며, 현재 런타임에는 기본 포함되지 않는다.
 
 관련 파일:
 - `be/apps/ai_chat_service/src/pipeline/chat.orchestrator.ts`
@@ -121,6 +122,8 @@
 - 대표 로그 패턴:
 	- `[2단계:컨텍스트확인] [reqId=...] ...`
 	- `[3단계:의도분기] [reqId=...] ...`
+	- `[3단계:INFO처리_RAG응답] [reqId=...] ...`
+	- `[3단계:ACTION처리_툴실행] [reqId=...] ...`
 	- `[4단계:드래프트구성] [reqId=...] ...`
 	- `[compose_linear_taskflow][taskContents-match] hit|miss ...`
 
@@ -145,9 +148,17 @@ flowchart TD
 	C1 --> C2[Continuation rewrite\nbuildContinuationMessage]
 	C2 --> C3{Intent Route}
 
-	C3 -->|info| I[RAG response path]
-	C3 -->|data| D[Data tool path]
-	C3 -->|action| A[compose_linear_taskflow]
+	C3 -->|info| I1[RAG lookup]
+	I1 --> I2{RAG satisfied?}
+	I2 -->|yes| I3[RAG-grounded answer]
+	I2 -->|no| I4[Default LLM fallback]
+	I3 --> R
+	I4 --> R
+
+	C3 -->|data/action| A0[Action unified route]
+	A0 --> A00[Unified action prompt]
+	A00 --> AR[Action RAG - future extension]
+	AR --> A[compose_linear_taskflow / integrated tools]
 
 	A --> A1{Compose Branch}
 	A1 -->|PickUp| P1[PickUp->DoesObjectExist->PutDown]
@@ -160,8 +171,7 @@ flowchart TD
 	P3 --> APP
 	P4 --> APP
 
-	I --> R[Assistant response]
-	D --> R
+	R[Assistant response]
 	APP --> R
 
 	R --> FE[Frontend applies chat_action/chat_action_param]

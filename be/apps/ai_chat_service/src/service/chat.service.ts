@@ -15,11 +15,11 @@ import { getDefaultLlmProvider } from '../llm/llm.factory'
 import type { LlmProvider, LlmRuntime } from '../llm/llm.types'
 import { ChatLogService } from '../db/chat-log.service'
 import { ChatSettingService } from '../db/chat-setting.service'
-import { getPromptStore } from '../db/prompt-store.service'
+import { getPromptStore, type RagChunkData } from '../db/prompt-store.service'
 import { findPhraseMapMatch } from '../db/query-phrase-map.repo'
 import { ChatOrchestrator } from '../pipeline/chat.orchestrator'
 import { loadChatPipelineConfig } from '../pipeline/pipeline.config'
-import type { ChatReply, ChatTurn, SuggestedAction } from '../pipeline/pipeline.types'
+import type { ChatReply, ChatReplyImage, ChatTurn, SuggestedAction } from '../pipeline/pipeline.types'
 import { getScreenConfig } from '../pipeline/screen-registry'
 import { buildToolContextFromBody } from '../pipeline/tool-context.util'
 import { queryEvents } from '../screens/robot/ailog-event.datatools'
@@ -64,6 +64,17 @@ type ScreenTask =
   | 'create'
   | 'update'
   | 'delete'
+
+const TASKFLOW_EXPLANATION_KEYWORDS = [
+  /설명/, /구성/, /구조/, /예시/, /사용법/, /어떻게/, /뭐야/, /무엇/, /알려/, /차이/, /노드/,
+]
+
+const TASKFLOW_COMPOSE_REQUEST_KEYWORDS = [
+  /만들어\s*줘/i, /구성해\s*줘/i, /생성해\s*줘/i, /추가해\s*줘/i, /캔버스/i, /반영해\s*줘/i,
+]
+
+const TASKFLOW_EXPLANATION_IMAGE_MIN_SCORE = 5
+const TASKFLOW_EXPLANATION_IMAGE_MIN_SCORE_ALWAYS = 1
 
 @Injectable()
 export class ChatService {
@@ -147,7 +158,16 @@ export class ChatService {
     const ruleFirstReply = await this.tryRuleFirstEventQuery(ctx)
     if (ruleFirstReply) {
       this.stageLog('3단계:룰우선처리', 'served', 'phrase-map/휴리스틱 우선 처리로 응답 완료', reqId)
-      return this.withSuggestedActions(ruleFirstReply, ctx)
+      return this.withSuggestedActions(
+        this.withTaskflowExplanationImages(
+          this.attachPipelineTrace(
+            ruleFirstReply,
+            'rule(phrase-map|heuristic)=>tool(query_events)=>응답조립',
+          ),
+          ctx,
+        ),
+        ctx,
+      )
     }
 
     this.stageLog('4단계:화면파이프라인', 'running', '등록 화면 파이프라인 처리 시작', reqId)
@@ -156,17 +176,81 @@ export class ChatService {
       const fallbackReply = await this.tryComposeTaskflowFallback(ctx, pipelineReply)
       if (fallbackReply) {
         this.stageLog('4-1단계:화면파이프라인', 'completed', '화면 파이프라인 후 태스크플로우 draft 폴백 반영 완료', reqId)
-        return this.withSuggestedActions(fallbackReply, ctx)
+        return this.withSuggestedActions(
+          this.withTaskflowExplanationImages(
+            this.attachPipelineTrace(
+              fallbackReply,
+              'llm(공통 프롬프트+앱별 프롬프트)=>분기(action)=>tool(compose_linear_taskflow)=>응답조립',
+            ),
+            ctx,
+          ),
+          ctx,
+        )
       }
       this.stageLog('4-1단계:화면파이프라인', 'completed', '화면 파이프라인에서 응답 생성 완료', reqId)
-      return this.withSuggestedActions(pipelineReply, ctx)
+      return this.withSuggestedActions(
+        this.withTaskflowExplanationImages(
+          this.attachPipelineTrace(
+            pipelineReply,
+            'llm(공통 프롬프트+앱별 프롬프트)=>분기(action|info)=>응답조립',
+          ),
+          ctx,
+        ),
+        ctx,
+      )
     }
 
     // 미등록 화면 또는 pipeline 실패 시 기존 guidance 경로
     this.stageLog('5단계:가이던스폴백', 'fallback', '등록 화면 처리 불가로 기본 안내 경로 진입', reqId)
     const guidanceReply = await this.handleGuidance(ctx)
     this.stageLog('5-1단계:가이던스폴백', 'completed', '기본 안내 응답 생성 완료', reqId)
-    return this.withSuggestedActions(guidanceReply, ctx)
+    return this.withSuggestedActions(
+      this.withTaskflowExplanationImages(
+        this.attachPipelineTrace(
+          guidanceReply,
+          'llm(공통 프롬프트+앱별 프롬프트)=>guidance-llm=>응답조립',
+        ),
+        ctx,
+      ),
+      ctx,
+    )
+  }
+
+  private attachPipelineTrace(reply: ChatReply, fallbackTrace: string): ChatReply {
+    const existingTrace = String((reply as Record<string, unknown>)?.pipelineTrace ?? '').trim()
+    if (existingTrace) {
+      return {
+        ...reply,
+        pipelineTrace: existingTrace,
+      }
+    }
+
+    const trace = String(fallbackTrace ?? '').trim()
+    if (!trace) return reply
+
+    return {
+      ...reply,
+      pipelineTrace: trace,
+    }
+  }
+
+  private buildOrchestratorPipelineTrace(meta: unknown): string {
+    if (!meta || typeof meta !== 'object') {
+      return 'llm(공통 프롬프트+앱별 프롬프트)=>분기(action|info)=>응답조립'
+    }
+
+    const row = meta as Record<string, unknown>
+    const pipelineIntent = String(row.pipelineIntent ?? '').trim().toLowerCase()
+
+    if (pipelineIntent === 'action') {
+      return 'llm(공통 프롬프트+앱별 프롬프트)=>분기(action)=>llm(액션 프롬프트)=>tool/응답조립'
+    }
+
+    if (pipelineIntent === 'info') {
+      return 'llm(공통 프롬프트+앱별 프롬프트)=>분기(info)=>rag(화면+공통)=>llm(정보 프롬프트)=>응답조립'
+    }
+
+    return 'llm(공통 프롬프트+앱별 프롬프트)=>분기(action|info)=>응답조립'
   }
 
   private normalizeRouteLike(value: string): string {
@@ -277,6 +361,115 @@ export class ChatService {
         : undefined
 
     return Boolean(toolResult?.canvasDraft && typeof toolResult.canvasDraft === 'object')
+  }
+
+  private looksLikeTaskflowExplanationMessage(message: string, reply: ChatReply): boolean {
+    const sourceText = `${this.normalize(message)} ${this.normalize(reply?.text)}`
+    if (!sourceText) return false
+
+    const hasExplanationKeyword = TASKFLOW_EXPLANATION_KEYWORDS.some((pattern) => pattern.test(sourceText))
+    if (!hasExplanationKeyword) return false
+
+    const looksLikeComposeRequest = TASKFLOW_COMPOSE_REQUEST_KEYWORDS.some((pattern) => pattern.test(this.normalize(message)))
+    return !looksLikeComposeRequest
+  }
+
+  private scoreTaskflowExplanationChunk(query: string, chunk: RagChunkData): number {
+    const normalizedQuery = this.normalize(query).toLowerCase()
+    if (!normalizedQuery) return 0
+
+    let score = 0
+
+    for (const keyword of Array.isArray(chunk.keywords) ? chunk.keywords : []) {
+      const normalizedKeyword = String(keyword ?? '').trim().toLowerCase()
+      if (!normalizedKeyword) continue
+      if (normalizedQuery.includes(normalizedKeyword)) {
+        score += normalizedKeyword.length >= 4 ? 5 : 3
+      }
+    }
+
+    const title = String(chunk.title ?? '').trim().toLowerCase()
+    if (title && normalizedQuery.includes(title)) score += 4
+
+    const body = String(chunk.body ?? '').trim().toLowerCase()
+    if (body) {
+      const bodyTerms = body.split(/[^\p{L}\p{N}_]+/u).filter((term) => term.length >= 2)
+      for (const term of bodyTerms.slice(0, 32)) {
+        if (normalizedQuery.includes(term.toLowerCase())) score += 1
+      }
+    }
+
+    return score
+  }
+
+  private resolveTaskflowExplanationChunk(routeKey: string, message: string, reply: ChatReply): RagChunkData | null {
+    const store = getPromptStore()
+    const normalizedRouteKey = this.findNearestRegisteredRouteKey(routeKey) ?? this.normalizeRouteLike(routeKey)
+    const collection = store?.getCollection(normalizedRouteKey)
+    if (!collection) return null
+
+    const query = `${this.normalize(message)} ${this.normalize(reply?.text)}`.trim()
+    if (!query) return null
+
+    const candidates = collection.chunks.filter((chunk) => {
+      if (!String(chunk?.imageUrl ?? '').trim()) return false
+      return String(chunk?.imageAttachMode ?? 'auto').toLowerCase() !== 'never'
+    })
+    if (candidates.length === 0) return null
+
+    const scored = candidates
+      .map((chunk) => ({ chunk, score: this.scoreTaskflowExplanationChunk(query, chunk) }))
+      .filter((item) => {
+        const mode = String(item.chunk.imageAttachMode ?? 'auto').toLowerCase()
+        if (mode === 'always') return item.score >= TASKFLOW_EXPLANATION_IMAGE_MIN_SCORE_ALWAYS
+        return item.score >= TASKFLOW_EXPLANATION_IMAGE_MIN_SCORE
+      })
+      .sort((left, right) => {
+        const leftMode = String(left.chunk.imageAttachMode ?? 'auto').toLowerCase()
+        const rightMode = String(right.chunk.imageAttachMode ?? 'auto').toLowerCase()
+        const leftPriority = leftMode === 'always' ? 0 : 1
+        const rightPriority = rightMode === 'always' ? 0 : 1
+        if (leftPriority !== rightPriority) return leftPriority - rightPriority
+        if (right.score !== left.score) return right.score - left.score
+
+        const leftSortOrder = Number(left.chunk.sortOrder ?? 0)
+        const rightSortOrder = Number(right.chunk.sortOrder ?? 0)
+        if (leftSortOrder !== rightSortOrder) return leftSortOrder - rightSortOrder
+
+        return String(left.chunk.id ?? '').localeCompare(String(right.chunk.id ?? ''))
+      })
+
+    return scored[0]?.chunk ?? null
+  }
+
+  private resolveTaskflowExplanationImages(routeKey: string, message: string, reply: ChatReply): ChatReplyImage[] {
+    const matched = this.resolveTaskflowExplanationChunk(routeKey, message, reply)
+    if (!matched) return []
+
+    const src = String(matched.imageUrl ?? '').trim()
+    if (!src) return []
+
+    return [{
+      id: `taskflow-node-${matched.id}`,
+      src,
+      alt: String(matched.title ?? '').trim() || 'taskflow explanation image',
+      title: String(matched.title ?? '').trim(),
+      caption: String(matched.body ?? '').trim(),
+    }]
+  }
+
+  private withTaskflowExplanationImages(reply: ChatReply, ctx: ChatContext): ChatReply {
+    if (!this.isTmsCanvasRoute(ctx.key)) return reply
+    if (this.hasCanvasDraftParam(reply)) return reply
+    if (!this.looksLikeTaskflowExplanationMessage(ctx.message, reply)) return reply
+
+    const images = this.resolveTaskflowExplanationImages(ctx.key, ctx.message, reply)
+    if (images.length === 0) return reply
+
+    return {
+      ...reply,
+      images,
+    }
   }
 
   private async tryComposeTaskflowFallback(
@@ -803,9 +996,13 @@ export class ChatService {
     )
     this.stageLog('4-5단계:오케스트레이터결과', 'completed', `handled=${String(out.handled)} hasReply=${String(Boolean(out.reply))}`, ctx.reqId)
     if (out.handled && out.reply) {
-      await this.saveLog(ctx.body, out.reply, ctx)
+      const tracedReply = this.attachPipelineTrace(
+        out.reply,
+        this.buildOrchestratorPipelineTrace(out.meta),
+      )
+      await this.saveLog(ctx.body, tracedReply, ctx)
       this.stageLog('4-6단계:응답저장', 'saved', '오케스트레이터 응답을 chat_log에 저장 완료', ctx.reqId)
-      return out.reply
+      return tracedReply
     }
 
     this.stageLog('4-6단계:응답저장', 'skipped', '오케스트레이터에서 유효 응답이 없어 저장 생략', ctx.reqId)

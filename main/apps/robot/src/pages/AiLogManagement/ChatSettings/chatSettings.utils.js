@@ -53,6 +53,48 @@ export const getScreenTitle = (group) => {
 export const groupScreenSettings = (screens, prompts, guidance, ragDocs, screenTools) => {
     const map = new Map()
 
+    const isTaskflowCanvasRoute = (routeKey) => {
+        const normalized = normalizeRoute(routeKey)
+        if (!normalized) return false
+        return /^tms\/taskflows\/(?:[^/]+|:taskFlowId|:id)\/canvas(?:\/|$)/.test(normalized)
+    }
+
+    const buildBuiltInActionTools = (routeKey, existingTools) => {
+        if (!isTaskflowCanvasRoute(routeKey)) return []
+
+        const hasCompose = (Array.isArray(existingTools) ? existingTools : []).some(
+            (tool) => String(tool?.toolName ?? '').trim() === 'compose_linear_taskflow'
+        )
+        if (hasCompose) return []
+
+        return [
+            {
+                id: `builtin::${normalizeRoute(routeKey)}::compose_linear_taskflow`,
+                appKey: 'tms',
+                key: normalizeRoute(routeKey),
+                routeKey: 'tms/taskflows',
+                toolName: 'compose_linear_taskflow',
+                displayName: '직선 태스크플로우 구성',
+                kind: 'action',
+                description: '코드 내장 액션 툴(동적 편집 불가). 사용자 요청을 태스크플로우 캔버스 draft로 구성합니다.',
+                apiName: 'compose_linear_taskflow',
+                method: 'LOCAL',
+                endpoint: '-',
+                baseUrl: '',
+                requestHeaders: {},
+                requestQuery: {},
+                requestBody: {},
+                contextParams: [],
+                requestParams: [{ name: 'steps', type: 'array', required: true, in: 'body' }],
+                staticPayload: { layout: 'linear', mode: 'replace' },
+                sortOrder: 9999,
+                enabled: true,
+                isCodeTool: true,
+                isReadOnly: true,
+            },
+        ]
+    }
+
     const buildLookupRouteKeys = (routeKey) => {
         const normalized = normalizeRoute(routeKey)
         if (!normalized) return ['common']
@@ -94,7 +136,8 @@ export const groupScreenSettings = (screens, prompts, guidance, ragDocs, screenT
             merged.push(item.tool)
         }
 
-        return merged
+        const builtInTools = buildBuiltInActionTools(routeKey, merged)
+        return [...merged, ...builtInTools]
     }
 
     for (const item of screens) {

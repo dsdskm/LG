@@ -12,6 +12,7 @@ export type RagChunk = {
   /** 검색 가중치를 높일 핵심 키워드. */
   keywords: string[]
   body: string
+  intentType?: 'info' | 'action' | 'both'
 }
 
 export type RagCollection = {

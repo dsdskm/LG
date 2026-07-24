@@ -254,6 +254,65 @@ export const StyledAiAssistantMessageBubble = styled.div`
   word-break: break-word;
 `
 
+export const StyledAiAssistantPipelineTrace = styled.div`
+  max-width: 90%;
+  margin-top: 0.2rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgba(107, 114, 128, 0.25);
+  background: rgba(243, 244, 246, 0.85);
+  color: #4b5563;
+  font-size: 1.05rem;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`
+
+export const StyledAiAssistantImageList = styled.div`
+  width: 90%;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.8rem;
+`
+
+export const StyledAiAssistantImageCard = styled.figure`
+  margin: 0;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 14px;
+  overflow: hidden;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+`
+
+export const StyledAiAssistantImage = styled.img`
+  display: block;
+  width: 100%;
+  height: auto;
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+`
+
+export const StyledAiAssistantImageCaption = styled.figcaption`
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.9rem 1rem 1rem;
+`
+
+export const StyledAiAssistantImageTitle = styled.div`
+  font-size: 1.18rem;
+  font-weight: 700;
+  color: var(--color-secondary-90, #262f44);
+  line-height: 1.4;
+`
+
+export const StyledAiAssistantImageText = styled.div`
+  font-size: 1.1rem;
+  color: var(--color-secondary-60, #6b7280);
+  line-height: 1.5;
+  white-space: pre-wrap;
+`
+
 export const StyledAiActionCards = styled.div`
   width: 90%;
   display: grid;

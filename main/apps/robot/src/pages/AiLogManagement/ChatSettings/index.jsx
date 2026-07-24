@@ -71,6 +71,52 @@ const parseKeywordsFallback = (value) => {
   }
 }
 
+const normalizeRagIntentType = (value) => {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (normalized === 'info' || normalized === 'action' || normalized === 'both') return normalized
+  return 'both'
+}
+
+const normalizeCommonRagIntentType = (item) => {
+  const intentType = normalizeRagIntentType(item?.intentType)
+  if (String(item?.key ?? '') !== 'common' || intentType !== 'both') return intentType
+
+  const hint = `${String(item?.title ?? '')} ${String(item?.chunkKey ?? '')}`.toLowerCase()
+  if (hint.includes('action') || hint.includes('액션')) return 'action'
+  if (hint.includes('info') || hint.includes('정보')) return 'info'
+
+  return 'both'
+}
+
+const normalizeImageAttachMode = (value) => {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (normalized === 'always' || normalized === 'never' || normalized === 'auto') return normalized
+  return 'auto'
+}
+
+const INTENT_HINT_PROMPT_TEMPLATE = `너는 화면 기반 챗봇의 분기 분류기다.
+사용자 발화를 intent 하나로만 분류한다: info | data | action.
+
+판단 규칙:
+1) 설명, 정책, 사용법, 비교, 요약 같은 정보 질문은 info.
+2) 목록 조회, 검색, 필터 확인 같은 읽기성 요청은 data.
+3) 추가/생성/수정/삭제/실행/이동/저장/정렬/모드변경 같은 동작 요청은 action.
+4) 태스크플로우/노드/연결/parallel/ifthenelse/repeat/or/병렬/반복 관련 요청은 action 우선.
+5) 직전 질문이 명확화(예: 어떤 노드 추가?)이고 짧은 후속 답변이면 action.
+
+출력 형식:
+JSON 한 줄만 반환한다.
+{"intent":"info|data|action","reason":"짧은 근거","confidence":0.0}
+`
+
+const UNIFIED_MODAL_STYLE = {
+  width: 'min(760px, 100%)',
+  height: '72vh',
+  minHeight: '72vh',
+  maxHeight: '72vh',
+  overflowY: 'auto',
+}
+
 /**
  * AI 챗봇(ai_chat_service) 설정 페이지.
  * AI Assistant 패널의 설정(⚙) 아이콘에서 진입한다.
@@ -94,10 +140,24 @@ const ChatSettings = () => {
     content: '',
     enabled: true,
   })
-  const [newCommonRagDraft, setNewCommonRagDraft] = useState({
-    chunkKey: '',
-    title: '공통 RAG',
+  const [commonIntentPromptDraft, setCommonIntentPromptDraft] = useState({
+    label: '공통 분기 프롬프트',
+    content: INTENT_HINT_PROMPT_TEMPLATE,
+    enabled: true,
+  })
+  const [newCommonInfoRagDraft, setNewCommonInfoRagDraft] = useState({
+    title: '공통 info RAG',
     body: '',
+    imageUrl: '',
+    imageAttachMode: 'auto',
+    keywords: [],
+    enabled: true,
+  })
+  const [newCommonActionRagDraft, setNewCommonActionRagDraft] = useState({
+    title: '공통 action RAG',
+    body: '',
+    imageUrl: '',
+    imageAttachMode: 'auto',
     keywords: [],
     enabled: true,
   })
@@ -113,10 +173,12 @@ const ChatSettings = () => {
   const [savingPromptKey, setSavingPromptKey] = useState('')
   const [creatingPromptRouteKey, setCreatingPromptRouteKey] = useState('')
   const [savingCommonPrompt, setSavingCommonPrompt] = useState(false)
+  const [savingCommonIntentPrompt, setSavingCommonIntentPrompt] = useState(false)
   const [savingGuidanceKey, setSavingGuidanceKey] = useState('')
   const [creatingGuidanceRouteKey, setCreatingGuidanceRouteKey] = useState('')
   const [savingRagKey, setSavingRagKey] = useState('')
-  const [savingCreateCommonRag, setSavingCreateCommonRag] = useState(false)
+  const [savingCreateCommonInfoRag, setSavingCreateCommonInfoRag] = useState(false)
+  const [savingCreateCommonActionRag, setSavingCreateCommonActionRag] = useState(false)
   const [savingCreateScreenRag, setSavingCreateScreenRag] = useState(false)
   const [savingCreateCommonTool, setSavingCreateCommonTool] = useState(false)
   const [savingCreateScreenTool, setSavingCreateScreenTool] = useState(false)
@@ -171,6 +233,15 @@ const ChatSettings = () => {
         enabled: nextCommonPrompt?.enabled !== false,
       })
 
+      const nextCommonIntentPrompt = normalizedManagement.prompts.find(
+        (item) => String(item?.key ?? '') === 'common' && String(item?.promptType ?? item?.category ?? '').toLowerCase() === 'intent-hint'
+      )
+      setCommonIntentPromptDraft({
+        label: String(nextCommonIntentPrompt?.label ?? '공통 분기 프롬프트'),
+        content: String(nextCommonIntentPrompt?.content ?? '') || INTENT_HINT_PROMPT_TEMPLATE,
+        enabled: nextCommonIntentPrompt?.enabled !== false,
+      })
+
       setPromptDrafts(
         Object.fromEntries(
           normalizedManagement.prompts.map((item) => [
@@ -204,7 +275,10 @@ const ChatSettings = () => {
               id: item.id,
               title: String(item.title ?? ''),
               body: String(item.body ?? ''),
+              imageUrl: String(item.imageUrl ?? ''),
+              imageAttachMode: normalizeImageAttachMode(item.imageAttachMode),
               keywords: normalizeKeywordArray(item.keywords ?? []),
+              intentType: normalizeCommonRagIntentType(item),
               enabled: item.enabled !== false,
             },
           ])
@@ -254,6 +328,16 @@ const ChatSettings = () => {
         (item) =>
           String(item?.key ?? '') === 'common' &&
           String(item?.promptType ?? item?.category ?? '').toLowerCase() === 'system'
+      ) ?? null,
+    [management.prompts]
+  )
+
+  const commonIntentPromptItem = useMemo(
+    () =>
+      management.prompts.find(
+        (item) =>
+          String(item?.key ?? '') === 'common' &&
+          String(item?.promptType ?? item?.category ?? '').toLowerCase() === 'intent-hint'
       ) ?? null,
     [management.prompts]
   )
@@ -367,6 +451,54 @@ const ChatSettings = () => {
     }
   }, [commonPromptDraft, load])
 
+  const handleCommonIntentPromptChange = useCallback((field, nextValue) => {
+    setCommonIntentPromptDraft((prev) => ({
+      ...prev,
+      [field]: nextValue,
+    }))
+  }, [])
+
+  const handleSaveCommonIntentPrompt = useCallback(async () => {
+    setSavingCommonIntentPrompt(true)
+    setError('')
+
+    try {
+      if (commonIntentPromptItem?.id) {
+        const res = await updateChatPrompt(commonIntentPromptItem.id, {
+          label: String(commonIntentPromptDraft.label ?? ''),
+          content: String(commonIntentPromptDraft.content ?? ''),
+          enabled: Boolean(commonIntentPromptDraft.enabled),
+        })
+        const next = res?.data ?? {}
+        setSavedMessage(`${String(next.label ?? '공통 분기 프롬프트')}가 저장되었습니다.`)
+      } else {
+        const res = await createChatPrompt({
+          appKey: 'common',
+          key: 'common',
+          routeKey: 'common',
+          promptType: 'intent-hint',
+          label: String(commonIntentPromptDraft.label ?? '공통 분기 프롬프트'),
+          content: String(commonIntentPromptDraft.content ?? ''),
+          enabled: Boolean(commonIntentPromptDraft.enabled),
+        })
+
+        if (Number(res?.code ?? 0) !== 200) {
+          throw new Error(String(res?.message ?? '공통 분기 프롬프트 생성 응답이 올바르지 않습니다.'))
+        }
+
+        const next = res?.data ?? {}
+        setSavedMessage(`${String(next.label ?? '공통 분기 프롬프트')}가 생성되었습니다.`)
+      }
+
+      setSavedOpen(true)
+      await load()
+    } catch (e) {
+      setError(e?.message || '공통 분기 프롬프트 저장에 실패했습니다.')
+    } finally {
+      setSavingCommonIntentPrompt(false)
+    }
+  }, [commonIntentPromptDraft, commonIntentPromptItem, load])
+
   const handlePromptChange = useCallback((key, field, nextValue) => {
     setPromptDrafts((prev) => ({
       ...prev,
@@ -379,8 +511,8 @@ const ChatSettings = () => {
 
 
   const handleSavePrompt = useCallback(
-    async (item) => {
-      const draft = getPromptDraft(promptDrafts, item)
+    async (item, overrideDraft) => {
+      const draft = overrideDraft ?? getPromptDraft(promptDrafts, item)
       const draftKey = String(item.id)
 
       setSavingPromptKey(draftKey)
@@ -542,51 +674,91 @@ const ChatSettings = () => {
     }))
   }, [])
 
-  const handleNewCommonRagChange = useCallback((field, nextValue) => {
-    setNewCommonRagDraft((prev) => ({
+  const handleNewCommonInfoRagChange = useCallback((field, nextValue) => {
+    setNewCommonInfoRagDraft((prev) => ({
       ...prev,
       [field]: nextValue,
     }))
   }, [])
 
-  const handleCreateCommonRag = useCallback(async () => {
-    const keywords = normalizeKeywordArray(newCommonRagDraft.keywords)
+  const handleNewCommonActionRagChange = useCallback((field, nextValue) => {
+    setNewCommonActionRagDraft((prev) => ({
+      ...prev,
+      [field]: nextValue,
+    }))
+  }, [])
 
-    const chunkKey = String(newCommonRagDraft.chunkKey ?? '').trim()
-    if (!chunkKey) {
-      setError('공통 RAG chunk key(목차 ID)는 필수입니다.')
-      return
-    }
+  const handleCreateCommonInfoRag = useCallback(async () => {
+    const keywords = normalizeKeywordArray(newCommonInfoRagDraft.keywords)
 
-    setSavingCreateCommonRag(true)
+    setSavingCreateCommonInfoRag(true)
     setError('')
 
     try {
       const res = await createCommonChatRagDoc({
-        chunkKey,
-        title: String(newCommonRagDraft.title ?? ''),
-        body: String(newCommonRagDraft.body ?? ''),
+        title: String(newCommonInfoRagDraft.title ?? ''),
+        body: String(newCommonInfoRagDraft.body ?? ''),
+        imageUrl: String(newCommonInfoRagDraft.imageUrl ?? ''),
+        imageAttachMode: normalizeImageAttachMode(newCommonInfoRagDraft.imageAttachMode),
         keywords,
-        enabled: Boolean(newCommonRagDraft.enabled),
+        intentType: 'info',
+        enabled: Boolean(newCommonInfoRagDraft.enabled),
       })
       const next = res?.data ?? {}
 
-      setNewCommonRagDraft({
-        chunkKey: '',
-        title: '공통 RAG',
+      setNewCommonInfoRagDraft({
+        title: '공통 info RAG',
         body: '',
+        imageUrl: '',
+        imageAttachMode: 'auto',
         keywords: [],
         enabled: true,
       })
-      setSavedMessage(`${String(next.title ?? '공통 RAG')} 청크가 등록되었습니다.`)
+      setSavedMessage(`${String(next.title ?? '공통 info RAG')} 청크가 등록되었습니다.`)
       setSavedOpen(true)
       await load()
     } catch (e) {
-      setError(e?.message || '공통 RAG 등록에 실패했습니다.')
+      setError(e?.message || '공통 info RAG 등록에 실패했습니다.')
     } finally {
-      setSavingCreateCommonRag(false)
+      setSavingCreateCommonInfoRag(false)
     }
-  }, [newCommonRagDraft, load])
+  }, [newCommonInfoRagDraft, load])
+
+  const handleCreateCommonActionRag = useCallback(async () => {
+    const keywords = normalizeKeywordArray(newCommonActionRagDraft.keywords)
+
+    setSavingCreateCommonActionRag(true)
+    setError('')
+
+    try {
+      const res = await createCommonChatRagDoc({
+        title: String(newCommonActionRagDraft.title ?? ''),
+        body: String(newCommonActionRagDraft.body ?? ''),
+        imageUrl: String(newCommonActionRagDraft.imageUrl ?? ''),
+        imageAttachMode: normalizeImageAttachMode(newCommonActionRagDraft.imageAttachMode),
+        keywords,
+        intentType: 'action',
+        enabled: Boolean(newCommonActionRagDraft.enabled),
+      })
+      const next = res?.data ?? {}
+
+      setNewCommonActionRagDraft({
+        title: '공통 action RAG',
+        body: '',
+        imageUrl: '',
+        imageAttachMode: 'auto',
+        keywords: [],
+        enabled: true,
+      })
+      setSavedMessage(`${String(next.title ?? '공통 action RAG')} 청크가 등록되었습니다.`)
+      setSavedOpen(true)
+      await load()
+    } catch (e) {
+      setError(e?.message || '공통 action RAG 등록에 실패했습니다.')
+    } finally {
+      setSavingCreateCommonActionRag(false)
+    }
+  }, [newCommonActionRagDraft, load])
 
   const handleDeleteCommonRag = useCallback(async (item) => {
     const id = Number(item?.id)
@@ -645,7 +817,10 @@ const ChatSettings = () => {
         routeKey: String(draft?.routeKey ?? '').trim(),
         title: String(draft?.title ?? ''),
         body: String(draft?.body ?? ''),
+        imageUrl: String(draft?.imageUrl ?? ''),
+        imageAttachMode: normalizeImageAttachMode(draft?.imageAttachMode),
         keywords,
+        intentType: normalizeRagIntentType(draft?.intentType),
         enabled: Boolean(draft?.enabled),
       })
 
@@ -679,7 +854,10 @@ const ChatSettings = () => {
         await updateChatRagDoc(item.id, {
           title: String(draft.title ?? ''),
           body: String(draft.body ?? ''),
+          imageUrl: String(draft.imageUrl ?? ''),
+          imageAttachMode: normalizeImageAttachMode(draft.imageAttachMode),
           keywords,
+          intentType: normalizeRagIntentType(draft.intentType),
           enabled: Boolean(draft.enabled),
         })
 
@@ -986,16 +1164,25 @@ const ChatSettings = () => {
               savingCommonPrompt={savingCommonPrompt}
               onCommonPromptChange={handleCommonPromptChange}
               onSaveCommonPrompt={handleSaveCommonPrompt}
+              commonIntentPromptItem={commonIntentPromptItem}
+              commonIntentPromptDraft={commonIntentPromptDraft}
+              savingCommonIntentPrompt={savingCommonIntentPrompt}
+              onCommonIntentPromptChange={handleCommonIntentPromptChange}
+              onSaveCommonIntentPrompt={handleSaveCommonIntentPrompt}
               commonRagDocs={commonRagDocs}
               ragDrafts={ragDrafts}
               savingRagKey={savingRagKey}
               onRagChange={handleRagChange}
               onSaveRag={handleSaveRag}
-              newCommonRagDraft={newCommonRagDraft}
-              savingCreateCommonRag={savingCreateCommonRag}
+              newCommonInfoRagDraft={newCommonInfoRagDraft}
+              newCommonActionRagDraft={newCommonActionRagDraft}
+              savingCreateCommonInfoRag={savingCreateCommonInfoRag}
+              savingCreateCommonActionRag={savingCreateCommonActionRag}
               deletingCommonRagKey={deletingCommonRagKey}
-              onNewCommonRagChange={handleNewCommonRagChange}
-              onCreateCommonRag={handleCreateCommonRag}
+              onNewCommonInfoRagChange={handleNewCommonInfoRagChange}
+              onNewCommonActionRagChange={handleNewCommonActionRagChange}
+              onCreateCommonInfoRag={handleCreateCommonInfoRag}
+              onCreateCommonActionRag={handleCreateCommonActionRag}
               onDeleteCommonRag={handleDeleteCommonRag}
               commonTools={commonTools}
               actionTypes={commonActionTypes}
@@ -1027,8 +1214,14 @@ const ChatSettings = () => {
                 appKey={activeAppTab}
                 activeRouteKey={activeRouteKey}
                 screenGroups={screenGroups}
+                commonRagDocs={commonRagDocs}
+                commonTools={commonTools}
+                onGoToCommonTab={() => handleChangeAppTab(APP_TAB.COMMON)}
                 commonPromptItem={commonPromptItem}
                 commonPromptDraft={commonPromptDraft}
+                commonIntentPromptItem={commonIntentPromptItem}
+                commonIntentPromptDraft={commonIntentPromptDraft}
+                allPrompts={management.prompts}
                 actionTypes={screenActionTypes}
                 promptDrafts={promptDrafts}
                 guidanceDrafts={guidanceDrafts}
@@ -1065,7 +1258,7 @@ const ChatSettings = () => {
 
       {savedOpen ? (
         <ModalBackdrop onClick={() => setSavedOpen(false)}>
-          <ModalCard onClick={(e) => e.stopPropagation()}>
+          <ModalCard style={UNIFIED_MODAL_STYLE} onClick={(e) => e.stopPropagation()}>
             <ModalTitle>저장되었습니다</ModalTitle>
             <ModalDescription>{savedMessage || '설정이 적용되었습니다. 이후 대화부터 반영됩니다.'}</ModalDescription>
             <ModalActions>

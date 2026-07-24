@@ -735,6 +735,263 @@ function buildMoveParallelFlowDraftFromMessage(
   }
 }
 
+function buildDocentFlowDraftFromMessage(
+  flowContext: FlowContextSummary,
+  message: string,
+  flowMode?: 'default' | 'tree',
+): Record<string, unknown> | null {
+  const stops = pickMoveStopsFromMessage(flowContext, message)
+  if (stops.length === 0) return null
+
+  const taskContents = Array.isArray(flowContext.taskContents) ? flowContext.taskContents : []
+  const parallelControl = resolveControlTaskContentCandidate(taskContents, 'Parallel', 'parallel')
+  const playFace = pickFirstByTaskName(taskContents, 'PlayFace')
+  const playSound = pickFirstByTaskName(taskContents, 'PlaySound')
+  const playMotion = pickFirstByTaskName(taskContents, 'PlayMotion')
+  const tts = pickFirstByTaskName(taskContents, 'Tts')
+
+  if (!parallelControl || !playFace || !playSound || !playMotion || !tts) return null
+
+  const fullFlow = flowContext.fullFlow
+  const fullFlowNodes = Array.isArray(fullFlow?.nodes) ? fullFlow.nodes : []
+  const startNode = fullFlowNodes.find((node) => String(node.id ?? '') === 'start')
+  const existingNodes = fullFlowNodes.filter((node) => String(node.id ?? '') !== 'start')
+  const existingEdges = Array.isArray(fullFlow?.edges) ? fullFlow.edges : []
+
+  const startX = Number((startNode?.position as Record<string, unknown> | undefined)?.x ?? 0)
+  const startY = Number((startNode?.position as Record<string, unknown> | undefined)?.y ?? 0)
+  const appendAnchor = resolveAppendAnchor(existingNodes, existingEdges, startX, startY)
+  const baseX = appendAnchor.x + 124
+  const baseY = appendAnchor.y
+  const stageGapX = 124
+  const seed = Date.now()
+
+  const nodes: Array<Record<string, unknown>> = []
+  const edges: Array<Record<string, unknown>> = existingEdges.map((edge) => ({ ...edge }))
+
+  const ensuredStartNode = startNode
+    ? { ...startNode }
+    : {
+      id: 'start',
+      type: 'startNode',
+      position: { x: startX, y: startY },
+      data: { label: 'Start', taskName: 'Start', taskType: 'ROOT' },
+    }
+  nodes.push(ensuredStartNode)
+  nodes.push(...existingNodes.map((node) => ({ ...node })))
+
+  let prevSeqNodeId = appendAnchor.nodeId
+  let stageIndex = 0
+
+  const pushEdge = (
+    id: string,
+    source: string,
+    target: string,
+    edgeType: 'bezier' | 'step',
+    sourceHandle: 'right' | 'left',
+  ) => {
+    edges.push({
+      id,
+      source,
+      target,
+      sourceHandle,
+      targetHandle: 'left',
+      type: 'default',
+      markerEnd: { type: 'arrowclosed', width: 10, height: 10, color: '#94a3b8' },
+      style: { stroke: '#94a3b8', strokeWidth: 1.25 },
+      data: {
+        sourceNodeId: source,
+        targetNodeId: target,
+        sourceHandleId: sourceHandle,
+        targetHandleId: 'left',
+        edgeType,
+      },
+    })
+  }
+
+  stops.forEach((moveContent, index) => {
+    const moveParallelId = `ai-docent-move-parallel-${seed}-${stageIndex}`
+    const moveId = `ai-docent-move-${seed}-${stageIndex}`
+    const soundId = `ai-docent-sound-${seed}-${stageIndex}`
+    const faceId = `ai-docent-face-${seed}-${stageIndex}`
+    const moveX = baseX + stageIndex * stageGapX
+
+    nodes.push({
+      id: moveParallelId,
+      type: 'taskNode',
+      position: { x: moveX, y: baseY },
+      data: {
+        label: 'Parallel',
+        taskId: parallelControl.taskId,
+        taskName: parallelControl.taskName ?? 'Parallel',
+        taskType: 'CONTROL',
+        properties: {
+          main_nodes: [moveId],
+          failure_count: -1,
+          success_count: 1,
+        },
+      },
+    })
+
+    nodes.push({
+      id: moveId,
+      type: 'taskNode',
+      position: { x: moveX, y: baseY + 68 },
+      data: {
+        label: moveContent.label ?? moveContent.contentName ?? 'MoveTo',
+        taskId: moveContent.taskId,
+        taskName: moveContent.taskName ?? 'MoveTo',
+        taskType: 'ACTION',
+        contentId: moveContent.contentId,
+        contentName: moveContent.contentName ?? moveContent.label,
+        properties: {
+          poi_id: moveContent.contentId,
+        },
+      },
+    })
+
+    nodes.push({
+      id: soundId,
+      type: 'taskNode',
+      position: { x: moveX, y: baseY + 140.75 },
+      data: {
+        label: playSound.label ?? playSound.contentName ?? 'PlaySound',
+        taskId: playSound.taskId,
+        taskName: playSound.taskName ?? 'PlaySound',
+        taskType: 'ACTION',
+        contentId: playSound.contentId,
+        contentName: playSound.contentName ?? playSound.label,
+        properties: {
+          sound_id: playSound.contentId,
+          repeat_count: 1,
+        },
+      },
+    })
+
+    nodes.push({
+      id: faceId,
+      type: 'taskNode',
+      position: { x: moveX, y: baseY + 216 },
+      data: {
+        label: playFace.label ?? playFace.contentName ?? 'PlayFace',
+        taskId: playFace.taskId,
+        taskName: playFace.taskName ?? 'PlayFace',
+        taskType: 'ACTION',
+        contentId: playFace.contentId,
+        contentName: playFace.contentName ?? playFace.label,
+        properties: {
+          face_id: playFace.contentId,
+          repeat_count: '',
+        },
+      },
+    })
+
+    pushEdge(`ai-docent-seq-${seed}-${stageIndex}`, prevSeqNodeId, moveParallelId, 'bezier', 'right')
+    pushEdge(`ai-docent-move-branch-${seed}-${stageIndex}-0`, moveParallelId, moveId, 'step', 'left')
+    pushEdge(`ai-docent-move-branch-${seed}-${stageIndex}-1`, moveParallelId, soundId, 'step', 'left')
+    pushEdge(`ai-docent-move-branch-${seed}-${stageIndex}-2`, moveParallelId, faceId, 'step', 'left')
+
+    prevSeqNodeId = moveParallelId
+    stageIndex += 1
+
+    if (index >= stops.length - 1) return
+
+    const docentParallelId = `ai-docent-parallel-${seed}-${stageIndex}`
+    const ttsId = `ai-docent-tts-${seed}-${stageIndex}`
+    const motionId = `ai-docent-motion-${seed}-${stageIndex}`
+    const docentFaceId = `ai-docent-face-${seed}-${stageIndex}`
+    const docentX = baseX + stageIndex * stageGapX
+    const docentMainIds = [ttsId, motionId]
+
+    nodes.push({
+      id: docentParallelId,
+      type: 'taskNode',
+      position: { x: docentX, y: baseY },
+      data: {
+        label: 'Parallel',
+        taskId: parallelControl.taskId,
+        taskName: parallelControl.taskName ?? 'Parallel',
+        taskType: 'CONTROL',
+        properties: {
+          main_nodes: docentMainIds,
+          failure_count: -1,
+          success_count: docentMainIds.length,
+        },
+      },
+    })
+
+    nodes.push({
+      id: ttsId,
+      type: 'taskNode',
+      position: { x: docentX, y: baseY + 68 },
+      data: {
+        label: tts.label ?? tts.contentName ?? 'Tts',
+        taskId: tts.taskId,
+        taskName: tts.taskName ?? 'Tts',
+        taskType: 'ACTION',
+        contentId: tts.contentId,
+        contentName: tts.contentName ?? tts.label,
+        properties: {
+          tts_id: tts.contentId,
+        },
+      },
+    })
+
+    nodes.push({
+      id: motionId,
+      type: 'taskNode',
+      position: { x: docentX, y: baseY + 140.75 },
+      data: {
+        label: playMotion.label ?? playMotion.contentName ?? 'PlayMotion',
+        taskId: playMotion.taskId,
+        taskName: playMotion.taskName ?? 'PlayMotion',
+        taskType: 'ACTION',
+        contentId: playMotion.contentId,
+        contentName: playMotion.contentName ?? playMotion.label,
+        properties: {
+          motion_id: playMotion.contentId,
+          repeat_count: 1,
+        },
+      },
+    })
+
+    nodes.push({
+      id: docentFaceId,
+      type: 'taskNode',
+      position: { x: docentX, y: baseY + 216 },
+      data: {
+        label: playFace.label ?? playFace.contentName ?? 'PlayFace',
+        taskId: playFace.taskId,
+        taskName: playFace.taskName ?? 'PlayFace',
+        taskType: 'ACTION',
+        contentId: playFace.contentId,
+        contentName: playFace.contentName ?? playFace.label,
+        properties: {
+          face_id: playFace.contentId,
+          repeat_count: '',
+        },
+      },
+    })
+
+    pushEdge(`ai-docent-seq-${seed}-${stageIndex}`, prevSeqNodeId, docentParallelId, 'bezier', 'right')
+    pushEdge(`ai-docent-branch-${seed}-${stageIndex}-0`, docentParallelId, ttsId, 'step', 'left')
+    pushEdge(`ai-docent-branch-${seed}-${stageIndex}-1`, docentParallelId, motionId, 'step', 'left')
+    pushEdge(`ai-docent-branch-${seed}-${stageIndex}-2`, docentParallelId, docentFaceId, 'step', 'left')
+
+    prevSeqNodeId = docentParallelId
+    stageIndex += 1
+  })
+
+  return {
+    mode: 'replace',
+    layout: 'manual',
+    flowMode: flowMode === 'tree' ? 'tree' : (fullFlow?.flowMode === 'tree' ? 'tree' : 'default'),
+    nodes,
+    edges,
+    viewport: fullFlow?.viewport ?? { x: 0, y: 0, zoom: 1 },
+  }
+}
+
 function resolveMoveFlowContext(contextRow: Record<string, unknown> | null): FlowContextSummary | null {
   if (!contextRow || typeof contextRow !== 'object') return null
 
@@ -751,6 +1008,7 @@ function resolveMoveFlowContext(contextRow: Record<string, unknown> | null): Flo
 }
 
 export {
+  buildDocentFlowDraftFromMessage,
   buildMoveParallelFlowDraftFromMessage,
   buildPickupPutDownFlowDraftFromMessage,
   buildPlayMotionParallelFlowDraftFromMessage,

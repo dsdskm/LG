@@ -151,11 +151,26 @@ function isPlayMotionFlowComposeMessage(message: string): boolean {
   return /(playmotion|play\s*motion|모션|동작|제스처|포즈)/i.test(text)
 }
 
+function isDocentFlowComposeMessage(message: string): boolean {
+  const text = String(message ?? '').trim()
+  if (!text) return false
+
+  const mentionsDocent = /(도슨트|docent)/i.test(text)
+  if (!mentionsDocent) return false
+
+  const asksCompose =
+    isTaskflowComposeRequest(text) ||
+    /(구성해줘|구성해\s*줘|만들어줘|만들어\s*줘|생성해줘|생성해\s*줘)/i.test(text)
+
+  return asksCompose
+}
+
 export {
   detectRequestedFlowMode,
   detectSaveCommand,
   inferLinearDraftPlanFromMessage,
   isDeleteAllNodesMessage,
+  isDocentFlowComposeMessage,
   isAlignRequestMessage,
   isAmbiguousModeChangeMessage,
   isAmbiguousSaveMessage,

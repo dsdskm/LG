@@ -3,6 +3,7 @@ export {
   detectSaveCommand,
   inferLinearDraftPlanFromMessage,
   isDeleteAllNodesMessage,
+  isDocentFlowComposeMessage,
   isAlignRequestMessage,
   isAmbiguousModeChangeMessage,
   isAmbiguousSaveMessage,

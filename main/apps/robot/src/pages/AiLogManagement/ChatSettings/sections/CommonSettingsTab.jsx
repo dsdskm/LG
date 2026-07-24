@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import {
     SettingCard,
@@ -30,6 +30,14 @@ import {
 
 import { formatDateTime } from '../chatSettings.utils'
 
+const UNIFIED_MODAL_STYLE = {
+    width: 'min(760px, 100%)',
+    height: '72vh',
+    minHeight: '72vh',
+    maxHeight: '72vh',
+    overflowY: 'auto',
+}
+
 const normalizeKeywordArray = (value) => {
     const rows = Array.isArray(value) ? value : []
     const normalized = rows
@@ -38,59 +46,222 @@ const normalizeKeywordArray = (value) => {
     return Array.from(new Set(normalized))
 }
 
+const normalizeRagIntentType = (value) => {
+    const normalized = String(value ?? '').trim().toLowerCase()
+    if (normalized === 'info' || normalized === 'action' || normalized === 'both') return normalized
+    return 'both'
+}
+
+const normalizeImageAttachMode = (value) => {
+    const normalized = String(value ?? '').trim().toLowerCase()
+    if (normalized === 'always' || normalized === 'never' || normalized === 'auto') return normalized
+    return 'auto'
+}
+
+const IMAGE_ATTACH_MODE_OPTIONS = [
+    { key: 'auto', label: '자동' },
+    { key: 'always', label: '항상 표시' },
+    { key: 'never', label: '표시 안함' },
+]
+
+const normalizeCommonRagIntentType = (item) => {
+    const intentType = normalizeRagIntentType(item?.intentType)
+    if (String(item?.key ?? '') !== 'common' || intentType !== 'both') return intentType
+
+    const hint = `${String(item?.title ?? '')} ${String(item?.chunkKey ?? '')}`.toLowerCase()
+    if (hint.includes('action') || hint.includes('액션')) return 'action'
+    if (hint.includes('info') || hint.includes('정보')) return 'info'
+
+    return 'both'
+}
+
+const getRagIntentLabel = (value) => {
+    const intentType = normalizeRagIntentType(value)
+    if (intentType === 'info') return 'info'
+    if (intentType === 'action') return 'action'
+    return 'both'
+}
+
 const KeywordListEditor = ({ keywords, onChange, hint }) => {
     const [newKeyword, setNewKeyword] = useState('')
+    const [editingIndex, setEditingIndex] = useState(-1)
+    const [editingValue, setEditingValue] = useState('')
+    const isComposingRef = useRef(false)
     const list = Array.isArray(keywords) ? keywords : []
 
     const addKeyword = () => {
         const value = String(newKeyword ?? '').trim()
         if (!value) return
-        onChange([...list, value])
+        onChange(Array.from(new Set([...list, value].map((item) => String(item ?? '').trim()).filter(Boolean))))
         setNewKeyword('')
     }
 
+    const startEditKeyword = (index) => {
+        setEditingIndex(index)
+        setEditingValue(String(list[index] ?? ''))
+    }
+
+    const saveEditedKeyword = () => {
+        const value = String(editingValue ?? '').trim()
+        if (editingIndex < 0) return
+
+        if (!value) {
+            onChange(list.filter((_, idx) => idx !== editingIndex))
+        } else {
+            const next = list.slice()
+            next[editingIndex] = value
+            onChange(Array.from(new Set(next.map((item) => String(item ?? '').trim()).filter(Boolean))))
+        }
+
+        setEditingIndex(-1)
+        setEditingValue('')
+    }
+
+    const deleteKeyword = (index) => {
+        onChange(list.filter((_, idx) => idx !== index))
+        if (editingIndex === index) {
+            setEditingIndex(-1)
+            setEditingValue('')
+        }
+    }
+
     return (
-        <div style={{ display: 'grid', gap: '8px' }}>
+        <div style={{ display: 'grid', gap: '10px' }}>
             {list.length > 0 ? (
-                <div style={{ display: 'grid', gap: '6px' }}>
+                <div
+                    style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: '8px',
+                        alignItems: 'center',
+                    }}
+                >
                     {list.map((keyword, index) => (
-                        <div key={`keyword-row-${index}`} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px', alignItems: 'center' }}>
-                            <input
-                                value={keyword}
-                                onChange={(e) => {
-                                    const next = list.slice()
-                                    next[index] = e.target.value
-                                    onChange(next)
+                        <button
+                            key={`keyword-chip-${index}`}
+                            type="button"
+                            onClick={() => startEditKeyword(index)}
+                            style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                width: 'fit-content',
+                                maxWidth: '100%',
+                                padding: '8px 12px',
+                                borderRadius: '999px',
+                                border: editingIndex === index ? '1px solid #2563eb' : '1px solid #dbe3ef',
+                                background: editingIndex === index ? '#eff6ff' : '#ffffff',
+                                color: editingIndex === index ? '#1d4ed8' : '#334155',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                lineHeight: 1.2,
+                                boxShadow: editingIndex === index ? '0 0 0 2px rgba(37, 99, 235, 0.08)' : 'none',
+                            }}
+                        >
+                            <span
+                                style={{
+                                    maxWidth: '280px',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                }}
+                            >
+                                {keyword}
+                            </span>
+                            <span
+                                role="button"
+                                tabIndex={0}
+                                onClick={(e) => {
+                                    e.stopPropagation()
+                                    deleteKeyword(index)
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault()
+                                        e.stopPropagation()
+                                        deleteKeyword(index)
+                                    }
                                 }}
                                 style={{
-                                    width: '100%',
-                                    border: '1px solid #dbe3ef',
-                                    borderRadius: '10px',
-                                    padding: '8px 10px',
-                                    fontSize: '13px',
-                                    color: '#1f2937',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    width: '18px',
+                                    height: '18px',
+                                    borderRadius: '999px',
+                                    background: 'rgba(37, 99, 235, 0.12)',
+                                    color: '#1d4ed8',
+                                    fontSize: '12px',
+                                    fontWeight: 800,
+                                    flex: '0 0 auto',
                                 }}
-                            />
-                            <SecondaryTextButton
-                                type="button"
-                                onClick={() => onChange(list.filter((_, idx) => idx !== index))}
+                                aria-label={`${keyword} 삭제`}
                             >
-                                삭제
-                            </SecondaryTextButton>
-                        </div>
+                                ×
+                            </span>
+                        </button>
                     ))}
                 </div>
+            ) : null}
+
+            {editingIndex >= 0 ? (
+                <InlineFields>
+                    <input
+                        value={editingValue}
+                        onChange={(e) => setEditingValue(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault()
+                                saveEditedKeyword()
+                            }
+                            if (e.key === 'Escape') {
+                                e.preventDefault()
+                                setEditingIndex(-1)
+                                setEditingValue('')
+                            }
+                        }}
+                        placeholder="키워드 수정"
+                        autoFocus
+                        style={{
+                            width: '100%',
+                            border: '1px solid #dbe3ef',
+                            borderRadius: '10px',
+                            padding: '8px 10px',
+                            fontSize: '13px',
+                            color: '#1f2937',
+                        }}
+                    />
+                    <PrimaryButton type="button" onClick={saveEditedKeyword} style={{ height: '36px' }}>
+                        저장
+                    </PrimaryButton>
+                    <SecondaryTextButton
+                        type="button"
+                        onClick={() => {
+                            setEditingIndex(-1)
+                            setEditingValue('')
+                        }}
+                    >
+                        취소
+                    </SecondaryTextButton>
+                </InlineFields>
             ) : null}
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px', alignItems: 'center' }}>
                 <input
                     value={newKeyword}
                     onChange={(e) => setNewKeyword(e.target.value)}
+                    onCompositionStart={() => {
+                        isComposingRef.current = true
+                    }}
+                    onCompositionEnd={(e) => {
+                        isComposingRef.current = false
+                        setNewKeyword(e.currentTarget.value)
+                    }}
                     onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                            e.preventDefault()
-                            addKeyword()
-                        }
+                        if (e.key !== 'Enter') return
+                        if (e.nativeEvent?.isComposing || isComposingRef.current || e.keyCode === 229) return
+                        e.preventDefault()
+                        addKeyword()
                     }}
                     placeholder="키워드 입력 후 Enter 또는 추가"
                     style={{
@@ -125,16 +296,25 @@ export const CommonSettingsTab = ({
     savingCommonPrompt,
     onCommonPromptChange,
     onSaveCommonPrompt,
+    commonIntentPromptItem,
+    commonIntentPromptDraft,
+    savingCommonIntentPrompt,
+    onCommonIntentPromptChange,
+    onSaveCommonIntentPrompt,
     commonRagDocs,
     ragDrafts,
     savingRagKey,
     onRagChange,
     onSaveRag,
-    newCommonRagDraft,
-    savingCreateCommonRag,
+    newCommonInfoRagDraft,
+    newCommonActionRagDraft,
+    savingCreateCommonInfoRag,
+    savingCreateCommonActionRag,
     deletingCommonRagKey,
-    onNewCommonRagChange,
-    onCreateCommonRag,
+    onNewCommonInfoRagChange,
+    onNewCommonActionRagChange,
+    onCreateCommonInfoRag,
+    onCreateCommonActionRag,
     onDeleteCommonRag,
     commonTools,
     actionTypes,
@@ -165,17 +345,45 @@ export const CommonSettingsTab = ({
                 onSaveCommonPrompt={onSaveCommonPrompt}
             />
 
+            <CommonIntentPromptManagementCard
+                commonIntentPromptItem={commonIntentPromptItem}
+                commonIntentPromptDraft={commonIntentPromptDraft}
+                savingCommonIntentPrompt={savingCommonIntentPrompt}
+                onCommonIntentPromptChange={onCommonIntentPromptChange}
+                onSaveCommonIntentPrompt={onSaveCommonIntentPrompt}
+            />
+
             <CommonRagManagementCard
                 ragDocs={commonRagDocs}
                 ragDrafts={ragDrafts}
                 savingRagKey={savingRagKey}
                 onRagChange={onRagChange}
                 onSaveRag={onSaveRag}
-                newCommonRagDraft={newCommonRagDraft}
-                savingCreateCommonRag={savingCreateCommonRag}
+                intentType="info"
+                title="공통 info RAG 데이터"
+                description="공통 info RAG는 정보성 답변에 쓰는 근거 청크를 모아 관리합니다."
+                newCommonRagDraft={newCommonInfoRagDraft}
+                savingCreateCommonRag={savingCreateCommonInfoRag}
                 deletingCommonRagKey={deletingCommonRagKey}
-                onNewCommonRagChange={onNewCommonRagChange}
-                onCreateCommonRag={onCreateCommonRag}
+                onNewCommonRagChange={onNewCommonInfoRagChange}
+                onCreateCommonRag={onCreateCommonInfoRag}
+                onDeleteCommonRag={onDeleteCommonRag}
+            />
+
+            <CommonRagManagementCard
+                ragDocs={commonRagDocs}
+                ragDrafts={ragDrafts}
+                savingRagKey={savingRagKey}
+                onRagChange={onRagChange}
+                onSaveRag={onSaveRag}
+                intentType="action"
+                title="공통 action RAG 데이터"
+                description="공통 action RAG는 실행/변경/보강용 근거 청크를 모아 관리합니다."
+                newCommonRagDraft={newCommonActionRagDraft}
+                savingCreateCommonRag={savingCreateCommonActionRag}
+                deletingCommonRagKey={deletingCommonRagKey}
+                onNewCommonRagChange={onNewCommonActionRagChange}
+                onCreateCommonRag={onCreateCommonActionRag}
                 onDeleteCommonRag={onDeleteCommonRag}
             />
 
@@ -190,6 +398,71 @@ export const CommonSettingsTab = ({
                 onDeleteTool={onDeleteTool}
             />
         </ManagementGrid>
+    )
+}
+
+const CommonIntentPromptManagementCard = ({
+    commonIntentPromptItem,
+    commonIntentPromptDraft,
+    savingCommonIntentPrompt,
+    onCommonIntentPromptChange,
+    onSaveCommonIntentPrompt,
+}) => {
+    const hasPrompt = Boolean(commonIntentPromptItem?.id)
+
+    return (
+        <SettingCard>
+            <CardHeader>
+                <CardTitle>공통 분기 프롬프트</CardTitle>
+            </CardHeader>
+
+            <PageDescription>
+                모든 화면의 intent 분기에서 공통으로 쓰는 기본 규칙입니다. 화면별 분기 프롬프트는 이 규칙 위에 추가로 붙습니다.
+            </PageDescription>
+
+            <PromptCard>
+                <PromptMeta>
+                    <span>{commonIntentPromptItem?.label || commonIntentPromptDraft.label || '공통 분기 프롬프트'}</span>
+                    <span>key: common</span>
+                    <span>type: intent-hint</span>
+                    {hasPrompt ? <span>updated: {formatDateTime(commonIntentPromptItem?.updatedAt)}</span> : null}
+                </PromptMeta>
+
+                <FieldLabel>프롬프트</FieldLabel>
+                <PromptTextarea
+                    value={commonIntentPromptDraft.content}
+                    onChange={(e) => onCommonIntentPromptChange('content', e.target.value)}
+                    style={{ minHeight: '200px' }}
+                />
+
+                <PromptFooter>
+                    <ToggleButton
+                        type="button"
+                        $active={Boolean(commonIntentPromptDraft.enabled)}
+                        onClick={() => onCommonIntentPromptChange('enabled', !commonIntentPromptDraft.enabled)}
+                    >
+                        {commonIntentPromptDraft.enabled ? '활성' : '비활성'}
+                    </ToggleButton>
+
+                    {hasPrompt ? (
+                        <SecondaryTextButton
+                            type="button"
+                            onClick={() => {
+                                onCommonIntentPromptChange('content', String(commonIntentPromptItem?.content ?? ''))
+                                onCommonIntentPromptChange('label', String(commonIntentPromptItem?.label ?? '공통 분기 프롬프트'))
+                                onCommonIntentPromptChange('enabled', commonIntentPromptItem?.enabled !== false)
+                            }}
+                        >
+                            원본 복원
+                        </SecondaryTextButton>
+                    ) : null}
+
+                    <PrimaryButton type="button" onClick={onSaveCommonIntentPrompt} disabled={savingCommonIntentPrompt}>
+                        {savingCommonIntentPrompt ? '저장 중...' : hasPrompt ? '저장' : '등록'}
+                    </PrimaryButton>
+                </PromptFooter>
+            </PromptCard>
+        </SettingCard>
     )
 }
 
@@ -300,6 +573,9 @@ const CommonRagManagementCard = ({
     savingRagKey,
     onRagChange,
     onSaveRag,
+    intentType,
+    title,
+    description,
     newCommonRagDraft,
     savingCreateCommonRag,
     deletingCommonRagKey,
@@ -308,14 +584,21 @@ const CommonRagManagementCard = ({
     onDeleteCommonRag,
 }) => {
     const sortedRagDocs = useMemo(() => {
-        return [...ragDocs].sort((left, right) => {
+        return [...ragDocs]
+            .filter((item) => {
+                const itemIntent = normalizeCommonRagIntentType(item)
+                if (intentType === 'info') return itemIntent === 'info' || itemIntent === 'both'
+                if (intentType === 'action') return itemIntent === 'action'
+                return true
+            })
+            .sort((left, right) => {
             const leftOrder = Number(left?.sortOrder ?? 0)
             const rightOrder = Number(right?.sortOrder ?? 0)
 
             if (leftOrder !== rightOrder) return leftOrder - rightOrder
             return String(left?.chunkKey ?? '').localeCompare(String(right?.chunkKey ?? ''))
-        })
-    }, [ragDocs])
+            })
+    }, [ragDocs, intentType])
 
     const [activeRagKey, setActiveRagKey] = useState('')
     const [creatingOpen, setCreatingOpen] = useState(false)
@@ -348,38 +631,43 @@ const CommonRagManagementCard = ({
     }, [sortedRagDocs, activeRagKey, creatingOpen])
 
     const activeRagDoc = sortedRagDocs.find((item) => String(item.id) === activeRagKey) ?? null
+    const resolvedActiveRagIntentType = normalizeCommonRagIntentType(activeRagDoc)
     const activeRagDraft = activeRagDoc
-        ? ragDrafts[activeRagKey] ?? {
+        ? {
             title: String(activeRagDoc.title ?? ''),
             body: String(activeRagDoc.body ?? ''),
+            imageUrl: String(activeRagDoc.imageUrl ?? ''),
+            imageAttachMode: normalizeImageAttachMode(activeRagDoc.imageAttachMode),
             keywords: normalizeKeywordArray(activeRagDoc.keywords ?? []),
+            intentType: resolvedActiveRagIntentType,
             enabled: activeRagDoc.enabled !== false,
+            ...(ragDrafts[activeRagKey] ?? {}),
+            intentType: normalizeRagIntentType(ragDrafts[activeRagKey]?.intentType ?? resolvedActiveRagIntentType),
+            imageAttachMode: normalizeImageAttachMode(ragDrafts[activeRagKey]?.imageAttachMode ?? activeRagDoc.imageAttachMode),
         }
         : null
 
     return (
         <SettingCard>
             <CardHeader>
-                <CardTitle>공통 RAG 데이터</CardTitle>
+                <CardTitle>{title || '공통 RAG 데이터'}</CardTitle>
                 <SmallBadge>{sortedRagDocs.length}개 청크</SmallBadge>
             </CardHeader>
 
-            <PageDescription>
-                공통 RAG는 단일 문서가 아니라 목차/단락 단위 청크 목록으로 관리하는 것이 권장됩니다.
-            </PageDescription>
+            <PageDescription>{description || '공통 RAG는 단일 문서가 아니라 목차/단락 단위 청크 목록으로 관리하는 것이 권장됩니다.'}</PageDescription>
 
             {sortedRagDocs.length > 0 ? (
                 <>
                     <div style={{ display: 'grid', gap: '10px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                            <strong style={{ fontSize: '13px', color: '#334155' }}>탭 구성</strong>
+                            <strong style={{ fontSize: '13px', color: '#334155' }}>{getRagIntentLabel(intentType)} 구성</strong>
                             <PrimaryButton
                                 type="button"
                                 onClick={toggleCreatingOpen}
                                 disabled={savingCreateCommonRag}
                                 style={{ height: '36px' }}
                             >
-                                {creatingOpen ? '등록 닫기' : '+ RAG 추가'}
+                                {creatingOpen ? '등록 닫기' : '+ 청크 추가'}
                             </PrimaryButton>
                         </div>
 
@@ -415,7 +703,6 @@ const CommonRagManagementCard = ({
                                         }}
                                     >
                                         <strong style={{ fontSize: '13px' }}>{item.title || item.chunkKey}</strong>
-                                        <span style={{ fontSize: '12px' }}>chunk: {item.chunkKey}</span>
                                     </button>
                                 )
                             })}
@@ -425,16 +712,9 @@ const CommonRagManagementCard = ({
                     {creatingOpen ? (
                         <PromptCard>
                             <PromptMeta>
-                                <span>새 공통 RAG 청크 추가</span>
+                                <span>새 공통 {getRagIntentLabel(intentType)} RAG 청크 추가</span>
+                                <span>intent: {getRagIntentLabel(intentType)}</span>
                             </PromptMeta>
-
-                            <FieldLabel>chunk key (목차/단락 ID)</FieldLabel>
-                            <PromptTextarea
-                                value={newCommonRagDraft.chunkKey}
-                                onChange={(e) => onNewCommonRagChange('chunkKey', e.target.value)}
-                                style={{ minHeight: '56px' }}
-                            />
-                            <FieldHint>예: site-overview, menu-navigation, ailog-guide 처럼 의미가 드러나는 키를 사용하세요.</FieldHint>
 
                             <FieldLabel>제목</FieldLabel>
                             <PromptTextarea
@@ -442,6 +722,7 @@ const CommonRagManagementCard = ({
                                 onChange={(e) => onNewCommonRagChange('title', e.target.value)}
                                 style={{ minHeight: '56px' }}
                             />
+                            <FieldHint>제목 기준으로 내부 식별자가 자동 생성됩니다.</FieldHint>
 
                             <FieldLabel>keywords</FieldLabel>
                             <KeywordListEditor
@@ -456,6 +737,43 @@ const CommonRagManagementCard = ({
                                 onChange={(e) => onNewCommonRagChange('body', e.target.value)}
                                 style={{ minHeight: '160px' }}
                             />
+
+                            <FieldLabel>imageUrl</FieldLabel>
+                            <PromptTextarea
+                                value={String(newCommonRagDraft.imageUrl ?? '')}
+                                onChange={(e) => onNewCommonRagChange('imageUrl', e.target.value)}
+                                style={{ minHeight: '56px' }}
+                            />
+                            <FieldHint>설명 응답에 함께 보여줄 이미지 URL입니다. 비워두면 이미지를 표시하지 않습니다.</FieldHint>
+
+                            <FieldLabel>이미지 노출 정책</FieldLabel>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                {IMAGE_ATTACH_MODE_OPTIONS.map((option) => {
+                                    const active = normalizeImageAttachMode(newCommonRagDraft.imageAttachMode) === option.key
+                                    return (
+                                        <button
+                                            key={`create-image-mode-${option.key}`}
+                                            type="button"
+                                            onClick={() => onNewCommonRagChange('imageAttachMode', option.key)}
+                                            style={{
+                                                height: '32px',
+                                                padding: '0 10px',
+                                                borderRadius: '999px',
+                                                border: active ? '1px solid #2563eb' : '1px solid #dbe3ef',
+                                                background: active ? '#eff6ff' : '#ffffff',
+                                                color: active ? '#1d4ed8' : '#475569',
+                                                fontSize: '12px',
+                                                fontWeight: 700,
+                                                cursor: 'pointer',
+                                            }}
+                                        >
+                                            {option.label}
+                                        </button>
+                                    )
+                                })}
+                            </div>
+
+                            <FieldHint>현재 카드의 intent({getRagIntentLabel(intentType)})로 저장됩니다.</FieldHint>
 
                             <PromptFooter>
                                 <ToggleButton
@@ -478,7 +796,7 @@ const CommonRagManagementCard = ({
                             <PromptMeta>
                                 <span>{activeRagDoc.title || activeRagDoc.chunkKey}</span>
                                 <span>key: common</span>
-                                <span>chunk: {activeRagDoc.chunkKey}</span>
+                                <span>intent: {getRagIntentLabel(activeRagDraft.intentType)}</span>
                                 <span>updated: {formatDateTime(activeRagDoc.updatedAt)}</span>
                             </PromptMeta>
 
@@ -504,6 +822,41 @@ const CommonRagManagementCard = ({
                                 style={{ minHeight: '180px' }}
                             />
                             <FieldHint>한 청크는 한 주제만 다루는 것이 좋습니다(목차/단락 단위).</FieldHint>
+
+                            <FieldLabel>imageUrl</FieldLabel>
+                            <PromptTextarea
+                                value={String(activeRagDraft.imageUrl ?? '')}
+                                onChange={(e) => onRagChange(activeRagKey, 'imageUrl', e.target.value)}
+                                style={{ minHeight: '56px' }}
+                            />
+                            <FieldHint>설명 답변에 같이 노출할 이미지 URL입니다. 로컬/사설/퍼블릭 URL 모두 가능합니다.</FieldHint>
+
+                            <FieldLabel>이미지 노출 정책</FieldLabel>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                {IMAGE_ATTACH_MODE_OPTIONS.map((option) => {
+                                    const active = normalizeImageAttachMode(activeRagDraft.imageAttachMode) === option.key
+                                    return (
+                                        <button
+                                            key={`edit-image-mode-${option.key}`}
+                                            type="button"
+                                            onClick={() => onRagChange(activeRagKey, 'imageAttachMode', option.key)}
+                                            style={{
+                                                height: '32px',
+                                                padding: '0 10px',
+                                                borderRadius: '999px',
+                                                border: active ? '1px solid #2563eb' : '1px solid #dbe3ef',
+                                                background: active ? '#eff6ff' : '#ffffff',
+                                                color: active ? '#1d4ed8' : '#475569',
+                                                fontSize: '12px',
+                                                fontWeight: 700,
+                                                cursor: 'pointer',
+                                            }}
+                                        >
+                                            {option.label}
+                                        </button>
+                                    )
+                                })}
+                            </div>
 
                             <PromptFooter>
                                 <ToggleButton
@@ -549,17 +902,15 @@ const CommonRagManagementCard = ({
                             disabled={savingCreateCommonRag}
                             style={{ height: '36px' }}
                         >
-                            {creatingOpen ? '등록 닫기' : '+ RAG 추가'}
+                            {creatingOpen ? '등록 닫기' : '+ 청크 추가'}
                         </PrimaryButton>
                     </div>
                     {creatingOpen ? (
                         <PromptCard>
-                            <FieldLabel>chunk key (목차/단락 ID)</FieldLabel>
-                            <PromptTextarea
-                                value={newCommonRagDraft.chunkKey}
-                                onChange={(e) => onNewCommonRagChange('chunkKey', e.target.value)}
-                                style={{ minHeight: '56px' }}
-                            />
+                            <PromptMeta>
+                                <span>새 공통 {getRagIntentLabel(intentType)} RAG 청크 추가</span>
+                                <span>intent: {getRagIntentLabel(intentType)}</span>
+                            </PromptMeta>
 
                             <FieldLabel>제목</FieldLabel>
                             <PromptTextarea
@@ -567,6 +918,7 @@ const CommonRagManagementCard = ({
                                 onChange={(e) => onNewCommonRagChange('title', e.target.value)}
                                 style={{ minHeight: '56px' }}
                             />
+                            <FieldHint>제목 기준으로 내부 식별자가 자동 생성됩니다.</FieldHint>
 
                             <FieldLabel>keywords</FieldLabel>
                             <KeywordListEditor
@@ -580,6 +932,42 @@ const CommonRagManagementCard = ({
                                 onChange={(e) => onNewCommonRagChange('body', e.target.value)}
                                 style={{ minHeight: '160px' }}
                             />
+
+                            <FieldLabel>imageUrl</FieldLabel>
+                            <PromptTextarea
+                                value={String(newCommonRagDraft.imageUrl ?? '')}
+                                onChange={(e) => onNewCommonRagChange('imageUrl', e.target.value)}
+                                style={{ minHeight: '56px' }}
+                            />
+
+                            <FieldLabel>이미지 노출 정책</FieldLabel>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                {IMAGE_ATTACH_MODE_OPTIONS.map((option) => {
+                                    const active = normalizeImageAttachMode(newCommonRagDraft.imageAttachMode) === option.key
+                                    return (
+                                        <button
+                                            key={`empty-image-mode-${option.key}`}
+                                            type="button"
+                                            onClick={() => onNewCommonRagChange('imageAttachMode', option.key)}
+                                            style={{
+                                                height: '32px',
+                                                padding: '0 10px',
+                                                borderRadius: '999px',
+                                                border: active ? '1px solid #2563eb' : '1px solid #dbe3ef',
+                                                background: active ? '#eff6ff' : '#ffffff',
+                                                color: active ? '#1d4ed8' : '#475569',
+                                                fontSize: '12px',
+                                                fontWeight: 700,
+                                                cursor: 'pointer',
+                                            }}
+                                        >
+                                            {option.label}
+                                        </button>
+                                    )
+                                })}
+                            </div>
+
+                            <FieldHint>현재 카드의 intent({getRagIntentLabel(intentType)})로 저장됩니다.</FieldHint>
 
                             <PromptFooter>
                                 <ToggleButton
@@ -833,14 +1221,12 @@ const CommonToolManagementCard = ({
 
     const handleSubmitModal = async () => {
         if (isCreateMode) {
-            const ok = await onCreateCommonTool(modalDraft)
-            if (ok) closeModal()
+            await onCreateCommonTool(modalDraft)
             return
         }
 
         if (isEditMode && activeTool) {
-            const ok = await onSaveTool(activeTool, modalDraft)
-            if (ok) closeModal()
+            await onSaveTool(activeTool, modalDraft)
         }
     }
 
@@ -1039,7 +1425,7 @@ const CommonToolManagementCard = ({
 
             {(isCreateMode || isEditMode) ? (
                 <ModalBackdrop>
-                    <ModalCard style={{ width: 'min(560px, 100%)' }}>
+                    <ModalCard style={UNIFIED_MODAL_STYLE}>
                         <ModalTitle>{isCreateMode ? '공통 액션 추가' : '공통 액션 수정'}</ModalTitle>
                         <ModalDescription>기본 정보는 목록에 간단히 표시하고, 상세 입력은 팝업에서 관리합니다.</ModalDescription>
 

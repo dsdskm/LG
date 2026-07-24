@@ -19,11 +19,13 @@ type Props = {
   title?: string
   description?: string
   status?: string
+  onBack?: () => void
   onEditInfo?: () => void
   onTempSave?: () => void
   onSave?: () => void
   onUndo?: () => void
   onRedo?: () => void
+  onResetAllNodes?: () => void
   canUndo?: boolean
   canRedo?: boolean
   tempSaveDisabled?: boolean
@@ -36,11 +38,13 @@ export default function TaskFlowCanvasHeader({
   title = 'Task Flow',
   description,
   status,
+  onBack,
   onEditInfo,
   onTempSave,
   onSave,
   onUndo,
   onRedo,
+  onResetAllNodes,
   canUndo = false,
   canRedo = false,
   tempSaveDisabled = false,
@@ -55,7 +59,7 @@ export default function TaskFlowCanvasHeader({
     <HeaderRoot>
       <Left>
         <TitleRow>
-          <UiTitle>{title}</UiTitle>
+          <UiTitle onBack={onBack}>{title}</UiTitle>
 
           {status ? <StatusPill>{getTaskFlowStatusLabel(status, t)}</StatusPill> : null}
           {desc ? <Description title={desc}>{desc}</Description> : null}
@@ -84,6 +88,16 @@ export default function TaskFlowCanvasHeader({
         </IconButton>
 
         <HeaderDivider />
+
+        <SecondaryButton
+          type="button"
+          onClick={onResetAllNodes}
+          disabled={!onResetAllNodes || saving || tempSaving}
+          title="Start 노드를 제외한 전체 노드를 삭제합니다."
+        >
+          <Icon name="delete" size={18} />
+          전체 노드 초기화
+        </SecondaryButton>
 
         <SecondaryButton
           type="button"

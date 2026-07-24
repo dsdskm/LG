@@ -22,6 +22,7 @@ export {
 } from './core'
 
 export {
+  buildDocentFlowDraftFromMessage,
   buildMoveParallelFlowDraftFromMessage,
   buildPickupPutDownFlowDraftFromMessage,
   buildPlayMotionParallelFlowDraftFromMessage,
@@ -29,6 +30,7 @@ export {
   detectSaveCommand,
   inferLinearDraftPlanFromMessage,
   isDeleteAllNodesMessage,
+  isDocentFlowComposeMessage,
   isAlignRequestMessage,
   isAmbiguousModeChangeMessage,
   isAmbiguousSaveMessage,

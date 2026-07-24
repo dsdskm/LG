@@ -2,6 +2,8 @@ import "dotenv/config";
 import { NestFactory } from '@nestjs/core';
 import { Logger } from "@nestjs/common";
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import type { NestExpressApplication } from '@nestjs/platform-express';
+import { join } from 'path';
 import { AppModule } from "./app.module";
 
 function buildAllowedOrigins(...ports: number[]) {
@@ -31,7 +33,11 @@ function buildAllowedOrigins(...ports: number[]) {
 
 async function bootstrap() {
   const logger = new Logger('Main');
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  app.useStaticAssets(join(process.cwd(), 'apps/ai_chat_service/assets'), {
+    prefix: '/assets/',
+  });
 
   app.enableCors({
     origin: true, // 개발 환경: 모든 origin 허용

@@ -18,6 +18,8 @@ export type ScreenConfig = {
   screenName: string
   /** 인텐트 분류기에 주는 화면별 추가 힌트. */
   intentHints?: string
+  /** intent-hint 병합 방식. merge(기본) | replace */
+  intentHintMode?: 'merge' | 'replace'
   /** RAG 컬렉션 키(rag.docs). info 인텐트에서 사용. */
   ragCollection: string
   /** data 인텐트 tool 목록. */
@@ -27,6 +29,8 @@ export type ScreenConfig = {
   /** data/action agent 의 system 프롬프트. */
   dataSystemPrompt: string
   actionSystemPrompt: string
+  /** 공통 key(common)에서만 온 action tool 목록. 실패 시 재시도용. */
+  commonActionTools: ToolDefinition[]
   /** 인텐트별 chat_action 값(프론트 분기용). */
   chatActions: { info: string; data: string; action: string }
   /** 근거/데이터가 없을 때 공통 폴백 문구. */
@@ -479,6 +483,17 @@ function toChatAction(routeKey: string) {
   return normalized || 'default'
 }
 
+function normalizeIntentHintMode(value: unknown): 'merge' | 'replace' {
+  const mode = String(value ?? '').trim().toLowerCase()
+  return mode === 'replace' ? 'replace' : 'merge'
+}
+
+function isTaskflowCanvasRoute(routeKey: string): boolean {
+  const normalized = String(routeKey ?? '').trim().replace(/^\/+/, '')
+  if (!normalized) return false
+  return /^tms\/taskflows\/(?:[^/]+|:taskFlowId|:id)\/canvas(?:\/|$)/.test(normalized)
+}
+
 export function getScreenConfig(routeKey: string, reqId?: string): ScreenConfig | undefined {
   const normalizedRouteKey = String(routeKey || '').replace(/^\//, '')
   if (!normalizedRouteKey) return undefined
@@ -492,22 +507,34 @@ export function getScreenConfig(routeKey: string, reqId?: string): ScreenConfig 
   }
 
   const commonSystem = store?.getPromptContent('common', 'system') ?? ''
+  const commonIntentHint = store?.getPromptContent('common', 'intent-hint') ?? ''
+  const commonIntentHintMode = store?.getPromptContent('common', 'intent-hint-mode') ?? ''
   const screenIntentHint = store?.getPromptContent(normalizedRouteKey, 'intent-hint') ?? ''
+  const screenIntentHintMode = store?.getPromptContent(normalizedRouteKey, 'intent-hint-mode') ?? ''
   const screenDataSystem = store?.getPromptContent(normalizedRouteKey, 'data-system') ?? ''
   const screenActionSystem = store?.getPromptContent(normalizedRouteKey, 'action-system') ?? ''
   const screenFallback = store?.getPromptContent(normalizedRouteKey, 'fallback') ?? ''
 
   const appIntentHint = store?.getPromptContent(appKey, 'intent-hint') ?? ''
+  const appIntentHintMode = store?.getPromptContent(appKey, 'intent-hint-mode') ?? ''
   const appDataSystem = store?.getPromptContent(appKey, 'data-system') ?? ''
   const appActionSystem = store?.getPromptContent(appKey, 'action-system') ?? ''
   const appFallback = store?.getPromptContent(appKey, 'fallback') ?? ''
 
-  const resolvedIntentHint = screenIntentHint || appIntentHint
+  const resolvedIntentHintMode = normalizeIntentHintMode(screenIntentHintMode || appIntentHintMode || commonIntentHintMode)
+
+  const resolvedIntentHint = resolvedIntentHintMode === 'replace'
+    ? String(screenIntentHint || appIntentHint || commonIntentHint || '').trim()
+    : [commonIntentHint, appIntentHint, screenIntentHint].filter(Boolean).join('\n\n')
   const resolvedDataSystem = screenDataSystem || appDataSystem
   const resolvedActionSystem = screenActionSystem || appActionSystem
   const resolvedFallback = screenFallback || appFallback
 
-  const intentHintSource = screenIntentHint ? 'screen' : appIntentHint ? 'app' : 'none'
+  const intentHintSource = [
+    commonIntentHint ? 'common' : '',
+    appIntentHint ? 'app' : '',
+    screenIntentHint ? 'screen' : '',
+  ].filter(Boolean).join('+') || 'none'
   const dataPromptSource = screenDataSystem ? 'screen' : appDataSystem ? 'app' : 'none'
   const actionPromptSource = screenActionSystem ? 'screen' : appActionSystem ? 'app' : 'none'
 
@@ -531,9 +558,27 @@ export function getScreenConfig(routeKey: string, reqId?: string): ScreenConfig 
     .filter((item) => item.kind === 'data')
     .map((item) => item.tool)
 
-  const actionTools = resolvedTools
+  let actionTools = resolvedTools
     .filter((item) => item.kind === 'action')
     .map((item) => item.tool)
+
+  const commonScreenToolRows = store?.getScreenTools('common', 'action') ?? []
+  const commonActionTools = commonScreenToolRows
+    .map((row) => {
+      const tool = buildToolFromRow(row)
+      if (!tool) return undefined
+
+      const kind = resolveToolKind(row, tool)
+      if (kind !== 'action') return undefined
+
+      return tool
+    })
+    .filter((item): item is ToolDefinition => Boolean(item))
+
+  const hasComposeTool = actionTools.some((tool) => String(tool?.declaration?.name ?? '').trim() === 'compose_linear_taskflow')
+  if (!hasComposeTool && isTaskflowCanvasRoute(normalizedRouteKey)) {
+    actionTools = [...actionTools, composeLinearTaskflowTool]
+  }
 
   const baseAction = toChatAction(normalizedRouteKey)
 
@@ -545,6 +590,7 @@ export function getScreenConfig(routeKey: string, reqId?: string): ScreenConfig 
       `app=${appKey}`,
       `commonSystemApplied=${Boolean(commonSystem)}`,
       `intentHintSource=${intentHintSource}`,
+      `intentHintMode=${resolvedIntentHintMode}`,
       `dataPromptSource=${dataPromptSource}`,
       `actionPromptSource=${actionPromptSource}`,
       `dataPromptLen=${mergedDataSystemPrompt.length}`,
@@ -575,11 +621,13 @@ export function getScreenConfig(routeKey: string, reqId?: string): ScreenConfig 
     appKey,
     screenName: screen.screenName,
     intentHints: resolvedIntentHint,
+    intentHintMode: resolvedIntentHintMode,
     ragCollection: normalizedRouteKey,
     dataTools,
     actionTools,
     dataSystemPrompt: mergedDataSystemPrompt,
     actionSystemPrompt: mergedActionSystemPrompt,
+    commonActionTools,
     chatActions: {
       info: baseAction,
       data: `${baseAction}/filter`,

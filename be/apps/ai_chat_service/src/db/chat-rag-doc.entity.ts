@@ -1,7 +1,7 @@
 import { Column, Entity, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm'
 
 /**
- * RAG 문서 청크. key 는 실제 화면 경로, routeKey 는 바로 상위 경로.
+ * RAG 문서 청크. key 는 실제 화면 경로.
  * 검색 로직은 rag.service 가 담당(키워드/본문 스코어).
  */
 @Entity({ name: 'chat_rag_doc' })
@@ -16,12 +16,6 @@ export class ChatRagDocEntity {
   @Column({ type: 'text', name: 'key' })
   key!: string
 
-  @Column({ type: 'text', name: 'route_key', nullable: true })
-  routeKey?: string | null
-
-  @Column({ type: 'text', name: 'scope', nullable: true })
-  scope?: string
-
   @Column({ type: 'text', name: 'chunk_key' })
   chunkKey!: string
 
@@ -33,6 +27,15 @@ export class ChatRagDocEntity {
 
   @Column({ type: 'text', name: 'body', default: '' })
   body!: string
+
+  @Column({ type: 'text', name: 'image_url', nullable: true })
+  imageUrl?: string | null
+
+  @Column({ type: 'text', name: 'image_attach_mode', default: 'auto' })
+  imageAttachMode!: string
+
+  @Column({ type: 'text', name: 'intent_type', default: 'both' })
+  intentType!: string
 
   @Column({ type: 'int', name: 'sort_order', default: 0 })
   sortOrder!: number
