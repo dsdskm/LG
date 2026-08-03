@@ -1,4 +1,5 @@
-import type { BtAstNode, BtIfThenElseNode } from '../types'
+import type { BtAstNode } from '../types'
+import { BtIfThenElseNode, ifThenElseNodeName, ifThenElseNodeType } from '../nodes/btIfThenElseNode'
 import {
   isIfThenElseRuleMatch,
   sortOutgoingEdgeRefsByCanvasPosition,
@@ -8,8 +9,8 @@ import {
 import { createBtActionNode } from '../mapping/createBtActionNode'
 import type { BtRule } from './types'
 
-export const rule_ifThenElse: BtRule = {
-  name: 'ifThenElse',
+export const rule_ifThenElse: BtRule<typeof ifThenElseNodeName> = {
+  name: ifThenElseNodeName,
 
   match: ({ node, outgoing }) => {
     return isIfThenElseRuleMatch(node, outgoing)
@@ -51,16 +52,13 @@ export const rule_ifThenElse: BtRule = {
     const conditionAction = createBtActionNode(conditionNode)
 
     const trueChildren: BtAstNode[] = nextTargetRef
-      ? [
-          ...buildAstList(thenTargetRef.targetId),
-          ...buildAstList(nextTargetRef.targetId)
-        ]
+      ? [...buildAstList(thenTargetRef.targetId), ...buildAstList(nextTargetRef.targetId)]
       : [...buildAstList(thenTargetRef.targetId)]
 
     const falseChildren: BtAstNode[] = buildAstList(elseTargetRef.targetId)
 
     const ifThenElseNode: BtIfThenElseNode = {
-      kind: 'ifThenElse',
+      kind: ifThenElseNodeType,
       name: getRuleNodeName(node, 'ifthenelse'),
       attrs: {
         node_id: String(node.id)

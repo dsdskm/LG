@@ -1,28 +1,34 @@
-import { ParsedTrajectory } from '@/types/motion'
+import { MotionData, ParsedTrajectory } from '@/types/motion'
 import { parse } from 'yaml'
 
-export function parseMotionYaml(yamlText: string) {
+/**
+ * cloid_motion_v1 / dense_fps 포맷의 trajectory 텍스트를 파싱한다.
+ * - 최상위 joint_names / points 사용
+ * - time_from_start 는 초(second) 단위 실수
+ * - 관절 이름은 이미 URDF 실제 이름이므로 별도 매핑 없음
+ * - time_from_start 오프셋을 제거하여 첫 프레임을 0초 기준으로 정규화
+ */
+export function parseMotionYaml(yamlText: string): MotionData | undefined {
   try {
-    const rawData = parse(yamlText)
+    const raw = parse(yamlText) as ParsedTrajectory
 
-    const trajectory: ParsedTrajectory = rawData.trajectory
-
-    // R3F 애니메이션에서 쓰기 편하게 초(second) 단위 정보를 포함하여 리턴
-    const formattedPoints = trajectory.points.map((point) => {
-      // sec와 nanosec를 합쳐 완전한 초(double) 단위로 계산 (예: 10.0초)
-      const totalSeconds = point.time_from_start.sec + point.time_from_start.nanosec / 1_000_000_000
-
-      return {
-        t: totalSeconds,
-        joints: Object.fromEntries(trajectory.joint_names.map((key, index) => [key, point.positions[index]]))
-      }
-    })
-
-    return {
-      frameRate: 0,
-      frames: formattedPoints
+    if (!raw?.joint_names || !Array.isArray(raw.points) || raw.points.length === 0) {
+      console.error('모션 파싱 실패: joint_names 또는 points 가 없습니다.')
+      return undefined
     }
+
+    const jointNames = raw.joint_names
+    // 첫 프레임 시간을 빼서 0초부터 재생되도록 정규화 (파일의 3.0초 오프셋 제거)
+    const t0 = raw.points[0].time_from_start ?? 0
+
+    const frames = raw.points.map((point) => ({
+      t: (point.time_from_start ?? 0) - t0,
+      joints: Object.fromEntries(jointNames.map((name, index) => [name, point.positions[index]]))
+    }))
+
+    return { frames }
   } catch (error) {
-    console.error('YAML 파싱 실패:', error)
+    console.error('모션 파싱 실패:', error)
+    return undefined
   }
 }

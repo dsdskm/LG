@@ -1,6 +1,7 @@
 export const API_CONFIG = {
   BASE_URL: import.meta.env.VITE_AUTH_API_BASE_URL,
   PREFIX_AUTH: '/api/v1/auth',
+  PREFIX_INVITATION: '/api/v1/web/invitations',
   PREFIX_OTA: '/v1/ota/web',
   PREFIX_CMS: '/v1/cms/web',
   PREFIX_TMS: '/api/v1/web',
@@ -24,6 +25,10 @@ export const ENDPOINTS = {
     TEMPTOKEN_VALIDATE: `${API_CONFIG.PREFIX_AUTH}/signup/temporary-tokens/validate`,
     SIGNUP_COMPLETE: `${API_CONFIG.PREFIX_AUTH}/signup/complete`,
     TOKEN_REFRESH: `${API_CONFIG.PREFIX_AUTH}/token/refresh`
+  },
+  INVITATION: {
+    TOKEN_VALIDATE: `${API_CONFIG.PREFIX_INVITATION}/invitation-tokens/validate`,
+    ACCEPT: `${API_CONFIG.PREFIX_INVITATION}/accept`
   },
   ROBOT: {
     DEVICES: `${API_CONFIG.PREFIX_ROBOT}/devices`,

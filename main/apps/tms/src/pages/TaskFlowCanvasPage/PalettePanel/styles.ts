@@ -1,39 +1,39 @@
 // PalettePanel.styles.ts
-import styled, { css } from "styled-components";
+import styled, { css } from 'styled-components'
 
-export { PanelRoot } from "../styles.shared";
+export { PanelRoot } from '../styles.shared'
 
 export const HeaderRow = styled.div`
   margin-bottom: 12px; /* mb-3 */
   display: flex;
   align-items: center;
   justify-content: space-between;
-`;
+`
 
 export const Subtitle = styled.div`
   font-size: 12px; /* text-xs */
   font-weight: 600; /* font-semibold */
   color: #64748b; /* slate-500 */
-`;
+`
 
 export const LoadingText = styled.span`
   font-size: 12px;
   font-weight: 600;
   color: #64748b;
-`;
+`
 
 export const Sections = styled.div`
   display: flex;
   flex-direction: column;
   gap: 12px; /* space-y-3 */
-`;
+`
 
 export const Section = styled.section`
   overflow: hidden;
   border-radius: 12px; /* rounded-xl */
   border: 1px solid #e2e8f0; /* slate-200 */
   background: #ffffff;
-`;
+`
 
 export const SectionHeader = styled.div`
   display: flex;
@@ -41,34 +41,34 @@ export const SectionHeader = styled.div`
   justify-content: space-between;
   background: var(--t-header-bg);
   padding: 8px 12px; /* px-3 py-2 */
-`;
+`
 
 export const SectionTitle = styled.div`
   font-size: 14px; /* text-sm */
   font-weight: 800; /* font-extrabold */
   color: #0f172a; /* slate-900 */
-`;
+`
 
 export const SectionBody = styled.div`
   border-top: 1px solid #f1f5f9; /* slate-100 */
-`;
+`
 
 export const SectionBodyPadded = styled(SectionBody)`
   padding: 12px; /* p-3 */
-`;
+`
 
 export const ControlGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr)); /* grid-cols-2 */
   gap: 8px; /* gap-2 */
-`;
+`
 
 export const DividerList = styled.div`
   border-top: 1px solid #f1f5f9; /* slate-100 */
   > * + * {
     border-top: 1px solid #f1f5f9; /* divide-y slate-100 */
   }
-`;
+`
 
 /* Task row button */
 export const TaskToggleButton = styled.button`
@@ -86,7 +86,7 @@ export const TaskToggleButton = styled.button`
   &:hover {
     background: #f8fafc; /* slate-50 */
   }
-`;
+`
 
 export const TaskName = styled.div`
   min-width: 0;
@@ -97,20 +97,21 @@ export const TaskName = styled.div`
   font-size: 14px;
   font-weight: 800;
   color: #0f172a;
-`;
+  line-height: 1.5;
+`
 
 export const Chevron = styled.span<{ $open: boolean }>`
   display: inline-block;
   color: #64748b; /* slate-500 */
   transition: transform 140ms ease;
 
-  transform: ${({ $open }) => ($open ? "rotate(90deg)" : "rotate(0deg)")};
-`;
+  transform: ${({ $open }) => ($open ? 'rotate(90deg)' : 'rotate(0deg)')};
+`
 
 /* Content list wrapper when open */
 export const ContentBlock = styled.div`
   padding: 0 12px 12px; /* px-3 pb-3 */
-`;
+`
 
 export const ContentGrid = styled.div`
   display: grid;
@@ -120,13 +121,13 @@ export const ContentGrid = styled.div`
   border-radius: 8px; /* rounded-lg */
   background: #f8fafc; /* slate-50 */
   padding: 8px; /* p-2 */
-`;
+`
 
 /* Card base */
 const selectedStyles = css`
   border-color: #94a3b8; /* slate-400 */
   background: #f1f5f9; /* slate-100 */
-`;
+`
 
 const unselectedStyles = css`
   border-color: #e2e8f0; /* slate-200 */
@@ -135,7 +136,7 @@ const unselectedStyles = css`
   &:hover {
     background: #f8fafc; /* slate-50 */
   }
-`;
+`
 
 export const NodeCard = styled.div<{ $selected: boolean }>`
   width: 100%;
@@ -159,8 +160,13 @@ export const NodeCard = styled.div<{ $selected: boolean }>`
   justify-content: center;
   text-align: center;
 
+  white-space: normal; /* 추가: 명시적으로 줄바꿈 허용 */
+  word-break: keep-all; /* 한글이면 어절 단위 */
+  overflow-wrap: break-word; /* 긴 단어(영문)는 강제로 끊기 */
+  overflow: hidden; /* aspect-ratio 넘칠 때 카드 밖으로 안 삐져나가게 */
+
   ${({ $selected }) => ($selected ? selectedStyles : unselectedStyles)};
-`;
+`
 
 export const CardLabel = styled.div`
   /* line-clamp-3 */
@@ -171,15 +177,15 @@ export const CardLabel = styled.div`
   overflow: hidden;
 
   font-size: 12px; /* text-[12px] */
-  line-height: 1.15; /* leading-tight */
-`;
+  line-height: 1.4; /* leading-tight */
+`
 
 /* Disabled row */
 export const DisabledRow = styled.div`
   cursor: not-allowed;
   user-select: none;
   padding: 8px 12px; /* px-3 py-2 */
-`;
+`
 
 export const DisabledName = styled.div`
   overflow: hidden;
@@ -189,4 +195,4 @@ export const DisabledName = styled.div`
   font-size: 14px;
   font-weight: 800;
   color: #334155; /* slate-700 */
-`;
+`

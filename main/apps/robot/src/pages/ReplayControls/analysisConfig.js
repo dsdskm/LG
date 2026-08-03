@@ -35,30 +35,37 @@ export const DEFAULT_ANALYSIS_THRESHOLDS = {
 export const THRESHOLD_FIELDS = [
   {
     group: 'arm',
-    label: '팔 관절',
+    labelKey: 'replayControls.thresholds.arm.title',
     fields: [
-      { key: 'jointVelWarn', label: '속도 경고', unit: 'rad/s', step: 0.1, min: 0 },
-      { key: 'jointVelError', label: '속도 오류', unit: 'rad/s', step: 0.1, min: 0 },
-      { key: 'jointEffWarn', label: 'effort 경고', unit: '', step: 0.5, min: 0 },
-      { key: 'jointEffError', label: 'effort 오류', unit: '', step: 0.5, min: 0 },
-      { key: 'smoothnessWarnPct', label: 'Smoothness 경고', unit: '%', step: 1, min: 0, max: 100 }
+      { key: 'jointVelWarn', labelKey: 'replayControls.thresholds.arm.jointVelWarn', unit: 'rad/s', step: 0.1, min: 0 },
+      { key: 'jointVelError', labelKey: 'replayControls.thresholds.arm.jointVelError', unit: 'rad/s', step: 0.1, min: 0 },
+      { key: 'jointEffWarn', labelKey: 'replayControls.thresholds.arm.jointEffWarn', unit: '', step: 0.5, min: 0 },
+      { key: 'jointEffError', labelKey: 'replayControls.thresholds.arm.jointEffError', unit: '', step: 0.5, min: 0 },
+      {
+        key: 'smoothnessWarnPct',
+        labelKey: 'replayControls.thresholds.arm.smoothnessWarnPct',
+        unit: '%',
+        step: 1,
+        min: 0,
+        max: 100
+      }
     ]
   },
   {
     group: 'hand',
-    label: '손(End-Effector)',
+    labelKey: 'replayControls.thresholds.hand.title',
     fields: [
-      { key: 'graspCurlPct', label: 'Grasp 판정 Curl', unit: '%', step: 1, min: 0, max: 100 },
-      { key: 'curlWarnPct', label: 'Curl 경고', unit: '%', step: 1, min: 0, max: 100 },
-      { key: 'asymWarnPct', label: '비대칭 경고', unit: '%', step: 1, min: 0, max: 100 }
+      { key: 'graspCurlPct', labelKey: 'replayControls.thresholds.hand.graspCurlPct', unit: '%', step: 1, min: 0, max: 100 },
+      { key: 'curlWarnPct', labelKey: 'replayControls.thresholds.hand.curlWarnPct', unit: '%', step: 1, min: 0, max: 100 },
+      { key: 'asymWarnPct', labelKey: 'replayControls.thresholds.hand.asymWarnPct', unit: '%', step: 1, min: 0, max: 100 }
     ]
   },
   {
     group: 'perf',
-    label: '제어 성능',
+    labelKey: 'replayControls.thresholds.perf.title',
     fields: [
-      { key: 'posOkRad', label: '성공 기준(pos err)', unit: 'rad', step: 0.01, min: 0 },
-      { key: 'peakWarnRad', label: 'peak 경고', unit: 'rad', step: 0.01, min: 0 }
+      { key: 'posOkRad', labelKey: 'replayControls.thresholds.perf.posOkRad', unit: 'rad', step: 0.01, min: 0 },
+      { key: 'peakWarnRad', labelKey: 'replayControls.thresholds.perf.peakWarnRad', unit: 'rad', step: 0.01, min: 0 }
     ]
   }
 ]

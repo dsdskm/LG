@@ -2,7 +2,7 @@ import styled from 'styled-components'
 
 export const StyledSelectButton = styled.button`
   display: flex;
-  justify-content: space-between;
+  justify-content: ${({ $iconPosition }) => ($iconPosition === 'left' ? 'flex-start' : 'space-between')};
   gap: 1rem;
   align-items: center;
   width: 100%;

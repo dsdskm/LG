@@ -1,3 +1,4 @@
+import { CONTENT_TYPE } from '@/common/contentTypes'
 import FacePreview from './previews/FacePreview'
 import MotionPreview from './previews/MotionPreview'
 import ObjectPreview from './previews/ObjectPreview'
@@ -16,27 +17,27 @@ export default function VisualDataSection({ selectedData }: VisualDataSectionPro
 
   if (taskType === 'ACTION' && contentTypeName) {
     const previewNode = { data: selectedData }
-    if (contentTypeName === 'POI') {
+    if (contentTypeName === CONTENT_TYPE.POI) {
       return <PoiPreview node={previewNode} />
     }
 
-    if (contentTypeName === 'MOTION') {
+    if (contentTypeName === CONTENT_TYPE.MOTION) {
       return <MotionPreview node={previewNode} />
     }
 
-    if (contentTypeName === 'TTS') {
+    if (contentTypeName === CONTENT_TYPE.TTS) {
       return <SoundPreview node={previewNode} />
     }
 
-    if (contentTypeName === 'BGM') {
+    if (contentTypeName === CONTENT_TYPE.BGM) {
       return <SoundPreview node={previewNode} />
     }
 
-    if (contentTypeName.startsWith('FACE:')) {
+    if (contentTypeName === CONTENT_TYPE.FACE_IMAGE || contentTypeName === CONTENT_TYPE.FACE_VIDEO) {
       return <FacePreview node={previewNode} />
     }
 
-    if (contentTypeName === 'OBJECT') {
+    if (contentTypeName === CONTENT_TYPE.OBJECT) {
       return <ObjectPreview node={previewNode} />
     }
   }

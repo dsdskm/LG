@@ -71,7 +71,7 @@ const TargetGroupDetail = () => {
     () =>
       orgIdParam
         ? allOrgs.concat(defaultOrg).find((o) => o.id === Number(orgIdParam))
-        : session.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
+        : session?.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
           ? defaultOrg
           : actualOrgs[0],
     [actualOrgs, defaultOrg]
@@ -345,10 +345,10 @@ const TargetGroupDetail = () => {
   useEffect(() => {
     setOrgName(currentOrg?.displayName)
     const fetchData = async () => {
-      if (actualOrgs.length === 0 && session.userRole !== 'SYSTEM_MANAGER') return
+      if (actualOrgs.length === 0 && session?.userRole !== 'SYSTEM_MANAGER') return
 
       const orgIds =
-        session.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
+        session?.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
           ? [...allOrgs, defaultOrg].map((org) => org.id).join(',')
           : actualOrgs.map((org) => org.id).join(',')
 

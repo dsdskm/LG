@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useEffect, useCallback, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { theme, formatTime } from '../styles'
 import { tSecToKstHms } from '@/utils/dateUtils'
 
@@ -21,6 +22,7 @@ function ReplayControls({
   onChangeRate, // (r:number)=>void
   timeRange = null // { absStartSec } — 절대 KST 시각 표기용
 }) {
+  const { t } = useTranslation('robot')
   // 절대 KST 시계. timeRange(absStartSec) 있으면 절대시각, 없으면 상대(mm:ss) 폴백.
   const fmtClock = (sec) => {
     const abs = tSecToKstHms(sec, timeRange)
@@ -248,7 +250,7 @@ function ReplayControls({
         </div>
 
         <div style={P.speedGroup}>
-          <span style={P.speedLabel}>속도:</span>
+          <span style={P.speedLabel}>{t('replayControls.playback.speedLabel')}</span>
           <input
             type="range"
             min={0.1}
@@ -308,10 +310,10 @@ function ReplayControls({
       {/* Row 3 */}
       <div style={P.row3}>
         <button style={P.navBtn} onClick={goPrevIssue}>
-          ◀ 이전 이슈
+          {t('replayControls.playback.prevIssue')}
         </button>
         <button style={P.navBtn} onClick={goNextIssue}>
-          다음 이슈 ▶
+          {t('replayControls.playback.nextIssue')}
         </button>
       </div>
     </div>

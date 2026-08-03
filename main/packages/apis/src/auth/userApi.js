@@ -147,3 +147,33 @@ export const getUserInfo = async (userId, token) => {
     throw error
   }
 }
+
+export const invitationTokensValidate = async (invitationToken) => {
+  try {
+    const response = await axiosAuth.get(ENDPOINTS.INVITATION.TOKEN_VALIDATE, {
+      params: { invitationToken },
+      headers: commonHeaders()
+    })
+    return response
+  } catch (error) {
+    throw error
+  }
+}
+
+export const acceptInvitation = async (invitationId, userNickname, userEmail, userPassword) => {
+  try {
+    const response = await axiosAuth.post(
+      ENDPOINTS.INVITATION.ACCEPT,
+      {
+        invitationId,
+        userNickname,
+        userEmail,
+        userPassword
+      },
+      { headers: commonHeaders() }
+    )
+    return response
+  } catch (error) {
+    throw error
+  }
+}

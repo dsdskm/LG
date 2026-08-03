@@ -23,6 +23,7 @@ import {
 import { TaskFlowWithDeployment, TaskFlowStatus, DeploymentStatus } from '@/types/taskflow'
 import { getTaskFlowStatusLabel } from '@/utils/taskflowStatus'
 import { convertDateToString } from '@repo/utils'
+import { TextAlignStart } from 'lucide-react'
 function EmptyValue() {
   return <>-</>
 }
@@ -143,15 +144,7 @@ export default function TaskFlowListRow({ flow, onClickCanvas, onClickDetail }: 
       <CardLeft>
         <FlowMain>
           <FlowTitleRow>
-            <Button
-              theme="text"
-              size="lg"
-              type="button"
-              style={{ padding: 0, justifyContent: 'flex-start' }}
-              onClick={() => flow.id > 0 && onClickCanvas(flow.id)}
-            >
-              {flow.name || <EmptyValue />}
-            </Button>
+            <span style={{ lineHeight: 1.4 }}>{flow.name || <EmptyValue />}</span>
 
             <FlowVersionBadge>{getVersionText(flow)}</FlowVersionBadge>
             {renderFlowStatusBadge(flow, t)}

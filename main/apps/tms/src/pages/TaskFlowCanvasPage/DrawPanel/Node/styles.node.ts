@@ -304,6 +304,29 @@ export const ForcedResultMark = styled.span<{ $result: 'SUCCESS' | 'FAILURE' | '
   z-index: 4;
 `
 
+// 점검 시 현재 RUNNING 노드의 tick 반복 횟수(우하단). 같은 노드에 tick 이 다시 오면 숫자가 증가한다.
+export const TickCountBadge = styled.span`
+  position: absolute;
+  bottom: -6px;
+  right: -6px;
+
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: #2563eb;
+  color: #ffffff;
+  border: 1px solid #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.35);
+
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 12px;
+  text-align: center;
+
+  z-index: 4;
+`
+
 export const execStyle: Record<string, { border: string; bg: string; text: string; sub: string; handle: string }> = {
   IDLE: {
     border: '#cbd5e1',

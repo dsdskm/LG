@@ -150,7 +150,7 @@ const Action = () => {
   }
 
   const fetchData = useCallback(async () => {
-    if (actualOrgs.length === 0 && session.userRole !== 'SYSTEM_MANAGER') {
+    if (actualOrgs.length === 0 && session?.userRole !== 'SYSTEM_MANAGER') {
       setIsLoading(false)
       return
     }
@@ -158,7 +158,7 @@ const Action = () => {
     setIsLoading(true)
     try {
       const orgIds =
-        session.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
+        session?.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
           ? [...allOrgs, defaultOrg].map((org) => org.id).join(',')
           : actualOrgs.map((org) => org.id).join(',')
       const response = await actionApis.retrieveAction(orgIds.split(',').sort((a, b) => a - b))
@@ -235,7 +235,7 @@ const Action = () => {
               <Button
                 variant="contained"
                 onClick={handleCreate}
-                disabled={actualOrgs.length !== 1 && session.userRole !== 'SYSTEM_MANAGER'}
+                disabled={actualOrgs.length !== 1 && session?.userRole !== 'SYSTEM_MANAGER'}
               >
                 {t('create')}
               </Button>

@@ -5,18 +5,33 @@
 
 // BtAst 순회 유틸. semantic 규칙들이 공용으로 사용한다.
 
+import { fallbackOnFailureNodeType } from '../nodes/btFallbackOnFailureNode'
+import { forceFailureNodeType } from '../nodes/btForceFailureNode'
+import { forceSuccessNodeType } from '../nodes/btForceSuccessNode'
+import { ifThenElseNodeType } from '../nodes/btIfThenElseNode'
+import { orNodeType } from '../nodes/btOrNode'
+import { parallelNodeType } from '../nodes/btParallelNode'
+import { reactiveAndNodeType } from '../nodes/btReactiveAndNode'
+import { reactiveOrNodeType } from '../nodes/btReactiveOrNode'
+import { repeatNodeType } from '../nodes/btRepeatNode'
+import { retryUntilSuccessfulNodeType } from '../nodes/btRetryUntilSuccessfulNode'
+import { sequenceNodeType } from '../nodes/btSequenceNode'
 import type { BtAstNode } from '../types'
 
 export function getBtChildren(node: BtAstNode): BtAstNode[] {
   switch (node.kind) {
-    case 'sequence':
-    case 'ifThenElse':
-    case 'or':
-    case 'fallbackOnFailure':
-    case 'parallel':
+    case sequenceNodeType:
+    case ifThenElseNodeType:
+    case orNodeType:
+    case reactiveOrNodeType:
+    case reactiveAndNodeType:
+    case fallbackOnFailureNodeType:
+    case parallelNodeType:
       return node.children ?? []
-    case 'repeat':
-    case 'forceSuccess':
+    case repeatNodeType:
+    case retryUntilSuccessfulNodeType:
+    case forceSuccessNodeType:
+    case forceFailureNodeType:
       return node.child ? [node.child] : []
     default:
       return []

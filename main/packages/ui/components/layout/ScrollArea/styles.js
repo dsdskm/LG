@@ -7,6 +7,6 @@ export const StyledScrollArea = styled.div`
   grid-auto-columns: minmax(100%, 1fr);
 
   @media all and (max-width: 767px) {
-    grid-template-rows: 1fr 12.9rem;
+    grid-template-rows: 1fr 7.5rem;
   }
 `

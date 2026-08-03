@@ -1,10 +1,12 @@
 // /components/ReplayLandingView.jsx
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 import RobotVizEmptyState from './RobotVizEmptyState'
 import ReplayControlsUX from './ReplayControls'
 import { UX } from '../styles'
 
 export default function ReplayLandingView({ currentTime, totalDuration, isPlaying, playbackRate, issues }) {
+  const { t } = useTranslation('robot')
   return (
     <div style={UX.main}>
       <div style={UX.leftPanel}>
@@ -23,7 +25,7 @@ export default function ReplayLandingView({ currentTime, totalDuration, isPlayin
       </div>
 
       <div style={UX.rightPanel}>
-        <div style={UX.rightEmpty}>로그를 로드하면 분석 패널이 표시됩니다</div>
+        <div style={UX.rightEmpty}>{t('replayControls.landing.analysisPanelPlaceholder')}</div>
       </div>
     </div>
   )

@@ -1,4 +1,5 @@
-import type { BtAstNode, BtRepeatNode } from '../types'
+import type { BtAstNode } from '../types'
+import { repeatNodeType, BtRepeatNode, repeatNodeName } from '../nodes/btRepeatNode'
 import {
   isRepeatRuleMatch,
   sortOutgoingEdgeRefsByCanvasPosition,
@@ -6,9 +7,10 @@ import {
   getRuleNodeName
 } from '../bt.util'
 import type { BtRule } from './types'
+import { sequenceNodeType } from '../nodes/btSequenceNode'
 
-export const rule_repeat: BtRule = {
-  name: 'repeat',
+export const rule_repeat: BtRule<typeof repeatNodeName> = {
+  name: repeatNodeName,
 
   match: ({ node, outgoing }) => {
     return isRepeatRuleMatch(node, outgoing)
@@ -28,13 +30,13 @@ export const rule_repeat: BtRule = {
       repeatChildren.length === 1
         ? repeatChildren[0]
         : {
-            kind: 'sequence',
+            kind: sequenceNodeType,
             name: 'repeat_body',
             children: repeatChildren
           }
 
     const repeatNode: BtRepeatNode = {
-      kind: 'repeat',
+      kind: repeatNodeType,
       name: getRuleNodeName(node, 'repeat'),
       numCycles: resolveNumCycles(node),
       attrs: {

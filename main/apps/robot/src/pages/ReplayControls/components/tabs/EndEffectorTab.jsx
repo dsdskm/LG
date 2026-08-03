@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { UX, theme } from '../../styles'
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, ReferenceLine } from 'recharts'
 import { rosStampToKstHms } from '@/utils/dateUtils'
@@ -388,6 +389,7 @@ export default function EndEffectorTab({
   isParsingMcap = false,
   mcapParseError = null
 }) {
+  const { t } = useTranslation('robot')
   const wrapped = mcapSummary?.samples?.['/joint_states'] ?? []
   const timeRange = mcapSummary?.timeRange ?? null
   // ✅ 차트 전용 풀-타임라인 시리즈(백그라운드 다운샘플). 준비되면 curl 차트를 전체 구간으로 표시.
@@ -493,8 +495,8 @@ export default function EndEffectorTab({
 
   function renderCurlChart(series, sideLabel) {
     // 전체 구간 차트 로딩 중에는 슬라이딩 윈도우를 잠깐 보여줬다 바꾸지 않고 로딩 표시 → 모양 급변 방지
-    if (chartTimelineLoading && !hasTimeline) return safeNotice('info', '전체 구간 차트 불러오는 중…')
-    if (!series?.length) return safeNotice('warn', '차트에 표시할 curl 시계열 데이터가 없습니다.')
+    if (chartTimelineLoading && !hasTimeline) return safeNotice('info', t('replayControls.common.chartLoadingFull'))
+    if (!series?.length) return safeNotice('warn', t('replayControls.tabs.endEffector.noCurlChartData'))
     return (
       <SafeResponsiveChart height={170}>
         <LineChart data={series}>
@@ -552,7 +554,11 @@ export default function EndEffectorTab({
 
     const headerRow = (
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <div style={{ ...UX.sectionTitle, marginBottom: 0 }}>{sideLabel.toUpperCase()} HAND — FINGER JOINT MATRIX</div>
+        <div style={{ ...UX.sectionTitle, marginBottom: 0 }}>
+          {t('replayControls.tabs.endEffector.handMatrixTitle', {
+            side: sideLabel === 'Left' ? t('replayControls.common.left') : t('replayControls.common.right')
+          })}
+        </div>
         <span style={{ fontSize: 11, color: theme.colors.textMuted }}>
           {rosStampToKstHms(currentSample?.header?.stamp)}
         </span>
@@ -597,24 +603,24 @@ export default function EndEffectorTab({
           })}
 
           <div style={{ marginTop: 8, fontSize: 10, color: theme.colors.textMuted }}>
-            * Curl%는 joint angle 기반 추정값이며, tactile/force가 없으면 “Grasp”는 추정(est.)입니다.
+            {t('replayControls.tabs.endEffector.footnoteGraspEstimate')}
           </div>
         </div>
 
         {/* ── NEW: Curl% Timeline ── */}
         <div style={UX.card}>
-          <div style={UX.sectionTitle}>CURL% / ASYM% TIMELINE (derived)</div>
+          <div style={UX.sectionTitle}>{t('replayControls.tabs.endEffector.curlTimelineTitle')}</div>
           {renderCurlChart(series, sideLabel === 'Left' ? 'LH' : 'RH')}
           <div style={{ marginTop: 8, fontSize: 10, color: theme.colors.textMuted }}>
-            * 전체 구간을 펼쳐서 표시합니다(로드 전엔 현재시간 중심 윈도우). 세로선(▼)이 현재 재생 시간입니다.
+            {t('replayControls.tabs.endEffector.footnoteCurlTimeline')}
           </div>
         </div>
 
         {/* ── Derived Events ── */}
         <div style={UX.card}>
-          <div style={UX.sectionTitle}>RECENT EVENTS (derived)</div>
+          <div style={UX.sectionTitle}>{t('replayControls.tabs.endEffector.recentEventsTitle')}</div>
           {events.length === 0 ? (
-            <div style={{ fontSize: 12, color: theme.colors.textMuted }}>표시할 이벤트가 없습니다.</div>
+            <div style={{ fontSize: 12, color: theme.colors.textMuted }}>{t('replayControls.common.noEvents')}</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {events.map((e, i) => (
@@ -635,7 +641,7 @@ export default function EndEffectorTab({
             </div>
           )}
           <div style={{ marginTop: 8, fontSize: 10, color: theme.colors.textMuted }}>
-            * 이벤트는 /joint_states 기반 휴리스틱(velocity/gap/curl 변화)입니다.
+            {t('replayControls.tabs.endEffector.footnoteEventsHeuristic')}
           </div>
         </div>
       </div>
@@ -644,9 +650,12 @@ export default function EndEffectorTab({
 
   // ── gating ──────────────────────────────
   if (mcapParseError)
-    return safeNotice('error', `❌ MCAP parse error: ${mcapParseError?.message ?? String(mcapParseError)}`)
-  if (isParsingMcap) return safeNotice('info', 'MCAP parsing...')
-  if (!currentSample) return safeNotice('warn', '⚠️ /joint_states 샘플을 찾지 못했습니다.')
+    return safeNotice(
+      'error',
+      t('replayControls.common.mcapParseError', { message: mcapParseError?.message ?? String(mcapParseError) })
+    )
+  if (isParsingMcap) return safeNotice('info', t('replayControls.common.mcapParsing'))
+  if (!currentSample) return safeNotice('warn', t('replayControls.tabs.endEffector.noJointSampleFound'))
 
   return (
     <div style={UX.grid2}>

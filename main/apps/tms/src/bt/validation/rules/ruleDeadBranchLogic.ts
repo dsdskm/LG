@@ -8,7 +8,8 @@
 //
 // 확정 근거 두 가지:
 //  1) 노드 상수 신호  : 조건 노드 자체가 항상 SUCCESS/FAILURE (evaluateConstantOutcome)
-import type { BtAstNode, BtIfThenElseNode } from '../../types'
+import type { BtAstNode } from '../../types'
+import { ifThenElseNodeType, BtIfThenElseNode } from '@/bt/nodes/btIfThenElseNode'
 import type { SemanticRule, ValidationIssue } from '../types'
 import { collectBtNodeIds, getBtChildren } from '../astWalk'
 import { evaluateConstantOutcome } from '../conditionOutcome'
@@ -44,7 +45,7 @@ export const ruleDeadBranchLogic: SemanticRule = {
     }
 
     const walk = (node: BtAstNode, known: Map<string, Outcome>) => {
-      if (node.kind === 'ifThenElse') {
+      if (node.kind === ifThenElseNodeType) {
         const condId = conditionIdOf(node)
         const condNode = condId ? nodeById.get(condId) : null
         const [, thenCase, elseCase] = node.children

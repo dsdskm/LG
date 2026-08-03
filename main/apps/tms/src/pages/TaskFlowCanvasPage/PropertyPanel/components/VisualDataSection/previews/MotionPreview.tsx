@@ -1,59 +1,16 @@
-import { Suspense, useEffect, useMemo, useRef } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useLoader } from '@react-three/fiber'
 import { Center, OrbitControls } from '@react-three/drei'
 import URDFLoader, { URDFRobot } from 'urdf-loader'
 import { PreviewCard } from './styles.preview'
 import { PreviewProps } from './types.preview'
 import { parseMotionYaml } from '@/utils/motionParser'
-import { MotionData, ParsedTrajectory, TrajectoryPoint } from '@/types/motion'
+import { MotionData } from '@/types/motion'
 import { MotionCollision } from './MotionCollision'
 import { useContentTaskStore } from '@/pages/TaskFlowCanvasPage/store/useContentTaskStore'
-import { data } from 'react-router-dom'
+import { useDownloadContentUrl } from '@/api/contentApis'
+import { DownloadContentUrlResponse } from '@/types/api/content'
 const URDF_BASE = '/tms/urdf/cloid_description_1k'
-
-const motion_yaml = `
-# FollowJointTrajectory action goal for aging.py motions
-# Based on aging.py sequence: 18 joints (4 waist + 7 left + 7 right)
- 
-trajectory:
-  joint_names:
-    - waist_joint_1
-    - waist_joint_2
-    - waist_joint_3
-    - waist_joint_4
-    - left_joint_1
-    - left_joint_2
-    - left_joint_3
-    - left_joint_4
-    - left_joint_5
-    - left_joint_6
-    - left_joint_7
-    - right_joint_1
-    - right_joint_2
-    - right_joint_3
-    - right_joint_4
-    - right_joint_5
-    - right_joint_6
-    - right_joint_7
- 
-  points:
-    # Initial pose (0-1s)
-    - positions: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-      time_from_start: {sec: 1, nanosec: 0}
- 
-    # Initial pose (1-10s)
-    - positions: [0.0, 0.0, 0.0, 0.0,
-                  1.000, 0.283, -0.691, 2.052, -0.011, -0.313, 0.193,
-                  1.000, 0.283, -0.691, 2.052, -0.011, -0.313, 0.193]
-      time_from_start: {sec: 10, nanosec: 0}
- 
-
- 
-path_tolerance: []
-goal_tolerance: []
-goal_time_tolerance: {sec: 1, nanosec: 0}
-
-`
 
 function useUrdfRobot(url: string) {
   const LoaderClass = URDFLoader as any as new (...args: any[]) => any
@@ -70,11 +27,6 @@ interface RobotProps {
   nodeId: string | undefined
 }
 
-// YAML(aging.py)의 관절 이름을 URDF 실제 관절 이름으로 매핑
-// 예) left_joint_1 -> left_arm_joint_1, right_joint_1 -> right_arm_joint_1
-function resolveJointName(name: string): string {
-  return name.replace(/^left_joint_/, 'left_arm_joint_').replace(/^right_joint_/, 'right_arm_joint_')
-}
 function sampleFrame(frames: MotionData['frames'], t: number): Record<string, number> {
   // 가장 단순한 버전: 매번 처음부터 찾음 (최적화 없음)
   let i = 0
@@ -102,22 +54,22 @@ function Robot({ urdfUrl, motionData, nodeId }: RobotProps) {
 
   useEffect(() => {
     timeRef.current = 0
-    console.log('time is initialized')
   }, [nodeId])
 
   useFrame((_, delta) => {
-    console.log('paly time', timeRef.current, ' duration ', duration)
+    if (!motionData || motionData.frames.length === 0) return
+
     if (timeRef.current > duration) {
       updatePlayStatus(nodeId, 'COMPLETED')
     } else {
       updatePlayStatus(nodeId, 'PLAYING')
     }
-    console.log('delta', delta)
     timeRef.current = timeRef.current + delta
-    const joints = sampleFrame(motionData?.frames ?? [], timeRef.current)
+    const joints = sampleFrame(motionData.frames, timeRef.current)
     Object.entries(joints).forEach(([key, value]) => {
-      // 로봇의 joints 맵에서 관절을 찾아 값을 주입합니다.
-      robotRef.current?.joints[resolveJointName(key)]?.setJointValue(value)
+      // 새 포맷은 URDF 실제 관절 이름을 그대로 사용하므로 이름 매핑 없이 주입.
+      // mimic 관절(*_dip, thumb_pip 등)은 URDFLoader 가 자동으로 따라 움직인다.
+      robotRef.current?.joints[key]?.setJointValue(value)
     })
   })
 
@@ -130,8 +82,73 @@ function Robot({ urdfUrl, motionData, nodeId }: RobotProps) {
 }
 
 export default function MotionPreview({ node, nodeId }: PreviewProps) {
-  const motion = useMemo(() => parseMotionYaml(motion_yaml), [])
-  console.log('motion data', motion)
+  const [contentUrl, setContentUrl] = useState('')
+  const [motion, setMotion] = useState<MotionData>()
+
+  const { mutate } = useDownloadContentUrl()
+
+  const contentId = useMemo(() => {
+    try {
+      let jsonStr = node?.data?.contentValue
+      if (!jsonStr) {
+        return -1
+      }
+      let result = -1
+      const data: Record<string, any> = JSON.parse(jsonStr)
+      const contentArray = data['fileContents']
+
+      if (Array.isArray(contentArray)) {
+        result = contentArray[0]['id']
+      }
+
+      return result
+    } catch (e) {
+      console.log('parsing error', e)
+      return -1
+    }
+  }, [node])
+
+  useEffect(() => {
+    if (contentId !== -1) {
+      mutate(
+        { fileContentId: contentId },
+        {
+          onSuccess: (data) => {
+            console.log('get url success', data)
+            const response = data as DownloadContentUrlResponse
+            if (response.results) {
+              setContentUrl(response.results)
+            }
+            //dismissPopup()
+          },
+          onError: (error) => {
+            console.error('get url failure', error)
+            //dismissPopup()
+          }
+        }
+      )
+    }
+  }, [contentId])
+
+  // 다운로드 링크에서 trajectory 파일 텍스트를 받아 파싱한다.
+  useEffect(() => {
+    if (!contentUrl) return
+    let cancelled = false
+
+    fetch(contentUrl)
+      .then((res) => res.text())
+      .then((text) => {
+        if (cancelled) return
+        const parsed = parseMotionYaml(text)
+        if (parsed) setMotion(parsed)
+      })
+      .catch((err) => console.error('모션 파일 다운로드/파싱 실패', err))
+
+    return () => {
+      cancelled = true
+    }
+  }, [contentUrl])
+
   if (!node || !node.data) {
     return <></>
   }

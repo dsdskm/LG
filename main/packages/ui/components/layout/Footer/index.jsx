@@ -15,23 +15,14 @@ const CopyrightText = styled.span`
   line-height: var(--line-height-button-5);
   font-weight: 500;
   color: var(--t-footer-fg);
-  white-space: nowrap;
-
-  &::before {
-    content: '';
-    display: block;
-    margin: 0 0.8rem;
-    width: 0.1rem;
-    height: 1.2rem;
-    background: var(--alpha-black-10);
-  }
+  white-space: normal;
+  word-break: break-word;
 
   @media all and (max-width: 767px) {
     display: block;
     text-align: center;
     margin-top: 0.4rem;
-
-    &::before { display: none; }
+    width: 100%;
   }
 `
 
@@ -50,7 +41,7 @@ const Footer = ({ routes = defaultRoutes }) => {
                 theme="text"
                 as={as}
                 to={path}
-                className={`typographyButton5 ${pathname === path ? 'active' : ''}`}
+                className={`typographyButton5 fnbLink ${pathname === path ? 'active' : ''}`}
               >
                 {t(`Footer.${name}`)}
               </Button>

@@ -1,4 +1,5 @@
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 import { theme, UX } from '../../styles'
 import { rosStampToKstHms } from '@/utils/dateUtils'
 /* ───────────────── helpers ───────────────── */
@@ -61,6 +62,7 @@ function topicStatus(stat) {
 /* ───────────────── main ───────────────── */
 
 export default function OverviewTab({ mcapSummary, jointGroups }) {
+  const { t } = useTranslation('robot')
   const topics = mcapSummary?.topics ?? []
   const stats = mcapSummary?.stats ?? {}
   const jointSample = mcapSummary?.samples?.['/joint_states']?.[0]?.msg ?? null
@@ -72,24 +74,24 @@ export default function OverviewTab({ mcapSummary, jointGroups }) {
     <div style={UX.tabGrid}>
       {/* ── Left: Joint summary ── */}
       <div style={UX.cardScroll}>
-        <div style={UX.cardTitle}>Joint States Overview</div>
+        <div style={UX.cardTitle}>{t('replayControls.tabs.overview.jointOverviewTitle')}</div>
 
         {!js ? (
-          <div style={UX.noticePill('warn')}>⚠️ /joint_states sample not available</div>
+          <div style={UX.noticePill('warn')}>{t('replayControls.tabs.overview.noJointSample')}</div>
         ) : (
           <>
             <div style={UX.kvRow}>
-              <span style={UX.kvLabel}>Time</span>
+              <span style={UX.kvLabel}>{t('replayControls.common.time')}</span>
               <span style={UX.badge({ ok: true })}>{rosStampToKstHms(jointSample?.header?.stamp)}</span>
             </div>
 
             <div style={UX.kvRow}>
-              <span style={UX.kvLabel}>Stamp</span>
+              <span style={UX.kvLabel}>{t('replayControls.common.stamp')}</span>
               <span style={UX.badge({ ok: true })}>{js.stamp}</span>
             </div>
 
             <div style={UX.kvRow}>
-              <span style={UX.kvLabel}>Joints</span>
+              <span style={UX.kvLabel}>{t('replayControls.tabs.overview.joints')}</span>
               <span style={UX.badge({ ok: true })}>{js.total}</span>
               <span style={UX.kvSub}>
                 pos {js.lens.posLen} · vel {js.lens.velLen} · eff {js.lens.effLen}
@@ -134,7 +136,7 @@ export default function OverviewTab({ mcapSummary, jointGroups }) {
 
       {/* ── Right: Topic health ── */}
       <div style={UX.cardScroll}>
-        <div style={UX.cardTitle}>ROS Topics</div>
+        <div style={UX.cardTitle}>{t('replayControls.tabs.overview.rosTopicsTitle')}</div>
 
         <div style={UX.topicList}>
           {topics.map((t) => {

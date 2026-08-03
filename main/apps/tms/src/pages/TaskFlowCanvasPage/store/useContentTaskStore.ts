@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type PlayStatus = 'NONE' | 'READY' | 'PLAYING' | 'COMPLETED'
+export type PlayStatus = 'NONE' | 'READY' | 'PLAYING' | 'COMPLETED' | 'FAILURE'
 
 export interface ContentTask {
   nodeId: string

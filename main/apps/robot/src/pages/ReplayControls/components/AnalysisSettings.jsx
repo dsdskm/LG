@@ -3,10 +3,12 @@
 // groups: 보여줄 그룹 키 배열(예: ['arm']). 현재 활성 탭에 해당하는 그룹만 표시.
 // 자체 완결형(상태=open만 보유). 값/변경/복원은 props로 받음 → 롤백 시 이 파일 + 호출부만 제거.
 import React, { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { theme } from '../styles'
 import { THRESHOLD_FIELDS, DEFAULT_ANALYSIS_THRESHOLDS } from '../analysisConfig'
 
 export default function AnalysisSettings({ thresholds, onChange, onReset, groups }) {
+  const { t } = useTranslation('robot')
   const [open, setOpen] = useState(false)
 
   const shownGroups = THRESHOLD_FIELDS.filter((g) => (groups ? groups.includes(g.group) : true))
@@ -21,11 +23,12 @@ export default function AnalysisSettings({ thresholds, onChange, onReset, groups
     <div style={S.wrap}>
       <button
         type="button"
-        title="이 탭의 분석 임계값(추정 기준) 설정"
+        title={t('replayControls.thresholds.popoverButtonTitle')}
         onClick={() => setOpen((o) => !o)}
         style={S.button(open || customized)}
       >
-        ⚙ 기준{customized ? ' •' : ''}
+        {t('replayControls.thresholds.popoverButton')}
+        {customized ? ' •' : ''}
       </button>
 
       {open && (
@@ -33,18 +36,18 @@ export default function AnalysisSettings({ thresholds, onChange, onReset, groups
           {/* 바깥 클릭 닫기 */}
           <div style={S.backdrop} onClick={() => setOpen(false)} />
           <div style={S.popover} role="dialog">
-            <div style={{ fontWeight: 700, fontSize: 13 }}>분석 임계값 (추정 기준)</div>
+            <div style={{ fontWeight: 700, fontSize: 13 }}>{t('replayControls.thresholds.popoverTitle')}</div>
             <div style={{ fontSize: 11, color: theme.colors.textMuted, margin: '4px 0 10px' }}>
-              이 탭의 경고·판정에 쓰이는 추정 기준값입니다. 실측/사양 기준이 아닙니다.
+              {t('replayControls.thresholds.popoverDesc')}
             </div>
 
             {shownGroups.map((grp) => (
               <div key={grp.group} style={{ marginBottom: 10 }}>
-                <div style={S.groupTitle}>{grp.label}</div>
+                <div style={S.groupTitle}>{t(grp.labelKey)}</div>
                 {grp.fields.map((f) => (
                   <label key={f.key} style={S.row}>
                     <span style={S.fieldLabel}>
-                      {f.label}
+                      {t(f.labelKey)}
                       {f.unit ? ` (${f.unit})` : ''}
                     </span>
                     <input
@@ -68,7 +71,7 @@ export default function AnalysisSettings({ thresholds, onChange, onReset, groups
                 disabled={!customized}
                 style={S.resetBtn(customized)}
               >
-                기본값 복원
+                {t('replayControls.thresholds.resetButton')}
               </button>
             </div>
           </div>

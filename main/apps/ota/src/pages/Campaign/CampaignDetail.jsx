@@ -16,7 +16,7 @@ import {
 } from '@repo/ui'
 import { useTranslation } from 'react-i18next'
 import ArtifactTable from '@/components/Artifact/ArtifactTable'
-import { actionApis, campaignApis, targetGroupApis, policyApis, moduleApis } from '@/apis'
+import { actionApis, campaignApis, targetGroupApis, policyApis, moduleApis, packageTypeApis } from '@/apis'
 import { artifactApis } from '@repo/apis'
 import { toast } from 'react-toastify'
 import { convertDateToString } from '@repo/utils'
@@ -50,11 +50,13 @@ const CampaignDetail = () => {
   const [selectedPostActionId, setSelectedPostActionId] = useState('')
   const [selectedPreActionId, setSelectedPreActionId] = useState('')
   const [selectedArtifactId, setSelectedArtifactId] = useState('')
+  const [selectedPackageTypeId, setSelectedPackageTypeId] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [memo, setMemo] = useState('')
   const [policyOptions, setPolicyOptions] = useState([])
   const [actionOptions, setActionOptions] = useState([])
   const [moduleOptions, setModuleOptions] = useState([])
+  const [packageTypeOptions, setPackageTypeOptions] = useState([])
   const [organizationOptions, setOrganizationOptions] = useState([])
   const [selectedModuleId, setSelectedModuleId] = useState('')
   const [selectedOrganizationId, setSelectedOrganizationId] = useState('')
@@ -122,6 +124,18 @@ const CampaignDetail = () => {
     setSelectedModuleId(value)
   }
 
+  const handlePackageTypeChange = (value) => {
+    setSelectedPackageTypeId(value)
+    setModuleOptions(
+      allModules
+        .filter((module) => module.PackageType.id === Number(value))
+        .map((item) => ({
+          name: item.displayName,
+          value: item.id
+        }))
+    )
+  }
+
   const handleOrganizationChange = (value) => {
     setSelectedOrganizationId(value)
   }
@@ -144,12 +158,16 @@ const CampaignDetail = () => {
 
   const filteredArtifactData = processedArtifactData.filter((item) => {
     const matchesSearch = item.displayName?.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesOrg = item.Organization.id === selectedOrganizationId
+    const matchesOrg =
+      !selectedOrganizationId ||
+      selectedOrganizationId === 'all' ||
+      Number(item.Organization.id) === Number(selectedOrganizationId)
     const matchesModule =
       !selectedModuleId || selectedModuleId === 'all' || Number(item.Module?.id) === Number(selectedModuleId)
     const completed = item.status === ARTIFACT_STATUS.SUCCESS
+    const matchesPackageType = item.Module.packageTypeId === Number(selectedPackageTypeId)
 
-    return matchesSearch && matchesOrg && matchesModule && completed
+    return matchesSearch && matchesOrg && matchesModule && completed && matchesPackageType
   })
 
   const handleSave = async (isRequest = false) => {
@@ -220,17 +238,27 @@ const CampaignDetail = () => {
         if (actualOrgs.length === 0 && session.userRole !== 'SYSTEM_MANAGER') return
 
         const actualOrgIds =
-          session.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
+          session.userRole === 'SYSTEM_MANAGER'
             ? [...allOrgs, defaultOrg].map((org) => org.id)
             : actualOrgs.map((org) => org.id)
 
-        const [groupRes, policyRes, actionRes, artifactRes, moduleRes] = await Promise.all([
+        console.log('actualOrgIds', actualOrgIds)
+        console.log('session.userRole', session.userRole)
+        const [packageTypeRes, groupRes, policyRes, actionRes, artifactRes, moduleRes] = await Promise.all([
+          packageTypeApis.retrievePackageTypes(company.id),
           targetGroupApis.retrieveTargetGroup(actualOrgIds),
           policyApis.retrievePolicy(actualOrgIds),
           actionApis.retrieveAction(actualOrgIds),
           artifactApis.retrieveArtifacts(actualOrgIds),
           moduleApis.retrieveModules(company.id)
         ])
+
+        const ptOptions = packageTypeRes.results.map((item) => ({
+          name: item.displayName,
+          value: item.id,
+          origin: item
+        }))
+        setPackageTypeOptions(ptOptions)
 
         const groupOptions = groupRes.results
           .filter((item) => item.campaignType === 'update')
@@ -389,6 +417,16 @@ const CampaignDetail = () => {
         <Section gap="2.4rem">
           <HeaderTitleGroup>
             <Dropdown
+              label={t('packageType')}
+              size="lg"
+              minWidth="200px"
+              value={selectedPackageTypeId}
+              placeholder={t('selectPackageType')}
+              options={packageTypeOptions}
+              disabled={id}
+              onChange={handlePackageTypeChange}
+            />
+            <Dropdown
               label={t('module')}
               size="lg"
               minWidth="200px"
@@ -410,7 +448,7 @@ const CampaignDetail = () => {
             />
             <SearchContainer>
               <Search
-                label={t('search')}
+                label={tCommon('search')}
                 value={searchQuery}
                 onChange={handleSearchChange}
                 placeholder={tCommon('searchPlaceHolder')}

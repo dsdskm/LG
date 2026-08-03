@@ -15,7 +15,7 @@ import {
   OrganizationSelector
 } from '@repo/ui'
 import { ButtonWrap } from './styles'
-import { useOrganizationStore } from '@repo/stores'
+import { useOrganizationStore, useResponsiveStore } from '@repo/stores'
 import { TOTAL_GROUP_ID, TOTAL_SITE_ID } from '@/common/constants'
 
 export default function TaskFlowListPage() {
@@ -60,6 +60,9 @@ export default function TaskFlowListPage() {
     })
   }, [orderedFlows, searchQuery])
 
+  const { responsiveMode } = useResponsiveStore()
+  const isMobile = responsiveMode !== 'PC' ? true : false
+
   const total = filteredFlows.length
 
   const handleClickCanvas = (flowId: number) => {
@@ -100,11 +103,13 @@ export default function TaskFlowListPage() {
             />
           </SearchContainer>
 
-          <ButtonWrap className="alignRight" style={{ marginBottom: '0' }}>
-            <Button variant="contained" style={{ whiteSpace: 'nowrap' }} onClick={handleCreate}>
-              {t('list.create')}
-            </Button>
-          </ButtonWrap>
+          {!isMobile && (
+            <ButtonWrap className="alignRight" style={{ marginBottom: '0' }}>
+              <Button variant="contained" style={{ whiteSpace: 'nowrap' }} onClick={handleCreate}>
+                {t('list.create')}
+              </Button>
+            </ButtonWrap>
+          )}
         </HeaderTitleGroup>
 
         {filteredFlows.length === 0 ? (

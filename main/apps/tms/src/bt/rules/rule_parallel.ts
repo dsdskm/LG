@@ -1,4 +1,4 @@
-import type { BtAstNode, BtParallelNode } from '../types'
+import type { BtAstNode } from '../types'
 import {
   isParallelRuleMatch,
   sortNodeIdsByCanvasPosition,
@@ -8,9 +8,11 @@ import {
   getRuleNodeName
 } from '../bt.util'
 import type { BtRule } from './types'
+import { BtParallelNode, parallelNodeName, parallelNodeType } from '../nodes/btParallelNode'
+import { forceSuccessNodeType } from '../nodes/btForceSuccessNode'
 
-export const rule_parallel: BtRule = {
-  name: 'parallel',
+export const rule_parallel: BtRule<typeof parallelNodeName> = {
+  name: parallelNodeName,
 
   match: ({ node, outgoing }) => {
     return isParallelRuleMatch(node, outgoing)
@@ -35,7 +37,7 @@ export const rule_parallel: BtRule = {
 
       // main 이 아닌 노드는 항상 SUCCESS 가 되도록 ForceSuccess 로 감싼다.
       const isMain = !mainTargetSet || mainTargetSet.has(entry.targetId)
-      return isMain ? child : { kind: 'forceSuccess', child }
+      return isMain ? child : { kind: forceSuccessNodeType, child }
     })
 
     // 사용자가 입력한 success/failure 임계값은 main_nodes 개수 기준으로 검증하고,
@@ -44,7 +46,7 @@ export const rule_parallel: BtRule = {
     const failureCount = resolveFailureCount(node, mainCount)
 
     const parallelNode: BtParallelNode = {
-      kind: 'parallel',
+      kind: parallelNodeType,
       name: getRuleNodeName(node, 'parallel'),
       successCount,
       failureCount,

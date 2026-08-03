@@ -57,5 +57,6 @@
   "setting": "設定",
   "deploying": "展開中",
   "noAvailableDevices": "選択可能なデバイスがありません",
-  "groupedCommandsCount": "このデバイスのコマンド{{count}}件"
+  "groupedCommandsCount": "このデバイスのコマンド{{count}}件",
+  "selectPackageType": "パッケージの種類を選択してください"
 }

@@ -1,5 +1,5 @@
 import type { Node } from '@xyflow/react'
-import type { BtActionNode } from '../types'
+import type { BtActionNode } from '../nodes/btActionNode'
 import { resolveBtCppNodeInfo } from './resolveBtCppNodeInfo'
 
 export function createBtActionNode(node: Node): BtActionNode {

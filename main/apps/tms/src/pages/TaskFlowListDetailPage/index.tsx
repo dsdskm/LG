@@ -51,7 +51,7 @@ import {
   getSuccessDialogContent,
   getErrorDialogTitle
 } from './util'
-import { useOrganizationStore } from '@repo/stores'
+import { useOrganizationStore, useResponsiveStore } from '@repo/stores'
 import { DeviceParams, DeviceResponse } from '@/types/api/device'
 import { useDeviceList } from '@/api/deviceApis'
 import { CenteredContent } from '../RobotDetailPage/styles'
@@ -194,6 +194,9 @@ const TaskFlowListDetailPage = () => {
     }
   }, [])
 
+  const { responsiveMode } = useResponsiveStore()
+  const isMobile = responsiveMode !== 'PC' ? true : false
+
   const handleEdit = () => {
     if (!taskFlow?.id) return
     navigate(`/tms/taskflows/${taskFlow.id}/canvas`)
@@ -256,8 +259,8 @@ const TaskFlowListDetailPage = () => {
         groupId: selectedGroupId ?? null,
         siteId: selectedSiteId ?? null,
         robotInfos: null,
-        description: 'fixme',
-        ...(deivces ? { robotIds: deivces?.map((device) => device.deviceId) ?? [] } : {})
+        description: 'fixme'
+        //...(deivces ? { robotIds: deivces?.map((device) => device.deviceId) ?? [] } : {})
       }
     }
   }
@@ -365,17 +368,19 @@ const TaskFlowListDetailPage = () => {
   console.log(`taskFlow`, taskFlow)
   return (
     <Container>
-      <Header>
+      <Header style={{ flexWrap: 'wrap', gap: '8px' }}>
         <HeaderLeft>
           <Title onBack={() => navigate('/tms')}>{taskFlow.name}</Title>
         </HeaderLeft>
 
         <HeaderRight>
           <HeaderButtonGroup>
-            <Button theme="secondary" type="button" onClick={handleEdit} disabled={!!isSubmitting}>
-              <Icon name="edit" size={18} />
-              {t('detail.edit')}
-            </Button>
+            {!isMobile && (
+              <Button theme="secondary" type="button" onClick={handleEdit} disabled={!!isSubmitting}>
+                <Icon name="edit" size={18} />
+                {t('detail.edit')}
+              </Button>
+            )}
 
             <Button theme="primary" type="button" onClick={handleDeployManage} disabled={!!isSubmitting}>
               <Icon name="robot" size={18} />
@@ -424,7 +429,7 @@ const TaskFlowListDetailPage = () => {
                 <tr>
                   <th>{t('detail.description')}</th>
                   <td>
-                    <TableCellLeft>{taskFlow.description || ''}</TableCellLeft>
+                    <TableCellRight>{taskFlow.description || ''}</TableCellRight>
                   </td>
                 </tr>
                 <tr>

@@ -26,9 +26,9 @@ export type BtRuleContext = {
   buildAstList: (nodeId: string) => BtAstNode[]
 }
 
-export type BtRule = {
-  name: string
+// name필드에 추론 type을 사용하기 위해 변경함
+export type BtRule<N extends string = string> = {
+  name: N
   match: (ctx: BtRuleContext) => boolean
   apply: (ctx: BtRuleContext) => BtAstNode[]
 }
-;``

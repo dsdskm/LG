@@ -13,9 +13,10 @@ import TableLoading from '../TableLoading'
  * @param {number[]} [props.paginationRowsPerPageOptions] - Rows per page options
  * @param {number} [props.paginationPerPage] - Initial rows per page
  * @param {boolean} [props.isLoading] - Loading state
+ * @param {boolean} [props.dense] - Reduce row height / cell padding for a more compact layout
  * @param {any} rest - Other props passed to DataTable
  */
-const Table = ({ noData, paginationRowsPerPageOptions, paginationPerPage, isLoading, ...rest }) => {
+const Table = ({ noData, paginationRowsPerPageOptions, paginationPerPage, isLoading, dense, ...rest }) => {
   const noDataComponent = useMemo(() => {
     return noData ? <NoData>{noData}</NoData> : null
   }, [noData])
@@ -25,7 +26,7 @@ const Table = ({ noData, paginationRowsPerPageOptions, paginationPerPage, isLoad
   }
 
   return (
-    <StyledDataTable>
+    <StyledDataTable $dense={dense}>
       <DataTable
         noDataComponent={noDataComponent}
         persistTableHead

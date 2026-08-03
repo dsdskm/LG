@@ -27,7 +27,19 @@ export const StyledFnb = styled.nav`
     }
   }
 
+  & .fnbItem .fnbLink {
+    padding: 0 !important;
+  }
+
   & .fnbItem:not(:last-of-type)::after {
+    content: '';
+    margin: 0 0.4rem;
+    width: 0.1rem;
+    height: 1.2rem;
+    background: var(--alpha-black-10);
+  }
+
+  & .fnbItem:last-of-type::after {
     content: '';
     margin: 0 0.4rem;
     width: 0.1rem;
@@ -37,6 +49,9 @@ export const StyledFnb = styled.nav`
 
   @media all and (max-width: 767px) {
     width: 100%;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.8rem;
 
     & .fnbList {
       width: 100%;

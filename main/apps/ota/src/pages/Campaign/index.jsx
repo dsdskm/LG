@@ -163,9 +163,9 @@ const Campaign = () => {
   const [initialOrg, setInitialOrg] = useState(false)
 
   const orgIds =
-    session.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
-      ? [...allOrgs, defaultOrg].map((org) => org.id).join(',')
-      : actualOrgs.map((org) => org.id).join(',')
+    session?.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
+      ? [...allOrgs, defaultOrg].map((org) => org?.id).join(',')
+      : actualOrgs.map((org) => org?.id).join(',')
   const fetchData = useCallback(async () => {
     try {
       setIsLoading(true)
@@ -211,7 +211,7 @@ const Campaign = () => {
         const searchQueryStr = searchQuery || ''
         const matchesSearch = displayNameStr.toLowerCase().includes(searchQueryStr.toLowerCase())
         const matchesOrg =
-          session.userRole === 'SYSTEM_MANAGER' && orgFilter.actualOrgs.length === 0
+          session?.userRole === 'SYSTEM_MANAGER' && orgFilter.actualOrgs.length === 0
             ? true
             : campaign.Organization
               ? orgFilter.matchesOrg(campaign.Organization)
@@ -348,7 +348,7 @@ const Campaign = () => {
   }, [])
 
   useEffect(() => {
-    if (!initialOrg || (session.userRole !== 'SYSTEM_MANAGER' && actualOrgs.length === 0) || allOrgs.length === 0) {
+    if (!initialOrg || (session?.userRole !== 'SYSTEM_MANAGER' && actualOrgs.length === 0) || allOrgs.length === 0) {
       setIsLoading(false)
       return
     }
@@ -406,11 +406,11 @@ const Campaign = () => {
               onClick={() =>
                 navigate(
                   `/ota/campaign/detail/?orgId=${
-                    session.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0 ? defaultOrg.id : actualOrgs[0].id
+                    session?.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0 ? defaultOrg.id : actualOrgs[0].id
                   }`
                 )
               }
-              disabled={orgFilter.actualOrgs.length !== 1 && session.userRole !== 'SYSTEM_MANAGER'}
+              disabled={orgFilter.actualOrgs.length !== 1 && session?.userRole !== 'SYSTEM_MANAGER'}
             >
               {t('create')}
             </Button>

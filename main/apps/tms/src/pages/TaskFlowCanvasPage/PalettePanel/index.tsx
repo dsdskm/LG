@@ -62,15 +62,22 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
 
   const otherTasks = useMemo(() => tasks.filter((t) => t.taskType !== TASK_TYPE_CONTROL), [tasks])
 
-  // contents 가 비어 있는 ACTION task 는 펼침(content 단위) 대신
-  // CONTROL task 처럼 task 자체를 직접 노드화해서 보여준다.
+  const hasContentReference = (t: TaskApiPayload) =>
+    Object.values(t.propertySchema?.properties ?? {}).some((p) => p?.type === 'content_reference')
+
+  // propertySchema.properties 중 type === 'content_reference' 가 없으면 Default,
+  // 하나라도 있으면 펼침(content 단위)으로 보여준다.
   const directActionTasks = useMemo(
-    () => otherTasks.filter((t) => t.taskType === TaskType.ACTION && (t.contents?.length ?? 0) === 0),
+    () => otherTasks.filter((t) => t.taskType === TaskType.ACTION && !hasContentReference(t)),
     [otherTasks]
   )
 
   const expandableTasks = useMemo(
-    () => otherTasks.filter((t) => t.taskType !== TaskType.ROOT && (t.contents?.length ?? 0) > 0),
+    () =>
+      otherTasks.filter(
+        (t) =>
+          t.taskType !== TaskType.ROOT && hasContentReference(t) && t.name !== 'PickUp' && t.name !== 'PutDown'
+      ),
     [otherTasks]
   )
 
@@ -89,8 +96,8 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
         id: task.id,
         name: task.name,
         taskType: task.taskType,
-        contentsCount: Array.isArray(task.contents) ? task.contents.length : 0,
-      })),
+        contentsCount: Array.isArray(task.contents) ? task.contents.length : 0
+      }))
     })
   }, [loading, tasks, controlTasks.length, otherTasks.length, directActionTasks.length, expandableTasks.length])
 

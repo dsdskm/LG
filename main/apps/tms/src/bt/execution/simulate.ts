@@ -18,7 +18,19 @@
 //
 
 import { buildBehaviorTreeFromFlowDefinition } from '../build'
-import type { BtAstNode, BtSequenceNode } from '../types'
+import { forceFailureNodeType } from '../nodes/btForceFailureNode'
+import { forceSuccessNodeType } from '../nodes/btForceSuccessNode'
+import { orNodeType } from '../nodes/btOrNode'
+import { parallelNodeType } from '../nodes/btParallelNode'
+import type { BtAstNode } from '../types'
+import { sequenceNodeType, type BtSequenceNode } from '../nodes/btSequenceNode'
+import { fallbackOnFailureNodeType } from '../nodes/btFallbackOnFailureNode'
+import { ifThenElseNodeType } from '../nodes/btIfThenElseNode'
+import { repeatNodeType } from '../nodes/btRepeatNode'
+import { reactiveOrNodeType } from '../nodes/btReactiveOrNode'
+import { actionNodeType } from '../nodes/btActionNode'
+import { reactiveAndNodeType } from '../nodes/btReactiveAndNode'
+import { retryUntilSuccessfulNodeType } from '../nodes/btRetryUntilSuccessfulNode'
 
 export type SimStatus = 'SUCCESS' | 'FAILURE' | 'RUNNING'
 
@@ -33,6 +45,8 @@ export type ControlSpan = {
   start: number
   end: number
   status: SimStatus
+  // ReactiveFallback(reactiveOr) 구간 여부. true 면 RUNNING 시 매 tick 첫 자식부터 재평가한다.
+  reactive?: boolean
 }
 
 export type ResolveFn = (nodeId: string) => SimStatus
@@ -47,38 +61,56 @@ export function buildSimTrace(
 
   function exec(node: BtAstNode): SimStatus {
     switch (node.kind) {
-      case 'action': {
+      case actionNodeType: {
         const nodeId = String(node.attrs?.node_id ?? '')
         const status = resolve(nodeId)
         if (nodeId) trace.push({ nodeId, status })
         return status
       }
-      case 'sequence':
+
+      case sequenceNodeType:
         return runSequence(node.children)
-      case 'ifThenElse':
+      case ifThenElseNodeType:
         return wrapControl(node, () => runIfThenElse(node.children))
-      case 'or':
-      case 'fallbackOnFailure':
+      case orNodeType:
+      case fallbackOnFailureNodeType:
         return wrapControl(node, () => runFallback(node.children))
-      case 'parallel':
+      case reactiveOrNodeType:
+        return wrapControl(node, () => runFallback(node.children), true)
+      case reactiveAndNodeType:
+        return wrapControl(node, () => runSequence(node.children), true)
+      case parallelNodeType:
         return wrapControl(node, () => runParallel(node.children, node.successCount))
-      case 'repeat':
+      case repeatNodeType:
         return wrapControl(node, () => runRepeat(node.child, node.numCycles))
-      case 'forceSuccess': {
-        const r = exec(node.child)
-        return r === 'RUNNING' ? 'RUNNING' : 'SUCCESS'
-      }
+      case retryUntilSuccessfulNodeType:
+        return wrapControl(node, () => runRetry(node.child, node.numAttempts))
+      case forceSuccessNodeType:
+        return wrapControl(node, () => {
+          const r = exec(node.child)
+          return r === 'RUNNING' ? 'RUNNING' : 'SUCCESS'
+        })
+      case forceFailureNodeType:
+        return wrapControl(node, () => {
+          const r = exec(node.child)
+          return r === 'RUNNING' ? 'RUNNING' : 'FAILURE'
+        })
       default:
         return 'SUCCESS'
     }
   }
 
   // 컨트롤 노드를 실행하면서, 차지한 leaf 구간(span)을 기록한다.
-  function wrapControl(node: BtAstNode & { attrs?: Record<string, string> }, run: () => SimStatus): SimStatus {
+  // reactive=true 면 RUNNING 시 매 tick 첫 자식부터 재평가하는 구간으로 표시한다.
+  function wrapControl(
+    node: BtAstNode & { attrs?: Record<string, string> },
+    run: () => SimStatus,
+    reactive = false
+  ): SimStatus {
     const nodeId = String(node.attrs?.node_id ?? '')
     const start = trace.length
     const status = run()
-    if (nodeId) spans.push({ nodeId, start, end: trace.length, status })
+    if (nodeId) spans.push({ nodeId, start, end: trace.length, status, reactive })
     return status
   }
 
@@ -137,6 +169,19 @@ export function buildSimTrace(
       if (r !== 'SUCCESS') return r
     }
     return 'SUCCESS'
+  }
+
+  // RetryUntilSuccessful: 자식이 SUCCESS 면 성공, FAILURE 면 최대 numAttempts 회 재시도.
+  // RUNNING 이면 RUNNING(대기), 모든 시도 실패면 FAILURE.
+  function runRetry(child: BtAstNode, numAttempts: number): SimStatus {
+    const attempts = Number.isFinite(numAttempts) && numAttempts > 0 ? Math.min(numAttempts, 100) : 1
+    for (let i = 0; i < attempts; i++) {
+      const r = exec(child)
+      if (r === 'RUNNING') return 'RUNNING'
+      if (r === 'SUCCESS') return 'SUCCESS'
+      // FAILURE → 다음 시도
+    }
+    return 'FAILURE'
   }
 
   try {

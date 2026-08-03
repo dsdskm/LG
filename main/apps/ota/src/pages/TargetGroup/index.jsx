@@ -111,18 +111,18 @@ const TargetGroup = () => {
   }
 
   const checkTargetGroupLimitPerOrg = () => {
-    const currentOrg = session.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0 ? defaultOrg : actualOrgs[0]
+    const currentOrg = session?.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0 ? defaultOrg : actualOrgs[0]
     const targetGroupCount = processedData.filter((item) => item.organizationId === currentOrg.id).length
     return targetGroupCount < LIMIT_TARGET_GROUP_PER_ORG
   }
 
   const allOrgIds =
-    session.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
+    session?.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
       ? [...allOrgs, defaultOrg].map((org) => org.id).join(',')
       : actualOrgs.map((org) => org.id).join(',')
 
   useEffect(() => {
-    if (actualOrgs.length === 0 && session.userRole !== 'SYSTEM_MANAGER') {
+    if (actualOrgs.length === 0 && session?.userRole !== 'SYSTEM_MANAGER') {
       setIsLoading(false)
       return
     }
@@ -164,7 +164,7 @@ const TargetGroup = () => {
       toast.error(t('targetGroupLimitPerOrg', { limit: LIMIT_TARGET_GROUP_PER_ORG }), { autoClose: 2000 })
       return
     }
-    const orgId = session.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0 ? defaultOrg.id : actualOrgs[0].id
+    const orgId = session?.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0 ? defaultOrg.id : actualOrgs[0].id
     navigate(`/ota/target-group/detail/?orgId=${orgId}`)
   }
 
@@ -198,7 +198,7 @@ const TargetGroup = () => {
             />
           </SearchContainer>
           <ButtonWrap className="alignRight" style={{ marginBottom: '-2rem' }}>
-            <Button onClick={handleCreate} disabled={actualOrgs.length !== 1 && session.userRole !== 'SYSTEM_MANAGER'}>
+            <Button onClick={handleCreate} disabled={actualOrgs.length !== 1 && session?.userRole !== 'SYSTEM_MANAGER'}>
               {t('create')}
             </Button>
             <Button>{t('delete')}</Button>

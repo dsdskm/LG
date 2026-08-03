@@ -1,5 +1,6 @@
 // components/tabs/PerformanceTab.jsx
 import React, { useMemo, useRef, useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { UX, theme } from '../../styles'
 import { rosStampToKstHms, tSecToKstHms } from '@/utils/dateUtils'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from 'recharts'
@@ -41,7 +42,9 @@ const POWER_EVENT_RE = /safety|battery|bms|power|전력|전압|방전|과충전|
 
 /* ───────────────── helpers ───────────────── */
 
-function GuideHover({ content, label = 'Guide' }) {
+function GuideHover({ content, label }) {
+  const { t } = useTranslation('robot')
+  const resolvedLabel = label ?? t('replayControls.tabs.performance.guideLabel')
   const [open, setOpen] = React.useState(false)
 
   return (
@@ -54,7 +57,7 @@ function GuideHover({ content, label = 'Guide' }) {
     >
       <button
         type="button"
-        aria-label={label}
+        aria-label={resolvedLabel}
         style={{
           cursor: 'help',
           border: `1px solid ${theme.colors.border}`,
@@ -68,7 +71,7 @@ function GuideHover({ content, label = 'Guide' }) {
           gap: 6
         }}
       >
-        ⓘ {label}
+        ⓘ {resolvedLabel}
       </button>
 
       {open && (
@@ -93,7 +96,7 @@ function GuideHover({ content, label = 'Guide' }) {
         >
           {content}
           <div style={{ marginTop: 8, fontSize: 11, color: theme.colors.textMuted }}>
-            * 마우스를 떼면 자동으로 닫힙니다.
+            {t('replayControls.tabs.performance.guideAutoCloseHint')}
           </div>
         </div>
       )}
@@ -296,6 +299,7 @@ export default function PerformanceTab({
   isParsingMcap = false,
   mcapParseError = null
 }) {
+  const { t } = useTranslation('robot')
   const samples = mcapSummary?.samples || {}
   const timeRange = mcapSummary?.timeRange || null
 
@@ -443,10 +447,12 @@ export default function PerformanceTab({
   // ── gating ──────────────────────────────
   if (mcapParseError) {
     return (
-      <div style={UX.noticePill('error')}>❌ MCAP parse error: {mcapParseError?.message ?? String(mcapParseError)}</div>
+      <div style={UX.noticePill('error')}>
+        {t('replayControls.common.mcapParseError', { message: mcapParseError?.message ?? String(mcapParseError) })}
+      </div>
     )
   }
-  if (isParsingMcap) return <div style={UX.noticePill('info')}>MCAP parsing...</div>
+  if (isParsingMcap) return <div style={UX.noticePill('info')}>{t('replayControls.common.mcapParsing')}</div>
 
   const hasCtrl = Array.isArray(ctrlWrapped) && ctrlWrapped.length > 0
   const hasBatt = Array.isArray(battWrapped) && battWrapped.length > 0
@@ -457,18 +463,16 @@ export default function PerformanceTab({
     <div style={UX.grid2}>
       {/* ── KPI: Target vs Actual ── */}
       <div style={UX.card}>
-        <div style={UX.sectionTitle}>제어 성능 (Target vs Actual)</div>
+        <div style={UX.sectionTitle}>{t('replayControls.tabs.performance.controlPerfTitle')}</div>
 
         {!hasCtrl ? (
-          <div style={UX.noticePill('warn')}>
-            ⚠️ /tracking_controller/joint 샘플이 없습니다. (Target 기반 KPI/히스토그램이 제한됩니다.)
-          </div>
+          <div style={UX.noticePill('warn')}>{t('replayControls.tabs.performance.noTrackingSample')}</div>
         ) : !kpiNow ? (
-          <div style={UX.noticePill('warn')}>⚠️ KPI 계산에 필요한 샘플을 찾지 못했습니다.</div>
+          <div style={UX.noticePill('warn')}>{t('replayControls.tabs.performance.noKpiSample')}</div>
         ) : (
           <>
             <div style={UX.kvRow}>
-              <span style={UX.kvLabel}>Time</span>
+              <span style={UX.kvLabel}>{t('replayControls.common.time')}</span>
               <span style={UX.badge({ ok: true })}>{kpiNow.stamp}</span>
               <span style={UX.kvSub}>t={Number(currentTime || 0).toFixed(2)}s</span>
             </div>
@@ -482,7 +486,7 @@ export default function PerformanceTab({
             </div>
 
             <div style={{ marginTop: 10, fontSize: 11, color: theme.colors.textMuted }}>
-              * Success 기준(|pos error| &lt; {kpiNow.posOkRad} rad)은 추정 기준입니다. (⚙에서 조정)
+              {t('replayControls.tabs.performance.footnoteSuccessCriteria', { posOkRad: kpiNow.posOkRad })}
             </div>
           </>
         )}
@@ -490,32 +494,38 @@ export default function PerformanceTab({
 
       {/* ── Time Distribution Histogram ── */}
       <div style={UX.card}>
-        <div style={UX.sectionTitle}>시간 분포 (Histogram)</div>
+        <div style={UX.sectionTitle}>{t('replayControls.tabs.performance.histogramTitle')}</div>
 
         <div style={{ marginLeft: 'auto' }}>
           <GuideHover
-            label="Guide"
             content={
               <div>
-                <div style={{ fontWeight: 700, marginBottom: 6 }}>히스토그램 해석</div>
+                <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                  {t('replayControls.tabs.performance.histogramGuideTitle')}
+                </div>
                 <div style={{ display: 'grid', gap: 6 }}>
                   <div>
-                    <b>posRMS↑</b>: 해당 구간에서 Target 대비 추종오차가 커짐
+                    <b>{t('replayControls.tabs.performance.histogramGuidePosRmsLabel')}</b>:{' '}
+                    {t('replayControls.tabs.performance.histogramGuidePosRmsDesc')}
                   </div>
                   <div>
-                    <b>success%↓</b>: 오차 기준(POS_OK)을 넘은 조인트 비율 증가
+                    <b>{t('replayControls.tabs.performance.histogramGuideSuccessLabel')}</b>:{' '}
+                    {t('replayControls.tabs.performance.histogramGuideSuccessDesc')}
                   </div>
                   <div>
-                    <b>연속으로 나쁨</b>: 지속 문제(튜닝/외란/하드웨어) 가능
+                    <b>{t('replayControls.tabs.performance.histogramGuideContinuousLabel')}</b>:{' '}
+                    {t('replayControls.tabs.performance.histogramGuideContinuousDesc')}
                   </div>
                   <div>
-                    <b>일부 bin만 튐</b>: 순간 이벤트(급동작/모드 전환 등) 가능
+                    <b>{t('replayControls.tabs.performance.histogramGuideSpikeLabel')}</b>:{' '}
+                    {t('replayControls.tabs.performance.histogramGuideSpikeDesc')}
                   </div>
                   <div>
-                    <b>samples가 적음</b>: 대표성 낮아 해석 주의
+                    <b>{t('replayControls.tabs.performance.histogramGuideLowSamplesLabel')}</b>:{' '}
+                    {t('replayControls.tabs.performance.histogramGuideLowSamplesDesc')}
                   </div>
                   <div style={{ color: theme.colors.textMuted, fontSize: 11 }}>
-                    세로선(ReferenceLine)은 현재 재생 시간입니다.
+                    {t('replayControls.tabs.performance.histogramGuideRefLine')}
                   </div>
                 </div>
               </div>
@@ -525,13 +535,11 @@ export default function PerformanceTab({
 
         {chartTimelineLoading && !hasJsTimeline ? (
           // 전체 구간 데이터 로딩 중에는 일부 bin만 찬 히스토그램을 보여줬다 바꾸지 않고 로딩 표시
-          <div style={UX.noticePill('info')}>전체 구간 차트 불러오는 중…</div>
+          <div style={UX.noticePill('info')}>{t('replayControls.common.chartLoadingFull')}</div>
         ) : !hasCtrl ? (
-          <div style={UX.noticePill('warn')}>
-            ⚠️ /tracking_controller/joint 샘플이 없어 히스토그램을 만들 수 없습니다.
-          </div>
+          <div style={UX.noticePill('warn')}>{t('replayControls.tabs.performance.noTrackingForHistogram')}</div>
         ) : !timeHist?.length ? (
-          <div style={UX.noticePill('warn')}>⚠️ 히스토그램을 만들 데이터가 부족합니다. (샘플/시간범위 확인)</div>
+          <div style={UX.noticePill('warn')}>{t('replayControls.tabs.performance.notEnoughHistogramData')}</div>
         ) : (
           <>
             <SafeResponsiveChart height={230}>
@@ -563,7 +571,12 @@ export default function PerformanceTab({
                 <Tooltip
                   labelFormatter={(v, payload) => {
                     const p = payload?.[0]?.payload
-                    if (p?.t0 != null && p?.t1 != null) return `구간: ${p.t0.toFixed(1)}~${p.t1.toFixed(1)}s`
+                    if (p?.t0 != null && p?.t1 != null) {
+                      return t('replayControls.tabs.performance.histogramTooltipRange', {
+                        t0: p.t0.toFixed(1),
+                        t1: p.t1.toFixed(1)
+                      })
+                    }
                     return `t≈${Number(v).toFixed(2)}s`
                   }}
                   formatter={(val, name, item) => {
@@ -593,7 +606,7 @@ export default function PerformanceTab({
             </SafeResponsiveChart>
 
             <div style={{ marginTop: 8, fontSize: 11, color: theme.colors.textMuted }}>
-              * 각 막대는 해당 시간 구간에서의 평균 posRMS / 평균 success% 입니다. (ReferenceLine = currentTime)
+              {t('replayControls.tabs.performance.footnoteHistogramBars')}
             </div>
           </>
         )}
@@ -601,10 +614,12 @@ export default function PerformanceTab({
 
       {/* ── Issue Summary ── */}
       <div style={UX.card}>
-        <div style={UX.sectionTitle}>이슈 요약 (diagnostic/actuator 기반)</div>
+        <div style={UX.sectionTitle}>{t('replayControls.tabs.performance.issueSummaryTitle')}</div>
 
         {issueSummary.length === 0 ? (
-          <div style={{ fontSize: 12, color: theme.colors.textMuted }}>표시할 이슈가 없습니다.</div>
+          <div style={{ fontSize: 12, color: theme.colors.textMuted }}>
+            {t('replayControls.tabs.performance.noIssues')}
+          </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {issueSummary.map((t, i) => (
@@ -616,22 +631,22 @@ export default function PerformanceTab({
         )}
 
         <div style={{ marginTop: 10, fontSize: 11, color: theme.colors.textMuted }}>
-          * CPU/메모리 같은 리소스 값은 별도 토픽이 필요합니다. 전력은 우측 배터리 카드를 참고하세요.
+          {t('replayControls.tabs.performance.footnoteResourceNote')}
         </div>
       </div>
 
       {/* ── Battery / Power ── */}
       <div style={UX.card}>
-        <div style={UX.sectionTitle}>전력/배터리 (Battery)</div>
+        <div style={UX.sectionTitle}>{t('replayControls.tabs.performance.batteryTitle')}</div>
 
         {!hasBatt ? (
-          <div style={UX.noticePill('warn')}>⚠️ /battery/battery_status 샘플이 없습니다.</div>
+          <div style={UX.noticePill('warn')}>{t('replayControls.tabs.performance.noBatterySample')}</div>
         ) : !battInfo ? (
-          <div style={UX.noticePill('warn')}>⚠️ battery 메시지를 해석할 수 없습니다.</div>
+          <div style={UX.noticePill('warn')}>{t('replayControls.tabs.performance.batteryParseFail')}</div>
         ) : (
           <>
             <div style={UX.kvRow}>
-              <span style={UX.kvLabel}>Time</span>
+              <span style={UX.kvLabel}>{t('replayControls.common.time')}</span>
               <span style={UX.badge({ ok: true })}>{battInfo.stamp}</span>
               <span style={UX.kvSub}>t={Number(currentTime || 0).toFixed(2)}s</span>
             </div>
@@ -667,9 +682,10 @@ export default function PerformanceTab({
             )}
 
             <div style={{ marginTop: 10, fontSize: 11, color: theme.colors.textMuted }}>
-              * sensor_msgs/BatteryState 기준. percentage는 0~1 규약을 %로 환산해 표시합니다.
-              {powerEvents.length > 0 && ` · 전력/안전 이벤트 ${powerEvents.length}건(rosout)`}
-              {' · 과방전 등 보호 이벤트는 BatteryState가 아닌 rosout(safety) 로그입니다.'}
+              {t('replayControls.tabs.performance.footnoteBatteryNote')}
+              {powerEvents.length > 0 &&
+                t('replayControls.tabs.performance.powerEventsSuffix', { count: powerEvents.length })}
+              {t('replayControls.tabs.performance.footnoteSafetyNote')}
             </div>
           </>
         )}
@@ -677,11 +693,11 @@ export default function PerformanceTab({
 
       {/* ── (Optional) Raw stats small note ── */}
       <div style={UX.card}>
-        <div style={UX.sectionTitle}>데이터 상태</div>
+        <div style={UX.sectionTitle}>{t('replayControls.tabs.performance.dataStatusTitle')}</div>
 
         <details style={{ marginTop: 6 }}>
           <summary style={{ cursor: 'pointer', fontSize: 12, color: theme.colors.textMuted }}>
-            개발자용 샘플 카운트 보기
+            {t('replayControls.tabs.performance.devSampleCountToggle')}
           </summary>
           <div
             style={{

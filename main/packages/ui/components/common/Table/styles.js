@@ -67,4 +67,16 @@ export const StyledDataTable = styled.div`
       border-top: 1px solid var(--alpha-table-border);
     }
   }
+
+  ${({ $dense }) =>
+    $dense &&
+    `
+    .rdt_TableRow {
+      min-height: 3.2rem;
+    }
+
+    .rdt_TableCell {
+      padding: 0.3rem 1.2rem;
+    }
+  `}
 `

@@ -1,4 +1,4 @@
-import styled from "styled-components"
+import styled from 'styled-components'
 
 export const PreviewCard = styled.div`
   display: flex;
@@ -51,5 +51,12 @@ export const AudioControlButton = styled.button`
 
   &:hover {
     background: #f3f4f6;
+  }
+  &:disabled {
+    background: #f9fafb;
+    color: #9ca3af;
+    border-color: #e5e7eb;
+    cursor: not-allowed;
+    opacity: 0.6;
   }
 `

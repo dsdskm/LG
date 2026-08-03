@@ -7,6 +7,7 @@ import Embedding from '../pages/Embedding'
 import EmbeddingDocumentDetail from '../pages/Embedding/EmbeddingDocumentDetail'
 import EmbeddingVersion from '../pages/Embedding/EmbeddingVersion'
 import EmbeddingTest from '../pages/Embedding/EmbeddingTest'
+import AgentChat from '../pages/Agent/AgentChat'
 import RobotActionList from '../pages/Embedding/RobotActionList'
 import RobotActionDetail from '../pages/Embedding/RobotActionDetail'
 import ContentType from '../pages/Settings/ContentType'
@@ -105,6 +106,20 @@ export const appRoutes = [
         prefix: 'cms',
         icon: 'stack',
         element: <EmbeddingVersion />
+      }
+    ]
+  },
+  {
+    name: 'lab',
+    prefix: 'cms',
+    icon: 'robot',
+    depth: [
+      {
+        name: 'agentChat',
+        path: '/cms/lab/agent',
+        prefix: 'cms',
+        icon: 'message',
+        element: <AgentChat />
       }
     ]
   },

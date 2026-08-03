@@ -1,5 +1,6 @@
 // components/ReplayResultView.jsx
 import React, { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import ReplayControls from './ReplayControls'
 import { theme } from '../styles'
 import { Tabs, Tab } from '@repo/ui'
@@ -50,6 +51,7 @@ export default function ReplayResultView({
   onChangeThreshold,
   onResetThresholds
 }) {
+  const { t } = useTranslation('robot')
   // 현재 활성 탭 → 조정 가능한 임계값 그룹 매핑 (Overview/System은 매핑 없음 → ⚙ 미표시)
   const [activeTabId, setActiveTabId] = useState('overview')
   const tabGroup = { leftArm: 'arm', rightArm: 'arm', endEffector: 'hand', performance: 'perf' }[activeTabId]
@@ -73,7 +75,7 @@ export default function ReplayResultView({
         <div style={S.loadingFixed}>
           <div style={S.loadingBox}>
             <div style={S.spinner} />
-            <span>분석 데이터 로딩 중...</span>
+            <span>{t('replayControls.resultView.loadingInitial')}</span>
           </div>
         </div>
       )}
@@ -82,7 +84,7 @@ export default function ReplayResultView({
       {!isInitialLoading && isBackgroundLoading && (
         <div style={S.bgLoading}>
           <div style={S.bgSpinner} />
-          <span>나머지 분석 데이터 불러오는 중…</span>
+          <span>{t('replayControls.resultView.loadingBackground')}</span>
         </div>
       )}
 
@@ -126,7 +128,7 @@ export default function ReplayResultView({
           <div style={S.tabsWrap}>
             {/* ✅ landing→result 재진입 시 탭 active 상태/스크롤 잔상 초기화를 위해 key 부여 */}
             <Tabs key={viewMode} defaultActiveId="overview" onChange={setActiveTabId}>
-              <Tab id="overview" label="Overview">
+              <Tab id="overview" label={t('replayControls.resultView.tabOverview')}>
                 <div style={S.content}>
                   <OverviewTab
                     data={resultData}
@@ -138,7 +140,7 @@ export default function ReplayResultView({
                 </div>
               </Tab>
 
-              <Tab id="leftArm" label="Left Arm">
+              <Tab id="leftArm" label={t('replayControls.resultView.tabLeftArm')}>
                 <div style={S.content}>
                   <ArmAnalysisTab
                     data={resultData}
@@ -152,7 +154,7 @@ export default function ReplayResultView({
                 </div>
               </Tab>
 
-              <Tab id="rightArm" label="Right Arm">
+              <Tab id="rightArm" label={t('replayControls.resultView.tabRightArm')}>
                 <div style={S.content}>
                   <ArmAnalysisTab
                     data={resultData}
@@ -166,7 +168,7 @@ export default function ReplayResultView({
                 </div>
               </Tab>
 
-              <Tab id="endEffector" label="End‑Effector">
+              <Tab id="endEffector" label={t('replayControls.resultView.tabEndEffector')}>
                 <div style={S.content}>
                   <EndEffectorTab
                     mcapSummary={mcapSummary}
@@ -178,7 +180,7 @@ export default function ReplayResultView({
                 </div>
               </Tab>
 
-              <Tab id="system" label="System">
+              <Tab id="system" label={t('replayControls.resultView.tabSystem')}>
                 <div style={S.content}>
                   <SystemStatusTab
                     data={resultData}
@@ -192,7 +194,7 @@ export default function ReplayResultView({
                 </div>
               </Tab>
 
-              <Tab id="performance" label="Performance">
+              <Tab id="performance" label={t('replayControls.resultView.tabPerformance')}>
                 <div style={S.content}>
                   <PerformanceTab
                     data={resultData}

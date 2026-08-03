@@ -1,4 +1,5 @@
-import type { BtAstNode, BtOrNode } from '../types'
+import type { BtAstNode } from '../types'
+import { orNodeName, orNodeType, type BtOrNode } from '../nodes/btOrNode'
 import {
   isIfElseRuleMatch,
   sortOutgoingEdgeRefsByCanvasPosition,
@@ -7,8 +8,8 @@ import {
 } from '../bt.util'
 import type { BtRule } from './types'
 
-export const rule_ifElse: BtRule = {
-  name: 'ifElse',
+export const rule_ifElse: BtRule<typeof orNodeName> = {
+  name: orNodeName,
 
   match: ({ node, outgoing }) => {
     return isIfElseRuleMatch(node, outgoing)
@@ -27,7 +28,7 @@ export const rule_ifElse: BtRule = {
     })
 
     const orNode: BtOrNode = {
-      kind: 'or',
+      kind: orNodeType,
       name: getRuleNodeName(node, 'or'),
       attrs: {
         node_id: String(node.id)
