@@ -123,6 +123,7 @@ interface Provision {
   certificateId: string
   apiKey: string
   organization: string
+  isDefaultSite: boolean
   groupId: string | null
   groupName: string
   siteId: string | null

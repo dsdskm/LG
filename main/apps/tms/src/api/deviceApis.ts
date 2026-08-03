@@ -36,11 +36,12 @@ async function getDevice(deviceId?: string): Promise<DeviceResponse> {
   return response as DeviceResponse
 }
 
-export function useDevice(deviceId?: string) {
+export function useDevice(deviceId?: string, pollingInterval?: number) {
   return useQuery({
     queryKey: ['useDevice', deviceId],
     queryFn: () => getDevice(deviceId),
-    enabled: deviceId !== undefined
+    enabled: deviceId !== undefined,
+    refetchInterval: pollingInterval ?? false
   })
 }
 
