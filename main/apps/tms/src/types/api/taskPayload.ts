@@ -15,6 +15,7 @@ export interface ContentApiPayload {
   contentTypeId: number
   contentTypeName: string
   contentValue: string
+  contentVersion: string
   createdAt: string
   groupId: string | null
   id: number

@@ -2,7 +2,7 @@ import styled from 'styled-components'
 
 export const Container = styled.div`
   display: flex;
-  width: 100vw;
+  width: 100%;
   height: 100vh;
   overflow: hidden;
   background-color: var(--color-background);
@@ -65,6 +65,22 @@ export const StyledLayout = styled.div`
       min-width: 0;
       min-height: 0;
       padding: 2.4rem 32px;
+    }
+
+    @media all and (max-width: 767px) {
+      &::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: transparent;
+        cursor: pointer;
+        z-index: 91;
+        pointer-events: ${({ $sideBarOpen }) => ($sideBarOpen ? 'auto' : 'none')};
+        display: ${({ $sideBarOpen }) => ($sideBarOpen ? 'block' : 'none')};
+      }
     }
   }
 

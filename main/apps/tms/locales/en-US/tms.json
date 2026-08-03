@@ -271,6 +271,21 @@
     "title": "RobotsPage",
     "statusFilter": "로봇상태",
     "taskflowFilter": "taskflow",
+    "controlButton": "Control",
+    "controlPageTitle": "Robot Control - {{robotId}}",
+    "controlPageEmpty": "Robot control screen is under construction.",
+    "controlTabs": {
+      "cloud": "Cloud",
+      "rf": "RF"
+    },
+    "controlInputPlaceholder": "Enter a value to send",
+    "controlSend": "Send",
+    "controlRequiredInput": "Please enter a value to send.",
+    "controlInvalidRobot": "Invalid robot id.",
+    "controlBridgeUnavailable": "Android native bridge is not available.",
+    "controlCloudFailed": "Failed to send cloud control request.",
+    "controlSentCloud": "Sent cloud control request.",
+    "controlSentRf": "Sent to Android native.",
     "installedCount": "설치 TaskFlow",
     "recentRun": "최근 실행",
     "runningStatus": {

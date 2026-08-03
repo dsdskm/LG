@@ -44,6 +44,7 @@ const ArtifactDetail = () => {
   const [manifestFile, setManifestFile] = useState(null)
   const [status, setStatus] = useState('')
   const [allPackageTypes, setAllPackageTypes] = useState([])
+  const [artifactPackageTypeId, setArtifactPackageTypeId] = useState(null)
   const [allModules, setAllModules] = useState([])
   const [moduleOptions, setModuleOptions] = useState([])
   const [moduleId, setModuleId] = useState(null)
@@ -262,17 +263,16 @@ const ArtifactDetail = () => {
 
   useEffect(() => {
     if (id) {
-      try {
-        const retrieveArtifacts = async () => {
-          setIsLoading(true)
+      const retrieveArtifacts = async () => {
+        setIsLoading(true)
+        try {
           const response = await artifactApis.retrieveArtifacts([Number(orgIdParam)], id)
           const artifact = response.results[0]
           setDisplayName(artifact.displayName || '')
           setMemo(artifact.memo || '')
           setStatus(artifact.status)
           setModuleId(artifact.Module.id || '')
-          const moduleResponse = await moduleApis.retrieveModules(company.id, artifact.Module.id)
-          setPackageType(moduleResponse.results[0].PackageType || null)
+          setArtifactPackageTypeId(artifact.Module.packageTypeId || null)
           setVersions(artifact.Versions.map((v) => v.displayName) || [])
           setOrganizationId(artifact.Organization.id || '')
 
@@ -296,33 +296,27 @@ const ArtifactDetail = () => {
           } else {
             setManifestFile(null)
           }
+        } catch (error) {
+          console.error('Error retrieving artifacts:', error)
+        } finally {
+          setIsLoading(false)
         }
-        retrieveArtifacts()
-      } catch (error) {
-        console.error('Error retrieving artifacts:', error)
-      } finally {
-        setIsLoading(false)
       }
+      retrieveArtifacts()
+    } else {
+      setArtifactPackageTypeId(null)
     }
   }, [id])
 
   useEffect(() => {
-    if (!company) return
-    const retrieveModules = async () => {
-      setIsLoading(true)
-      try {
-        const response = await moduleApis.retrieveModules(company.id, null)
-        setModuleOptions(
-          response.results.map((module) => ({ value: module.id, name: module.displayName, use: module.use }))
-        )
-        setAllModules(response.results)
-      } catch (error) {
-        console.error('Error retrieving modules:', error)
-      } finally {
-        setIsLoading(false)
-      }
+    if (artifactPackageTypeId !== null && allPackageTypes.length > 0) {
+      const pkgType = allPackageTypes.find((p) => p.id === artifactPackageTypeId)
+      setPackageType(pkgType || null)
     }
-    retrieveModules()
+  }, [artifactPackageTypeId, allPackageTypes])
+
+  useEffect(() => {
+    if (!company) return
 
     const retrievePackageTypes = async () => {
       setIsLoading(true)
@@ -338,9 +332,23 @@ const ArtifactDetail = () => {
       }
     }
     retrievePackageTypes()
-  }, [company])
 
-  console.log('Render: packageType is', packageType, 'code is', packageType?.code)
+    const retrieveModules = async () => {
+      setIsLoading(true)
+      try {
+        const response = await moduleApis.retrieveModules(company.id, null)
+        setModuleOptions(
+          response.results.map((module) => ({ value: module.id, name: module.displayName, use: module.use }))
+        )
+        setAllModules(response.results)
+      } catch (error) {
+        console.error('Error retrieving modules:', error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    retrieveModules()
+  }, [company])
 
   return (
     <StyledPageContent className="column">

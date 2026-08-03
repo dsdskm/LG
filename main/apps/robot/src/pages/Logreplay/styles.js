@@ -320,16 +320,6 @@ export const S = {
     width: '100%',
     height: '100%'
   },
-  map3DHint: {
-    position: 'absolute',
-    bottom: 28,
-    left: '50%',
-    transform: 'translateX(-50%)',
-    fontSize: 12,
-    color: '#9CA3AF',
-    pointerEvents: 'none',
-    whiteSpace: 'nowrap'
-  },
   map3DDebugInfo: {
     position: 'absolute',
     top: 8,
@@ -577,23 +567,6 @@ export const S = {
     checkMark: { color: '#A5B4FC', marginLeft: 6 },
     emptyRight: { width: 12 },
 
-    // ===== LogsSection / Highlighter =====
-    highlightMark: { background: '#FDE68A', color: '#111827', padding: '0 1px' },
-
-    // ===== Logs containers (mode-specific overrides) =====
-    // Plain 모드: 부드러운 스크롤 대신 즉시 스크롤(깜빡임 방지)
-    logBodyPlain: { scrollBehavior: 'auto' },
-    // Virtual 모드: 바깥 스크롤을 감추고 내부 가상리스트만 스크롤
-
-    logBodyVirtual: {
-      position: 'relative'
-      // ✅ overflow 계열은 절대 넣지 말 것 (shorthand/longhand 모두 X)
-      // virtualization용 translate/height 계산 등의 속성만
-    },
-    // ===== Log line variants =====
-    logLineWarn: { color: '#DC2626', fontWeight: 600 },
-    logLineError: { color: '#DC2626' },
-
     // 툴팁 인라인 스타일(전역 S 수정 없이 최소 추가)
     tooltipWrapStyle: {
       position: 'absolute',
@@ -612,17 +585,35 @@ export const S = {
       lineHeight: '14px',
       whiteSpace: 'nowrap',
       boxShadow: '0 1px 2px rgba(0,0,0,0.3)'
-    },
-    toggleMapBtn: {
-      padding: '3px 10px',
-      fontSize: 12,
-      borderRadius: 6,
-      border: '1px solid #4B5563',
-      background: '#374151',
-      color: '#F9FAFB',
-      cursor: 'pointer',
-      whiteSpace: 'nowrap',
-      marginRight: 6
     }
+  },
+
+  // ===== LogsSection / Highlighter =====
+  highlightMark: { background: '#FDE68A', color: '#111827', padding: '0 1px' },
+
+  // ===== Logs containers (mode-specific overrides) =====
+  // Plain 모드: 부드러운 스크롤 대신 즉시 스크롤(깜빡임 방지)
+  logBodyPlain: { scrollBehavior: 'auto' },
+  // Virtual 모드: 바깥 스크롤을 감추고 내부 가상리스트만 스크롤
+  logBodyVirtual: {
+    position: 'relative'
+    // ✅ overflow 계열은 절대 넣지 말 것 (shorthand/longhand 모두 X)
+    // virtualization용 translate/height 계산 등의 속성만
+  },
+  // ===== Log line variants =====
+  logLineWarn: { color: '#DC2626', fontWeight: 600 },
+  logLineError: { color: '#DC2626' },
+
+  // 3D/2D 지도 전환 버튼
+  toggleMapBtn: {
+    padding: '3px 10px',
+    fontSize: 12,
+    borderRadius: 6,
+    border: '1px solid #4B5563',
+    background: '#374151',
+    color: '#F9FAFB',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    marginRight: 6
   }
 }

@@ -3,6 +3,7 @@
 declare module '@repo/stores' {
   export function useOrganizationStore(): any
   export function useUserStore(): any
+  export function useResponsiveStore(): any
 }
 
 declare module '@repo/apis'

@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useLogReplayLogic } from './hooks/useLogReplayLogic'
 import { useSearchParams } from 'react-router-dom'
 import { deviceApis } from '@/apis'
@@ -96,6 +97,7 @@ const HeaderContainer = React.memo(
 // BodyContainer는 본문 상태 변화에만 반응
 const BodyContainer = React.memo(
   function BodyContainerInner(props) {
+    const { t } = useTranslation('robot')
     const {
       // 스타일/레이아웃
       topRatio,
@@ -242,7 +244,7 @@ const BodyContainer = React.memo(
         </div>
 
         {/* 드래그 바 */}
-        <div style={S.dragBar} onMouseDown={onDragStart} title="위/아래 영역 높이를 드래그로 조절" />
+        <div style={S.dragBar} onMouseDown={onDragStart} title={t('logreplay.logs.dragBarTitle')} />
 
         {/* 하단(로그 영역) */}
         <LogsSection
@@ -288,6 +290,7 @@ const BodyContainer = React.memo(
 )
 
 export default function Logreplay({ robotName = '로봇 명', initialDate }) {
+  const { t } = useTranslation('robot')
   // ✅ BodyContainer deferred re-render용
   const [bodyKey, setBodyKey] = useState(0)
 
@@ -410,8 +413,12 @@ export default function Logreplay({ robotName = '로봇 명', initialDate }) {
   }, [deviceId])
 
   const selectedLabel = useMemo(() => {
-    return logOptions.find((l) => l.id === selectedLogId)?.label ?? (logOptions[0]?.label || '로그 없음')
-  }, [logOptions, selectedLogId])
+    const labelOf = (opt) => (opt?.labelKey ? t(opt.labelKey) : opt?.label)
+    return (
+      labelOf(logOptions.find((l) => l.id === selectedLogId)) ??
+      (labelOf(logOptions[0]) || t('logreplay.logs.noLogOption'))
+    )
+  }, [logOptions, selectedLogId, t])
 
   const isEmptyOption = selectedLogId === '__empty__'
   const headerLocked = isPlaying || isLoadingLogs

@@ -16,7 +16,10 @@ export const useSideBarStore = create(
       setCompactSideBar: (value) => set({ compactSideBar: value })
     }),
     {
-      name: 'STORE_SIDEBAR'
+      name: 'STORE_SIDEBAR',
+      partialize: (state) => ({
+        openDepth: state.openDepth
+      })
     }
   )
 )

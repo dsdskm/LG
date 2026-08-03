@@ -87,7 +87,10 @@ import FacePreview from '../PropertyPanel/components/VisualDataSection/previews/
 import SoundPreview from '../PropertyPanel/components/VisualDataSection/previews/SoundPreview'
 import { PlayStatus } from '../PropertyPanel/components/VisualDataSection/previews/types.preview'
 import { useContentTaskStore } from '../store/useContentTaskStore'
-
+import { useResponsiveStore } from '@repo/stores'
+import { MobilePropertySheet } from '../components/MobilePropertySheet'
+import { CONTENT_TYPE } from '@/common/contentTypes'
+import ObjectPreview from '../PropertyPanel/components/VisualDataSection/previews/ObjectPreview'
 // 로컬 개발 환경 여부. .env.local 의 VITE_ENV=local 로 판별(빌드 환경엔 없음).
 const IS_LOCAL_ENV = import.meta.env.VITE_ENV === 'local'
 
@@ -179,39 +182,43 @@ function PropertyPanel({
 }
 
 function ContentsPanel({ selectedNode }: { selectedNode: any | null }) {
-  const [contentTypes, setContentTypes] = useState<Map<number, any>>(new Map())
+  const [contentNodeMap, setContentNodeMap] = useState<Map<string, any>>(new Map())
   const addContentTask = useContentTaskStore((state) => state.addContentTask)
   console.log('selectedNode info ', selectedNode)
 
   useEffect(() => {
-    if (!selectedNode?.data?.contentTypeId) return
-    const typeId = selectedNode?.data?.contentTypeId
-    if (!typeId) return
+    if (!selectedNode?.data?.contentTypeName) return
+    const typeName = selectedNode?.data?.contentTypeName
+    if (!typeName) return
 
-    setContentTypes((prev) => {
-      if (prev.get(typeId) === selectedNode) return prev
+    setContentNodeMap((prev) => {
+      if (prev.get(typeName) === selectedNode) return prev
       const next = new Map(prev)
-      next.set(typeId, selectedNode)
+      next.set(typeName, selectedNode)
       return next
     })
     addContentTask({
       nodeId: selectedNode.id,
       playStatus: 'READY'
     })
-  }, [selectedNode, addContentTask])
+  }, [selectedNode])
 
-  const poiContent = contentTypes.get(1)
-  const motionContent = contentTypes.get(2)
-  const faceContent = contentTypes.get(6)
-  const soundContent = contentTypes.get(5)
+  const poiContent = contentNodeMap.get(CONTENT_TYPE.POI)
+  const motionContent = contentNodeMap.get(CONTENT_TYPE.MOTION)
+  const faceContent = contentNodeMap.get(CONTENT_TYPE.FACE_VIDEO) ?? contentNodeMap.get(CONTENT_TYPE.FACE_IMAGE)
+  const soundContent = contentNodeMap.get(CONTENT_TYPE.BGM)
+  const ttsContent = contentNodeMap.get(CONTENT_TYPE.TTS)
+  const objectContent = contentNodeMap.get(CONTENT_TYPE.OBJECT)
 
   return (
     <>
       <div style={{ display: 'flex', flexDirection: 'column', overflow: 'auto', gap: 10, padding: '8px 4px 0px 0px' }}>
-        {poiContent && <PoiPreview node={{ data: poiContent?.data ?? {} }} nodeId={poiContent?.id} />}
-        {motionContent && <MotionPreview node={{ data: motionContent?.data ?? {} }} nodeId={motionContent?.id} />}
         {faceContent && <FacePreview node={{ data: faceContent?.data ?? {} }} nodeId={faceContent?.id} />}
+        {motionContent && <MotionPreview node={{ data: motionContent?.data ?? {} }} nodeId={motionContent?.id} />}
+        {poiContent && <PoiPreview node={{ data: poiContent?.data ?? {} }} nodeId={poiContent?.id} />}
         {soundContent && <SoundPreview node={{ data: soundContent?.data ?? {} }} nodeId={soundContent?.id} />}
+        {ttsContent && <SoundPreview node={{ data: ttsContent?.data ?? {} }} nodeId={ttsContent?.id} />}
+        {objectContent && <ObjectPreview node={{ data: objectContent?.data ?? {} }} nodeId={objectContent?.id} />}
       </div>
     </>
   )
@@ -305,6 +312,16 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
     return safeFlow.nodes ?? []
   }, [safeFlow.nodes])
 
+  // 콘텐츠(contentId 보유) 노드 id 집합 — resolveResult 에서 참조(executor 재생성 없이 ref 로)
+  const contentNodeIdsRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const ids = new Set<string>()
+    for (const n of rawNodes) {
+      if (typeof (n as any)?.data?.contentId === 'number') ids.add(String(n.id))
+    }
+    contentNodeIdsRef.current = ids
+  }, [rawNodes])
+
   const rawEdges = useMemo(() => {
     return safeFlow.edges ?? []
   }, [safeFlow.edges])
@@ -322,7 +339,12 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
     const forced = nodeConfigsRef.current[nodeId]?.forced ?? DEFAULT_NODE_CONFIG.forced
     if (forced === 'FAILURE') return 'FAILURE'
     if (forced === 'RUNNING') return 'RUNNING'
-    if (forced === 'NORMAL') return showAstRef.current ? 'SUCCESS' : checkViaContentsStatus(nodeId, 'SUCCESS')
+    if (forced === 'NORMAL') {
+      if (showAstRef.current) return 'SUCCESS'
+      // 콘텐츠 없는 일반 노드 → 즉시 SUCCESS, 콘텐츠 노드 → 콘텐츠 상태(기본 RUNNING) 따름
+      if (!contentNodeIdsRef.current.has(nodeId)) return 'SUCCESS'
+      return checkViaContentsStatus(nodeId, 'RUNNING')
+    }
 
     return 'SUCCESS'
   }, [])
@@ -340,6 +362,9 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
         break
       case 'COMPLETED':
         result = 'SUCCESS'
+        break
+      case 'FAILURE':
+        result = 'FAILURE'
         break
     }
     return result
@@ -385,6 +410,8 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
       // 강제 결과(NORMAL 제외) 마커: 우상단 네모 표시용
       const forced = mode === 'inspect' ? nodeConfigs[node.id]?.forced : undefined
       const forcedResult = forced && forced !== 'NORMAL' ? forced : undefined
+      // 점검 시 현재 RUNNING 노드의 tick 반복 횟수(우하단 뱃지)
+      const tickCount = mode === 'inspect' ? (snapshot.runningCountById[node.id] ?? 0) : 0
       return {
         ...node,
         selected: node.id === selectedNodeId,
@@ -394,13 +421,23 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
           taskStatus: simStatus ?? activeInfo?.status ?? 'IDLE',
           runningCount: activeInfo?.runningCount ?? 0,
           breakpoint,
-          forcedResult
+          forcedResult,
+          tickCount
         },
         selectable: true,
         connectable: false
       }
     })
-  }, [rawNodes, selectedNodeId, activeNodeList, readonlyFlowMode, mode, simStatusById, nodeConfigs])
+  }, [
+    rawNodes,
+    selectedNodeId,
+    activeNodeList,
+    readonlyFlowMode,
+    mode,
+    simStatusById,
+    snapshot.runningCountById,
+    nodeConfigs
+  ])
 
   const edges = useMemo(() => {
     return rawEdges.map((edge: any) => ({
@@ -513,6 +550,7 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
     (_event: React.MouseEvent, node: Node) => {
       setSelectedNodeId(node.id)
       setPropertyTab('task')
+      setPanelOpen(true)
       // 점검 모드에서는 START(ROOT) 를 제외한 노드 클릭 시 점검 설정 팝업을 연다.
       if (mode === 'inspect' && node.type !== 'startNode') {
         setConfigNodeId(node.id)
@@ -579,6 +617,7 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
     setSnapshot(EMPTY_SNAPSHOT)
     setStarted(true)
     setIsPlaying(true)
+    setPanelOpen(true)
   }, [compile, executor])
 
   // 수동 모드 시작: 먼저 컴파일 → 실패 시 팝업, 성공 시 첫 tick 진행(이후 Next)
@@ -591,6 +630,7 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
     setCompiledModel(model)
     executor.reset()
     setStarted(true)
+    setPanelOpen(true)
     void applyStep()
   }, [compile, executor, applyStep])
 
@@ -671,12 +711,30 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
     return rawNodes.find((n: any) => String(n.id) === configNodeId) ?? null
   }, [configNodeId, rawNodes])
 
+  const { responsiveMode } = useResponsiveStore()
+  const isMobile = responsiveMode !== 'PC' ? true : false
+  const [isPanelOpen, setPanelOpen] = useState(false)
+
+  const mobileSheetContent = useMemo(() => {
+    if (mode === 'view') {
+      return <PropertyPanel selectedNode={selectedNode} tab={propertyTab} onChangeTab={setPropertyTab} />
+    }
+    if (IS_LOCAL_ENV && showAst) {
+      return <AstView model={compiledModel} statusById={simStatusById} startNodeId={startNodeId} error={compileError} />
+    }
+    return <ContentsPanel selectedNode={selectedNode} />
+  }, [selectedNode])
+
+  // useEffect(() => {
+  //   setPanelOpen(selectedNode)
+  // }, [selectedNode])
+
   return (
     <InspectShell>
-      <CanvasRoot>
+      <CanvasRoot $isPanelOpen={!!selectedNode && !isMobile}>
         <CanvasMain>
           {displayOption === 'RUNNING_STATUS' && (
-            <FlowTitleBar>
+            <FlowTitleBar style={{ flexWrap: 'wrap', rowGap: '8px' }}>
               <FlowTitle>
                 <FlowTitleLabel>선택한 Task Flow</FlowTitleLabel>
                 {flowName && (
@@ -701,10 +759,28 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
           {displayOption !== 'RUNNING_STATUS' && (
             <Toolbar>
               <SegmentedWrap>
-                <SegmentedButton type="button" $active={mode === 'view'} $first onClick={() => setMode('view')}>
+                <SegmentedButton
+                  type="button"
+                  $active={mode === 'view'}
+                  $first
+                  onClick={() => {
+                    setMode('view')
+                    setSelectedNodeId(null)
+                    setPanelOpen(false)
+                  }}
+                >
                   {t('canvas.viewer.viewMode')}
                 </SegmentedButton>
-                <SegmentedButton type="button" $active={mode === 'inspect'} $last onClick={() => setMode('inspect')}>
+                <SegmentedButton
+                  type="button"
+                  $active={mode === 'inspect'}
+                  $last
+                  onClick={() => {
+                    setMode('inspect')
+                    setSelectedNodeId(null)
+                    setPanelOpen(false)
+                  }}
+                >
                   {t('canvas.viewer.inspectMode')}
                 </SegmentedButton>
               </SegmentedWrap>
@@ -867,6 +943,17 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
             </ControlsGroup>
           )}
         </InspectBar>
+      )}
+      {/* 모바일에서만 바텀시트로 같은 패널을 렌더링 */}
+      {isMobile && (
+        <MobilePropertySheet
+          isOpen={isPanelOpen}
+          onClose={() => {
+            setPanelOpen(false)
+          }}
+        >
+          {mobileSheetContent}
+        </MobilePropertySheet>
       )}
 
       <NodeInspectDialog

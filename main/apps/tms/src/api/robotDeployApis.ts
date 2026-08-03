@@ -13,17 +13,17 @@ async function getLatestDeployments(params?: DeviceLatestDeploymentRequest): Pro
     throw new Error('params is required')
   }
 
-  const { robotId, taskflowId, groupId, siteId } = params
+  const { taskflowId, groupId, siteId } = params
 
   const searchParams = new URLSearchParams({
-    groupId,
-    siteId,
     taskflowId: String(taskflowId)
   })
-
-  robotId.forEach((robotId) => {
-    searchParams.append('robotId', robotId)
-  })
+  if (groupId) {
+    searchParams.set('groupId', groupId)
+  }
+  if (siteId) {
+    searchParams.set('siteId', siteId)
+  }
 
   const response = await axiosClient.get(path + '/latest', {
     params: searchParams
@@ -34,7 +34,7 @@ async function getLatestDeployments(params?: DeviceLatestDeploymentRequest): Pro
 
 export function useGetLatestDeployments(params?: DeviceLatestDeploymentRequest, enabled: boolean = true) {
   return useQuery({
-    queryKey: ['robots', params?.groupId, params?.siteId, params?.taskflowId, [...(params?.robotId ?? [])].sort()],
+    queryKey: ['latest_deployments', params?.groupId, params?.siteId, params?.taskflowId],
     queryFn: () => getLatestDeployments(params),
     enabled: enabled && !!params
   })

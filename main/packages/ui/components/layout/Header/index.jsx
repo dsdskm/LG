@@ -54,7 +54,9 @@ const Header = () => {
       <div className="containerHeader">
         <div className="content left">
           <StyledHeaderButton type="button" onClick={toggleSideBar} aria-label="Open Sidebar" className="hideOnMobile">
-            <SvgMenu />
+            <i className="icon">
+              <SvgMenu />
+            </i>
           </StyledHeaderButton>
 
           <Logo />
@@ -90,7 +92,7 @@ const Header = () => {
             )}
 
             {isProfileOpen && (
-              <StyledProfileDropdown>
+              <StyledProfileDropdown className={responsiveMode}>
                 <button type="button" onClick={handleLogout}>
                   <Icon name="sign_out" size={16} />
                   Logout

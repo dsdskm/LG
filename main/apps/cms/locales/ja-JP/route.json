@@ -7,7 +7,9 @@
       "embeddingDocs": "ドキュメント登録",
       "embeddingAction": "ロボットアクション",
       "embeddingTest": "テスト",
+      "agentChat": "AIエージェント",
       "embeddingVersion": "ベクターバージョン",
+      "lab": "実験室",
       "settings": "設定",
       "contentType": "コンテンツタイプ",
       "category": "カテゴリー",
@@ -47,6 +49,9 @@
     },
     "embeddingTest": {
       "name": "音声対話テスト"
+    },
+    "agentChat": {
+      "name": "AIエージェント"
     },
     "contentType": {
       "name": "コンテンツタイプ"

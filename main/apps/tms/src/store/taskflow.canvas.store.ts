@@ -1,6 +1,12 @@
 import { create } from 'zustand'
 import type { Node, Edge, XYPosition, NodeChange, EdgeChange, Connection } from '@xyflow/react'
-import { applyNodeChanges, applyEdgeChanges, MarkerType, addEdge, reconnectEdge as reconnectEdgeHelper } from '@xyflow/react'
+import {
+  applyNodeChanges,
+  applyEdgeChanges,
+  MarkerType,
+  addEdge,
+  reconnectEdge as reconnectEdgeHelper
+} from '@xyflow/react'
 
 import type { TaskApiPayload, ContentApiPayload, PropertySchema } from '../types/api/taskPayload'
 
@@ -29,6 +35,7 @@ export type NodeData = {
   contentTypeId?: number
   contentTypeName?: string
   contentValue?: string
+  contentVersion?: string
   groupId?: string | null
   siteId?: string | null
 
@@ -214,6 +221,7 @@ function normalizeContentPayload(content: any): ContentApiPayload {
     contentTypeId: Number(content?.contentTypeId ?? 0),
     contentTypeName: toStringOrEmpty(content?.contentTypeName),
     contentValue: toStringOrEmpty(content?.contentValue),
+    contentVersion: toStringOrEmpty(content?.contentVersion),
     createdAt: toStringOrEmpty(content?.createdAt),
     groupId: toStringOrNull(content?.groupId),
     id: Number(content?.id ?? 0),
@@ -294,6 +302,7 @@ function buildNodeDataFromPaletteItem(item: PaletteItem): NodeData {
       contentTypeId: content.contentTypeId,
       contentTypeName: content.contentTypeName,
       contentValue: content.contentValue,
+      contentVersion: content.version,
       groupId: content.groupId,
       siteId: content.siteId,
       propertySchema: task.propertySchema,
@@ -730,8 +739,6 @@ type FlowEditorState = {
   pushHistoryCheckpoint: () => void
   getSelectedNode: () => RFNode | null
   loadFromFlowDefinition: (def: Record<string, unknown>) => void
-  // 외부(예: AI draft)에서 full flow를 적용하되, 현재 상태를 undo 히스토리에 남긴다.
-  applyFlowDefinitionWithHistory: (def: Record<string, unknown>) => void
 
   // flowKey 기준으로 localStorage 에 저장된 히스토리가 있으면 복원, 없으면 def 로 초기화
   initFlowEditor: (flowKey: string, def: Record<string, unknown>) => void
@@ -745,8 +752,6 @@ type FlowEditorState = {
 
   deleteSelectedNode: () => void
   deleteSelectedEdge: () => void
-  // Start 노드를 제외한 모든 노드/엣지를 제거한다. (undo 가능)
-  clearAllNodesExceptStart: () => void
   // 선택된 엣지의 시각 유형(곡선/직선/꺾은선) 변경
   setSelectedEdgeType: (edgeType: EdgeVisualType) => void
 
@@ -806,7 +811,7 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
     try {
       console.log('[TASK_PANEL][LOAD_START]', {
         groupId,
-        siteId,
+        siteId
       })
 
       const rawTasks = await listTasks({ groupId, siteId, include: 'contents' })
@@ -816,8 +821,8 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
           id: task.id,
           name: task.name,
           taskType: task.taskType,
-          contentsCount: Array.isArray((task as any)?.contents) ? (task as any).contents.length : 0,
-        })),
+          contentsCount: Array.isArray((task as any)?.contents) ? (task as any).contents.length : 0
+        }))
       })
 
       const tasks = rawTasks.map(normalizeTaskPayload)
@@ -829,7 +834,7 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
         contentsCount: contentsList.length,
         controlTaskCount: tasks.filter((task) => task.taskType === TASK_TYPE_CONTROL).length,
         actionTaskCount: tasks.filter((task) => task.taskType === 'ACTION').length,
-        rootTaskCount: tasks.filter((task) => task.taskType === TASK_TYPE_ROOT).length,
+        rootTaskCount: tasks.filter((task) => task.taskType === TASK_TYPE_ROOT).length
       })
 
       // tasks 로드 전에 캔버스가 먼저 초기화된 경우, 지금 start 노드에 ROOT task 정보를 반영한다.
@@ -846,7 +851,7 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
       set({ loadingTasks: false })
       console.log('[TASK_PANEL][LOAD_END]', {
         groupId,
-        siteId,
+        siteId
       })
     }
   },
@@ -987,34 +992,6 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
       canUndo: false,
       canRedo: false
     })
-  },
-
-  applyFlowDefinitionWithHistory: (def) => {
-    const tasks = get().tasks
-    const safeDef = ensureStartNode(def, tasks)
-
-    const rawNodes = Array.isArray((safeDef as any).nodes) ? ((safeDef as any).nodes as RFNode[]) : []
-    const nodes = applyRootTaskToStartNode(rawNodes, tasks)
-
-    const edges = Array.isArray((safeDef as any).edges) ? ((safeDef as any).edges as RFEdge[]) : []
-    const viewport = normalizeViewport((safeDef as any).viewport)
-    const flowMode = normalizeFlowMode((safeDef as any).flowMode)
-
-    const prev = makeSnapshot(get().nodes, get().edges, get().viewport, get().flowMode)
-
-    set((state) => ({
-      nodes,
-      edges,
-      viewport,
-      flowMode,
-      positionsByMode: {},
-      helperLineVertical: undefined,
-      helperLineHorizontal: undefined,
-      selectedNodeId: null,
-      selectedEdgeId: null,
-      selectedPalette: null,
-      ...pushHistory(state.historyPast, prev)
-    }))
   },
 
   initFlowEditor: (flowKey, def) => {
@@ -1215,16 +1192,16 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
     const next = reconnected.map((edge) =>
       edge.id === oldEdge.id
         ? {
-          ...edge,
-          data: {
-            ...edge.data,
-            sourceNodeId: newConnection.source ?? null,
-            targetNodeId: newConnection.target ?? null,
-            sourceHandleId: newConnection.sourceHandle ?? null,
-            targetHandleId: newConnection.targetHandle ?? null,
-            waypoints: undefined
+            ...edge,
+            data: {
+              ...edge.data,
+              sourceNodeId: newConnection.source ?? null,
+              targetNodeId: newConnection.target ?? null,
+              sourceHandleId: newConnection.sourceHandle ?? null,
+              targetHandleId: newConnection.targetHandle ?? null,
+              waypoints: undefined
+            }
           }
-        }
         : edge
     ) as RFEdge[]
 
@@ -1238,9 +1215,7 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
 
   setEdgeWaypoints: (edgeId, waypoints) => {
     set((state) => ({
-      edges: state.edges.map((edge) =>
-        edge.id === edgeId ? { ...edge, data: { ...edge.data, waypoints } } : edge
-      )
+      edges: state.edges.map((edge) => (edge.id === edgeId ? { ...edge, data: { ...edge.data, waypoints } } : edge))
     }))
   },
 
@@ -1283,30 +1258,11 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
     const { selectedEdgeId, edges, viewport } = get()
     if (!selectedEdgeId) return
 
-    const prev = makeSnapshot(get().nodes, edges, viewport,get().flowMode)
+    const prev = makeSnapshot(get().nodes, edges, viewport, get().flowMode)
 
     set((state) => ({
       edges: edges.filter((edge) => edge.id !== selectedEdgeId),
       selectedEdgeId: null,
-      ...pushHistory(state.historyPast, prev)
-    }))
-  },
-
-  clearAllNodesExceptStart: () => {
-    const { nodes, edges, viewport } = get()
-
-    const nextNodes = nodes.filter((node) => isStartNodeId(node.id))
-    const hasChanges = nextNodes.length !== nodes.length || edges.length > 0
-    if (!hasChanges) return
-
-    const prev = makeSnapshot(nodes, edges, viewport, get().flowMode)
-
-    set((state) => ({
-      nodes: nextNodes,
-      edges: [],
-      selectedNodeId: null,
-      selectedEdgeId: null,
-      selectedPalette: null,
       ...pushHistory(state.historyPast, prev)
     }))
   },

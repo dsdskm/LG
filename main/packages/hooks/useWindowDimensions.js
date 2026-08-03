@@ -1,6 +1,7 @@
 import { throttle } from 'lodash'
 import { useCallback, useEffect, useState } from 'react'
 import { useResponsiveStore, useSideBarStore } from '@repo/stores'
+import { BREAKPOINTS, RESPONSIVE_MODES } from '@repo/constants'
 import '../ui/styles/vars.css'
 
 export const useWindowDimensions = () => {
@@ -30,12 +31,17 @@ export const useWindowDimensions = () => {
         const realWidth = window.innerWidth
         const realHeight = window.innerHeight
         const currentMode = useResponsiveStore.getState().responsiveMode
-        const newMode = realWidth > 767 ? 'PC' : 'MOBILE'
+        const newMode =
+          realWidth > BREAKPOINTS.PC
+            ? RESPONSIVE_MODES.PC
+            : realWidth > BREAKPOINTS.MOBILE
+              ? RESPONSIVE_MODES.TABLET
+              : RESPONSIVE_MODES.MOBILE
 
         useResponsiveStore.getState().setWindowSize({ width: realWidth, height: realHeight })
 
         if (currentMode !== newMode) {
-          useSideBarStore.getState().setCompactSideBar(realWidth <= 767)
+          useSideBarStore.getState().setCompactSideBar(newMode !== RESPONSIVE_MODES.PC)
         }
       }
 

@@ -1,5 +1,6 @@
 // Logreplay/components/DrivingMap3D.jsx
 import React, { memo, useMemo, useRef, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
@@ -229,6 +230,13 @@ function OccupancyGridMesh({ gridData }) {
     const { width, height, resolution } = gridData
     return new THREE.PlaneGeometry(width * resolution, height * resolution)
   }, [gridData])
+
+  // gridData 변경/언마운트 시 이전 지오메트리 해제 (GPU 누수 방지 — PathLine과 동일 패턴)
+  useEffect(() => {
+    return () => {
+      if (geometry) geometry.dispose()
+    }
+  }, [geometry])
 
   const position = useMemo(() => {
     if (!gridData) return [0, 0, 0]
@@ -465,6 +473,18 @@ function CostmapOverlay({ localCostmapFrames, playbackCutoffSec, pathPoints }) {
     if (!geometry) return null
     return new THREE.EdgesGeometry(geometry)
   }, [geometry])
+
+  // 프레임 변경/언마운트 시 이전 지오메트리 해제 (GPU 누수 방지)
+  useEffect(() => {
+    return () => {
+      if (geometry) geometry.dispose()
+    }
+  }, [geometry])
+  useEffect(() => {
+    return () => {
+      if (edgeGeometry) edgeGeometry.dispose()
+    }
+  }, [edgeGeometry])
 
   if (!texture || !geometry) return null
 
@@ -766,6 +786,14 @@ function GoalMarker({ dwaGoals, pathPoints, playbackCutoffSec, markerSize = 0.3,
   const barXGeo = useMemo(() => new THREE.BoxGeometry(armLen, armHeight, armThick), [armLen, armThick])
   const barZGeo = useMemo(() => new THREE.BoxGeometry(armThick, armHeight, armLen), [armLen, armThick])
 
+  // markerSize 변경/언마운트 시 이전 지오메트리 해제 (GPU 누수 방지)
+  useEffect(() => {
+    return () => {
+      barXGeo.dispose()
+      barZGeo.dispose()
+    }
+  }, [barXGeo, barZGeo])
+
   if (!pickedPose) return null
 
   return (
@@ -800,6 +828,13 @@ function RobotMarker({ pathPoints, playbackCutoffSec, markerSize = 0.4 }) {
     geo.computeVertexNormals()
     return geo
   }, [markerSize])
+
+  // markerSize 변경/언마운트 시 이전 지오메트리 해제 (GPU 누수 방지)
+  useEffect(() => {
+    return () => {
+      if (geometry) geometry.dispose()
+    }
+  }, [geometry])
 
   if (!pose) return null
 
@@ -886,11 +921,11 @@ function DrivingMap3D({
   currentTimestampMs,
   t0EpochMs
 }) {
+  const { t } = useTranslation('robot')
   const containerRef = useRef(null)
   const glDomRef = useRef(null)
   const controlsRef = useRef()
 
-  const hasGrid = !!gridData
   const hasPath = Array.isArray(pathPoints) && pathPoints.length > 0
   const hasCostmap = Array.isArray(localCostmapFrames) && localCostmapFrames.length > 0
   const hasGoal = Array.isArray(dwaGoals) && dwaGoals.length > 0
@@ -996,13 +1031,12 @@ function DrivingMap3D({
         )}
       </Canvas>
 
-      {!hasGrid && <div style={S.map3DHint}>지도 데이터 로딩 중…</div>}
       {/* {hasGrid && (
         <div
           style={S.map3DDebugInfo}
         >{`지도: ${gridData.width}×${gridData.height} | 해상도: ${gridData.resolution}m`}</div>
       )} */}
-      <div style={S.map3DControlsHint}>좌클릭: 회전 &nbsp;|&nbsp; 우클릭: 이동 &nbsp;|&nbsp; 휠: 줌</div>
+      <div style={S.map3DControlsHint}>{t('logreplay.map.controlsHint')}</div>
     </div>
   )
 }

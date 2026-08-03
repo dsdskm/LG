@@ -25,6 +25,8 @@ type RobotListProps = {
   mode: 'DEPLOY' | 'CONTROL'
   onChangeCheckbox?: (robot: RobotInfo) => void
   onClickItem?: (robotId: string) => void
+  onClickControlItem?: (robotId: string) => void
+  showControlButton?: boolean
 }
 
 const RobotList = ({
@@ -33,7 +35,9 @@ const RobotList = ({
   searchQuery,
   selectedRobotIds,
   onChangeCheckbox,
-  onClickItem
+  onClickItem,
+  onClickControlItem,
+  showControlButton = false
 }: RobotListProps) => {
   console.log('robotList robotList', robotList)
   return (
@@ -60,9 +64,11 @@ const RobotList = ({
                 checked={selectedRobotIds.some((robotInfo) => robotInfo.id === robot.id)}
                 onChangeCheckbox={onChangeCheckbox}
                 onClick={onClickItem}
+                onClickControl={onClickControlItem}
                 displaySpec={mode === 'DEPLOY'}
                 displayTaskFlow={mode === 'CONTROL'}
                 deployStatus={robotStatus}
+                showControlButton={showControlButton}
               />
             )
           })}

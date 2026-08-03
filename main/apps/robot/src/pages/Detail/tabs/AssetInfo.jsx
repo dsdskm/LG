@@ -1,9 +1,9 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { Table, Modal, Button, ExpandableSection, SectionRobot as Section } from '@repo/ui'
 import { toYmdHmKST } from '@/utils/dateUtils'
-import { parseDeviceInfo, parseRobotData, getLocalizedName } from '@/utils/robotUtils'
-import { EditButton, PlayButton, StopButton, LiveSpan } from '@/utils/style'
-import { SectionList, ControlDiv, ControlBtn } from '../styles'
+import { parseDeviceInfo, parseRobotData, getLocalizedName, getWifiStatus } from '@/utils/robotUtils'
+import { EditButton, PlayButton, StopButton, LiveSpan, NoUnderlineExpandable } from '@/utils/style'
+import { SectionList } from '../styles'
 import { useModalState } from '@repo/hooks'
 import { deviceApis, mapApis } from '@/apis'
 import ModalEditRobot from '../modal/ModalEditRobot'
@@ -13,26 +13,29 @@ import { useUserStore } from '@repo/stores'
 // import SiteMap from '../../../common/SiteMap'
 import SiteMap3D from '../../../common/SiteMap3D'
 import PartsStatusPanel from '../component/PartsStatusPanel'
-import {
-  Play,
-  GamePad,
-  Battery,
-  Wifi,
-  Clock,
-  Upload,
-  OperationStatus,
-  RotateCcw,
-  PowerOff,
-  PlayCircle,
-  StopCircle,
-  AlertOctagon,
-  PauseCircle,
-  BatteryCharging,
-  Navigation
-} from '@/assets/icon'
+import RobotControlPanel from '../component/RobotControlPanel'
+import { Play, GamePad, Battery, Wifi, Clock, Upload, OperationStatus, StopCircle } from '@/assets/icon'
 
 // sitePosition(건물/층/영역) 식별 키 — 값이 바뀌면 해당 위치의 지도를 다시 로딩
 const sitePosKey = (sp) => (sp?.buildingId ? `${sp.buildingId}/${sp.floorId}/${sp.areaId}` : null)
+
+// {label, value} 목록을 2개씩 묶어 4컬럼(제목/내용 2쌍) 테이블 행으로 변환
+const toPairedRows = (items) => {
+  const rows = []
+  for (let i = 0; i < items.length; i += 2) {
+    const left = items[i]
+    const right = items[i + 1]
+    rows.push({
+      label1: left?.label,
+      value1: left?.value,
+      editable1: left?.editable,
+      label2: right?.label ?? '',
+      value2: right?.value ?? '',
+      editable2: right?.editable
+    })
+  }
+  return rows
+}
 
 const AssetInfo = ({ t, deviceId }) => {
   const EditRobotModal = useModalState()
@@ -59,6 +62,7 @@ const AssetInfo = ({ t, deviceId }) => {
     senTs: null,
     swTs: null
   })
+  const [channel, setChannel] = useState('CLOUD')
 
   useEffect(() => {
     loadDeviceInfo()
@@ -105,20 +109,36 @@ const AssetInfo = ({ t, deviceId }) => {
   }
 
   const loadDeviceInfo = useCallback(async (searchParams = {}) => {
-    setShowMap(false)
     try {
       const data = await deviceApis.getDeviceInfo(deviceId)
-      setDeviceInfo(parseDeviceInfo(data))
+      setDeviceInfo({
+        ...parseDeviceInfo(data),
+        wifi: getWifiStatus(data.state)
+      })
       setRobotDatas([parseRobotData(data)])
       setRobotState(data?.state)
 
       const provisionData = data.provision
       const sp = data.state?.sitePosition
+      // 지도는 로봇이 다른 건물/영역으로 이동하기 전까지는 바뀌지 않으므로,
+      // 위치 키가 이전에 로딩한 값과 동일하면 다시 불러오지 않는다.
+      // (제어 명령 후 정보 갱신 시 불필요한 지도 재조회 방지)
       // 맵은 device/area 단위로만 존재 → sitePosition(area) 없으면 조회하지 않음
-      if (provisionData && !provisionData.isDefaultSite && sp) {
-        prevSitePosRef.current = sitePosKey(sp)
-        getMapUrl(provisionData, sp)
+      if (provisionData && provisionData.isDefaultSite) {
+        // 기본 사이트: deviceId 기준으로 조회 (위치 개념이 없어 device 키로 dedupe)
+        const nextKey = `device:${deviceId}`
+        if (prevSitePosRef.current !== nextKey) {
+          prevSitePosRef.current = nextKey
+          getMapUrlByDevice()
+        }
+      } else if (provisionData && !provisionData.isDefaultSite && sp) {
+        const nextKey = sitePosKey(sp)
+        if (prevSitePosRef.current !== nextKey) {
+          prevSitePosRef.current = nextKey
+          getMapUrl(provisionData, sp)
+        }
       } else {
+        prevSitePosRef.current = null
         setShowMap(false)
       }
     } catch (err) {
@@ -162,6 +182,27 @@ const AssetInfo = ({ t, deviceId }) => {
     }
   }, [])
 
+  const getMapUrlByDevice = useCallback(async () => {
+    try {
+      const params = { deviceId: deviceId }
+      const data = await mapApis.getMapViewFind(params)
+
+      let type = 'png'
+      let url = ''
+      if (data.mapServer?.navi?.svgDownloadUrl) {
+        type = 'svg'
+        url = data.mapServer.navi.svgDownloadUrl
+      } else {
+        url = data.mapServer.navi.pngDownloadUrl
+      }
+      setMapData({ type, url })
+      setShowMap(true)
+      setMapServer(data.mapServer)
+    } catch (err) {
+      console.error('Error getMapUrlByDevice:', err)
+    }
+  }, [deviceId])
+
   const openModalEditRobot = () => {
     EditRobotModal.onOpen()
   }
@@ -191,33 +232,48 @@ const AssetInfo = ({ t, deviceId }) => {
     {
       name: t('occurDate'),
       selector: (row) => (row.erroredAt ? toYmdHmKST(row.erroredAt) : '-'),
-      sortable: true
+      sortable: true,
+      width: '15%',
+      style: { paddingLeft: '12px', paddingRight: '12px' }
     },
     {
       name: t('errorCode'),
       selector: (row) => row.errorCode,
-      sortable: true
+      sortable: true,
+      width: '10%',
+      style: { paddingLeft: '12px', paddingRight: '12px' }
     },
     {
       name: t('errorDetail'),
       selector: (row) => row.errorTitle,
       sortable: true,
-      width: '60%',
-      wrap: true
+      width: '50%',
+      wrap: true,
+      style: {
+        paddingLeft: '12px',
+        paddingRight: '12px',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'normal'
+      }
     },
     {
       name: t('recoverySatus'),
       selector: (row) => (
-        <span style={{ color: row.isRecovered ? '#16a34a' : '#dc2626' }}>
+        <span style={{ color: row.isRecovered ? '#16a34a' : '#dc2626', whiteSpace: 'nowrap' }}>
           {row.isRecovered ? t('complete') : t('imcomplete')}
         </span>
       ),
-      sortable: true
+      sortable: true,
+      width: '10%',
+      style: { paddingLeft: '12px', paddingRight: '12px' }
     },
     {
       name: t('recoveryDate'),
       selector: (row) => (row.recoveredAt ? toYmdHmKST(row.recoveredAt) : '-'),
-      sortable: true
+      sortable: true,
+      width: '15%',
+      style: { paddingLeft: '12px', paddingRight: '12px' }
     }
   ]
 
@@ -261,7 +317,12 @@ const AssetInfo = ({ t, deviceId }) => {
       }
 
       try {
-        await deviceApis.postInstanceActions(deviceId, params)
+        if (channel === 'RF') {
+          // 모바일 webview(RF): 서버 호출 대신 안드로이드 네이티브로 actions 전송
+          sendToAndroidNative({ deviceId, userId: session?.userId, actions: params.actions })
+        } else {
+          await deviceApis.postInstanceActions(deviceId, params)
+        }
         const poiName = getLocalizedName(poi.name, i18n.language) || poi.poiId
         setConfirmMessage(`${poiName} ${t('moveCommandSent')}`)
         setIsConfirmModalOpen(true)
@@ -271,10 +332,30 @@ const AssetInfo = ({ t, deviceId }) => {
         setIsConfirmModalOpen(true)
       }
     },
-    [deviceId, session?.userId]
+    [deviceId, session?.userId, channel]
   )
 
   const isOnline = deviceInfo.state && deviceInfo.state != 'OFFLINE'
+
+  // actions 배열을 로봇에 전송하는 공용 함수 (RF: 네이티브, 그 외: 서버)
+  // 성공/실패 시 확인 모달 메시지를 표시한다.
+  const sendActions = async (actions, successMessage) => {
+    const params = { userId: session?.userId, actions }
+    try {
+      if (channel === 'RF') {
+        // 모바일 webview(RF): 서버 호출 대신 안드로이드 네이티브로 actions 전송
+        sendToAndroidNative({ deviceId, userId: session?.userId, actions })
+      } else {
+        await deviceApis.postInstanceActions(deviceId, params)
+      }
+      setConfirmMessage(successMessage)
+      setIsConfirmModalOpen(true)
+    } catch (err) {
+      console.error('명령 전송 실패:', err)
+      setConfirmMessage(t('errorReport'))
+      setIsConfirmModalOpen(true)
+    }
+  }
 
   const handleRobotAction = async (action) => {
     if (!isOnline && action !== 'reboot' && action !== 'shutdown') {
@@ -282,31 +363,55 @@ const AssetInfo = ({ t, deviceId }) => {
       return
     }
 
-    if (action === 'go_charging') {
-      const params = {
-        userId: session?.userId,
-        actions: [
-          {
-            actionType: 'goCharging',
-            actionId: crypto.randomUUID(),
-            blockingType: 'NONE'
-          }
-        ]
-      }
-      try {
-        await deviceApis.postInstanceActions(deviceId, params)
-        setConfirmMessage(t('chargingStationMoveSent'))
-        setIsConfirmModalOpen(true)
-      } catch (err) {
-        console.error('충전소 이동 명령 실패:', err)
-        setConfirmMessage(t('errorReport'))
-        setIsConfirmModalOpen(true)
-      }
+    // actionType/blockingType만 다른 단순 명령 액션
+    // messageKey가 있으면 해당 메시지를, 없으면 "라벨 + sendCommand"를 성공 메시지로 사용
+    const commandActionMap = {
+      reboot: { actionType: 'reboot', blockingType: 'HARD', labelKey: 'reboot' },
+      listen: { actionType: 'searchByVoice', blockingType: 'NONE', labelKey: 'listen' },
+      shutdown: { actionType: 'poweroff', blockingType: 'HARD', labelKey: 'powerEnd' },
+      pause_task: { actionType: 'startPause', blockingType: 'HARD', labelKey: 'workTempStop' },
+      resume_task: { actionType: 'stopPause', blockingType: 'NONE', labelKey: 'workReume' },
+      go_charging: { actionType: 'goCharging', blockingType: 'NONE', messageKey: 'chargingStationMoveSent' }
+    }
+
+    const command = commandActionMap[action]
+    if (command) {
+      await sendActions(
+        [{ actionType: command.actionType, actionId: crypto.randomUUID(), blockingType: command.blockingType }],
+        command.messageKey ? t(command.messageKey) : `${t(command.labelKey)} ${t('sendCommand')}`
+      )
       return
     }
 
     console.log(`Robot action: ${action}`)
     alert(`${action} ` + t('sendCommand'))
+  }
+
+  // 모션 명령 — RobotControlPanel에서 { actionType, blockingType, actionParameters }와 표시명을 전달받아 전송
+  const handleMotion = (action, name) => {
+    if (!isOnline) {
+      alert(t('offlineStatue'))
+      return
+    }
+    sendActions([{ ...action, actionId: crypto.randomUUID() }], `${name} ${t('sendCommand')}`)
+  }
+
+  // 회전 명령 — 시계방향(cw) → turnRight, 반시계방향(ccw) → turnLeft
+  const handleRotate = (direction, degree) => {
+    if (!isOnline) {
+      alert(t('offlineStatue'))
+      return
+    }
+    const actionType = direction === 'cw' ? 'turnRight' : 'turnLeft'
+    const actions = [
+      {
+        actionType,
+        actionId: crypto.randomUUID(),
+        blockingType: 'HARD',
+        actionParameters: [{ key: 'degree', value: String(degree) }]
+      }
+    ]
+    sendActions(actions, `${degree}° ${t('sendCommand')}`)
   }
 
   // 3초마다 실행할 polling 함수 (mapUrl 갱신 제외)
@@ -323,7 +428,10 @@ const AssetInfo = ({ t, deviceId }) => {
       if (data.updatedAt === c.updatedAt && st === c.st && conn === c.conn) return
 
       // 상단 정보(이름/배터리/상태/위치)는 변경 시 갱신
-      setDeviceInfo(parseDeviceInfo(data))
+      setDeviceInfo({
+        ...parseDeviceInfo(data),
+        wifi: getWifiStatus(data.state)
+      })
       setRobotDatas([parseRobotData(data)])
 
       // PartsStatusPanel용 robotState는 hw/sen/sw 타임스탬프가 바뀐 경우에만 갱신
@@ -376,83 +484,165 @@ const AssetInfo = ({ t, deviceId }) => {
     }
   }, [])
 
+  useEffect(() => {
+    // 1. 초기 상태 동기화 : web -> android native
+    const syncInitialChannel = () => {
+      if (window.Android && typeof window.Android.getChannel === 'function') {
+        const initialChannel = window.Android.getChannel()
+        console.log('request current channel:', initialChannel) // "CLOUD" or "RF"
+        setChannel(initialChannel)
+      }
+    }
+
+    syncInitialChannel()
+
+    // 2. 변경 이벤트 리스너 등록 : android native -> web
+    window.TMS_NATIVE_EVENT = (jsonString) => {
+      try {
+        const data = JSON.parse(jsonString)
+        console.log(`received current channel: ${JSON.stringify(data)}`) // {"channel":"CLOUD" or "RF"}
+        setChannel(data.channel)
+      } catch (error) {
+        console.error('Failed to parse native event:', error)
+      }
+    }
+
+    return () => {}
+  }, [])
+
+  const sendToAndroidNative = (message) => {
+    // message 포맷 미정
+    const payloadText = JSON.stringify(message)
+
+    try {
+      // 안드로이드 브릿지 (window.Android) 존재 여부 확인
+      const webViewBridge = window.Android
+
+      // 오직 postMessage 메서드만 사용하여 메시지 전송
+      if (webViewBridge && typeof webViewBridge.postMessage === 'function') {
+        webViewBridge.postMessage(payloadText)
+        console.log('[TMS_CONTROL][SENT]', message)
+        return true
+      } else {
+        console.error('[TMS_CONTROL][SEND_FAILED_BRIDGE_NOT_FOUND]')
+      }
+    } catch (error) {
+      console.error('[TMS_CONTROL][SEND_ERROR] failed to send native message', error)
+    }
+
+    return false
+  }
+
   return (
     <>
       <div className="flex flex-col gap-4">
-        <ExpandableSection
-          header={
-            <div>
-              <span>{deviceInfo.name}</span>
-              <span style={{ marginLeft: 5 }}>{t('assetInfo')}</span>
-              <span style={{ marginLeft: 15 }}>MAC: {deviceInfo.mac}</span>
-              <span style={{ marginLeft: 5 }}>|</span>
-              <span style={{ marginLeft: 5 }}>S/W: {deviceInfo.version}</span>
-            </div>
-          }
-          expandedHeader={
-            <div>
-              <span>{deviceInfo.name}</span>
-              <span style={{ marginLeft: 5 }}>{t('assetInfo')}</span>
-            </div>
-          }
-        >
-          <Section>
-            <Table
-              className="no-table-head"
-              noTableHead
-              columns={[
-                {
-                  name: 'label',
-                  cell: (row) => (
-                    <div style={{ fontSize: '14px' }}>
-                      <span>{row.label}</span>
-                    </div>
-                  )
-                },
-                {
-                  name: 'value',
-                  cell: (row) => (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
-                      <span>{row.value}</span>
-                      {row.editable && (
-                        <EditButton type="button" onClick={openModalEditRobot}>
-                          {t('modify')}
-                        </EditButton>
-                      )}
-                    </div>
-                  )
-                }
-              ]}
-              data={[
-                { label: t('robotName'), value: deviceInfo.name, editable: true },
-                { label: t('model'), value: deviceInfo.model ?? 'no model' },
-                {
-                  label: t('group'),
-                  value: deviceInfo.groupName ? deviceInfo.groupName : t('unassigned')
-                },
-                {
-                  label: t('site'),
-                  value: deviceInfo.siteName ? deviceInfo.siteName : t('unassigned')
-                },
-                { label: t('swVersion'), value: deviceInfo.version ?? '' },
-                {
-                  label: 'Serial Number',
-                  value: deviceInfo.serial ?? '',
-                  copyable: true
-                },
-                {
-                  label: 'MAC Address',
-                  value: deviceInfo.mac ?? '',
-                  copyable: true
-                },
-                {
-                  label: t('registerDate'),
-                  value: deviceInfo.registerDate ? toYmdHmKST(deviceInfo.registerDate) : '-'
-                }
-              ]}
-            />
-          </Section>
-        </ExpandableSection>
+        <NoUnderlineExpandable>
+          <ExpandableSection
+            iconPosition="left"
+            header={
+              <div>
+                <span>{deviceInfo.name}</span>
+                <span style={{ marginLeft: 5 }}>{t('assetInfo')}</span>
+                <span style={{ marginLeft: 15 }}>MAC: {deviceInfo.mac}</span>
+                {/* <span style={{ marginLeft: 5 }}>|</span>
+              <span style={{ marginLeft: 5 }}>S/W: {deviceInfo.version}</span> */}
+              </div>
+            }
+            expandedHeader={
+              <div>
+                <span>{deviceInfo.name}</span>
+                <span style={{ marginLeft: 5 }}>{t('assetInfo')}</span>
+              </div>
+            }
+          >
+            <Section>
+              <Table
+                className="no-table-head"
+                noTableHead
+                dense
+                columns={[
+                  {
+                    name: 'label1',
+                    grow: 0,
+                    width: '15%',
+                    style: { backgroundColor: 'var(--t-table-head-bg)' },
+                    cell: (row) => (
+                      <div style={{ fontSize: '14px' }}>
+                        <span>{row.label1}</span>
+                      </div>
+                    )
+                  },
+                  {
+                    name: 'value1',
+                    grow: 1,
+                    cell: (row) => (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
+                        <span>{row.value1}</span>
+                        {row.editable1 && (
+                          <EditButton type="button" onClick={openModalEditRobot}>
+                            {t('modify')}
+                          </EditButton>
+                        )}
+                      </div>
+                    )
+                  },
+                  {
+                    name: 'label2',
+                    grow: 0,
+                    width: '15%',
+                    style: { backgroundColor: 'var(--t-table-head-bg)' },
+                    cell: (row) => (
+                      <div style={{ fontSize: '14px' }}>
+                        <span>{row.label2}</span>
+                      </div>
+                    )
+                  },
+                  {
+                    name: 'value2',
+                    grow: 1,
+                    cell: (row) => (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
+                        <span>{row.value2}</span>
+                        {row.editable2 && (
+                          <EditButton type="button" onClick={openModalEditRobot}>
+                            {t('modify')}
+                          </EditButton>
+                        )}
+                      </div>
+                    )
+                  }
+                ]}
+                data={toPairedRows([
+                  { label: t('robotName'), value: deviceInfo.name, editable: true },
+                  { label: t('model'), value: deviceInfo.model ?? 'no model' },
+                  {
+                    label: t('group'),
+                    value: deviceInfo.groupName ? deviceInfo.groupName : t('unassigned')
+                  },
+                  {
+                    label: t('site'),
+                    value: deviceInfo.siteName ? deviceInfo.siteName : t('unassigned')
+                  },
+                  { label: t('swVersion'), value: deviceInfo.version ?? '' },
+                  {
+                    label: 'Serial Number',
+                    value: deviceInfo.serial ?? '',
+                    copyable: true
+                  },
+                  {
+                    label: 'MAC Address',
+                    value: deviceInfo.mac ?? '',
+                    copyable: true
+                  },
+                  {
+                    label: t('registerDate'),
+                    value: deviceInfo.registerDate ? toYmdHmKST(deviceInfo.registerDate) : '-'
+                  }
+                ])}
+              />
+            </Section>
+          </ExpandableSection>
+        </NoUnderlineExpandable>
         <Section gap="1rem">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
@@ -485,8 +675,8 @@ const AssetInfo = ({ t, deviceId }) => {
               {
                 icon: Wifi,
                 label: t('network'),
-                value: '안정'
-                //warn: robot.network !== '안정'
+                value: t(deviceInfo.wifi?.label ?? 'noData'),
+                warn: deviceInfo.wifi?.warn ?? false
               },
               {
                 icon: OperationStatus,
@@ -502,9 +692,11 @@ const AssetInfo = ({ t, deviceId }) => {
               }
             ].map((item, index) => (
               <Section key={item.label ?? index} className="gap-1.5">
-                <div className="mb-10">
+                <div className="mb-5" style={{ display: 'flex', alignItems: 'center' }}>
                   <item.icon />
-                  <span className="ml-5">{item.label}</span>
+                  <span className="ml-5" style={{ fontSize: '1.2rem' }}>
+                    {item.label}
+                  </span>
                 </div>
                 <span className={`ml-10 ${item.warn ? 'text-[#dc2626]' : 'text-[#333]'}`}>{item.value}</span>
               </Section>
@@ -520,7 +712,13 @@ const AssetInfo = ({ t, deviceId }) => {
               {isLive && <LiveSpan>Live</LiveSpan>}
             </div>
             <div className="mt-4">
-              <SiteMap3D mapData={mapData} robotDatas={robotDatas} mapServer={mapServer} />
+              <SiteMap3D
+                mapData={mapData}
+                robotDatas={robotDatas}
+                mapServer={mapServer}
+                clickPoi // ← 추가
+                onMovePoi={handleMoveLocation} // ← 추가 (기존 함수 그대로)
+              />
             </div>
           </Section>
         )}
@@ -544,57 +742,34 @@ const AssetInfo = ({ t, deviceId }) => {
           <label className="typographyBody4" style={{ fontWeight: 'bold' }}>
             {t('robotControl')}
           </label>
-          <ControlDiv style={{ marginTop: '1.25rem' }}>
-            <ControlBtn onClick={() => handleRobotAction('reboot')}>
-              <RotateCcw className="w-[14px] h-[14px]" />
-              {t('reboot')}
-            </ControlBtn>
-            <ControlBtn onClick={() => handleRobotAction('shutdown')}>
-              <PowerOff className="w-[14px] h-[14px]" />
-              {t('powerEnd')}
-            </ControlBtn>
-            <ControlBtn onClick={() => handleRobotAction('start')} disabled={!isOnline}>
-              <PlayCircle className="w-[14px] h-[14px]" />
-              {t('start')}
-            </ControlBtn>
-            <ControlBtn onClick={() => handleRobotAction('stop')} disabled={!isOnline}>
-              <StopCircle className="w-[14px] h-[14px]" />
-              {t('stop')}
-            </ControlBtn>
-            <ControlBtn onClick={() => handleRobotAction('emergency_stop')} disabled={!isOnline} $danger>
-              <AlertOctagon className="w-[14px] h-[14px]" />
-              {t('emergencyStop')}
-            </ControlBtn>
-            <ControlBtn onClick={() => handleRobotAction('pause_task')} disabled={!isOnline}>
-              <PauseCircle className="w-[14px] h-[14px]" />
-              {t('workTempStop')}
-            </ControlBtn>
-            <ControlBtn onClick={() => handleRobotAction('resume_task')} disabled={!isOnline}>
-              <PlayCircle className="w-[14px] h-[14px]" />
-              {t('workReume')}
-            </ControlBtn>
-            <ControlBtn onClick={() => handleRobotAction('go_charging')} disabled={!isOnline}>
-              <BatteryCharging className="w-[14px] h-[14px]" />
-              {t('chargeStationMove')}
-            </ControlBtn>
-            <ControlBtn onClick={MoveLocationModal.onOpen} disabled={!showMap} $info>
-              <Navigation className="w-[14px] h-[14px]" />
-              {t('locationMove')}
-            </ControlBtn>
-          </ControlDiv>
+          <div style={{ marginTop: '1.25rem' }}>
+            <RobotControlPanel
+              t={t}
+              isOnline={isOnline}
+              showMap={showMap}
+              onAction={handleRobotAction}
+              onRotate={handleRotate}
+              onMotion={handleMotion}
+              onMoveLocation={MoveLocationModal.onOpen}
+            />
+          </div>
         </Section>
         <Section>
           <label className="typographyBody4" style={{ fontWeight: 'bold' }}>
             {t('recentErrorSummary')}
           </label>
-          <div style={{ marginTop: '1.25rem' }}>
-            <Table
-              columns={errorColumns}
-              data={robotErrors}
-              noData={tCommon('noData')}
-              pagination
-              paginationRowsPerPageOptions={[10, 30, 50, 100]}
-            />
+          <div
+            style={{ marginTop: '1.25rem', overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch' }}
+          >
+            <div style={{ minWidth: 'min-content' }}>
+              <Table
+                columns={errorColumns}
+                data={robotErrors}
+                noData={tCommon('noData')}
+                pagination
+                paginationRowsPerPageOptions={[10, 30, 50, 100]}
+              />
+            </div>
           </div>
         </Section>
         <Section>

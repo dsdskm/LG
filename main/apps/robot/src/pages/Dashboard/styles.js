@@ -8,6 +8,39 @@ export const DashboardWrapper = styled.div`
   display: flex;
 `
 
+export const DashboardControlsContainer = styled.div`
+  display: flex;
+  gap: 1.25rem;
+  align-items: center;
+  margin-bottom: 2.4rem;
+
+  > * {
+    margin: 0;
+  }
+
+  @media all and (max-width: 1199px) {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1.2rem;
+    margin-bottom: 2.4rem;
+
+    > * {
+      width: 100%;
+      margin: 0;
+    }
+
+    button {
+      flex: 0 0 auto;
+    }
+  }
+`
+
+export const DashboardButtonGroup = styled.div`
+  display: flex;
+  gap: 1.2rem;
+  align-items: center;
+`
+
 export const DashSection = styled.section``
 
 export const DivPageBody = styled.div`
@@ -28,6 +61,17 @@ export const DivSectionTitle = styled.div`
   /* justify-content: space-between; */
   align-items: center;
   display: flex;
+`
+
+export const DivSectionTitleWrap = styled.div`
+  display: flex;
+  align-items: center;
+
+  @media all and (max-width: 767px) {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 1rem;
+  }
 `
 
 export const H3SectionTitle = styled.h3`
@@ -134,8 +178,11 @@ export const CollapsibleSectionHeader = styled.div`
 
 export const CollapsibleChevron = styled.span`
   display: inline-block;
-  font-size: 1.2rem;
-  line-height: 1;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid #334155;
   transition: transform 0.2s ease;
   transform: ${({ $collapsed }) => ($collapsed ? 'rotate(-90deg)' : 'rotate(0deg)')};
 `
@@ -176,9 +223,11 @@ export const SectionMap = styled.section`
 export const PlayButton = styled.button`
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
 
   padding: 3px 8px;
+  height: 2.4rem;
   border-radius: 4px;
 
   font-size: 11px;
@@ -199,9 +248,11 @@ export const PlayButton = styled.button`
 export const StopButton = styled.button`
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
 
   padding: 3px 8px;
+  height: 2.4rem;
   border-radius: 4px;
 
   font-size: 11px;

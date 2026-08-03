@@ -11,7 +11,9 @@
       "groupManagement": "그룹 관리",
       "userManagement": "사용자 관리",
       "mapManagement": "맵 관리",
-      "aiLogManagement": "AI 로그 분석"
+      "settings": "설정",
+      "aiLogManagement": "AI 로그 분석",
+      "termManagement": "약관관리"
     }
   },
   "Depth": {

@@ -225,7 +225,7 @@ const LoadingOverlay = styled.div`
 `
 
 const ConsoleCard = forwardRef(({ robotId, card, onExpand, onControlOpen }, ref) => {
-  const { t } = useTranslation('robot')
+  const { t, i18n } = useTranslation('robot')
   const [connectionStatus, setConnectionStatus] = useState('standby')
   const [lastUpdate, setLastUpdate] = useState(null)
   const [iframeError, setIframeError] = useState(null)
@@ -271,7 +271,7 @@ const ConsoleCard = forwardRef(({ robotId, card, onExpand, onControlOpen }, ref)
     // nginx는 /robotapp/** 경로에 WebSocket upgrade를 허용하지 않을 수 있으므로
     // /robot-tunnel?type=stream 경로를 사용 (nginx의 /robot-tunnel WebSocket 설정 재사용)
     const mode = safeCard.cardType === 'CONTROL' ? 'control' : 'readonly'
-    const url = `${wsBase}/robot-tunnel?type=stream&robotId=${encodeURIComponent(robotId)}&port=${safeCard.realtimePort}&path=${encodeURIComponent(safeCard.realtimePath)}&mode=readonly`
+    const url = `${wsBase}/robot-tunnel?type=stream&robotId=${encodeURIComponent(robotId)}&port=${safeCard.realtimePort}&path=${encodeURIComponent(safeCard.realtimePath)}&mode=${mode}`
 
     console.log('[REALTIME] Connecting to', url)
     setWsStatus('connecting')
@@ -381,7 +381,9 @@ const ConsoleCard = forwardRef(({ robotId, card, onExpand, onControlOpen }, ref)
     if (!safeCard.isRealtime) return
     if (!shouldConnect) return // ✅ 추가
 
-    connectRealtimeWs()
+    if (document.visibilityState === 'visible' && document.hasFocus()) {
+      connectRealtimeWs()
+    }
     return () => {
       reconnectCountRef.current = 0
       cleanup()
@@ -422,19 +424,68 @@ const ConsoleCard = forwardRef(({ robotId, card, onExpand, onControlOpen }, ref)
       }
     }
 
+    const handleVisibilityChange = () => {
+      if (!safeCard.isRealtime) return
+
+      if (document.visibilityState === 'visible' && document.hasFocus()) {
+        if (!wsRef.current) {
+          reconnectCountRef.current = 0
+          connectRealtimeWs()
+        }
+      } else {
+        if (wsRef.current) {
+          shouldReconnectRef.current = false
+          try {
+            wsRef.current.close(1000, 'Page hidden or unfocused')
+          } catch (_) {}
+          wsRef.current = null
+          setWsStatus('disconnected')
+        }
+      }
+    }
+
+    const handleBlur = () => {
+      if (!safeCard.isRealtime || !wsRef.current) return
+      shouldReconnectRef.current = false
+      try {
+        wsRef.current.close(1000, 'Window unfocused')
+      } catch (_) {}
+      wsRef.current = null
+      setWsStatus('disconnected')
+    }
+
+    const handleFocus = () => {
+      if (!safeCard.isRealtime) return
+      if (!wsRef.current) {
+        reconnectCountRef.current = 0
+        connectRealtimeWs()
+      }
+    }
+
     window.addEventListener('message', handleMessage)
-    return () => window.removeEventListener('message', handleMessage)
-  }, [])
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('blur', handleBlur)
+    window.addEventListener('focus', handleFocus)
+    return () => {
+      window.removeEventListener('message', handleMessage)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('blur', handleBlur)
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [safeCard.isRealtime, connectRealtimeWs])
 
   // ── iframe 핸들러 ─────────────────────────────────────────────────
   const buildIframeUrl = () => {
     const mode = safeCard.cardType === 'CONTROL' ? 'control' : 'readonly'
-    const base = `${config.proxyServerUrl}${safeCard.targetPath}?_deviceId=${robotId}&_port=${safeCard.targetPort}&_cid=${cid}&mode=${mode}&embedded=true`
-    if (safeCard.isRealtime) {
-      // wsSource=parent: ConsoleCard가 WS를 담당하므로 iframe은 postMessage만 수신
-      return `${base}&wsUrl=${encodeURIComponent(config.wsUrl || '')}&robotId=${encodeURIComponent(robotId)}&wsSource=parent`
+    const lang = i18n.language || 'en-US'
+    let url = `${config.proxyServerUrl}${safeCard.targetPath}?_deviceId=${robotId}&_port=${safeCard.targetPort}&_cid=${cid}&mode=${mode}&embedded=true&lang=${lang}`
+    if (safeCard.realtimePort && String(safeCard.realtimePort) !== safeCard.targetPort) {
+      url += `&_wsPort=${safeCard.realtimePort}`
     }
-    return base
+    if (safeCard.isRealtime) {
+      url += `&wsSource=parent`
+    }
+    return url
   }
 
   const iframeUrl = buildIframeUrl()
@@ -460,10 +511,10 @@ const ConsoleCard = forwardRef(({ robotId, card, onExpand, onControlOpen }, ref)
   // ── 버튼 핸들러 ───────────────────────────────────────────────────
   const handleExpand = () => {
     const mode = safeCard.cardType === 'CONTROL' ? 'control' : 'readonly'
-    let expandUrl = `${config.proxyServerUrl}${safeCard.targetPath}?_deviceId=${robotId}&_port=${safeCard.targetPort}&_cid=${cid}&mode=${mode}&expanded=true`
-    if (safeCard.isRealtime) {
-      // 팝업도 postMessage 없이 독립 WS 연결하므로 wsSource=parent 미포함
-      expandUrl += `&wsUrl=${encodeURIComponent(config.wsUrl || '')}&robotId=${encodeURIComponent(robotId)}`
+    const lang = i18n.language || 'en-US'
+    let expandUrl = `${config.proxyServerUrl}${safeCard.targetPath}?_deviceId=${robotId}&_port=${safeCard.targetPort}&_cid=${cid}&mode=${mode}&expanded=true&lang=${lang}`
+    if (safeCard.realtimePort && String(safeCard.realtimePort) !== safeCard.targetPort) {
+      expandUrl += `&_wsPort=${safeCard.realtimePort}`
     }
     const w = window.open(
       expandUrl,

@@ -10,7 +10,6 @@ import {
   Line,
   XAxis,
   YAxis,
-  CartesianGrid,
   Tooltip,
   Legend,
   Cell,
@@ -59,7 +58,7 @@ const SEG_FILL = '#454749'    // 스토리지 게이지 채움
 
 // ── shell ───────────────────────────────────────────────────────
 const Wrapper = styled.div`
-  margin-top: ${({ $embedded }) => ($embedded ? '0' : '16px')};
+  margin-top: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -111,7 +110,7 @@ const Card = styled.div`
   min-height: 320px; /* Figma 카드 높이 320 → 줄바꿈돼도 높이 유지 */
   background: #fff;
   border: 1px solid rgba(172, 173, 188, 0.3);
-  border-radius: 16px;
+  border-radius: 8px;
   box-shadow: 0 0 15px 0 rgba(173, 173, 173, 0.18);
   padding: 16px 18px 14px;
   display: flex;
@@ -131,7 +130,7 @@ const CardHead = styled.div`
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 `
 
 const CardTitle = styled.div`
@@ -139,8 +138,8 @@ const CardTitle = styled.div`
   align-items: center;
   gap: 7px;
   min-width: 0;
-  font-size: 1.35rem;
-  font-weight: 700;
+  font-size: 1.55rem;
+  font-weight: 600;
   color: #334155;
   word-break: keep-all;
   line-height: 1.2;
@@ -153,17 +152,6 @@ const CardTitle = styled.div`
   }
 `
 
-const Badge = styled.span`
-  flex-shrink: 0;
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: ${({ $c }) => $c || MUTED};
-  background: ${({ $c }) => ($c ? `${$c}1a` : '#f1f5f9')};
-  border-radius: 8px;
-  padding: 3px 9px;
-  white-space: nowrap;
-`
-
 const ValueRow = styled.div`
   display: flex;
   align-items: baseline;
@@ -173,15 +161,15 @@ const ValueRow = styled.div`
 `
 
 const BigValue = styled.div`
-  font-size: 2.8rem;
+  font-size: 3.2rem;
   font-weight: 800;
   color: ${TEXT};
   line-height: 1.05;
 `
 
 const ValueUnit = styled.span`
-  font-size: 1.5rem;
-  font-weight: 700;
+  font-size: 1.6rem;
+  font-weight: 600;
   color: ${UNIT};
   margin-left: 4px;
 `
@@ -193,8 +181,9 @@ const SubIndicator = styled.span`
   align-items: center;
   gap: 4px;
   background: rgba(197, 192, 181, 0.2);
-  border-radius: 8px;
-  padding: 4px 10px;
+  border-radius: 4px;
+  height: 22px;
+  padding: 0 10px;
   font-size: 1.2rem;
   font-weight: 500;
   white-space: nowrap;
@@ -211,7 +200,7 @@ const PeriodDelta = styled.span`
   flex-shrink: 0;
   align-self: flex-end;
   font-size: 1.3rem;
-  font-weight: 700;
+  font-weight: 600;
   color: ${({ $positive = true }) => ($positive ? POS : '#ef4444')};
   white-space: nowrap;
 `
@@ -317,7 +306,7 @@ const SubLabel = styled.span`
 
 const ChartBox = styled.div`
   position: relative;
-  margin-top: 10px;
+  margin-top: 16px;
   min-height: ${({ $h }) => $h || 160}px;
   flex: 1;
 `
@@ -341,7 +330,7 @@ const Bubble = styled.div`
   color: #fff;
   font-size: 1.2rem;
   font-weight: 800;
-  padding: 3px 9px;
+  padding: 4px 4px;
   border-radius: 8px;
   pointer-events: none;
   white-space: nowrap;
@@ -523,6 +512,60 @@ const formatK = (n) => {
   return String(n)
 }
 
+// Y축을 0부터 균등 간격으로 나누는 눈금 계산 (간격 동일 + max 라벨 포함).
+// dataMax를 seg등분했을 때 딱 떨어지는 round step으로 올림 → 예) 560 → 0·150·300·450·600
+const NICE_UNITS = [1, 1.5, 2, 2.5, 3, 4, 5, 7.5, 10]
+const niceAxis = (rawMax, seg = 4) => {
+  if (!rawMax || rawMax <= 0) {
+    return { domain: [0, seg], ticks: Array.from({ length: seg + 1 }, (_, i) => i) }
+  }
+  const rough = rawMax / seg
+  const mag = 10 ** Math.floor(Math.log10(rough))
+  const step = (NICE_UNITS.find((u) => u * mag >= rough) ?? 10) * mag
+  const max = step * seg
+  return { domain: [0, max], ticks: Array.from({ length: seg + 1 }, (_, i) => step * i) }
+}
+
+// 차트 말풍선 — 스토리지 말풍선과 동일한 HTML/CSS 방식.
+// SVG 안에서는 foreignObject로 렌더 → 내용에 맞춰 자동 크기, 상하 중앙 정렬(line-height), 삼각 꼬리.
+const HtmlBubble = styled.div`
+  position: absolute;
+  left: 0;
+  top: 0;
+  /* 지점(cx,cy) 기준 위(기본) 또는 아래($down)로 6px 띄움 */
+  transform: translate(-50%, ${({ $down }) => ($down ? '6px' : 'calc(-100% - 6px)')});
+  background: ${({ $bg }) => $bg || '#334155'};
+  color: #fff;
+  font-size: 1.2rem;
+  font-weight: 800;
+  line-height: 1.3;
+  padding: 4px 4px;
+  border-radius: 8px;
+  white-space: nowrap;
+  pointer-events: none;
+  &::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    ${({ $down, $bg }) =>
+      $down
+        ? `top: -5px; border-bottom: 5px solid ${$bg || '#334155'};`
+        : `bottom: -5px; border-top: 5px solid ${$bg || '#334155'};`}
+  }
+`
+
+// SVG 좌표(cx, cy)에 HTML 말풍선을 띄운다. down=true면 지점 아래로 뒤집어 표시.
+function LabelBubble({ cx, cy, text, down = false, bg }) {
+  return (
+    <foreignObject x={cx} y={cy} width={1} height={1} style={{ overflow: 'visible' }}>
+      <HtmlBubble $down={down} $bg={bg}>{text}</HtmlBubble>
+    </foreignObject>
+  )
+}
+
 // 마지막 지점에만 점을 그리는 dot 렌더러
 const makeLastDot = (len, color = PURPLE) =>
   function LastDot({ cx, cy, index }) {
@@ -531,55 +574,39 @@ const makeLastDot = (len, color = PURPLE) =>
     return <circle key={`d-${index}`} cx={cx} cy={cy} r={5} fill={color} stroke="#fff" strokeWidth={2} />
   }
 
-// 실적 라인 dot — 현재(마지막) 지점을 크게 강조
-const makeActualDot = (len, color = PURPLE) =>
+// 실적 라인 dot — 현재(마지막) 지점을 크게 강조 + 달성률(%) 말풍선.
+// (라인의 LabelList content는 렌더되지 않아, index를 확실히 받는 dot 렌더러에서 함께 그린다)
+const makeActualDot = (len, color = PURPLE, pct = null) =>
   function ActualDot({ cx, cy, index }) {
     if (cx == null || cy == null) return <circle key={`a-${index}`} r={0} fill="none" />
-    const last = index === len - 1
+    if (index !== len - 1) {
+      return <circle key={`a-${index}`} cx={cx} cy={cy} r={2.5} fill={color} />
+    }
+    // 마지막(오늘) 지점: 강조 dot + 달성률 말풍선(HTML 방식).
+    // 위 공간(플롯 상단=margin.top 10)이 부족하면 아래로 뒤집어 잘림 방지 (말풍선 높이+간격 ≈ 30).
+    const above = cy - 30 >= 10
     return (
-      <circle
-        key={`a-${index}`}
-        cx={cx}
-        cy={cy}
-        r={last ? 5.5 : 2.5}
-        fill={color}
-        stroke={last ? '#fff' : 'none'}
-        strokeWidth={last ? 2 : 0}
-      />
-    )
-  }
-
-// 현재(마지막) 지점 좌표에 달성률(%) 말풍선 라벨
-const makePctLabel = (len, pct) =>
-  function PctLabel({ x, y, index }) {
-    if (index !== len - 1 || x == null || y == null) return null
-    const w = 40
-    const h = 18
-    const bx = x - w / 2
-    const by = y - h - 10
-    return (
-      <g>
-        <rect x={bx} y={by} width={w} height={h} rx={8} ry={8} fill="#334155" />
-        <text
-          x={x}
-          y={by + h / 2 + 1}
-          fill="#fff"
-          style={{ fontSize: '1.2rem', fontWeight: 800 }}
-          textAnchor="middle"
-          dominantBaseline="central"
-        >
-          {pct}%
-        </text>
-        <polygon
-          points={`${x - 5},${by + h} ${x + 5},${by + h} ${x},${by + h + 5}`}
-          fill="#334155"
-        />
+      <g key={`a-${index}`}>
+        <circle cx={cx} cy={cy} r={5.5} fill={color} stroke="#fff" strokeWidth={2} />
+        {pct != null && <LabelBubble cx={cx} cy={cy} text={`${pct}%`} down={!above} />}
       </g>
     )
   }
 
 const REFRESH_INTERVAL = 60 * 1000 // 학습 데이터 현황 1분마다 갱신
 const STORAGE_SEGMENTS = 20 // 스토리지 게이지 세그먼트 수
+
+// 접기/펼치기 표시용 삼각 화살표 (펼침=아래, 접힘=오른쪽)
+const Chevron = styled.span`
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid #334155;
+  transform: rotate(${({ $open }) => ($open ? '0deg' : '-90deg')});
+  transition: transform 0.15s;
+`
 
 // ── Component ───────────────────────────────────────────────────
 const DataCollectionSection = ({
@@ -588,6 +615,7 @@ const DataCollectionSection = ({
   embedded = false,
   showSectionTitle = true,
   showForgeBar = true,
+  collapsible = false, // true면 섹션 타이틀 클릭으로 접기/펼치기 (기본 접힘)
   // 컬러모드용 차트 색 역할 (fill 은 색 또는 'url(#...)' 참조)
   line = PURPLE,               // 라인 / dot / 기준선
   areaColor = PURPLE,          // 라인 아래 면적 채움
@@ -596,10 +624,12 @@ const DataCollectionSection = ({
   qEmphFill = PURPLE,          // 품질 최대 막대
   qBaseFill = '#e6e1d6',       // 품질 그외 막대
   segFill = PURPLE,            // 스토리지 게이지 사용(색 또는 CSS 그라데이션)
-  segEmpty = '#e6e1d6'         // 스토리지 게이지 미사용
+  segEmpty = '#e6e1d6',        // 스토리지 게이지 미사용
+  accentAreaGrad = 'url(#dayActualGrad)' // 강조 영역 그라데이션 (기본: areaColor 기반)
 } = {}) => {
   const { t, i18n } = useTranslation('robot')
   const [stats, setStats] = useState(null)
+  const [collapsed, setCollapsed] = useState(collapsible) // collapsible이면 기본 접힘
 
   const load = useCallback(() => {
     getCollectionStats().then(setStats).catch(console.error)
@@ -624,6 +654,29 @@ const DataCollectionSection = ({
   // 달성률 말풍선: mock에 achievementPct 있으면 사용, 없으면 실적/목표로 계산
   const monthlyPct = monthly.achievementPct ?? Math.round((monthly.actual / monthly.target) * 100)
   const dailyPct = daily.achievementPct ?? Math.round((daily.actual / daily.target) * 100)
+
+  // 누적: 0 기준 아님. 소수점 없는 정수·5의 배수 눈금 + 첫~마지막 라벨 간격 동일.
+  // 값이 충분히 클 때만(≥1000) K로 표기하고, 작으면 K 없이 숫자 그대로 표시.
+  const cumVals = cumulative.trend.map((d) => d.value ?? 0)
+  const cumUseK = Math.max(...cumVals) >= 1000
+  const cumUnit = cumUseK ? 1000 : 1 // 라벨 단위 (K면 1000, 아니면 1)
+  const uMin = Math.min(...cumVals) / cumUnit
+  const uMax = Math.max(...cumVals) / cumUnit
+  const uStep = Math.max(5, Math.ceil((uMax - uMin) / 4 / 5) * 5) // 4등분 목표 step을 5의 배수로 올림
+  const uLo = Math.floor(uMin / uStep) * uStep
+  let uHi = Math.ceil(uMax / uStep) * uStep
+  if (uHi <= uLo) uHi = uLo + uStep
+  const uCount = Math.round((uHi - uLo) / uStep)
+  const cumAxis = {
+    domain: [uLo * cumUnit, uHi * cumUnit],
+    ticks: Array.from({ length: uCount + 1 }, (_, i) => (uLo + uStep * i) * cumUnit),
+    useK: cumUseK
+  }
+
+  // Y축 균등 눈금(간격 동일 + max 포함) — 목표/실적 최대값 기준 0부터 round 분할
+  const monthlyEpAxis = niceAxis(Math.max(...monthly.data.map((d) => Math.max(d.target ?? 0, d.actual ?? 0))))
+  const monthlyHrAxis = niceAxis(Math.max(...monthly.data.map((d) => d.cumTime ?? 0)))
+  const dailyAxis = niceAxis(Math.max(...daily.data.map((d) => Math.max(d.target ?? 0, d.actual ?? 0))))
   const prevMonthLabel = t('collection.lastMonth', '전월')
   const yesterdayLabel = t('collection.yesterday', '전일')
   // 영문은 라벨(Monthly/Daily/Hourly)만으로 의미가 명확해 'cases' 단위를 생략 → 1줄 표시
@@ -632,8 +685,14 @@ const DataCollectionSection = ({
   return (
     <Wrapper $embedded={embedded}>
       {showSectionTitle && (
-        <TopBar>
-          <H3SectionTitle style={{ marginBottom: 0 }}>{t('collection.sectionTitle')}</H3SectionTitle>
+        <TopBar
+          onClick={collapsible ? () => setCollapsed((v) => !v) : undefined}
+          style={collapsible ? { cursor: 'pointer', userSelect: 'none' } : undefined}
+        >
+          <H3SectionTitle style={{ marginBottom: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            {collapsible && <Chevron $open={!collapsed} />}
+            {t('collection.sectionTitle')}
+          </H3SectionTitle>
           <TopBarRight>
             <UpdatedText>
               {t('collection.lastUpdatedLabel')} {lastUpdated}
@@ -642,6 +701,7 @@ const DataCollectionSection = ({
         </TopBar>
       )}
 
+      {!collapsed && (
       <Grid>
         {/* 1) 누적 학습 데이터 */}
         <Card>
@@ -674,16 +734,27 @@ const DataCollectionSection = ({
           )}
           <ChartBox $h={bigH}>
             <AutoSize>
-              {(w, h) => (
+              {(w, h) => {
+                const isGradientMode = accentAreaGrad === 'url(#accentAreaGrad)'
+                return (
                 <AreaChart data={cumulative.trend} width={w} height={h} margin={{ top: 8, right: 6, bottom: 0, left: 0 }}>
                   <defs>
                     <linearGradient id="cumGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={areaColor} stopOpacity={0.35} />
-                      <stop offset="100%" stopColor={areaColor} stopOpacity={0.03} />
+                      {isGradientMode ? (
+                        <>
+                          <stop offset="0%" stopColor="#D2CFC8" />
+                          <stop offset="100%" stopColor="#FFFFFF" />
+                        </>
+                      ) : (
+                        <>
+                          <stop offset="0%" stopColor={areaColor} stopOpacity={0.35} />
+                          <stop offset="100%" stopColor={areaColor} stopOpacity={0.03} />
+                        </>
+                      )}
                     </linearGradient>
                   </defs>
                   <XAxis dataKey="month" tick={{ fontSize: 9, fill: MUTED }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-                  <YAxis tickFormatter={(v) => `${Math.round(v / 1000)}K`} tick={{ fontSize: 9, fill: MUTED }} axisLine={false} tickLine={false} width={28} domain={['dataMin - 2000', 'dataMax + 1500']} />
+                  <YAxis tickFormatter={(v) => (cumAxis.useK ? `${Math.round(v / 1000)}K` : `${Math.round(v)}`)} tick={{ fontSize: 9, fill: MUTED }} axisLine={false} tickLine={false} width={34} domain={cumAxis.domain} ticks={cumAxis.ticks} interval={0} />
                   <Tooltip content={<GenTooltip />} cursor={{ stroke: targetColor, strokeDasharray: '3 3' }} />
                   {/* 오늘(마지막 지점) 세로 기준선 — 2·3번 차트와 동일 (텍스트 없음) */}
                   <ReferenceLine
@@ -703,7 +774,8 @@ const DataCollectionSection = ({
                     dot={makeLastDot(cumulative.trend.length, line)}
                   />
                 </AreaChart>
-              )}
+              )
+              }}
             </AutoSize>
           </ChartBox>
           <Footnote>{t('collection.cumulativeFootnote', '* 현재까지 수집된 전체 학습 Episode 수')}</Footnote>
@@ -735,12 +807,23 @@ const DataCollectionSection = ({
           </ValueRow>
           <ChartBox $h={bigH + 20}>
             <AutoSize>
-              {(w, h) => (
+              {(w, h) => {
+                const isGradientMode = accentAreaGrad === 'url(#accentAreaGrad)'
+                return (
                 <ComposedChart data={monthly.data} width={w} height={h} margin={{ top: 10, right: 0, bottom: 0, left: 0 }}>
                   <defs>
                     <linearGradient id="monActualGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={areaColor} stopOpacity={0.3} />
-                      <stop offset="100%" stopColor={areaColor} stopOpacity={0.02} />
+                      {isGradientMode ? (
+                        <>
+                          <stop offset="0%" stopColor="#D2CFC8" />
+                          <stop offset="100%" stopColor="#FFFFFF" />
+                        </>
+                      ) : (
+                        <>
+                          <stop offset="0%" stopColor={areaColor} stopOpacity={0.3} />
+                          <stop offset="100%" stopColor={areaColor} stopOpacity={0.02} />
+                        </>
+                      )}
                     </linearGradient>
                     {/* 막대 그라데이션: 골드(Solid) / 회색(Gradient) */}
                     <linearGradient id="monGold" x1="0" y1="0" x2="0" y2="1">
@@ -752,7 +835,6 @@ const DataCollectionSection = ({
                       <stop offset="100%" stopColor="#e6e1d6" />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />
                   <XAxis
                     dataKey="month"
                     tick={{ fontSize: 9, fill: MUTED }}
@@ -762,12 +844,13 @@ const DataCollectionSection = ({
                     minTickGap={10}
                   />
                   <YAxis
-                    yAxisId="ep"
                     tick={{ fontSize: 9, fill: MUTED }}
                     axisLine={false}
                     tickLine={false}
                     width={34}
-                    tickCount={5}
+                    domain={monthlyEpAxis.domain}
+                    ticks={monthlyEpAxis.ticks}
+                    interval={0}
                     tickFormatter={formatK}
                   />
                   <YAxis
@@ -777,14 +860,15 @@ const DataCollectionSection = ({
                     axisLine={false}
                     tickLine={false}
                     width={34}
-                    tickCount={5}
+                    domain={monthlyHrAxis.domain}
+                    ticks={monthlyHrAxis.ticks}
+                    interval={0}
                     tickFormatter={(v) => `${v}h`}
                   />
                   <Tooltip content={<GenTooltip />} cursor={{ fill: 'rgba(139,92,246,0.06)' }} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar yAxisId="hr" dataKey="cumTime" name={t('collection.cumTime')} fill={monFill} radius={[3, 3, 0, 0]} barSize={12} />
+                  <Bar yAxisId="hr" dataKey="cumTime" name={t('collection.cumTime')} fill={monFill} radius={[3, 3, 0, 0]} barSize={28} />
                   <ReferenceLine
-                    yAxisId="ep"
                     x={monthly.data[monthly.data.length - 1].month}
                     stroke={line}
                     strokeWidth={1.5}
@@ -792,7 +876,6 @@ const DataCollectionSection = ({
                   />
                   {/* 목표(target) 라인 아래를 채움 */}
                   <Area
-                    yAxisId="ep"
                     type="monotone"
                     dataKey="target"
                     name={t('collection.target')}
@@ -804,18 +887,16 @@ const DataCollectionSection = ({
                   />
                   {/* 실적(actual)은 라인만 (dot + 달성률 말풍선) */}
                   <Line
-                    yAxisId="ep"
                     type="monotone"
                     dataKey="actual"
                     name={t('collection.actual')}
                     stroke={line}
                     strokeWidth={2.5}
-                    dot={makeActualDot(monthly.data.length, line)}
-                  >
-                    <LabelList dataKey="actual" content={makePctLabel(monthly.data.length, monthlyPct)} />
-                  </Line>
+                    dot={makeActualDot(monthly.data.length, line, monthlyPct)}
+                  />
                 </ComposedChart>
-              )}
+              )
+              }}
             </AutoSize>
           </ChartBox>
         </Card>
@@ -853,8 +934,12 @@ const DataCollectionSection = ({
                       <stop offset="0%" stopColor={areaColor} stopOpacity={0.3} />
                       <stop offset="100%" stopColor={areaColor} stopOpacity={0.02} />
                     </linearGradient>
+                    {/* Gradient 모드 일간 목표량 면적: #D2CFC8(위) → #FFFFFF(아래) */}
+                    <linearGradient id="accentAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#D2CFC8" />
+                      <stop offset="100%" stopColor="#FFFFFF" />
+                    </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />
                   <XAxis
                     dataKey="day"
                     tick={{ fontSize: 9, fill: MUTED }}
@@ -862,8 +947,9 @@ const DataCollectionSection = ({
                     tickLine={false}
                     interval="preserveStartEnd"
                     minTickGap={22}
+                    padding={{ left: 18 }}
                   />
-                  <YAxis tick={{ fontSize: 9, fill: MUTED }} axisLine={false} tickLine={false} width={34} tickCount={5} domain={[0, 'dataMax + 40']} />
+                  <YAxis tick={{ fontSize: 9, fill: MUTED }} axisLine={false} tickLine={false} width={34} domain={dailyAxis.domain} ticks={dailyAxis.ticks} interval={0} />
                   <Tooltip content={<GenTooltip />} cursor={{ stroke: '#cbd5e1', strokeWidth: 1 }} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   {/* 오늘(마지막 일자) 고정 세로선 — 날짜는 하단 x축에 표시 */}
@@ -882,7 +968,7 @@ const DataCollectionSection = ({
                     stroke={targetColor}
                     strokeWidth={2}
                     strokeDasharray="5 4"
-                    fill="url(#dayActualGrad)"
+                    fill={accentAreaGrad}
                     dot={false}
                   />
                   {/* 실적(actual)은 라인만 (dot + 달성률 말풍선) */}
@@ -892,11 +978,9 @@ const DataCollectionSection = ({
                     name={t('collection.actual')}
                     stroke={line}
                     strokeWidth={2.5}
-                    dot={makeActualDot(daily.data.length, line)}
+                    dot={makeActualDot(daily.data.length, line, dailyPct)}
                     activeDot={{ r: 5, stroke: '#fff', strokeWidth: 2 }}
-                  >
-                    <LabelList dataKey="actual" content={makePctLabel(daily.data.length, dailyPct)} />
-                  </Line>
+                  />
                 </ComposedChart>
               )}
             </AutoSize>
@@ -906,22 +990,23 @@ const DataCollectionSection = ({
         {/* 4~5) 우측 열 */}
         <SideCol>
           {/* 데이터 품질 추이 */}
-          <Card style={{ flex: '1 1 0', minHeight: 0, overflow: 'hidden' }}>
-            <CardHead>
-              <CardTitle>
-                <InboxIcon />
-                {t('collection.qualityTitle')}
-              </CardTitle>
-            </CardHead>
+          <Card style={{ flex: '1 1 0', minHeight: 0, overflow: 'hidden', paddingBottom: 8 }}>
+            {/* 제목을 좌측 컬럼 상단으로 → 차트가 우측에서 전체 높이로 정렬 */}
             <SideBody>
-              <SideLeft>
-                <BigValue style={{ fontSize: '2.4rem' }}>
-                  {quality.current}
-                  <ValueUnit>%</ValueUnit>
-                </BigValue>
-                <Badge $c={POS} style={{ alignSelf: 'flex-start' }}>
-                  + {Math.abs(quality.deltaPct).toFixed(quality.deltaPct % 1 === 0 ? 0 : 1)}% {prevMonthLabel}
-                </Badge>
+              <SideLeft style={{ justifyContent: 'space-between', flex: '0 0 auto', minWidth: 140, paddingBottom: 20 }}>
+                <CardTitle>
+                  <InboxIcon />
+                  {t('collection.qualityTitle')}
+                </CardTitle>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <BigValue>
+                    {quality.current}
+                    <ValueUnit>%</ValueUnit>
+                  </BigValue>
+                  <PeriodDelta style={{ alignSelf: 'flex-start' }}>
+                    + {Math.abs(quality.deltaPct).toFixed(quality.deltaPct % 1 === 0 ? 0 : 1)}% {prevMonthLabel}
+                  </PeriodDelta>
+                </div>
               </SideLeft>
               <SideViz $h={90}>
                 <AutoSize>
@@ -929,8 +1014,10 @@ const DataCollectionSection = ({
                     const qAvg = quality.data.reduce((s, d) => s + d.rate, 0) / quality.data.length
                     const qRates = quality.data.map((d) => d.rate)
                     const qMaxIdx = qRates.lastIndexOf(Math.max(...qRates))
+                    // 상단 여백: 말풍선(위 표시)이 잘리지 않도록 확보. 우측 여백 축소로 그래프를 카드 우측에 정렬.
+                    const Q_TOP = 24
                     return (
-                    <ComposedChart data={quality.data} width={w} height={h} margin={{ top: 24, right: 26, bottom: 0, left: 26 }}>
+                    <ComposedChart data={quality.data} width={w} height={h} margin={{ top: Q_TOP, right: 6, bottom: 0, left: 8 }}>
                       <defs>
                         {/* 골드(Solid): 세로 그라데이션 */}
                         <linearGradient id="qGold" x1="0" y1="0" x2="0" y2="1">
@@ -951,6 +1038,8 @@ const DataCollectionSection = ({
                         tickLine={false}
                         interval="preserveStartEnd"
                         minTickGap={6}
+                        height={20}
+                        tickMargin={3}
                       />
                       <YAxis hide width={0} domain={[88, 96]} />
                       <Tooltip content={<GenTooltip />} cursor={{ fill: 'rgba(139,92,246,0.06)' }} />
@@ -962,13 +1051,7 @@ const DataCollectionSection = ({
                         strokeDasharray="5 4"
                         ifOverflow="visible"
                       />
-                      <ReferenceLine
-                        x={quality.data[quality.data.length - 1].month}
-                        stroke={line}
-                        strokeWidth={1.5}
-                        strokeDasharray="4 3"
-                      />
-                      <Bar dataKey="rate" name={t('collection.qualityTitle')} radius={[3, 3, 0, 0]}>
+                      <Bar dataKey="rate" name={t('collection.qualityTitle')} radius={[3, 3, 0, 0]} isAnimationActive={false}>
                         {/* 최대 막대 = qEmphFill, 그외 = qBaseFill (Solid 은 둘 다 골드로 동일) */}
                         {quality.data.map((d, i) => (
                           <Cell key={`qc-${i}`} fill={i === qMaxIdx ? qEmphFill : qBaseFill} />
@@ -983,18 +1066,16 @@ const DataCollectionSection = ({
                             const lastMaxIdx = rates.lastIndexOf(max)
                             if (index !== lastMinIdx && index !== lastMaxIdx) return null
                             const isMax = index === lastMaxIdx
-                            const bg = isMax ? '#334155' : '#94a3b8'
-                            const w = 52, h = 18
                             const cx = x + width / 2
-                            const by = y - h - 6
+                            // 막대 위에 HTML 말풍선 표시 (상단 여백 Q_TOP로 잘림 방지)
                             return (
-                              <g key={`ql-${value}`}>
-                                <rect x={cx - w / 2} y={by} width={w} height={h} rx={8} ry={8} fill={bg} />
-                                <text x={cx} y={by + h / 2 + 1} fill="#fff" style={{ fontSize: '1.2rem', fontWeight: 800 }} textAnchor="middle" dominantBaseline="central">
-                                  {value}%
-                                </text>
-                                <polygon points={`${cx - 5},${by + h} ${cx + 5},${by + h} ${cx},${by + h + 5}`} fill={bg} />
-                              </g>
+                              <LabelBubble
+                                key={`ql-${value}`}
+                                cx={cx}
+                                cy={y}
+                                text={`${value}%`}
+                                bg={isMax ? '#334155' : '#646464'}
+                              />
                             )
                           }}
                         />
@@ -1017,15 +1098,15 @@ const DataCollectionSection = ({
             </CardHead>
             <SideBody>
               <SideLeft>
-                <BigValue style={{ fontSize: '2.4rem' }}>
+                <BigValue>
                   {storage.gb}
                   <ValueUnit>GB</ValueUnit>
                 </BigValue>
-                <Badge $c={POS} style={{ alignSelf: 'flex-start' }}>
+                <PeriodDelta style={{ alignSelf: 'flex-start' }}>
                   {storage.deltaGb != null
                     ? `+ ${storage.deltaGb}G ${prevMonthLabel}`
                     : `▲ ${Math.abs(storage.deltaPct).toFixed(1)}%p`}
-                </Badge>
+                </PeriodDelta>
               </SideLeft>
               <SideViz $h={90} style={{ display: 'flex', alignItems: 'center' }}>
                 <GaugeWrap>
@@ -1049,9 +1130,10 @@ const DataCollectionSection = ({
           </Card>
         </SideCol>
       </Grid>
+      )}
 
       {/* Forge 연동 상태 */}
-      {showForgeBar && (
+      {!collapsed && showForgeBar && (
       <ForgeBar>
         <ForgeName dangerouslySetInnerHTML={{ __html: forgeLogoSvg }} style={{ display: 'inline-flex', alignItems: 'center', height: '16px' }} />
         <ForgeStatus>
@@ -1064,4 +1146,6 @@ const DataCollectionSection = ({
   )
 }
 
-export default DataCollectionSection
+// TV 대시보드의 시계(now, 1초 주기)가 상위 리렌더를 일으켜도 props가 동일하면
+// 차트가 매초 재렌더되지 않도록 memo (mock 데이터는 동일 참조라 실제 갱신은 없음)
+export default React.memo(DataCollectionSection)

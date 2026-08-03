@@ -9,7 +9,7 @@ import WebConsole from './tabs/WebConsole'
 import '../../index.css'
 
 const Detail = () => {
-  const { t } = useTranslation('robot')
+  const { t, i18n } = useTranslation('robot')
   const [searchParams] = useSearchParams()
   const deviceId = searchParams.get('deviceId')
   const [deviceInfo, setDeviceInfo] = useState({})
@@ -22,7 +22,7 @@ const Detail = () => {
           <AssetInfo t={t} deviceId={deviceId} />
         </Tab>
         <Tab id="tabWebConsole" label={t('robotWebConsole')}>
-          <WebConsole t={t} deviceId={deviceId} />
+          <WebConsole t={t} deviceId={deviceId} i18n={i18n} />
         </Tab>
         <Tab id="tabHistory" label={t('contorlOperationHistory')}>
           <HistoryList t={t} deviceId={deviceId} />

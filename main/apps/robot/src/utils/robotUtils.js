@@ -153,3 +153,43 @@ export function getLocalizedName(name, lang) {
   }
   return name.default ?? name['en-US'] ?? name['en-us'] ?? Object.values(name)[0] ?? ''
 }
+
+// robotUtils.js
+
+/**
+ * hwComponents 배열에서 WiFi Module을 찾아 rxPower 기준으로 3단계 상태를 반환
+ * @param {object} state - device.state (raw, 즉 data.state)
+ * @returns {{ label: string, level: 'good'|'weak'|'disconnected'|'unknown', warn: boolean }}
+ */
+export function getWifiStatus(state) {
+  const unknown = { label: 'noData', level: 'unknown', warn: false }
+
+  if (!state?.hwComponents) return unknown
+
+  let hwList
+  try {
+    hwList = typeof state.hwComponents === 'string' ? JSON.parse(state.hwComponents) : state.hwComponents
+  } catch (e) {
+    console.error('hwComponents parse error:', e)
+    return unknown
+  }
+
+  if (!Array.isArray(hwList)) return unknown
+
+  const wifi = hwList.find((c) => c.type === 'WiFi Module' || c.id === 'hw-wifi')
+  if (!wifi || wifi.rxPower == null) return unknown
+
+  // "-36 dBm" 같은 문자열에서 숫자만 추출
+  const match = String(wifi.rxPower).match(/-?\d+(\.\d+)?/)
+  if (!match) return unknown
+
+  const rxPower = parseFloat(match[0])
+
+  if (rxPower >= -65) {
+    return { label: 'stable', level: 'good', warn: false }
+  } else if (rxPower >= -75) {
+    return { label: 'weak', level: 'weak', warn: true }
+  } else {
+    return { label: 'disconnected', level: 'disconnected', warn: true }
+  }
+}

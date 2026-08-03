@@ -22,10 +22,19 @@ export const DivErrorList = styled.div`
 `
 
 export const SectionList = styled.div`
-  display: flex;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  /* 폰에서 아무리 좁아도 한 줄에 최소 2개 */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1.6rem;
+
+  @media (min-width: 640px) {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+
+  /* 상태 요약 박스 높이 축소 */
+  .containerRobot {
+    padding: 1rem 1.4rem;
+  }
 `
 
 export const ControlDiv = styled.div`

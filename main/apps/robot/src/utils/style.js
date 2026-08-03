@@ -7,6 +7,13 @@ export const ManageActions = styled.div`
   justify-content: center;
 `
 
+// ExpandableSection 헤더 버튼의 hover 시 밑줄 제거 (밑줄은 버튼이 그리므로 버튼에서 덮어써야 함)
+export const NoUnderlineExpandable = styled.div`
+  .selectButton:hover:not(:disabled) {
+    text-decoration: none;
+  }
+`
+
 export const BaseActionButton = styled.button`
   min-width: 36px;
   height: 24px;

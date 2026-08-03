@@ -6,6 +6,15 @@ import { RobotImange } from '@/assets/image'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 
+// ── 상태별 로봇 아이콘 (URL로 import)
+import robotOperationSvg from '@/assets/icons/figma/ic_robot_operation.svg?url'
+import robotLearningSvg from '@/assets/icons/figma/ic_robot_learning.svg?url'
+import robotStandbySvg from '@/assets/icons/figma/ic_robot_standby.svg?url'
+import robotChargeSvg from '@/assets/icons/figma/ic_robot_charge.svg?url'
+import robotNetworkSvg from '@/assets/icons/figma/ic_robot_network.svg?url'
+import robotErrorSvg from '@/assets/icons/figma/ic_robot_error.svg?url'
+import poiMarkerSvg from '@/assets/icons/figma/marker.svg?url'
+
 const MIN_SCALE = 1
 const MAX_SCALE = 4
 const ZOOM_INTENSITY = 0.0015
@@ -14,17 +23,41 @@ const DRAG_THRESHOLD = 4
 const getStateColor = (robotState) => {
   switch (robotState) {
     case 'OPERATION':
-      return '#22c55e'
+      return '#22A56C'
+    case 'STANDBY':
     case 'WAIT':
-      return '#f59e0b'
+      return '#777772'
     case 'CHARGE':
-      return '#3b82f6'
+      return '#965BE3'
+    case 'LEARNING':
+      return '#3194CB'
     case 'ERROR':
-      return '#ef4444'
+      return '#A34F4E'
     case 'OFFLINE':
-      return '#6b7280'
+      return '#AD7744'
     default:
-      return '#8b5cf6'
+      return '#777772'
+  }
+}
+
+// 상태별 로봇 아이콘 이미지
+const getRobotIcon = (robotState) => {
+  switch (robotState) {
+    case 'OPERATION':
+      return robotOperationSvg
+    case 'LEARNING':
+      return robotLearningSvg
+    case 'STANDBY':
+    case 'WAIT':
+      return robotStandbySvg
+    case 'CHARGE':
+      return robotChargeSvg
+    case 'OFFLINE':
+      return robotNetworkSvg
+    case 'ERROR':
+      return robotErrorSvg
+    default:
+      return RobotImange
   }
 }
 
@@ -76,14 +109,22 @@ const RobotMarker = styled.div`
   }
 `
 
+// marker.svg 는 라벨 하단에 붙는 작은 커넥터(꼬리표) 모양 — Figma 원본 크기 11×4.085px 그대로.
+// height: auto 로 렌더링해야 object-fit 레터박싱 없이 이미지 하단 = 뾰족점이 정확히 일치.
+const POI_ICON_WIDTH = 11
+
+const PoiIcon = styled.img`
+  width: ${POI_ICON_WIDTH}px;
+  height: auto;
+  display: block;
+  pointer-events: none;
+  -webkit-user-drag: none;
+`
+
 const RobotAvatar = styled.div`
   width: ${ROBOT_SIZE}px;
   height: ${ROBOT_SIZE}px;
-  border-radius: 50%;
-  border: 2px solid ${({ $color }) => $color};
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
   overflow: hidden;
-  background: #fff;
 `
 
 const RobotImage = styled.img`
@@ -97,16 +138,17 @@ const RobotLabel = styled.div`
   top: calc(100% + 4px);
   left: 50%;
   transform: translateX(-50%);
-  padding: 2px 8px;
-  border-radius: 10px;
+  padding: 4px 8px;
+  border-radius: 6px;
   background: ${({ $color }) => $color};
   color: #fff;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
   pointer-events: none;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 `
 
 // heading pointer: a 0×0 anchor at the avatar center that rotates to the
@@ -122,7 +164,7 @@ const HeadingWrap = styled.div`
 
 const HeadingArrow = styled.div`
   position: absolute;
-  left: ${ROBOT_SIZE / 2 + 3}px;
+  left: ${ROBOT_SIZE / 2 - 5}px;
   top: 0;
   transform: translateY(-50%);
   width: 0;
@@ -130,45 +172,55 @@ const HeadingArrow = styled.div`
   border-top: 5px solid transparent;
   border-bottom: 5px solid transparent;
   border-left: 9px solid ${({ $color }) => $color};
-  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.3));
+  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.9)) drop-shadow(0 2px 5px rgba(0, 0, 0, 0.4));
 `
 
+/* 마커 앵커 = 컨테이너 바닥 중앙 → 화살표 끝이 POI x,y 좌표에 정확히 닿음.
+   Figma: 그림자(drop-shadow)는 라벨+마커 전체를 감싸는 이 컨테이너 1개에만 적용. */
 const PoiMarker = styled.div`
   position: absolute;
-  transform: translate(-50%, -50%);
-  cursor: pointer;
-
-  &:hover span {
-    display: block;
-  }
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translate(-50%, -100%);
+  cursor: ${({ $clickable }) => ($clickable ? 'pointer' : 'default')};
+  filter: drop-shadow(0px 2px 4px rgba(17, 17, 17, 0.2));
 `
 
-const PoiDot = styled.div`
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: ${({ $isCharging }) => ($isCharging ? '#16a34a' : '#f59e0b')};
-  border: 2px solid #fff;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-`
+// const PoiDot = styled.div`
+//   width: 20px;
+//   height: 20px;
+//   border-radius: 50%;
+//   background: ${({ $isCharging }) => ($isCharging ? '#16a34a' : '#f59e0b')};
+//   border: 2px solid #fff;
+//   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+// `
 
+// 라벨-마커 연결부는 poiMarkerSvg(PoiIcon)가 담당하므로 별도 화살표 불필요.
+// Figma: 배경 rgba(255,255,255,0.8) + 레이어 opacity 80% 이 별도로 곱해짐
+// (배경 실효 알파 0.64, 텍스트 알파 0.8) — 두 값을 그대로 반영.
 const PoiLabel = styled.div`
-  position: absolute;
-  left: 50%;
-  top: calc(100% + 4px);
-  transform: translateX(-50%);
-  font-size: 13px;
-  color: #ffffff;
+  font-size: 12px;
+  color: #484848;
   white-space: nowrap;
-  font-weight: 500;
+  font-weight: 600;
   pointer-events: none;
-  background-color: rgba(0, 0, 0, 0.75);
-  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.8);
+  opacity: 0.8;
+  padding: 4px 8px;
   border-radius: 4px;
 `
 
 // ---------------- component ----------------
-const SiteMap = ({ mapData, robotDatas = [], mapServer, clickRobot = false, height = '500px' }) => {
+const SiteMap = ({
+  mapData,
+  robotDatas = [],
+  mapServer,
+  clickRobot = false,
+  clickPoi = false, // ← POI 클릭(장소 이동) 활성화
+  onPoiClick = null, // ← POI 클릭 시 상위로 poi 전달 (확인 모달은 상위에서 처리)
+  height = '500px'
+}) => {
   const [mapSvgUrl, setMapSvgUrl] = useState('')
   const [imageNaturalSize, setImageNaturalSize] = useState({
     width: 0,
@@ -641,7 +693,7 @@ const SiteMap = ({ mapData, robotDatas = [], mapServer, clickRobot = false, heig
                 </HeadingWrap>
               )}
               <RobotAvatar $color={getStateColor(marker.robotState)}>
-                <RobotImage src={RobotImange} alt={marker.deviceName} />
+                <RobotImage src={getRobotIcon(marker.robotState)} alt={marker.deviceName} />
               </RobotAvatar>
               <RobotLabel $color={getStateColor(marker.robotState)}>
                 {marker.deviceName} / {marker.robotState}
@@ -649,18 +701,26 @@ const SiteMap = ({ mapData, robotDatas = [], mapServer, clickRobot = false, heig
             </RobotMarker>
           ))}
 
-          {poiMarkers.map((poi) => (
-            <PoiMarker
-              key={poi.poiId}
-              style={{
-                left: `${poi.renderX}px`,
-                top: `${poi.renderY}px`
-              }}
-            >
-              <PoiDot $isCharging={poi.type === 'CHARGING'} />
-              <PoiLabel>{getLocalizedName(poi.name, i18n.language)}</PoiLabel>
-            </PoiMarker>
-          ))}
+          {poiMarkers.map((poi) => {
+            // CHARGING POI는 클릭 대상에서 제외 (3D SiteMap3D 와 동일한 규칙)
+            const clickable = clickPoi && poi.type !== 'CHARGING'
+            return (
+              <PoiMarker
+                key={poi.poiId}
+                $clickable={clickable}
+                style={{
+                  left: `${poi.renderX}px`,
+                  top: `${poi.renderY}px`
+                }}
+                onClick={() => {
+                  if (clickable) onPoiClick?.(poi)
+                }}
+              >
+                <PoiLabel>{getLocalizedName(poi.name, i18n.language)}</PoiLabel>
+                <PoiIcon src={poiMarkerSvg} alt={getLocalizedName(poi.name, i18n.language)} draggable={false} />
+              </PoiMarker>
+            )
+          })}
         </Canvas>
       )}
     </Viewport>

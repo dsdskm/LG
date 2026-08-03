@@ -40,7 +40,9 @@ const OwnerBadge = ({ isRobot, t }) => (
 // 존재하는 맵 유형(NAVI/POI/SVG) 배지. 하나도 없으면 '없음'
 const MapTypeCell = ({ mapItem, t }) => {
   const noneEl = (
-    <span style={{ fontSize: '1.3rem', color: 'var(--color-neutral-40)', pointerEvents: 'none' }}>{t('mapMgmt.none')}</span>
+    <span style={{ fontSize: '1.3rem', color: 'var(--color-neutral-40)', pointerEvents: 'none' }}>
+      {t('mapMgmt.none')}
+    </span>
   )
   if (!mapItem) return noneEl
   const byType = indexVersionsByType(mapItem.latestVersions)
@@ -189,23 +191,34 @@ const MapManagement = () => {
   )
 
   const buildingOptions = useMemo(
-    () => [{ name: t('mapMgmt.allBuildings'), value: '' }, ...buildings.map((b) => ({ name: b.buildingName ?? b.buildingId, value: b.buildingId }))],
+    () => [
+      { name: t('mapMgmt.allBuildings'), value: '' },
+      ...buildings.map((b) => ({ name: b.buildingName ?? b.buildingId, value: b.buildingId }))
+    ],
     [buildings, t]
   )
 
   const floorSource = useMemo(
-    () => (buildingFilter ? buildings.find((b) => b.buildingId === buildingFilter)?.floors ?? [] : buildings.flatMap((b) => b.floors ?? [])),
+    () =>
+      buildingFilter
+        ? (buildings.find((b) => b.buildingId === buildingFilter)?.floors ?? [])
+        : buildings.flatMap((b) => b.floors ?? []),
     [buildings, buildingFilter]
   )
   const floorOptions = useMemo(
-    () => [{ name: t('mapMgmt.allFloors'), value: '' }, ...floorSource.map((f) => ({ name: f.floorName ?? f.floorId, value: f.floorId }))],
+    () => [
+      { name: t('mapMgmt.allFloors'), value: '' },
+      ...floorSource.map((f) => ({ name: f.floorName ?? f.floorId, value: f.floorId }))
+    ],
     [floorSource, t]
   )
 
   // 사이트 맵(영역) 행 + 로봇 맵 행 (빌딩/층 필터 미적용 시 로봇 맵도 함께 표시)
   const rows = useMemo(() => {
     const areaRows = allAreas
-      .filter((a) => (!buildingFilter || a.buildingId === buildingFilter) && (!floorFilter || a.floorId === floorFilter))
+      .filter(
+        (a) => (!buildingFilter || a.buildingId === buildingFilter) && (!floorFilter || a.floorId === floorFilter)
+      )
       .map((a) => ({
         _key: `a-${a.areaId}`,
         isRobot: false,
@@ -242,10 +255,26 @@ const MapManagement = () => {
   const columns = useMemo(
     () => [
       { name: t('mapMgmt.colType'), cell: (row) => <OwnerBadge isRobot={row.isRobot} t={t} /> },
-      { name: t('mapMgmt.colBuilding'), selector: (row) => row.buildingName, cell: (row) => <span style={{ fontSize: '1.3rem', pointerEvents: 'none' }}>{row.buildingName}</span> },
-      { name: t('mapMgmt.colFloor'), selector: (row) => row.floorName, cell: (row) => <span style={{ fontSize: '1.3rem', pointerEvents: 'none' }}>{row.floorName}</span> },
-      { name: t('mapMgmt.colArea'), selector: (row) => row.areaName, cell: (row) => <span style={{ fontSize: '1.3rem', pointerEvents: 'none' }}>{row.areaName}</span> },
-      { name: t('mapMgmt.colRobot'), selector: (row) => row.robotName, cell: (row) => <span style={{ fontSize: '1.3rem', pointerEvents: 'none' }}>{row.robotName}</span> },
+      {
+        name: t('mapMgmt.colBuilding'),
+        selector: (row) => row.buildingName,
+        cell: (row) => <span style={{ fontSize: '1.3rem', pointerEvents: 'none' }}>{row.buildingName}</span>
+      },
+      {
+        name: t('mapMgmt.colFloor'),
+        selector: (row) => row.floorName,
+        cell: (row) => <span style={{ fontSize: '1.3rem', pointerEvents: 'none' }}>{row.floorName}</span>
+      },
+      {
+        name: t('mapMgmt.colArea'),
+        selector: (row) => row.areaName,
+        cell: (row) => <span style={{ fontSize: '1.3rem', pointerEvents: 'none' }}>{row.areaName}</span>
+      },
+      {
+        name: t('mapMgmt.colRobot'),
+        selector: (row) => row.robotName,
+        cell: (row) => <span style={{ fontSize: '1.3rem', pointerEvents: 'none' }}>{row.robotName}</span>
+      },
       { name: t('mapMgmt.colMap'), cell: (row) => <MapTypeCell mapItem={row.mapItem} t={t} />, grow: 2 }
     ],
     [t]
@@ -262,9 +291,15 @@ const MapManagement = () => {
 
       {/* 필터 — 사이트 필터 옆에 빌딩/층 필터 배치 (카드 없이) */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '2rem', flexWrap: 'wrap' }}>
-        <OrganizationSelector onChange={handleOrgChange} disableCenter />
+        <OrganizationSelector onChange={handleOrgChange} supportNone={[false, false]} disableCenter />
         {hasScope && showBuildingFilter && (
-          <Dropdown size="lg" minWidth="16rem" value={buildingFilter} options={buildingOptions} onChange={handleBuildingChange} />
+          <Dropdown
+            size="lg"
+            minWidth="16rem"
+            value={buildingFilter}
+            options={buildingOptions}
+            onChange={handleBuildingChange}
+          />
         )}
         {hasScope && showFloorFilter && (
           <Dropdown size="lg" minWidth="16rem" value={floorFilter} options={floorOptions} onChange={setFloorFilter} />

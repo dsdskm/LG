@@ -9,7 +9,10 @@
       "robotList": "Robot List",
       "groupManagement": "Group Management",
       "userManagement": "User Management",
-      "mapManagement": "Map Management"
+      "mapManagement": "Map Management",
+      "settings": "Settings",
+      "aiLogManagement": "AI Log Analysis",
+      "termManagement": "Terms Management"
     }
   },
   "Depth": {

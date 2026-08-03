@@ -1,5 +1,6 @@
 // Logreplay/components/MapPanels.jsx
 import React, { memo, useMemo, useRef, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { S } from '../styles'
 import SensorChart from './SensorChart'
 import { Button } from '@repo/ui'
@@ -14,36 +15,37 @@ const POSE_COLORS = { x: '#f97316', y: '#8b5cf6', z: '#111827' }
 
 // [REPLACE] Legend 전체 함수 교체 (패널만 렌더)
 const Legend = memo(function Legend({ open = true }) {
+  const { t } = useTranslation('robot')
   if (!open) return null
   return (
-    <div style={S.legendBox} aria-label="지도 범례">
+    <div style={S.legendBox} aria-label={t('logreplay.map.legendAriaLabel')}>
       <div style={S.legendRow}>
         <span style={S.robotTriIcon()} aria-hidden />
-        <span>로봇(방향)</span>
+        <span>{t('logreplay.map.robot')}</span>
       </div>
       <div style={S.legendRow}>
         <span style={S.circleSwatch('#10B981')} aria-hidden />
-        <span>지나온 경로</span>
+        <span>{t('logreplay.map.pathDone')}</span>
       </div>
       <div style={S.legendRow}>
         <span style={S.circleSwatch('#9CA3AF')} aria-hidden />
-        <span>남은 경로</span>
+        <span>{t('logreplay.map.pathRemaining')}</span>
       </div>
       <div style={S.legendRow}>
         <span style={S.circleSwatch('#FFA500')} aria-hidden />
-        <span>LiDAR 포인트</span>
+        <span>{t('logreplay.map.lidarPoints')}</span>
       </div>
       <div style={S.legendRow}>
         <div style={S.gradientBarMini} aria-hidden />
-        <span style={{ whiteSpace: 'nowrap' }}>로컬 코스트맵</span>
+        <span style={{ whiteSpace: 'nowrap' }}>{t('logreplay.map.localCostmap')}</span>
       </div>
       <div style={S.legendRow}>
         <span style={S.dashedBoxSample} aria-hidden />
-        <span>로컬 코스트맵 범위(점선)</span>
+        <span>{t('logreplay.map.localCostmapRange')}</span>
       </div>
       <div style={S.legendRow}>
         <span style={S.goalCrossSample} aria-hidden />
-        <span>목표 지점</span>
+        <span>{t('logreplay.map.goalPoint')}</span>
       </div>
     </div>
   )
@@ -70,6 +72,7 @@ const LeftMapCard = memo(function LeftMapCard({
   odomChart2,
   chartLoading
 }) {
+  const { t } = useTranslation('robot')
   const [legendOpen, setLegendOpen] = useState(true)
   const [is3D, setIs3D] = useState(false)
   const hasGrid = !!gridData
@@ -100,18 +103,18 @@ const LeftMapCard = memo(function LeftMapCard({
   return (
     <div style={S.mapCard}>
       <div style={S.mapHeader}>
-        <span>이동현황</span>
+        <span>{t('logreplay.map.movementStatus')}</span>
         <div style={S.mapHeaderRight}>
           {/* ✅ 3D 모드에서도 범례 표시(2D와 동일 UX) */}
           <>
             <button
               type="button"
               onClick={() => setLegendOpen((v) => !v)}
-              title={legendOpen ? '범례 접기' : '범례 펼치기'}
+              title={legendOpen ? t('logreplay.map.legendCollapse') : t('logreplay.map.legendExpand')}
               aria-expanded={legendOpen}
               style={S.legendHeaderToggleBtn}
             >
-              {`범례 ${legendOpen ? '⌃' : '⌄'}`}
+              {`${t('logreplay.map.legendToggle')} ${legendOpen ? '⌃' : '⌄'}`}
             </button>
             <Legend open={legendOpen} />
           </>
@@ -119,10 +122,10 @@ const LeftMapCard = memo(function LeftMapCard({
             size="sm"
             theme="default"
             onClick={() => setIs3D((v) => !v)}
-            title={is3D ? '2D 지도로 전환' : '3D 지도로 전환'}
+            title={is3D ? t('logreplay.map.switchTo2D') : t('logreplay.map.switchTo3D')}
             style={S.toggleMapBtn}
           >
-            {is3D ? '2D 지도' : '3D 지도'}
+            {is3D ? t('logreplay.map.mode2D') : t('logreplay.map.mode3D')}
           </Button>
         </div>
       </div>
@@ -161,7 +164,7 @@ const LeftMapCard = memo(function LeftMapCard({
                   gap: 8
                 }}
               >
-                {loadPhase !== 'init' && leftOverlayText && leftOverlayText !== '로딩 실패' ? (
+                {loadPhase !== 'init' && loadPhase !== 'error' && leftOverlayText ? (
                   <>
                     <span
                       aria-hidden
@@ -212,9 +215,10 @@ const LeftMapCard = memo(function LeftMapCard({
 
 // ✅ 우측 헤더: 센서 정보로 고정 + 토글 제거(이동면적 disable 정책)
 const RightHeader = memo(function RightHeader({ isLoadingLogs, timeLabelRef }) {
+  const { t } = useTranslation('robot')
   return (
     <div style={S.mapHeader}>
-      <span>센서 정보</span>
+      <span>{t('logreplay.map.sensorInfo')}</span>
       <div style={S.mapHeaderRight}>
         <span style={S.mapSubLabel} ref={timeLabelRef} />
         {/* 토글/버튼은 추후 필요 시 추가 */}
@@ -248,6 +252,7 @@ function MapPanels({
   odomChart2,
   chartLoading
 }) {
+  const { t } = useTranslation('robot')
   // ===============================
   // 좌측 게이팅(기존 그대로)
   // ===============================
@@ -298,13 +303,13 @@ function MapPanels({
   const leftInteractiveReady = loadPhase === 'ready' && (leftReadyByData || leftHasGrid)
 
   const leftOverlayText = useMemo(() => {
-    if (loadPhase === 'error') return '로딩 실패'
-    if (loadPhase === 'init') return 'mcap 파일 선택 후 조회 버튼을 눌러주세요'
-    if (!leftHasPts && !leftHasGrid) return '경로 수집 대기…'
-    if (loadPhase !== 'ready') return 'MCAP 로딩 중…'
-    if (!leftReadyByData) return '데이터 안정화 대기…'
+    if (loadPhase === 'error') return t('logreplay.map.loadFailed')
+    if (loadPhase === 'init') return t('logreplay.map.initialHint')
+    if (!leftHasPts && !leftHasGrid) return t('logreplay.map.waitingPathCollection')
+    if (loadPhase !== 'ready') return t('logreplay.map.mcapLoading')
+    if (!leftReadyByData) return t('logreplay.map.waitingDataStabilize')
     return ''
-  }, [loadPhase, leftHasPts, leftHasGrid, leftReadyByData])
+  }, [loadPhase, leftHasPts, leftHasGrid, leftReadyByData, t])
 
   // ===============================
   // 우측 센서 차트 게이팅(좌측과 동일한 로딩 Sync)
@@ -312,11 +317,11 @@ function MapPanels({
   const rightInteractiveReady = loadPhase === 'ready'
 
   const rightOverlayText = useMemo(() => {
-    if (loadPhase === 'error') return '로딩 실패'
-    if (loadPhase === 'init') return 'mcap 파일 선택 후 조회 버튼을 눌러주세요'
-    if (loadPhase !== 'ready') return 'MCAP 로딩 중…'
+    if (loadPhase === 'error') return t('logreplay.map.loadFailed')
+    if (loadPhase === 'init') return t('logreplay.map.initialHint')
+    if (loadPhase !== 'ready') return t('logreplay.map.mcapLoading')
     return ''
-  }, [loadPhase])
+  }, [loadPhase, t])
 
   const showRightOverlay = loadPhase === 'error' || loadPhase === 'init' || !rightInteractiveReady
 
@@ -392,15 +397,28 @@ function MapPanels({
                     fontSize: 13
                   }}
                 >
-                  차트 데이터 로딩 중...
+                  {t('logreplay.map.chartDataLoading')}
                 </div>
               ) : (
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateRows: '1fr 1fr',
+                    // ✅ 세로: '1fr'은 트랙 최소값이 auto(콘텐츠 min-content)라, uPlot이 setSize로
+                    //    루트에 박는 명시적 높이가 트랙 최소값이 되어 "전체 높이로 고착"된다.
+                    //    minmax(0,1fr)로 최소값 0 고정 → 각 차트가 정확히 절반.
+                    gridTemplateRows: 'minmax(0, 1fr) minmax(0, 1fr)',
+                    // ✅ 가로: 컬럼을 명시하지 않으면 암시적 컬럼이 auto라 uPlot 명시 폭보다
+                    //    작게 줄지 못해, 컨테이너가 좁아져도 옛 넓은 폭에 고착(우측 잘림)된다.
+                    //    minmax(0,1fr)로 컬럼도 0까지 줄 수 있게 한다.
+                    gridTemplateColumns: 'minmax(0, 1fr)',
                     gap: 12,
-                    width: '100%'
+                    width: '100%',
+                    height: '100%',
+                    // ✅ 부모(mapBody)가 flex row이므로 이 그리드는 flex 아이템이다.
+                    //    flex 아이템 기본 min-width/min-height: auto(콘텐츠 min-content)라
+                    //    콘텐츠(uPlot 명시 폭/높이)보다 작게 못 줄어든다 → 0으로 풀어 shrink 허용.
+                    minWidth: 0,
+                    minHeight: 0
                   }}
                 >
                   <SensorChart
@@ -446,7 +464,7 @@ function MapPanels({
                 gap: 8
               }}
             >
-              {loadPhase !== 'init' && rightOverlayText && rightOverlayText !== '로딩 실패' ? (
+              {loadPhase !== 'init' && loadPhase !== 'error' && rightOverlayText ? (
                 <>
                   <span
                     aria-hidden

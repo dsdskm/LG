@@ -33,6 +33,29 @@ class HttpRangeReadable {
       16 * 1024 * 1024,
       Number(opts.maxChunkCacheBytes || 64 * 1024 * 1024) // 기본 64MB
     )
+
+    // ✅ [ADD] 동시 range fetch 상한(세마포어)
+    //   고배속 재생 시 pose/log/overlay 로더가 매 폴링마다 prefetch를 쏘면
+    //   fetch()가 수천 개 쌓여 브라우저 커넥션 풀이 고갈(net::ERR_INSUFFICIENT_RESOURCES)되고
+    //   pose window 로드가 실패해 로봇 경로가 멈춘다. 활성 fetch를 상한으로 묶고 나머지는 큐에서 대기시킨다.
+    this._maxConcurrentFetches = Math.max(1, Number(opts.maxConcurrentFetches || 6))
+    this._activeFetches = 0
+    this._fetchWaiters = []
+  }
+
+  // ✅ [ADD] fetch 슬롯 확보/반납 (경량 세마포어)
+  _acquireFetchSlot() {
+    if (this._activeFetches < this._maxConcurrentFetches) {
+      this._activeFetches++
+      return Promise.resolve()
+    }
+    return new Promise((resolve) => this._fetchWaiters.push(resolve))
+  }
+
+  _releaseFetchSlot() {
+    const next = this._fetchWaiters.shift()
+    if (next) next() // 슬롯을 대기자에게 그대로 이양(active 카운트 유지)
+    else this._activeFetches = Math.max(0, this._activeFetches - 1)
   }
 
   async size() {
@@ -237,18 +260,24 @@ class HttpRangeReadable {
     const headers = new Headers(this._fetchInit.headers || {})
     headers.set('Range', `bytes=${s.toString()}-${e.toString()}`)
 
-    const resp = await fetch(this.url, { ...this._fetchInit, method: 'GET', headers })
-    if (!resp.ok) {
-      throw new Error(`[HttpRangeReadable] range fetch failed: HTTP ${resp.status}`)
+    // ✅ 동시 fetch 상한 준수 — 슬롯 확보 후 진행, 완료/실패 무관하게 반드시 반납
+    await this._acquireFetchSlot()
+    try {
+      const resp = await fetch(this.url, { ...this._fetchInit, method: 'GET', headers })
+      if (!resp.ok) {
+        throw new Error(`[HttpRangeReadable] range fetch failed: HTTP ${resp.status}`)
+      }
+
+      // total size 힌트 확보
+      const cr = resp.headers.get('Content-Range') || resp.headers.get('content-range')
+      const total = this._parseTotalFromContentRange(cr)
+      if (total != null) this._knownSize = total
+
+      const ab = await resp.arrayBuffer()
+      return new Uint8Array(ab)
+    } finally {
+      this._releaseFetchSlot()
     }
-
-    // total size 힌트 확보
-    const cr = resp.headers.get('Content-Range') || resp.headers.get('content-range')
-    const total = this._parseTotalFromContentRange(cr)
-    if (total != null) this._knownSize = total
-
-    const ab = await resp.arrayBuffer()
-    return new Uint8Array(ab)
   }
 }
 
@@ -601,44 +630,6 @@ function dedupeSortedByTSec(arr) {
 // [ADD] Common helpers for windowed + HTTP range loading
 // - pose / rosout / costmap / path / goal_pose 로더에서 재사용
 // ============================================================
-function _secToNsBigInt(sec) {
-  return BigInt(Math.floor(Number(sec) * 1e9))
-}
-
-/**
- * reader.statistics.messageStartTime(=baseNs) 기준으로
- * startSec/endSec(플레이바 상대초) → readMessages(startTime/endTime) 생성
- * 반환 객체에 __baseSec도 함께 넣어 tSec 계산에 재사용
- */
-function buildWindowReadArgs(reader, { topics, startSec = null, endSec = null } = {}) {
-  const baseNs = reader?.statistics?.messageStartTime ?? undefined
-  const baseSec = baseNs != null ? nsToSec(baseNs) : 0
-  const isWindow = startSec != null && endSec != null
-
-  return {
-    topics,
-    startTime: isWindow && baseNs != null ? baseNs + _secToNsBigInt(startSec) : undefined,
-    endTime: isWindow && baseNs != null ? baseNs + _secToNsBigInt(endSec) : undefined,
-    __baseNs: baseNs,
-    __baseSec: baseSec
-  }
-}
-
-/**
- * chunkIndexes 기반 prefetch (있으면 Range 요청 안정화/감소)
- * 실패해도 기능은 진행하도록 try/catch로 흡수
- */
-async function prefetchForWindow(reader, readArgs, { padChunks = 1 } = {}) {
-  try {
-    const pStart = readArgs?.startTime ?? reader?.statistics?.messageStartTime
-    const pEnd = readArgs?.endTime ?? reader?.statistics?.messageEndTime
-    if (pStart != null && pEnd != null) {
-      await prefetchChunksForTimeWindow(reader, pStart, pEnd, { padChunks })
-    }
-  } catch (e) {
-    console.warn('[Logreplay] 청크 prefetch 실패(재생은 계속됨):', e?.message || e)
-  }
-}
 // ✅ [Step2] chunk index 객체에서 필드명을 안전하게 뽑기(라이브러리/버전 차이 대응)
 function _pickChunkField(ci, names) {
   for (const k of names) {
@@ -812,289 +803,6 @@ function normalizeLevelText(v) {
   return 'INFO'
 }
 // ============================================================
-// [ADD] Costmap window loader (local/global 공용)
-// - 기존 토픽 + 샘플 토픽 모두 후보로 커버
-// - 반환: { found, frames:[{tSec, grid}], topic }
-// ============================================================
-export async function loadCostmapWindowFromMcapUrl(url, options = {}) {
-  const {
-    topic = '/local_costmap/costmap',
-    decompressHandlers,
-    startSec = null,
-    endSec = null,
-    // costmap은 무거우므로 기본 희소화 권장
-    timeDownsampleMs = 250,
-    maxFrames = 2000,
-    onBatch,
-    batchSize = 1
-  } = options
-
-  const { reader } = await getOrOpenIndexedReaderFromUrl(url, {
-    decompressHandlers,
-    useHttpRange: true
-  })
-
-  // ✅ 기존 + 샘플 후보 모두 포함
-  const candidates = [
-    String(topic).toLowerCase(),
-
-    // 샘플(표준)
-    '/local_costmap/costmap',
-    '/global_costmap/costmap',
-
-    // 기존(디버그/변형)
-    '/debug/dwa_local_costmap',
-    '/debug/dwa_global_costmap',
-
-    // 느슨한 호환
-    '/local_costmap',
-    '/global_costmap',
-    '/costmap'
-  ]
-
-  const chosen = findTopicByCandidates(reader, candidates)
-  if (!chosen) return { found: false, frames: [], topic: null }
-
-  const channelsById = reader.channelsById || new Map()
-  const schemasById = reader.schemasById || new Map()
-  const schemaResolver = (id) => (id != null ? (schemasById.get(id) ?? null) : null)
-
-  // schema decoder (optional)
-  let decoder = null
-  try {
-    const ch = [...channelsById.values()].find((c) => c.topic === chosen)
-    const sch = ch?.schemaId != null ? schemasById.get(ch.schemaId) : null
-    if (sch) decoder = await buildDecoderForSchema(sch)
-  } catch {}
-
-  const readArgs = buildWindowReadArgs(reader, { topics: [chosen], startSec, endSec })
-  await prefetchForWindow(reader, readArgs, { padChunks: 1 })
-
-  const baseSec = readArgs.__baseSec ?? 0
-  let lastKept = -Infinity
-  const frames = []
-  let batch = []
-
-  try {
-    for await (const msg of reader.readMessages(readArgs)) {
-      const timeNs = msg.logTime ?? msg.publishTime
-      if (timeNs == null) continue
-
-      // ✅ 플레이바 상대초
-      const tSec = nsToSec(timeNs) - baseSec
-      if (!Number.isFinite(tSec)) continue
-
-      // ✅ 희소화
-      if (timeDownsampleMs > 0 && Number.isFinite(lastKept) && (tSec - lastKept) * 1000 < timeDownsampleMs) {
-        continue
-      }
-      lastKept = tSec
-
-      const ch = channelsById.get(msg.channelId)
-      const obj = await decodeMsgToObject(msg, ch, schemaResolver, { decoder, tryUtf8Json: true })
-      const grid = normalizeOccupancyGrid(obj)
-      if (!grid) continue
-
-      const rec = { tSec, grid }
-      frames.push(rec)
-      batch.push(rec)
-
-      if (onBatch && batch.length >= batchSize) {
-        onBatch(batch)
-        batch = []
-        await Promise.resolve()
-      }
-
-      if (frames.length >= maxFrames) break
-      if ((frames.length & 0x3f) === 0) await Promise.resolve()
-    }
-  } catch (e) {
-    console.warn('[Logreplay] costmap 읽기 실패:', e)
-  }
-
-  if (onBatch && batch.length) onBatch(batch)
-
-  // 정렬 + dedupe
-  frames.sort((a, b) => a.tSec - b.tSec)
-  const dedupedFrames = dedupeSortedByTSec(frames)
-
-  return { found: dedupedFrames.length > 0, frames: dedupedFrames, topic: chosen }
-}
-// ============================================================
-// [ADD] Path window loader (plan/transformed_global_plan + legacy)
-// - 반환: { found, plans:[{tSec, points:[{x,y,z}]}], topic }
-// ============================================================
-export async function loadPathWindowFromMcapUrl(url, options = {}) {
-  const {
-    topic = '/plan',
-    decompressHandlers,
-    startSec = null,
-    endSec = null,
-    // transformed_global_plan이 빈번할 수 있어 기본 희소화
-    timeDownsampleMs = 200,
-    maxMsgs = 800
-  } = options
-
-  const { reader } = await getOrOpenIndexedReaderFromUrl(url, {
-    decompressHandlers,
-    useHttpRange: true
-  })
-
-  // ✅ 기존 + 샘플 후보 모두 포함
-  const topicLC = String(topic)
-  const candidates = [
-    topicLC,
-    topicLC.toLowerCase(),
-
-    // 샘플
-    '/plan',
-    '/transformed_global_plan',
-
-    // 기존/확장 후보들
-    '/master_service/path',
-    '/path',
-    '/trajectory',
-    '/planned_path',
-    '/plan_smoothed',
-    '/transformed_global_plan', // 중복 괜찮음
-    '/transformedGlobalPlan' // 혹시 Camel 변형 있을까봐(희박)
-  ]
-
-  const chosen = findTopicByCandidates(reader, candidates)
-  if (!chosen) return { found: false, plans: [], topic: null }
-
-  const channelsById = reader.channelsById || new Map()
-  const schemasById = reader.schemasById || new Map()
-  const schemaResolver = (id) => (id != null ? (schemasById.get(id) ?? null) : null)
-
-  const readArgs = buildWindowReadArgs(reader, { topics: [chosen], startSec, endSec })
-  await prefetchForWindow(reader, readArgs, { padChunks: 1 })
-
-  const baseSec = readArgs.__baseSec ?? 0
-  let lastKept = -Infinity
-  const plans = []
-  let n = 0
-
-  try {
-    for await (const msg of reader.readMessages(readArgs)) {
-      const timeNs = msg.logTime ?? msg.publishTime
-      if (timeNs == null) continue
-
-      const tSec = nsToSec(timeNs) - baseSec
-      if (!Number.isFinite(tSec)) continue
-
-      // ✅ 희소화
-      if (timeDownsampleMs > 0 && Number.isFinite(lastKept) && (tSec - lastKept) * 1000 < timeDownsampleMs) {
-        continue
-      }
-      lastKept = tSec
-
-      const ch = channelsById.get(msg.channelId)
-      const obj = await decodeMsgToObject(msg, ch, schemaResolver, { tryUtf8Json: true })
-      if (!obj) continue
-
-      // nav_msgs/Path: poses[].pose.position
-      const poses = obj?.poses
-      if (!Array.isArray(poses) || poses.length === 0) continue
-
-      const points = []
-      for (const it of poses) {
-        const pos = it?.pose?.position ?? it?.pose?.pose?.position // 혹시 변형 대비
-        if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
-          points.push({ x: +pos.x, y: +pos.y, z: Number(pos.z) || 0 })
-        }
-      }
-      if (!points.length) continue
-
-      plans.push({ tSec, points })
-
-      if (++n >= maxMsgs) break
-      if ((n & 0x7f) === 0) await Promise.resolve()
-    }
-  } catch (e) {
-    console.warn('[Logreplay] path 읽기 실패:', e)
-  }
-
-  plans.sort((a, b) => a.tSec - b.tSec)
-  const dedupedPlans = dedupeSortedByTSec(plans)
-
-  return { found: dedupedPlans.length > 0, plans: dedupedPlans, topic: chosen }
-}
-// ============================================================
-// [ADD] Goal pose window loader (PoseStamped 계열)
-// - 기존 토픽 + 샘플 토픽 모두 후보로 커버
-// - 반환: { found, goals:[{tSec,x,y,z,yaw}], topic }
-// ============================================================
-export async function loadGoalPoseWindowFromMcapUrl(url, options = {}) {
-  const { topic = '/goal_pose', decompressHandlers, startSec = null, endSec = null, maxGoals = 800 } = options
-
-  const { reader } = await getOrOpenIndexedReaderFromUrl(url, {
-    decompressHandlers,
-    useHttpRange: true
-  })
-
-  const candidates = [
-    String(topic).toLowerCase(),
-
-    // 샘플/표준
-    '/goal_pose',
-    '/move_base_simple/goal',
-
-    // 기존/확장
-    '/debug/dwa_goal',
-    '/dwa_goal',
-    '/goal'
-  ]
-
-  const chosen = findTopicByCandidates(reader, candidates)
-  if (!chosen) return { found: false, goals: [], topic: null }
-
-  const channelsById = reader.channelsById || new Map()
-  const schemasById = reader.schemasById || new Map()
-  const schemaResolver = (id) => (id != null ? (schemasById.get(id) ?? null) : null)
-
-  // schema decoder (optional)
-  let decoder = null
-  try {
-    const ch = [...channelsById.values()].find((c) => c.topic === chosen)
-    const sch = ch?.schemaId != null ? schemasById.get(ch.schemaId) : null
-    if (sch) decoder = await buildDecoderForSchema(sch)
-  } catch {}
-
-  const readArgs = buildWindowReadArgs(reader, { topics: [chosen], startSec, endSec })
-  await prefetchForWindow(reader, readArgs, { padChunks: 1 })
-
-  const baseSec = readArgs.__baseSec ?? 0
-  const goals = []
-
-  try {
-    for await (const msg of reader.readMessages(readArgs)) {
-      const timeNs = msg.logTime ?? msg.publishTime
-      if (timeNs == null) continue
-
-      const tSec = nsToSec(timeNs) - baseSec
-      if (!Number.isFinite(tSec)) continue
-
-      const ch = channelsById.get(msg.channelId)
-      const obj = await decodeMsgToObject(msg, ch, schemaResolver, { decoder, tryUtf8Json: true })
-      const pose = pickPoseAny(obj) // ✅ 이미 파일에 존재하는 범용 pose 추출기 재사용
-      if (!pose) continue
-
-      goals.push({ tSec, x: pose.x, y: pose.y, z: Number(pose.z) || 0, yaw: Number(pose.yaw) || 0 })
-
-      if (goals.length >= maxGoals) break
-      if ((goals.length & 0x7f) === 0) await Promise.resolve()
-    }
-  } catch (e) {
-    console.warn('[Logreplay] goal_pose 읽기 실패:', e)
-  }
-
-  goals.sort((a, b) => a.tSec - b.tSec)
-  const dedupedGoals = dedupeSortedByTSec(goals)
-
-  return { found: dedupedGoals.length > 0, goals: dedupedGoals, topic: chosen }
-}
-// ============================================================
 // [ADD] Sparse pose loader — Foxglove 스타일 차트 Overview
 // chunk index에서 균등 간격으로 N개만 선택 → 각 chunk에서 1개 pose만 추출
 // 전체 chunk 해제 대신 ~100개만 해제 → 20초 → ~2초
@@ -1223,6 +931,20 @@ export async function loadPosesSparseFromMcapUrl(url, options = {}) {
   return out
 }
 
+// nav_msgs/Path → [{x,y,z}] 추출 (path 편승/로더 공용)
+function extractNavPathPoints(obj) {
+  const poses = obj?.poses
+  if (!Array.isArray(poses)) return []
+  const points = []
+  for (const it of poses) {
+    const pos = it?.pose?.position ?? it?.pose?.pose?.position
+    if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
+      points.push({ x: +pos.x, y: +pos.y, z: Number(pos.z) || 0 })
+    }
+  }
+  return points
+}
+
 // ===== [REPLACE] 기존 export async function loadPosesFromMcapUrl(...) 전체 교체 =====
 export async function loadPosesFromMcapUrl(url, options = {}) {
   const {
@@ -1231,7 +953,13 @@ export async function loadPosesFromMcapUrl(url, options = {}) {
     // ✅ Foxglove-style window
     startSec = null, // number | null
     endSec = null, // number | nu
-    timeDownsampleMs = null // t 간격 다운샘플(예: 80ms). null이면 비활성
+    timeDownsampleMs = null, // t 간격 다운샘플(예: 80ms). null이면 비활성
+    // ▼ 편승(piggyback) 스캔: 메인(pose)을 읽는 "같은 청크 스캔"에서 함께 뽑아 콜백으로 넘긴다.
+    //   ReplayControls의 extraTopics/onExtraMessage 패턴 이식. 같은 청크 → 추가 fetch/디컴프 없음.
+    //   extraTopics: [{ kind, candidates:[...], downsampleMs }], onExtraMessage: (kind, rec) => void
+    //   rec는 kind별 정규화 완료본: costmap {tSec,grid} / path {tSec,points} / goal {tSec,x,y,z,yaw}
+    extraTopics = [],
+    onExtraMessage = null
   } = options
 
   const isWindow = startSec != null && endSec != null
@@ -1270,6 +998,29 @@ export async function loadPosesFromMcapUrl(url, options = {}) {
     /* fallback to generic */
   }
 
+  // ▼ 편승 토픽 해석: [{kind,candidates,downsampleMs}] → 실제 존재 채널만 채택
+  //   topicName -> { kind, decoder, downsampleMs, lastKept } (다운샘플은 무거운 decode 이전에 적용)
+  const extraByTopic = new Map()
+  if (typeof onExtraMessage === 'function' && Array.isArray(extraTopics)) {
+    for (const ex of extraTopics) {
+      if (!ex?.kind || !Array.isArray(ex.candidates)) continue
+      const t = findTopicByCandidates(
+        reader,
+        ex.candidates.map((c) => String(c).toLowerCase())
+      )
+      if (!t || t === chosen || extraByTopic.has(t)) continue
+      let dec = null
+      try {
+        const ech = [...channelsById.values()].find((c) => c.topic === t)
+        const esch = ech?.schemaId != null ? schemasById.get(ech.schemaId) : null
+        if (esch) dec = await buildDecoderForSchema(esch)
+      } catch {
+        /* generic decode fallback */
+      }
+      extraByTopic.set(t, { kind: ex.kind, decoder: dec, downsampleMs: Number(ex.downsampleMs) || 0, lastKept: -Infinity })
+    }
+  }
+
   const out = []
   let lastTs = -Infinity
 
@@ -1285,7 +1036,8 @@ export async function loadPosesFromMcapUrl(url, options = {}) {
     const baseSec = baseNs != null ? nsToSec(baseNs) : 0
 
     const readArgs = {
-      topics: [chosen],
+      // 편승 토픽이 있으면 같은 스캔에 포함(같은 청크 → 추가 fetch/디컴프 없음)
+      topics: extraByTopic.size ? [chosen, ...extraByTopic.keys()] : [chosen],
 
       startTime: baseNs != null && startSec != null ? baseNs + secToNs(startSec) : undefined,
       endTime: baseNs != null && endSec != null ? baseNs + secToNs(endSec) : undefined
@@ -1308,6 +1060,36 @@ export async function loadPosesFromMcapUrl(url, options = {}) {
       if (timeNs == null) continue
       const tSec = nsToSec(timeNs) - baseSec
 
+      const ch = channelsById.get(msg.channelId)
+
+      // ▼ 편승 토픽: 메인과 별개로 (kind별 다운샘플 후) 정규화해 콜백. decode는 다운샘플 이후에만.
+      const ex = ch?.topic ? extraByTopic.get(ch.topic) : null
+      if (ex) {
+        if (!Number.isFinite(tSec)) continue
+        if (ex.downsampleMs > 0 && ex.lastKept > -Infinity && (tSec - ex.lastKept) * 1000 < ex.downsampleMs) {
+          if ((total & 0x3ff) === 0) await Promise.resolve()
+          continue
+        }
+        ex.lastKept = tSec
+        const exObj = await decodeMsgToObject(msg, ch, schemaResolver, { decoder: ex.decoder, tryUtf8Json: true })
+        if (exObj) {
+          let rec = null
+          if (ex.kind === 'costmap') {
+            const grid = normalizeOccupancyGrid(exObj)
+            if (grid) rec = { tSec, grid }
+          } else if (ex.kind === 'path') {
+            const points = extractNavPathPoints(exObj)
+            if (points.length) rec = { tSec, points }
+          } else if (ex.kind === 'goal') {
+            const p = pickPoseAny(exObj)
+            if (p) rec = { tSec, x: p.x, y: p.y, z: Number(p.z) || 0, yaw: Number(p.yaw) || 0 }
+          }
+          if (rec) onExtraMessage(ex.kind, rec)
+        }
+        if ((total & 0x3ff) === 0) await Promise.resolve()
+        continue
+      }
+
       // ✅ 시간 기반 다운샘플 (결정적: 같은 입력 → 항상 같은 출력)
       if (effTimeDownsampleMs > 0 && Number.isFinite(tSec)) {
         if (lastTs > -Infinity && (tSec - lastTs) * 1000 < effTimeDownsampleMs) {
@@ -1317,7 +1099,6 @@ export async function loadPosesFromMcapUrl(url, options = {}) {
         }
       }
 
-      const ch = channelsById.get(msg.channelId)
       const obj = await decodeMsgToObject(msg, ch, schemaResolver, { decoder: poseDecoder, tryUtf8Json: true })
 
       const pose = obj ? pickXYYawDeep(obj) : null

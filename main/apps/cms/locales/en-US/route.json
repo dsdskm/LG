@@ -7,7 +7,9 @@
       "embeddingDocs": "Documents",
       "embeddingAction": "Robot Action",
       "embeddingTest": "Test",
+      "agentChat": "AI Agent",
       "embeddingVersion": "Vector Versions",
+      "lab": "Lab",
       "settings": "Settings",
       "contentType": "Content Type",
       "category": "Category",
@@ -47,6 +49,9 @@
     },
     "embeddingTest": {
       "name": "Voice Chat Test"
+    },
+    "agentChat": {
+      "name": "AI Agent"
     },
     "contentType": {
       "name": "Content Type"

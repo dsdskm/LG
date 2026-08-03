@@ -40,26 +40,21 @@ const Router = ({ allRoutes, appPrefix, processedAppRoutes, headerRoutes, appT }
               path={item.path}
               element={
                 isFullscreen ? (
-                  <div
-                    style={{
-                      display: 'flex',
-                      width: '100vw',
-                      height: '100vh',
-                      overflow: 'hidden',
-                    }}
-                  >
+                  <>
+                    {item.element}
                     <div
                       style={{
-                        flex: '1 1 auto',
-                        minWidth: 0,
-                        minHeight: 0,
-                        overflow: 'hidden',
+                        position: 'fixed',
+                        right: 0,
+                        top: 0,
+                        height: '100vh',
+                        display: 'flex',
+                        zIndex: 850,
                       }}
                     >
-                      {item.element}
+                      <AiAssistantPanel />
                     </div>
-                    <AiAssistantPanel />
-                  </div>
+                  </>
                 ) : (
                   <MainLayout
                     currentApp={appPrefix}

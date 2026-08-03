@@ -14,6 +14,8 @@ export const StyledNavButton = styled.button`
   align-items: center;
   justify-content: center;
   gap: 0.8rem;
+  white-space: nowrap;
+  flex-shrink: 0;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 
@@ -51,4 +53,5 @@ export const HeaderMobileDropdown = styled(Dropdown)`
       }
     }
   }
+
 `

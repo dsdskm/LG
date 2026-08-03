@@ -1,8 +1,8 @@
 // // ✅ 로봇/개발 환경 공통 API BASE
 // const API_BASE =
 //   import.meta.env.PROD
-//     ? `http://${window.location.hostname}:8082`
-//     : 'http://localhost:8082'
+//     ? `http://${window.location.hostname}:8081`
+//     : 'http://localhost:8081'
 
 // export default API_BASE
 
@@ -10,10 +10,10 @@
 // 중요: 폰/PC가 로봇 AP에 접속해서 웹앱을 볼 때 `localhost`는 로봇이 아니라
 // 접속한 기기 자신을 의미한다. 그래서 기본값은 현재 웹페이지의 hostname을 사용한다.
 
-//const API_BASE = `http://${window.location.hostname}:8082`
+//const API_BASE = `http://${window.location.hostname}:8081`
 //export default API_BASE
 
-const DEFAULT_API_PORT = import.meta.env.VITE_API_PORT || '8082'
+const DEFAULT_API_PORT = import.meta.env.VITE_API_PORT || '8081'
 const browserHost = window.location.hostname || 'localhost'
 const browserProtocol = window.location.protocol === 'https:' ? 'https:' : 'http:'
 

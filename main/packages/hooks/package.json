@@ -6,6 +6,7 @@
   "types": "./index.d.ts",
   "dependencies": {
     "@repo/apis": "workspace:*",
+    "@repo/constants": "workspace:*",
     "@repo/stores": "workspace:*",
     "@repo/utils": "workspace:*",
     "date-fns": "^4.1.0",

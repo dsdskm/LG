@@ -1,59 +1,15 @@
-export type BtActionNode = {
-  kind: 'action'
-  tag: string
-  name: string
-  attrs: Record<string, string>
-}
-
-export type BtSequenceNode = {
-  kind: 'sequence'
-  name: string
-  children: BtAstNode[]
-}
-
-export type BtIfThenElseNode = {
-  kind: 'ifThenElse'
-  name: string
-  attrs?: Record<string, string>
-  children: BtAstNode[]
-}
-
-export type BtFallbackOnFailureNode = {
-  kind: 'fallbackOnFailure'
-  name: string
-  attrs?: Record<string, string>
-  children: BtAstNode[]
-}
-
-export type BtOrNode = {
-  kind: 'or'
-  name: string
-  attrs?: Record<string, string>
-  children: BtAstNode[]
-}
-
-export type BtParallelNode = {
-  kind: 'parallel'
-  name: string
-  successCount: number
-  failureCount: number
-  attrs: Record<string, string>
-  children: BtAstNode[]
-}
-
-export type BtRepeatNode = {
-  kind: 'repeat'
-  name: string
-  numCycles: number
-  attrs: Record<string, string>
-  child: BtAstNode
-}
-
-// Parallel 의 비-main 자식을 항상 SUCCESS 로 만들기 위한 데코레이터
-export type BtForceSuccessNode = {
-  kind: 'forceSuccess'
-  child: BtAstNode
-}
+import { BtReactiveOrNode } from './nodes/btReactiveOrNode'
+import { BtParallelNode } from './nodes/btParallelNode'
+import { BtForceSuccessNode } from './nodes/btForceSuccessNode'
+import { BtForceFailureNode } from './nodes/btForceFailureNode'
+import { BtOrNode } from './nodes/btOrNode'
+import { BtSequenceNode } from './nodes/btSequenceNode'
+import { BtIfThenElseNode } from './nodes/btIfThenElseNode'
+import { BtFallbackOnFailureNode } from './nodes/btFallbackOnFailureNode'
+import { BtRepeatNode } from './nodes/btRepeatNode'
+import { BtActionNode } from './nodes/btActionNode'
+import { BtReactiveAndNode } from './nodes/btReactiveAndNode'
+import { BtRetryUntilSuccessfulNode } from './nodes/btRetryUntilSuccessfulNode'
 
 export type BtAstNode =
   | BtActionNode
@@ -61,9 +17,13 @@ export type BtAstNode =
   | BtIfThenElseNode
   | BtFallbackOnFailureNode
   | BtOrNode
+  | BtReactiveOrNode
+  | BtReactiveAndNode
   | BtParallelNode
   | BtRepeatNode
   | BtForceSuccessNode
+  | BtForceFailureNode
+  | BtRetryUntilSuccessfulNode
 
 export type BuildResult = {
   model: BtSequenceNode
@@ -78,3 +38,5 @@ export type OutMapEntry = {
   bottom?: string
   leftBranches: string[]
 }
+
+export type AstNodeKind = BtAstNode['kind']

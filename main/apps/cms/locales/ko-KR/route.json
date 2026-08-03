@@ -7,7 +7,9 @@
       "embeddingDocs": "문서 등록",
       "embeddingAction": "로봇액션",
       "embeddingTest": "테스트",
+      "agentChat": "AI 에이전트",
       "embeddingVersion": "벡터 버전",
+      "lab": "실험실",
       "settings": "설정",
       "contentType": "콘텐츠 타입",
       "category": "카테고리",
@@ -47,6 +49,9 @@
     },
     "embeddingTest": {
       "name": "음성대화 테스트"
+    },
+    "agentChat": {
+      "name": "AI 에이전트"
     },
     "contentType": {
       "name": "콘텐츠 타입"

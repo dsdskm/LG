@@ -257,7 +257,7 @@
   --t-sidebar-bg: var(--color-secondary-15);
   --t-sidebar-fg: var(--color-neutral-70);
   --t-sidebar-hover-bg: var(--color-secondary-20);
-  --t-sidebar-press-bg: var(--color-secondary-30);
+  --t-sidebar-press-bg: rgba(255, 255, 255);
   /* 선택 박스의 둥근 모양·여백(pad/gap/radius)은 테마 공통 유지 → legacy 미override */
 
   --t-page-bg: var(--color-secondary-10);

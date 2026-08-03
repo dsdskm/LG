@@ -158,7 +158,7 @@ function buildContentsFromNodes(nodes: any[]) {
         siteId: data.siteId ?? null,
         status: 'ACTIVE',
         updatedAt: '',
-        version: '1.0.0'
+        version: data.contentVersion ?? ''
       }
     })
     .filter(Boolean)
@@ -189,6 +189,25 @@ function getBaseFlowMode(baseFlow: any): FlowMode {
   )
 }
 
+// 정식 저장('save') 시 기존 Behavior Tree가 변경되면 버전을 하나 올린다.
+function resolveVersion(mode: SaveMode, baseFlow: any, behaviorTree?: string): number {
+  const baseVersion = baseFlow?.version ?? 0
+
+  // 임시저장('temp')은 버전을 유지한다.
+  if (mode !== 'save') return baseVersion
+
+  const prevBt = String(baseFlow?.behaviorTree ?? '').trim()
+  const nextBt = String(behaviorTree ?? '').trim()
+
+  // 이전 BT가 존재하고 내용이 실제로 바뀐 경우에만 +1
+  // (최초 저장 시 prevBt는 placeholder ' ' → trim 후 '' 이므로 증가하지 않음)
+  if (prevBt && nextBt && prevBt !== nextBt) {
+    return baseVersion + 1
+  }
+
+  return baseVersion
+}
+
 export function buildTaskFlowPersistPayload({
   mode,
   flowId,
@@ -213,6 +232,7 @@ export function buildTaskFlowPersistPayload({
   const resolvedGroupId = normalizeOrgId(groupId) ?? normalizeOrgId(baseFlow?.groupId)
   const resolvedSiteId = normalizeOrgId(siteId) ?? normalizeOrgId(baseFlow?.siteId)
   const resolvedStatus = getSnapshotStatus(mode)
+  const resolvedVersion = resolveVersion(mode, baseFlow, behaviorTree)
 
   const snapshot = {
     id: flowId ?? baseFlow?.id ?? 0,
@@ -220,7 +240,7 @@ export function buildTaskFlowPersistPayload({
     groupId: resolvedGroupId,
     siteId: resolvedSiteId,
     status: resolvedStatus,
-    version: baseFlow?.version ?? 0,
+    version: resolvedVersion,
     createdAt: baseFlow?.createdAt ?? '',
     updatedAt: baseFlow?.updatedAt ?? '',
     description: flowDescription || '',
@@ -240,7 +260,7 @@ export function buildTaskFlowPersistPayload({
     siteId: resolvedSiteId,
     name: flowName,
     description: flowDescription || undefined,
-    version: baseFlow?.version ?? 0,
+    version: resolvedVersion,
     status: resolvedStatus,
     createdAt: baseFlow?.createdAt ?? '',
     updatedAt: baseFlow?.updatedAt ?? '',

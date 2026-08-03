@@ -27,7 +27,7 @@ import {
   buildCategorySelectorTree,
   pickLocalizedName
 } from '@/components/common/CategorySelector/categoryNodeAdapter'
-import { resolveOrgIds, resolveOrgQuery } from '@/utils/org'
+import { resolveOrgIds, resolveOrgQuery, isRealCode } from '@/utils/org'
 import { CONTENT_TYPE_MAP } from './contentTypeMeta'
 
 // 버전 라벨(LATEST/PREV) → 해시태그 배지 색상 매핑
@@ -89,11 +89,19 @@ const Content = () => {
   // OrganizationSelector 선택 조합 → 서버 필터 쿼리 (전체/그룹/그룹직접/특정site)
   const orgQuery = useMemo(() => resolveOrgQuery(selectedOrgs, allOrgs), [selectedOrgs, allOrgs])
 
-  // 생성은 (groupId, siteId) 대상이 하나로 특정될 때만 가능 → '전체(all)'가 포함되면 비활성
-  const canCreate = useMemo(() => selectedOrgs?.[0] !== 'all' && selectedOrgs?.[1] !== 'all', [selectedOrgs])
+  // 생성은 대상이 하나로 특정될 때 가능.
+  //  - 그룹 '-'(미지정) → 어느 조직에도 속하지 않는 콘텐츠(group/site null,null) 생성 허용
+  //  - 특정 사이트 선택 시(그룹이 '전체'여도) 대상이 유일하므로 활성
+  const canCreate = useMemo(
+    () =>
+      selectedOrgs?.[0] === 'none' ||
+      (selectedOrgs?.[0] !== 'all' && selectedOrgs?.[1] !== 'all') ||
+      isRealCode(selectedOrgs?.[1]),
+    [selectedOrgs]
+  )
 
   const fetchContents = useCallback(async () => {
-    // 그룹 '-'(미지정) 선택 → 조회 없이 빈 목록
+    // 방어: 쿼리 신호가 없으면 조회 스킵 (현재 resolveOrgQuery 는 항상 객체 반환)
     if (!orgQuery) {
       setProcessedData([])
       setIsLoading(false)
@@ -174,14 +182,22 @@ const Content = () => {
 
   const columns = [
     {
+      name: t('service') || 'Service',
+      selector: (row) => row.externalService?.displayName || '-',
+      sortable: 'true',
+      grow: 0.2
+    },
+    {
       name: t('group') || 'Group',
       selector: (row) => row.group?.displayName || '-',
-      sortable: 'true'
+      sortable: 'true',
+      grow: 0.3
     },
     {
       name: t('site') || 'Site',
       selector: (row) => row.site?.displayName || '-',
-      sortable: 'true'
+      sortable: 'true',
+      grow: 0.3
     },
     {
       name: t('contentName') || 'Content Name',
@@ -220,24 +236,22 @@ const Content = () => {
           </span>
         )
       },
-      width: '140px',
+      grow: 0.1,
       center: true,
       sortable: 'false'
     },
-    {
-      name: t('service') || 'Service',
-      selector: (row) => row.externalService?.displayName || '-',
-      sortable: 'true'
-    },
+
     {
       name: t('category1') || 'Category 1',
       selector: (row) => catName(row.category1),
-      sortable: 'true'
+      sortable: 'true',
+      grow: 0.4
     },
     {
       name: t('category2') || 'Category 2',
       selector: (row) => catName(row.category2),
-      sortable: 'true'
+      sortable: 'true',
+      grow: 0.4
     },
     {
       name: t('label') || 'Label',
@@ -262,7 +276,8 @@ const Content = () => {
     {
       name: t('date') || 'Date',
       selector: (row) => convertDateToString(row.createdAt),
-      sortable: 'true'
+      sortable: 'true',
+      grow: 0.4
     }
   ]
 
@@ -384,7 +399,9 @@ const Content = () => {
               variant="contained"
               onClick={handleCreate}
               disabled={isDeleteMode || !canCreate}
-              title={!canCreate ? t('selectOrgToCreate', '그룹/사이트를 특정하거나 미지정(-)으로 선택하세요') : undefined}
+              title={
+                !canCreate ? t('selectOrgToCreate', '그룹/사이트를 특정하거나 미지정(-)으로 선택하세요') : undefined
+              }
             >
               {t('create')}
             </Button>

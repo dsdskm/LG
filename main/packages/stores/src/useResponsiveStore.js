@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { BREAKPOINTS, RESPONSIVE_MODES } from '@repo/constants'
 
 export const useResponsiveStore = create(
   persist(
@@ -11,7 +12,12 @@ export const useResponsiveStore = create(
         set({
           windowWidth: width,
           windowHeight: height,
-          responsiveMode: width > 767 ? 'PC' : 'MOBILE'
+          responsiveMode:
+            width > BREAKPOINTS.PC
+              ? RESPONSIVE_MODES.PC
+              : width > BREAKPOINTS.MOBILE
+                ? RESPONSIVE_MODES.TABLET
+                : RESPONSIVE_MODES.MOBILE
         })
     }),
     {

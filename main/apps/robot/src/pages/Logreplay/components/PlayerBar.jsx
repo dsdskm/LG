@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { S } from '../styles'
 
 function PlayerBar({
@@ -27,6 +28,7 @@ function PlayerBar({
   hoverRatio,
   hoverAbsLabel
 }) {
+  const { t } = useTranslation('robot')
   const stepEnabled = typeof canStep === 'boolean' ? canStep : !!canPlay
 
   const leftTimeLabel =
@@ -103,7 +105,7 @@ function PlayerBar({
         <div
           ref={progressBarRef}
           style={{ ...S.progressWrapFull, position: 'relative', overflow: 'visible' }} // tooltip이 잘리지 않도록
-          aria-label="재생 진행도"
+          aria-label={t('logreplay.playback.progressAriaLabel')}
           role="slider"
           aria-valuemin={0}
           aria-valuemax={100}
@@ -114,18 +116,7 @@ function PlayerBar({
           onMouseEnter={onProgressMouseEnter} // ★ hook 로직 사용
           onMouseLeave={onProgressMouseLeave} // ★ hook 로직 사용
         >
-          {/* 버퍼(로딩) 바 */}
-          {/* <div
-            style={{
-              ...S.progressBuffer,
-              position: 'absolute',
-              left: `${bufferStart * 100}%`,
-              width: `${bufferFillWidth * 100}%`
-            }}
-          /> */}
-          {/* on-demand HTTP Range 방식이므로 버퍼 바 불필요 — 필요 시 주석 해제 */}
-          {/* 진행 채움 */}
-
+          {/* on-demand HTTP Range 방식이므로 버퍼 바 없음. 진행 채움만 표시 */}
           {showFill && (
             <div
               style={{
@@ -169,7 +160,7 @@ function PlayerBar({
             type="button"
             style={{ ...S.playerButton, ...(stepEnabled ? {} : S.disabledButton) }}
             onClick={onPrevClick}
-            title="이전"
+            title={t('logreplay.playback.prev')}
             disabled={!stepEnabled}
             aria-disabled={!stepEnabled}
           >
@@ -179,7 +170,7 @@ function PlayerBar({
             type="button"
             style={{ ...S.playerButton, ...(canPlay ? {} : S.disabledButton) }}
             onClick={onToggleClick}
-            title={isPlaying ? '일시정지' : '재생'}
+            title={isPlaying ? t('logreplay.playback.pause') : t('logreplay.playback.play')}
             disabled={!canPlay}
             aria-disabled={!canPlay}
           >
@@ -189,7 +180,7 @@ function PlayerBar({
             type="button"
             style={{ ...S.playerButton, ...(stepEnabled ? {} : S.disabledButton) }}
             onClick={onNextClick}
-            title="다음"
+            title={t('logreplay.playback.next')}
             disabled={!stepEnabled}
             aria-disabled={!stepEnabled}
           >
@@ -205,7 +196,7 @@ function PlayerBar({
             onClick={toggleSpeedMenu}
             aria-haspopup="listbox"
             aria-expanded={speedOpen}
-            title="재생 속도"
+            title={t('logreplay.playback.speedTitle')}
           >
             <span style={{ opacity: canPlay ? 1 : 0.6 }}>{`${playbackRate}×`}</span>
             <span style={{ ...S.speedMenu.caret, ...(speedOpen ? S.speedMenu.caretOpen : null) }} />
@@ -215,7 +206,7 @@ function PlayerBar({
             <div
               ref={speedMenuRef}
               role="listbox"
-              aria-label="재생 속도 선택"
+              aria-label={t('logreplay.playback.speedSelectAriaLabel')}
               style={S.speedMenu.dropdown}
               tabIndex={-1}
             >
@@ -273,6 +264,12 @@ export default React.memo(PlayerBar, (p, n) => {
   if (p.hoverVisible !== n.hoverVisible) return false
   if (p.hoverMs !== n.hoverMs) return false
   if (p.hoverRatio !== n.hoverRatio) return false
+  // 툴팁 절대시간 라벨(hover 중에만 변함) — 누락 시 stale 라벨
+  if ((p.hoverAbsLabel || '') !== (n.hoverAbsLabel || '')) return false
+
+  // durationMs: 툴팁 게이팅(durationMs > 0)/라벨에 사용. 로드당 1회(0→N) 정도만 바뀌므로
+  // 엄격 비교해도 재생 중 throttle에 영향 없음.
+  if ((Number(p.durationMs) || 0) !== (Number(n.durationMs) || 0)) return false
 
   const r0 = Number(p.playRatio) || 0,
     r1 = Number(n.playRatio) || 0

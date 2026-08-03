@@ -3,10 +3,13 @@ import { useTranslation } from 'react-i18next'
 import { SectionRobot, Title, OrganizationSelector, Button, NoData } from '@repo/ui'
 import {
   DashboardWrapper,
+  DashboardControlsContainer,
+  DashboardButtonGroup,
   DashSection,
   DivPageBody,
   DivDashState,
   DivSectionTitle,
+  DivSectionTitleWrap,
   H3SectionTitle,
   DivMarginTop,
   DivMapCard,
@@ -18,7 +21,6 @@ import {
   CollapsibleSectionHeader,
   CollapsibleChevron,
   CollapsibleBody,
-  CollapseToggleBtn,
   InspectionWrapper
 } from './styles'
 import { deviceApis, siteApis, mapApis } from '@/apis'
@@ -29,7 +31,7 @@ import { parseRobotData, buildDeviceMerger } from '@/utils/robotUtils'
 import Location from './KakaoMap'
 import TableAlarm from './AlarmTable'
 // import SiteMap from '../../common/SiteMap'
-import SiteMap3D from '../../common/SiteMap3D'
+import SiteMap3D, { DASHBOARD_MAP_VIEW_KEY } from '../../common/SiteMap3D'
 import LocationSelector from '../../common/LocationSelector'
 import DataCollectionSection from './components/DataCollectionSection'
 import RobotStateCards from './components/RobotStateCards'
@@ -321,14 +323,6 @@ const Dashboard = () => {
 
   const handleSiteMapPlay = (isPlay) => {
     setIsLiveImageMap(isPlay)
-    if (isPlay) {
-      liveIntervalRef.current = setInterval(pollDevices, 1000)
-    } else {
-      if (liveIntervalRef.current) {
-        clearInterval(liveIntervalRef.current)
-        liveIntervalRef.current = null
-      }
-    }
   }
 
   const loadSiteMap = useCallback(async (groupId, siteId, extra = {}) => {
@@ -381,11 +375,51 @@ const Dashboard = () => {
     }
   }, [orgFilter.values[1]])
 
+  // Control real-time polling based on live mode and page visibility/window focus
   useEffect(() => {
-    return () => {
-      if (liveIntervalRef.current) clearInterval(liveIntervalRef.current)
+    if (!isLiveImageMap) {
+      if (liveIntervalRef.current) {
+        clearInterval(liveIntervalRef.current)
+        liveIntervalRef.current = null
+      }
+      return
     }
-  }, [])
+
+    const startPolling = () => {
+      if (document.visibilityState === 'visible' && document.hasFocus() && !liveIntervalRef.current) {
+        liveIntervalRef.current = setInterval(pollDevices, 1000)
+      }
+    }
+
+    const stopPolling = () => {
+      if (liveIntervalRef.current) {
+        clearInterval(liveIntervalRef.current)
+        liveIntervalRef.current = null
+      }
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && document.hasFocus()) {
+        startPolling()
+      } else {
+        stopPolling()
+      }
+    }
+
+    const handleBlur = () => stopPolling()
+    const handleFocus = () => startPolling()
+
+    startPolling()
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('blur', handleBlur)
+    window.addEventListener('focus', handleFocus)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('blur', handleBlur)
+      window.removeEventListener('focus', handleFocus)
+      stopPolling()
+    }
+  }, [isLiveImageMap, pollDevices])
 
   // 사이트가 선택되면(전체/없음 제외) 사이트 지도 영역을 노출 (시험용)
   const hasSite = orgFilter.values[1] !== 'all' && orgFilter.values[1] !== 'none' && !isDefaultSiteSelected
@@ -394,60 +428,47 @@ const Dashboard = () => {
     <>
       <DashboardWrapper>
         <Title>{t('dashboard')}</Title>
-        <div style={{ display: 'flex' }}>
+        <DashboardControlsContainer>
           <OrganizationSelector
             onChange={handleSelectOrg}
             // supportAlls={[true, true]}
             supportNone={[false, false]}
             disableCenter
           />
-          {useImageMap &&
-            (!isLiveImageMap ? (
-              <PlayButton
-                style={{ marginLeft: '20px', marginTop: '5px', maxHeight: '30px' }}
-                onClick={() => handleSiteMapPlay(true)}
-              >
-                <Play className="w-[14px] h-[14px]" /> {t('realtime')}
-              </PlayButton>
-            ) : (
-              <StopButton
-                style={{ marginLeft: '20px', marginTop: '5px', maxHeight: '30px' }}
-                onClick={() => handleSiteMapPlay(false)}
-              >
-                <Stop className="w-[14px] h-[14px]" /> {t('stop')}
-              </StopButton>
-            ))}
-          <PlayButton
-            style={{ marginLeft: '20px', marginTop: '5px', maxHeight: '30px' }}
-            onClick={() => {
-              let groupId = orgFilter.values[0]
-              if (groupId === 'all' && orgFilter.values[1] !== 'all' && orgFilter.values[1] !== 'none') {
-                const matched = orgFilter.actualOrgs?.find((org) => String(org.code) === String(orgFilter.values[1]))
-                groupId = matched?.parentCode ?? groupId
-              }
+          <DashboardButtonGroup>
+            {useImageMap &&
+              (!isLiveImageMap ? (
+                <PlayButton
+                  onClick={() => handleSiteMapPlay(true)}
+                >
+                  <Play className="w-[14px] h-[14px]" /> {t('realtime')}
+                </PlayButton>
+              ) : (
+                <StopButton
+                  onClick={() => handleSiteMapPlay(false)}
+                >
+                  <Stop className="w-[14px] h-[14px]" /> {t('stop')}
+                </StopButton>
+              ))}
+            <PlayButton
+              onClick={() => {
+                let groupId = orgFilter.values[0]
+                if (groupId === 'all' && orgFilter.values[1] !== 'all' && orgFilter.values[1] !== 'none') {
+                  const matched = orgFilter.actualOrgs?.find((org) => String(org.code) === String(orgFilter.values[1]))
+                  groupId = matched?.parentCode ?? groupId
+                }
 
-              const params = new URLSearchParams({
-                group: groupId,
-                site: orgFilter.values[1] ?? 'all'
-              })
-              window.open(`/robot/tv?${params}`, '_blank')
-            }}
-          >
-            ⬛ {t('tvView')}
-          </PlayButton>
-        </div>
-
-        {/* 데이터 수집 현황 (collapsible) — TV Gradient GUI 색상과 동일하게 표시 */}
-        <DataCollectionSection
-          line="#b91c4c"
-          areaColor="#9aa0a8"
-          targetColor="#c5c6c9"
-          monFill="url(#monGray)"
-          qEmphFill="url(#qCrimson)"
-          qBaseFill="#cbc8c2"
-          segFill="linear-gradient(335deg, #cd7b94 11.32%, #bf2d59 44.35%, #b91c4c 77.37%)"
-          segEmpty="#cbc8c2"
-        />
+                const params = new URLSearchParams({
+                  group: groupId,
+                  site: orgFilter.values[1] ?? 'all'
+                })
+                window.open(`/robot/tv?${params}`, '_blank')
+              }}
+            >
+              ⬛ {t('tvView')}
+            </PlayButton>
+          </DashboardButtonGroup>
+        </DashboardControlsContainer>
 
         <DivPageBody>
           <DivDashState>
@@ -479,7 +500,7 @@ const Dashboard = () => {
             </DashSection>
             <DivMarginTop />
             <DashSection>
-              <DivSectionTitle>
+              <DivSectionTitleWrap>
                 <H3SectionTitle>{t('robotPlacementStatus', '로봇 배치 현황 및 위치 정보')}</H3SectionTitle>
                 {hasSite && (
                   <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1.3rem' }}>
@@ -492,7 +513,7 @@ const Dashboard = () => {
                   </div>
                 )}
                 {isLiveImageMap && <LiveSpan>Live</LiveSpan>}
-              </DivSectionTitle>
+              </DivSectionTitleWrap>
               {/* 지도 영역: 사이트 미선택 → 권역 지도, 사이트 선택 → 맵 있으면 SiteMap3D,
                   없으면 "표시할 지도가 없습니다" 안내. (사이트 선택 시점부터 영역 항시 표시) */}
               <SectionMap>
@@ -500,7 +521,7 @@ const Dashboard = () => {
                   {!hasSite ? (
                     <Location markers={markers} />
                   ) : useImageMap ? (
-                    <SiteMap3D mapData={mapData} mapServer={mapServer} robotDatas={robotDatas} clickRobot={true} />
+                    <SiteMap3D mapData={mapData} mapServer={mapServer} robotDatas={robotDatas} clickRobot={true} viewModeKey={DASHBOARD_MAP_VIEW_KEY} />
                   ) : (
                     <div
                       style={{
@@ -523,17 +544,10 @@ const Dashboard = () => {
         {/* 점검 알림 (하단, collapsible) */}
         <InspectionWrapper>
           <CollapsibleSectionHeader $collapsed={inspectionCollapsed} onClick={() => setInspectionCollapsed((v) => !v)}>
-            <H3SectionTitle style={{ margin: 0 }}>{t('inspectionNotification')}</H3SectionTitle>
-            <CollapseToggleBtn
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                setInspectionCollapsed((v) => !v)
-              }}
-            >
-              <CollapsibleChevron $collapsed={inspectionCollapsed}>∨</CollapsibleChevron>
-              {inspectionCollapsed ? t('expand') : t('collapse')}
-            </CollapseToggleBtn>
+            <H3SectionTitle style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <CollapsibleChevron $collapsed={inspectionCollapsed} />
+              {t('inspectionNotification')}
+            </H3SectionTitle>
           </CollapsibleSectionHeader>
           <CollapsibleBody $collapsed={inspectionCollapsed}>
             <SectionRobot>
@@ -543,6 +557,21 @@ const Dashboard = () => {
             </SectionRobot>
           </CollapsibleBody>
         </InspectionWrapper>
+
+        <DivMarginTop />
+
+        {/* 데이터 수집 현황 (collapsible, 기본 접힘) — TV Gradient GUI 색상과 동일하게 표시 */}
+        <DataCollectionSection
+          collapsible
+          line="#b91c4c"
+          areaColor="#9aa0a8"
+          targetColor="#c5c6c9"
+          monFill="url(#monGray)"
+          qEmphFill="url(#qCrimson)"
+          qBaseFill="#cbc8c2"
+          segFill="linear-gradient(335deg, #cd7b94 11.32%, #bf2d59 44.35%, #b91c4c 77.37%)"
+          segEmpty="#cbc8c2"
+        />
       </DashboardWrapper>
     </>
   )

@@ -2,6 +2,13 @@ import { useMutation } from '@tanstack/react-query'
 
 const baseurl = import.meta.env.VITE_API_MAP_BASE_URL
 
+export interface GetMapIdRequest {
+  groupId: string
+  siteId: string
+  deviceId: string
+  mapType: 'navi'
+}
+
 export interface GetMapRequest {
   mapId: string
 }
@@ -44,6 +51,10 @@ export interface GetMapResponse {
   poiData: MapPoiData
 }
 
+export interface GetMapIdResponse {
+  mapId: string
+}
+
 type RawMapViewResponse = {
   mapId: string
   navi: {
@@ -56,6 +67,13 @@ type RawMapViewResponse = {
   poi: {
     versionId: string
     pois: MapPoi[]
+  }
+}
+
+type RawFindMapIdResponse = {
+  mapId?: string
+  data?: {
+    mapId?: string
   }
 }
 
@@ -82,6 +100,42 @@ function normalizePoiData(poi: RawMapViewResponse['poi'] | null | undefined): Ma
     versionId: poi?.versionId ?? '',
     pois: Array.isArray(poi?.pois) ? poi.pois : [],
   }
+}
+
+function normalizeMapIdResponse(response: unknown): GetMapIdResponse {
+  const raw = response as RawFindMapIdResponse | null | undefined
+  const mapId = raw?.mapId ?? raw?.data?.mapId ?? ''
+
+  return {
+    mapId: typeof mapId === 'string' ? mapId.trim() : '',
+  }
+}
+
+async function getMapId(params: GetMapIdRequest): Promise<GetMapIdResponse> {
+  console.log(`getMapId params`,params)
+  console.log(`getMapId baseurl`,baseurl)
+  const response = await fetch(
+    `${baseurl}/swagger-api/v1/maps/download-urls/find`,
+    {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'x-util-api-key': import.meta.env.VITE_X_UTIL_API_KEY ?? '',
+      },
+      body: JSON.stringify(params),
+    }
+  )
+
+  if (!response.ok) {
+    throw new Error(
+      `getMapId failed. HTTP ${response.status}: ${response.statusText}`
+    )
+  }
+
+  const data = (await response.json()) as unknown
+
+  return normalizeMapIdResponse(data)
 }
 
 async function getMap(params: GetMapRequest): Promise<GetMapResponse> {
@@ -117,4 +171,4 @@ export function useGetMap() {
   })
 }
 
-export { getMap }
+export { getMap, getMapId }

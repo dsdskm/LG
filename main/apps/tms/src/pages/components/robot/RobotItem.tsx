@@ -1,5 +1,6 @@
 import { Battery, Navigation, Hand, Bot, Activity, AlertCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { useEffect, useState } from 'react'
 import type { DeployStatus, RobotInfo } from '../../../types/RobotInfo'
 import { getRunningTaskFlowStatusLabel } from '@/utils/taskflowStatus'
 import { Div } from '@/assets'
@@ -19,6 +20,8 @@ type RobotItemProps = {
   deployStatus?: DeployStatus
   onChangeCheckbox?: (robot: RobotInfo) => void
   onClick?: (robotId: string) => void
+  onClickControl?: (robotId: string) => void
+  showControlButton?: boolean
 }
 
 const RobotItem = ({
@@ -30,9 +33,32 @@ const RobotItem = ({
   displayTaskFlow,
   deployStatus,
   onChangeCheckbox,
-  onClick
+  onClick,
+  onClickControl,
+  showControlButton = false
 }: RobotItemProps) => {
   const { t } = useTranslation(['tms', 'common'])
+  const [isNarrowScreen, setIsNarrowScreen] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.matchMedia('(max-width: 640px)').matches
+  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const mediaQuery = window.matchMedia('(max-width: 640px)')
+    const onChange = () => {
+      setIsNarrowScreen(mediaQuery.matches)
+    }
+
+    onChange()
+    mediaQuery.addEventListener('change', onChange)
+
+    return () => {
+      mediaQuery.removeEventListener('change', onChange)
+    }
+  }, [])
+
   console.log('deployStatus', deployStatus)
   const onChange = () => {
     if (onChangeCheckbox) onChangeCheckbox(robot)
@@ -43,6 +69,13 @@ const RobotItem = ({
       onClick(robot.id)
     }
   }
+
+  const onClickControlItem = () => {
+    if (onClickControl) {
+      onClickControl(robot.id)
+    }
+  }
+
   return (
     <div
       key={robot.id}
@@ -59,8 +92,8 @@ const RobotItem = ({
       <div
         style={{
           display: 'flex',
-          alignItems: 'center',
-          gap: '24px'
+          alignItems: isNarrowScreen ? 'flex-start' : 'center',
+          gap: isNarrowScreen ? '12px' : '24px'
         }}
       >
         {onChangeCheckbox && (
@@ -98,13 +131,16 @@ const RobotItem = ({
           style={{
             display: 'flex',
             flex: 1,
-            alignItems: 'center',
+            flexDirection: isNarrowScreen ? 'column' : 'row',
+            gap: isNarrowScreen ? '8px' : 0,
+            alignItems: isNarrowScreen ? 'stretch' : 'center',
             justifyContent: 'space-between'
           }}
         >
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: 1, width: isNarrowScreen ? '100%' : 'auto' }}>
             <div
               style={{
+                flexWrap: 'wrap',
                 marginBottom: '8px',
                 display: 'flex',
                 alignItems: 'center',
@@ -175,16 +211,22 @@ const RobotItem = ({
                 color: '#4b5563'
               }}
             >
-              <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '10px' }}>
-                <div style={{ display: 'flex', flexDirection: 'row' }}>
-                  <span>{t('common:group')}:</span>
-                  <span style={{ color: '#9ca3af' }}>
+              <div
+                style={{ display: 'flex', flexWrap: 'wrap', flexDirection: 'row', alignItems: 'center', gap: '10px' }}
+              >
+                <div style={{ display: 'flex', flexDirection: 'row', minWidth: 0, flex: '0 1 auto' }}>
+                  <span style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>{t('common:group')}:</span>
+                  <span
+                    style={{ color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  >
                     {robot.group?.length > 0 ? robot.group : t('deploy.robot.unassigned')}
                   </span>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'row' }}>
-                  <span>{t('common:site')}:</span>
-                  <span style={{ color: '#9ca3af' }}>
+                <div style={{ display: 'flex', flexDirection: 'row', minWidth: 0, flex: '0 1 auto' }}>
+                  <span style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>{t('common:site')}:</span>
+                  <span
+                    style={{ color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  >
                     {robot.site?.length > 0 ? robot.site : t('deploy.robot.unassigned')}
                   </span>
                 </div>
@@ -194,28 +236,28 @@ const RobotItem = ({
                     <Div />
                     <div style={{ display: 'flex', flexDirection: 'row', gap: '10px' }}>
                       <span>{t('deploy.robot.supportedSkills')}:</span>
-                    {robot.skills.map((skill, idx) => (
-                      <span
-                        key={idx}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px'
-                        }}
-                      >
-                        {skill === 'NAVIGATION' ? (
-                          <>
-                            <Navigation size={14} color="#2563eb" />
-                            <span>{t('deploy.skill.navigation')}</span>
-                          </>
-                        ) : (
-                          <>
-                            <Hand size={14} color="#9333ea" />
-                            <span>{t('deploy.skill.manipulation')}</span>
-                          </>
-                        )}
-                      </span>
-                    ))}
+                      {robot.skills.map((skill, idx) => (
+                        <span
+                          key={idx}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          {skill === 'NAVIGATION' ? (
+                            <>
+                              <Navigation size={14} color="#2563eb" />
+                              <span>{t('deploy.skill.navigation')}</span>
+                            </>
+                          ) : (
+                            <>
+                              <Hand size={14} color="#9333ea" />
+                              <span>{t('deploy.skill.manipulation')}</span>
+                            </>
+                          )}
+                        </span>
+                      ))}
                     </div>
                   </>
                 )}
@@ -271,21 +313,52 @@ const RobotItem = ({
               <p>v{`${deployStatus.taskFlowVersion} ${deployStatus.status}`}</p>
             </div>
           )}
-          {onClick && (
-            <button
+          {(onClick || (showControlButton && onClickControl)) && (
+            <div
               style={{
-                marginLeft: 10,
-                backgroundColor: 'white',
-                color: '#383838',
-                border: '1px solid #C0C7D0',
-                padding: '8px 16px',
-                borderRadius: '6px',
-                cursor: 'pointer'
+                marginLeft: isNarrowScreen ? 0 : 10,
+                width: isNarrowScreen ? '100%' : 'auto',
+                display: 'flex',
+                flexDirection: isNarrowScreen ? 'row' : 'column',
+                alignItems: isNarrowScreen ? 'center' : 'stretch',
+                justifyContent: isNarrowScreen ? 'flex-end' : 'flex-start',
+                paddingTop: isNarrowScreen ? '4px' : 0,
+                gap: '8px'
               }}
-              onClick={onClickItem}
             >
-              {t('common:detail')}
-            </button>
+              {onClick && (
+                <button
+                  style={{
+                    backgroundColor: 'white',
+                    color: '#383838',
+                    border: '1px solid #C0C7D0',
+                    padding: '8px 16px',
+                    borderRadius: '6px',
+                    whiteSpace: 'nowrap',
+                    cursor: 'pointer'
+                  }}
+                  onClick={onClickItem}
+                >
+                  {t('common:detail')}
+                </button>
+              )}
+              {showControlButton && onClickControl && (
+                <button
+                  style={{
+                    backgroundColor: 'white',
+                    color: '#383838',
+                    border: '1px solid #C0C7D0',
+                    padding: '8px 16px',
+                    borderRadius: '6px',
+                    whiteSpace: 'nowrap',
+                    cursor: 'pointer'
+                  }}
+                  onClick={onClickControlItem}
+                >
+                  {t('robots.controlButton')}
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>

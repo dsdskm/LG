@@ -10,7 +10,7 @@ import { Navigate } from 'react-router-dom'
 export const appRoutes = [
   {
     name: 'taskflows',
-    path: '/tms',
+    path: '/tms/taskflows',
     prefix: 'tms',
     icon: 'dashboard',
     element: <TaskFlowListPage />,
@@ -81,9 +81,9 @@ export const flattenRoutes = (routes: any) => {
   if (!result.find((r: any) => r.path === '/')) {
     result.push({
       name: '',
-      path: '/',
+      path: '/tms',
       prefix: '',
-      element: <Navigate to="/" replace />
+      element: <Navigate to="/tms/taskflows" replace />
     })
   }
   return result

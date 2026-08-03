@@ -24,8 +24,6 @@ const GroupTableWrapper = styled.div`
     background: #f5f5f5;
     border-bottom: 2px solid #e0e0e0;
   }
-
-
 `
 
 const TABLE_CUSTOM_STYLES = {
@@ -33,8 +31,8 @@ const TABLE_CUSTOM_STYLES = {
     style: {
       flex: '0 0 48px',
       paddingLeft: '12px',
-      paddingRight: '4px',
-    },
+      paddingRight: '4px'
+    }
   },
   expanderButton: {
     style: {
@@ -53,17 +51,17 @@ const TABLE_CUSTOM_STYLES = {
         color: 'var(--color-primary-60, #2f929f)',
         fill: 'var(--color-primary-60, #2f929f)',
         borderColor: 'var(--color-primary-40, #83bac2)',
-        cursor: 'pointer',
+        cursor: 'pointer'
       },
       '&:disabled': {
         color: 'var(--color-secondary-30, #ccc)',
         fill: 'var(--color-secondary-30, #ccc)',
         borderColor: 'transparent',
-        backgroundColor: 'transparent',
+        backgroundColor: 'transparent'
       },
-      svg: { width: '16px', height: '16px' },
-    },
-  },
+      svg: { width: '16px', height: '16px' }
+    }
+  }
 }
 
 const SiteListPanel = styled.div`
@@ -108,7 +106,9 @@ const SiteNameLink = styled.a`
   color: var(--color-primary-60, #2f929f);
   cursor: pointer;
   text-decoration: none;
-  &:hover { text-decoration: underline; }
+  &:hover {
+    text-decoration: underline;
+  }
 `
 
 const SiteCodeBadge = styled.span`
@@ -173,9 +173,12 @@ const GroupManagement = () => {
             tempSite.siteAddressState = dataSites[j].siteAddressState
             tempSite.siteCode = dataSites[j].siteCode
             tempSite.siteAddressPostalCode = dataSites[j].siteAddressPostalCode
+            tempSite.siteLatitude = dataSites[j].siteLatitude
+            tempSite.siteLongitude = dataSites[j].siteLongitude
             tempSite.createdAt = dataSites[j].createdAt
             tempSite.updatedAt = dataSites[j].updatedAt
             tempSite.groupId = dataGroups[i].groupId
+            tempSite.isDefaultSite = dataSites[j].isDefaultSite
             _sites.push(tempSite)
           }
         }
@@ -243,17 +246,14 @@ const GroupManagement = () => {
         {(data.sites || []).map((site) => (
           <SiteItem key={site.siteId}>
             <SiteNameGroup>
-              <SiteNameLink onClick={() => goSiteDetail(site.siteId)}>
-                {site.siteName}
-              </SiteNameLink>
+              <SiteNameLink onClick={() => goSiteDetail(site.siteId)}>{site.siteName}</SiteNameLink>
               {site.siteCode && <SiteCodeBadge>{site.siteCode}</SiteCodeBadge>}
             </SiteNameGroup>
-            <SiteAddressText>
-              {[site.siteAddressOne, site.siteAddressTwo].filter(Boolean).join(' ')}
-            </SiteAddressText>
+            <SiteAddressText>{[site.siteAddressOne, site.siteAddressTwo].filter(Boolean).join(' ')}</SiteAddressText>
             <ManageActions>
               <EditButton
                 type="button"
+                disabled={site.isDefaultSite}
                 onClick={() =>
                   openModalEditSite(site.groupId, site.siteId, {
                     siteName: site.siteName,
@@ -261,7 +261,9 @@ const GroupManagement = () => {
                     siteAddressState: site.siteAddressState,
                     siteAddressCity: site.siteAddressCity,
                     siteAddressOne: site.siteAddressOne,
-                    siteAddressTwo: site.siteAddressTwo
+                    siteAddressTwo: site.siteAddressTwo,
+                    siteLatitude: site.siteLatitude,
+                    siteLongitude: site.siteLongitude
                   })
                 }
               >
@@ -355,14 +357,16 @@ const GroupManagement = () => {
               }}
               expandableRowDisabled={(row) => !row?.sites || row.sites.length === 0}
               customStyles={TABLE_CUSTOM_STYLES}
-              conditionalRowStyles={[{
-                when: (row) => row === currentRow,
-                style: {
-                  backgroundColor: 'var(--color-primary-20, #c9e1e4)',
-                  boxShadow: 'inset 3px 0 0 var(--color-primary-50, #4aa8b4)',
-                  fontWeight: '600',
-                },
-              }]}
+              conditionalRowStyles={[
+                {
+                  when: (row) => row === currentRow,
+                  style: {
+                    backgroundColor: 'var(--color-primary-20, #c9e1e4)',
+                    boxShadow: 'inset 3px 0 0 var(--color-primary-50, #4aa8b4)',
+                    fontWeight: '600'
+                  }
+                }
+              ]}
             />
           </GroupTableWrapper>
         </SectionRobot>

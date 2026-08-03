@@ -26,6 +26,7 @@ import MapHistory from './pages/MapManagement/MapHistory'
 import AiLogManagement from './pages/AiLogManagement'
 import AiEventSummaryPanel from './pages/Dashboard/components/AiEventSummaryPanel'
 import TVDashboard from './pages/TVDashboard'
+import TermManagement from './pages/TermManagement'
 
 const appRoutes = [
   {
@@ -123,6 +124,21 @@ const appRoutes = [
     icon: 'user',
     element: <UserManagement />,
     accessLevel: [2, 3]
+  },
+  {
+    name: 'settings',
+    prefix: 'settings',
+    icon: 'settings',
+    accessLevel: [3],
+    depth: [
+      {
+        name: 'termManagement',
+        path: '/robot/terms',
+        prefix: 'settings',
+        icon: 'terms',
+        element: <TermManagement />
+      }
+    ]
   }
 ]
 
@@ -178,7 +194,12 @@ const App = () => {
                 key={item.name}
                 path={item.path}
                 element={
-                  <MainLayout currentApp={appPrefix} appRoutes={appRoutes} t={appT} aiGreetingExtra={<AiEventSummaryPanel />}>
+                  <MainLayout
+                    currentApp={appPrefix}
+                    appRoutes={appRoutes}
+                    t={appT}
+                    aiGreetingExtra={<AiEventSummaryPanel />}
+                  >
                     {item.element}
                   </MainLayout>
                 }
