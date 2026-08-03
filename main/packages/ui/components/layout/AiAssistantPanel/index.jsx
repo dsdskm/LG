@@ -43,6 +43,7 @@ import {
   StyledAiActionCard,
   StyledAiActionCardTitle,
   StyledAiActionCardKeyword,
+  StyledAiStopButton,
 } from './styles'
 import { postSiteAssistantChat } from '@repo/apis/ai/chat.js'
 
@@ -186,16 +187,9 @@ const findGuidanceExamplesForPath = (guidanceItems, pathname) => {
     return extractExampleTexts(matched.examples)
   }
 
-  // 설정 페이지는 화면별 guidance가 없을 수 있어 앱 단위 추천메세지를 fallback 노출.
+  // 설정 페이지에서는 추천어를 노출하지 않는다.
   if (normalizedPath.endsWith('ai-chat-settings')) {
-    const appPrefix = normalizedPath.split('/')[0] ?? ''
-    if (!appPrefix) return []
-
-    const appExamples = entries
-      .filter((item) => item.key.startsWith(`${appPrefix}/`))
-      .flatMap((item) => extractExampleTexts(item.examples))
-
-    return uniqueTexts(appExamples).slice(0, 12)
+    return []
   }
 
   return []
@@ -496,11 +490,22 @@ const extractAssistantText = (result) => {
   if (typeof payload?.content === 'string' && payload.content.trim()) return payload.content.trim()
   if (typeof payload?.text === 'string' && payload.text.trim()) return payload.text.trim()
   if (typeof payload?.answer === 'string' && payload.answer.trim()) return payload.answer.trim()
-  try {
-    return JSON.stringify(payload, null, 2)
-  } catch {
-    return '응답을 해석하지 못했습니다.'
+
+  const chatAction = String(payload?.chat_action ?? '').trim()
+  const actionParam = payload?.chat_action_param && typeof payload.chat_action_param === 'object'
+    ? payload.chat_action_param
+    : undefined
+
+  if (chatAction === 'navigation') {
+    const path = String(actionParam?.path ?? '').trim().replace(/^\/+/, '')
+    return path ? `${path} 화면으로 이동을 준비했어요.` : '화면 이동을 준비했어요.'
   }
+
+  if (Array.isArray(actionParam?.suggested_actions) && actionParam.suggested_actions.length > 0) {
+    return '요청을 처리했지만 답변 문장을 만들지 못했습니다. 같은 내용을 한 번 더 질문해 주세요.'
+  }
+
+  return '요청을 처리했지만 답변 문장을 만들지 못했습니다. 다시 질문해 주세요.'
 }
 
 const extractPipelineTrace = (result) => {
@@ -514,6 +519,34 @@ const extractPipelineTrace = (result) => {
   if (!param || typeof param !== 'object') return ''
 
   return String(param?.pipelineTrace ?? param?.pipeline_trace ?? '').trim()
+}
+
+const extractPipelineConfidence = (result) => {
+  const payload = result?.data ?? result ?? null
+  if (!payload || typeof payload !== 'object') return undefined
+
+  const direct = Number(payload?.pipelineConfidence)
+  if (Number.isFinite(direct)) return direct
+
+  const param = payload?.chat_action_param
+  if (!param || typeof param !== 'object') return undefined
+  const nested = Number(param?.pipelineConfidence)
+  return Number.isFinite(nested) ? nested : undefined
+}
+
+const extractRagMatchInfo = (result) => {
+  const payload = result?.data ?? result ?? null
+  if (!payload || typeof payload !== 'object') {
+    return { usedCollection: '', usedChunkKeys: [] }
+  }
+
+  const usedCollection = String(payload?.usedCollection ?? '').trim()
+  const usedChunks = Array.isArray(payload?.usedChunks) ? payload.usedChunks : []
+
+  return {
+    usedCollection,
+    usedChunkKeys: usedChunks.map((item) => String(item ?? '').trim()).filter(Boolean),
+  }
 }
 
 const resolveAssistantAssetUrl = (src) => {
@@ -715,6 +748,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
   const location = useLocation()
   const session = useUserStore((state) => state.session)
   const selectedOrgs = useOrganizationStore((state) => state.selectedOrgs)
+  const currentEventFilters = useAiLogEventStore((state) => state.currentFilters)
 
   const isOpen = useAiAssistantStore((state) => state.isOpen)
   const openPanel = useAiAssistantStore((state) => state.openPanel)
@@ -733,6 +767,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
   const [pageContextOn, setPageContextOn] = useState(true)
   const [pendingNavigation, setPendingNavigation] = useState(null)
   const [screenSuggestions, setScreenSuggestions] = useState([])
+  const [isAssistantTyping, setIsAssistantTyping] = useState(false)
 
   const messageListRef = useRef(null)
   const textareaRef = useRef(null)
@@ -926,6 +961,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
       ...prev,
       [targetId]: '',
     }))
+    setIsAssistantTyping(true)
 
     let index = 0
     assistantTypingTimerRef.current = setInterval(() => {
@@ -941,6 +977,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
           clearInterval(assistantTypingTimerRef.current)
           assistantTypingTimerRef.current = null
         }
+        setIsAssistantTyping(false)
       }
     }, ASSISTANT_TYPEWRITER_INTERVAL_MS)
 
@@ -949,6 +986,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
         clearInterval(assistantTypingTimerRef.current)
         assistantTypingTimerRef.current = null
       }
+      setIsAssistantTyping(false)
     }
   }, [messages])
 
@@ -958,6 +996,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
         clearInterval(assistantTypingTimerRef.current)
         assistantTypingTimerRef.current = null
       }
+      setIsAssistantTyping(false)
     }
   }, [])
 
@@ -1294,6 +1333,14 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
         context: {
           groupId: selectedOrgs?.[0],
           siteId: selectedOrgs?.[1],
+          // 이벤트 화면의 현재 필터(기간 포함). 백엔드가 기간 미지정 질의 처리 시 참고할 수 있다.
+          eventFilters:
+            currentEventFilters
+            && typeof currentEventFilters === 'object'
+            && currentEventFilters.startDate
+            && currentEventFilters.endDate
+              ? currentEventFilters
+              : undefined,
           taskflow: taskflowContext,
           flowContext,
         },
@@ -1305,9 +1352,18 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
       const chat_action = data.chat_action
       const chat_action_param = data.chat_action_param
       const pipelineTrace = extractPipelineTrace(result)
+      const pipelineConfidence = extractPipelineConfidence(result)
+      const ragMatchInfo = extractRagMatchInfo(result)
+      if (pipelineConfidence !== undefined) {
+        console.log(`[AI_CHAT][PIPELINE_CONFIDENCE] ${pipelineConfidence.toFixed(2)}`)
+      }
       if (pipelineTrace) {
         console.log(`[AI_CHAT][PIPELINE_TRACE] ${pipelineTrace}`)
       }
+      console.log('[AI_CHAT][RAG_MATCH]', {
+        usedCollection: ragMatchInfo.usedCollection || '-'
+        , usedChunkKeys: ragMatchInfo.usedChunkKeys,
+      })
       const navigationPath = String(chat_action_param?.path ?? '').trim().replace(/^\/+/, '')
       const hasNavigationParams = chat_action === 'navigation' && extractPathParams(navigationPath).length > 0
       const suggestedActions = chat_action === 'ailog/event/filter' ? [] : extractSuggestedActions(result)
@@ -1375,8 +1431,30 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
 
   // 답변 생성 중지
   const handleStop = useCallback(() => {
-    abortRef.current?.abort()
-  }, [])
+    if (isSending) {
+      abortRef.current?.abort()
+      return
+    }
+
+    if (assistantTypingTimerRef.current) {
+      clearInterval(assistantTypingTimerRef.current)
+      assistantTypingTimerRef.current = null
+    }
+
+    setTypedAssistantMessages((prev) => {
+      const next = { ...prev }
+      for (const message of messages) {
+        if (message?.role !== 'assistant') continue
+        const id = String(message?.id ?? '')
+        const full = String(message?.content ?? '')
+        if (!id || !full) continue
+        if (String(next[id] ?? '').length >= full.length) continue
+        next[id] = full
+      }
+      return next
+    })
+    setIsAssistantTyping(false)
+  }, [isSending, messages])
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -1592,14 +1670,14 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
                   )}
                 </StyledAiContextChips>
 
-                {isSending ? (
-                  <StyledAiSendButton
+                {isSending || isAssistantTyping ? (
+                  <StyledAiStopButton
                     type="button"
                     onClick={handleStop}
-                    title="중지"
+                    title={isSending ? '답변 생성 정지' : '텍스트 표시 정지'}
                   >
-                    ■
-                  </StyledAiSendButton>
+                    정지
+                  </StyledAiStopButton>
                 ) : (
                   <StyledAiSendButton
                     type="submit"

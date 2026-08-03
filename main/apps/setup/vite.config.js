@@ -37,8 +37,6 @@ export default defineConfig(({ mode }) => {
     ],
     base: '/',
     server: {
-      host: '0.0.0.0',
-      port: 5177,
       allowedHosts: true,
       hmr: {
         clientPort: 5173

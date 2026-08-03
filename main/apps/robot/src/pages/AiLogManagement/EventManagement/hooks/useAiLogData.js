@@ -385,11 +385,17 @@ const useAiLogData = () => {
   // 챗봇이 요청한 필터를 소비해 표에 적용.
   const pendingFilters = useAiLogEventStore((state) => state.pendingFilters)
   const clearPendingFilters = useAiLogEventStore((state) => state.clearPendingFilters)
+  const setCurrentFilters = useAiLogEventStore((state) => state.setCurrentFilters)
   useEffect(() => {
     if (!pendingFilters) return
     applyExternalFilters(pendingFilters)
     clearPendingFilters()
   }, [pendingFilters, applyExternalFilters, clearPendingFilters])
+
+  // 현재 이벤트 필터를 전역 스토어에 반영해 챗봇 요청 컨텍스트에서 활용한다.
+  useEffect(() => {
+    setCurrentFilters(filters)
+  }, [filters, setCurrentFilters])
 
   useEffect(() => {
     loadData(filters, pagination)

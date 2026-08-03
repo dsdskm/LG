@@ -20,6 +20,7 @@ import {
     PageDescription,
     FieldLabel,
     FieldHint,
+    InlineFields,
     SmallBadge,
     ModalBackdrop,
     ModalCard,
@@ -32,10 +33,22 @@ import { formatDateTime } from '../chatSettings.utils'
 
 const UNIFIED_MODAL_STYLE = {
     width: 'min(760px, 100%)',
-    height: '72vh',
-    minHeight: '72vh',
+    height: 'auto',
+    minHeight: '0',
     maxHeight: '72vh',
     overflowY: 'auto',
+}
+
+const ONE_LINE_INPUT_STYLE = {
+    width: '100%',
+    height: '34px',
+    lineHeight: '34px',
+    border: '1px solid #dbe3ef',
+    borderRadius: '10px',
+    padding: '0 10px',
+    fontSize: '13px',
+    color: '#334155',
+    background: '#ffffff',
 }
 
 const normalizeKeywordArray = (value) => {
@@ -337,20 +350,20 @@ export const CommonSettingsTab = ({
                 onSaveProvider={onSaveProvider}
             />
 
-            <PromptManagementCard
-                commonPromptItem={commonPromptItem}
-                commonPromptDraft={commonPromptDraft}
-                savingCommonPrompt={savingCommonPrompt}
-                onCommonPromptChange={onCommonPromptChange}
-                onSaveCommonPrompt={onSaveCommonPrompt}
-            />
-
             <CommonIntentPromptManagementCard
                 commonIntentPromptItem={commonIntentPromptItem}
                 commonIntentPromptDraft={commonIntentPromptDraft}
                 savingCommonIntentPrompt={savingCommonIntentPrompt}
                 onCommonIntentPromptChange={onCommonIntentPromptChange}
                 onSaveCommonIntentPrompt={onSaveCommonIntentPrompt}
+            />
+
+            <PromptManagementCard
+                commonPromptItem={commonPromptItem}
+                commonPromptDraft={commonPromptDraft}
+                savingCommonPrompt={savingCommonPrompt}
+                onCommonPromptChange={onCommonPromptChange}
+                onSaveCommonPrompt={onSaveCommonPrompt}
             />
 
             <CommonRagManagementCard
@@ -432,7 +445,7 @@ const CommonIntentPromptManagementCard = ({
                 <PromptTextarea
                     value={commonIntentPromptDraft.content}
                     onChange={(e) => onCommonIntentPromptChange('content', e.target.value)}
-                    style={{ minHeight: '200px' }}
+                    
                 />
 
                 <PromptFooter>
@@ -532,6 +545,7 @@ const PromptManagementCard = ({
                 </PromptMeta>
 
                 <PromptTextarea
+                    
                     value={commonPromptDraft.content}
                     onChange={(e) => onCommonPromptChange('content', e.target.value)}
                 />
@@ -602,6 +616,13 @@ const CommonRagManagementCard = ({
 
     const [activeRagKey, setActiveRagKey] = useState('')
     const [creatingOpen, setCreatingOpen] = useState(false)
+
+    const handleCreateCommonRagSubmit = async () => {
+        const ok = await onCreateCommonRag()
+        if (ok !== false) {
+            setCreatingOpen(false)
+        }
+    }
 
     const toggleCreatingOpen = () => {
         setCreatingOpen((prev) => {
@@ -709,88 +730,6 @@ const CommonRagManagementCard = ({
                         </div>
                     </div>
 
-                    {creatingOpen ? (
-                        <PromptCard>
-                            <PromptMeta>
-                                <span>새 공통 {getRagIntentLabel(intentType)} RAG 청크 추가</span>
-                                <span>intent: {getRagIntentLabel(intentType)}</span>
-                            </PromptMeta>
-
-                            <FieldLabel>제목</FieldLabel>
-                            <PromptTextarea
-                                value={newCommonRagDraft.title}
-                                onChange={(e) => onNewCommonRagChange('title', e.target.value)}
-                                style={{ minHeight: '56px' }}
-                            />
-                            <FieldHint>제목 기준으로 내부 식별자가 자동 생성됩니다.</FieldHint>
-
-                            <FieldLabel>keywords</FieldLabel>
-                            <KeywordListEditor
-                                keywords={newCommonRagDraft.keywords}
-                                onChange={(next) => onNewCommonRagChange('keywords', next)}
-                                hint="동의어/사용자 표현까지 넣어야 조회 정확도가 올라갑니다."
-                            />
-
-                            <FieldLabel>body</FieldLabel>
-                            <PromptTextarea
-                                value={newCommonRagDraft.body}
-                                onChange={(e) => onNewCommonRagChange('body', e.target.value)}
-                                style={{ minHeight: '160px' }}
-                            />
-
-                            <FieldLabel>imageUrl</FieldLabel>
-                            <PromptTextarea
-                                value={String(newCommonRagDraft.imageUrl ?? '')}
-                                onChange={(e) => onNewCommonRagChange('imageUrl', e.target.value)}
-                                style={{ minHeight: '56px' }}
-                            />
-                            <FieldHint>설명 응답에 함께 보여줄 이미지 URL입니다. 비워두면 이미지를 표시하지 않습니다.</FieldHint>
-
-                            <FieldLabel>이미지 노출 정책</FieldLabel>
-                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                {IMAGE_ATTACH_MODE_OPTIONS.map((option) => {
-                                    const active = normalizeImageAttachMode(newCommonRagDraft.imageAttachMode) === option.key
-                                    return (
-                                        <button
-                                            key={`create-image-mode-${option.key}`}
-                                            type="button"
-                                            onClick={() => onNewCommonRagChange('imageAttachMode', option.key)}
-                                            style={{
-                                                height: '32px',
-                                                padding: '0 10px',
-                                                borderRadius: '999px',
-                                                border: active ? '1px solid #2563eb' : '1px solid #dbe3ef',
-                                                background: active ? '#eff6ff' : '#ffffff',
-                                                color: active ? '#1d4ed8' : '#475569',
-                                                fontSize: '12px',
-                                                fontWeight: 700,
-                                                cursor: 'pointer',
-                                            }}
-                                        >
-                                            {option.label}
-                                        </button>
-                                    )
-                                })}
-                            </div>
-
-                            <FieldHint>현재 카드의 intent({getRagIntentLabel(intentType)})로 저장됩니다.</FieldHint>
-
-                            <PromptFooter>
-                                <ToggleButton
-                                    type="button"
-                                    $active={Boolean(newCommonRagDraft.enabled)}
-                                    onClick={() => onNewCommonRagChange('enabled', !newCommonRagDraft.enabled)}
-                                >
-                                    {newCommonRagDraft.enabled ? '활성' : '비활성'}
-                                </ToggleButton>
-
-                                <PrimaryButton type="button" onClick={onCreateCommonRag} disabled={savingCreateCommonRag}>
-                                    {savingCreateCommonRag ? '등록 중...' : '청크 등록'}
-                                </PrimaryButton>
-                            </PromptFooter>
-                        </PromptCard>
-                    ) : null}
-
                     {activeRagDoc && activeRagDraft ? (
                         <PromptCard>
                             <PromptMeta>
@@ -801,10 +740,11 @@ const CommonRagManagementCard = ({
                             </PromptMeta>
 
                             <FieldLabel>제목</FieldLabel>
-                            <PromptTextarea
+                            <input
+                                type="text"
+                                style={ONE_LINE_INPUT_STYLE}
                                 value={activeRagDraft.title}
                                 onChange={(e) => onRagChange(activeRagKey, 'title', e.target.value)}
-                                style={{ minHeight: '56px' }}
                             />
                             <FieldHint>질문 의도와 바로 연결되는 제목으로 작성하세요.</FieldHint>
 
@@ -819,15 +759,15 @@ const CommonRagManagementCard = ({
                             <PromptTextarea
                                 value={activeRagDraft.body}
                                 onChange={(e) => onRagChange(activeRagKey, 'body', e.target.value)}
-                                style={{ minHeight: '180px' }}
                             />
                             <FieldHint>한 청크는 한 주제만 다루는 것이 좋습니다(목차/단락 단위).</FieldHint>
 
                             <FieldLabel>imageUrl</FieldLabel>
-                            <PromptTextarea
+                            <input
+                                type="text"
+                                style={ONE_LINE_INPUT_STYLE}
                                 value={String(activeRagDraft.imageUrl ?? '')}
                                 onChange={(e) => onRagChange(activeRagKey, 'imageUrl', e.target.value)}
-                                style={{ minHeight: '56px' }}
                             />
                             <FieldHint>설명 답변에 같이 노출할 이미지 URL입니다. 로컬/사설/퍼블릭 URL 모두 가능합니다.</FieldHint>
 
@@ -905,18 +845,25 @@ const CommonRagManagementCard = ({
                             {creatingOpen ? '등록 닫기' : '+ 청크 추가'}
                         </PrimaryButton>
                     </div>
-                    {creatingOpen ? (
-                        <PromptCard>
-                            <PromptMeta>
-                                <span>새 공통 {getRagIntentLabel(intentType)} RAG 청크 추가</span>
-                                <span>intent: {getRagIntentLabel(intentType)}</span>
-                            </PromptMeta>
+                    {!creatingOpen ? (
+                        <PageDescription>등록된 공통 RAG 청크가 없습니다. 우측의 + RAG 추가 버튼으로 등록해 주세요.</PageDescription>
+                    ) : null}
+                </>
+            )}
 
+            {creatingOpen ? (
+                <ModalBackdrop>
+                    <ModalCard style={UNIFIED_MODAL_STYLE}>
+                        <ModalTitle>새 공통 {getRagIntentLabel(intentType)} RAG 청크 추가</ModalTitle>
+                        <ModalDescription>공통 {getRagIntentLabel(intentType)} 경로에서 재사용할 청크를 등록합니다.</ModalDescription>
+
+                        <div style={{ marginTop: '14px', display: 'grid', gap: '12px' }}>
                             <FieldLabel>제목</FieldLabel>
-                            <PromptTextarea
+                            <input
+                                type="text"
+                                style={ONE_LINE_INPUT_STYLE}
                                 value={newCommonRagDraft.title}
                                 onChange={(e) => onNewCommonRagChange('title', e.target.value)}
-                                style={{ minHeight: '56px' }}
                             />
                             <FieldHint>제목 기준으로 내부 식별자가 자동 생성됩니다.</FieldHint>
 
@@ -924,21 +871,23 @@ const CommonRagManagementCard = ({
                             <KeywordListEditor
                                 keywords={newCommonRagDraft.keywords}
                                 onChange={(next) => onNewCommonRagChange('keywords', next)}
+                                hint="동의어/사용자 표현까지 넣어야 조회 정확도가 올라갑니다."
                             />
 
                             <FieldLabel>body</FieldLabel>
                             <PromptTextarea
                                 value={newCommonRagDraft.body}
                                 onChange={(e) => onNewCommonRagChange('body', e.target.value)}
-                                style={{ minHeight: '160px' }}
                             />
 
                             <FieldLabel>imageUrl</FieldLabel>
-                            <PromptTextarea
+                            <input
+                                type="text"
+                                style={ONE_LINE_INPUT_STYLE}
                                 value={String(newCommonRagDraft.imageUrl ?? '')}
                                 onChange={(e) => onNewCommonRagChange('imageUrl', e.target.value)}
-                                style={{ minHeight: '56px' }}
                             />
+                            <FieldHint>설명 응답에 함께 보여줄 이미지 URL입니다. 비워두면 이미지를 표시하지 않습니다.</FieldHint>
 
                             <FieldLabel>이미지 노출 정책</FieldLabel>
                             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -946,7 +895,7 @@ const CommonRagManagementCard = ({
                                     const active = normalizeImageAttachMode(newCommonRagDraft.imageAttachMode) === option.key
                                     return (
                                         <button
-                                            key={`empty-image-mode-${option.key}`}
+                                            key={`modal-create-image-mode-${option.key}`}
                                             type="button"
                                             onClick={() => onNewCommonRagChange('imageAttachMode', option.key)}
                                             style={{
@@ -968,25 +917,28 @@ const CommonRagManagementCard = ({
                             </div>
 
                             <FieldHint>현재 카드의 intent({getRagIntentLabel(intentType)})로 저장됩니다.</FieldHint>
+                        </div>
 
-                            <PromptFooter>
-                                <ToggleButton
-                                    type="button"
-                                    $active={Boolean(newCommonRagDraft.enabled)}
-                                    onClick={() => onNewCommonRagChange('enabled', !newCommonRagDraft.enabled)}
-                                >
-                                    {newCommonRagDraft.enabled ? '활성' : '비활성'}
-                                </ToggleButton>
-                                <PrimaryButton type="button" onClick={onCreateCommonRag} disabled={savingCreateCommonRag}>
-                                    {savingCreateCommonRag ? '등록 중...' : '청크 등록'}
-                                </PrimaryButton>
-                            </PromptFooter>
-                        </PromptCard>
-                    ) : (
-                        <PageDescription>등록된 공통 RAG 청크가 없습니다. 우측의 + RAG 추가 버튼으로 등록해 주세요.</PageDescription>
-                    )}
-                </>
-            )}
+                        <ModalActions style={{ gap: '10px' }}>
+                            <ToggleButton
+                                type="button"
+                                $active={Boolean(newCommonRagDraft.enabled)}
+                                onClick={() => onNewCommonRagChange('enabled', !newCommonRagDraft.enabled)}
+                            >
+                                {newCommonRagDraft.enabled ? '활성' : '비활성'}
+                            </ToggleButton>
+
+                            <SecondaryTextButton type="button" onClick={() => setCreatingOpen(false)}>
+                                닫기
+                            </SecondaryTextButton>
+
+                            <PrimaryButton type="button" onClick={handleCreateCommonRagSubmit} disabled={savingCreateCommonRag}>
+                                {savingCreateCommonRag ? '등록 중...' : '청크 등록'}
+                            </PrimaryButton>
+                        </ModalActions>
+                    </ModalCard>
+                </ModalBackdrop>
+            ) : null}
         </SettingCard>
     )
 }
@@ -1453,16 +1405,18 @@ const CommonToolManagementCard = ({
 
                             <FieldLabel>화면 이름</FieldLabel>
                             <PromptTextarea
+                                style={{ minHeight: '20px', lineHeight: 1 }}
                                 value={modalDraft.displayName}
                                 onChange={(e) => handleModalChange('displayName', e.target.value)}
-                                style={{ minHeight: '56px' }}
+                                
                             />
 
                             <FieldLabel>경로 (path)</FieldLabel>
                             <PromptTextarea
+                                style={{ minHeight: '20px', lineHeight: 1 }}
                                 value={modalDraft.path}
                                 onChange={(e) => handleModalChange('path', e.target.value)}
-                                style={{ minHeight: '56px' }}
+                                
                             />
                             <FieldHint>예: robot/ailog/ai-chat-settings</FieldHint>
 

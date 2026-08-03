@@ -2,7 +2,7 @@
  * Azure OpenAI tool-calling 루프.
  *
  * 주어진 tool 목록으로 LLM 이 함수를 호출하면 실행하고, 결과를 다시 넣어
- * 최종 자연어 답변이 나올 때까지 반복한다. data/action 인텐트 공용.
+ * 최종 자연어 답변이 나올 때까지 반복한다. action 인텐트 공용.
  */
 import type {
   LlmClient,

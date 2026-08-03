@@ -237,4 +237,21 @@ export class DbService {
     const entity = await this.repo.findOne({ where: { eventId } });
     return entity ?? null;
   }
+
+  async overrideAnalysisTimestampsByEventId(eventId: number, at: Date): Promise<boolean> {
+    const result = await this.repo.query(
+      `UPDATE analysis SET created_at = $1, updated_at = $2 WHERE event_id = $3`,
+      [at, at, eventId],
+    );
+
+    const rowCount = Array.isArray(result) && result[1] ? Number(result[1]?.rowCount ?? 0) : 0;
+    if (rowCount > 0) {
+      this.logger.log(`[db] override analysis timestamp OK eventId=${eventId} at=${at.toISOString()}`);
+      return true;
+    }
+
+    // pg driver에서 rowCount 위치가 다를 수 있어 fallback 조회
+    const row = await this.repo.findOne({ where: { eventId } });
+    return !!row;
+  }
 }

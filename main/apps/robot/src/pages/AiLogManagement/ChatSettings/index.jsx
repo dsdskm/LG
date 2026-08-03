@@ -111,8 +111,8 @@ JSON 한 줄만 반환한다.
 
 const UNIFIED_MODAL_STYLE = {
   width: 'min(760px, 100%)',
-  height: '72vh',
-  minHeight: '72vh',
+  height: 'auto',
+  minHeight: 'auto',
   maxHeight: '72vh',
   overflowY: 'auto',
 }

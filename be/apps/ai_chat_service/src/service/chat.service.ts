@@ -140,6 +140,67 @@ export class ChatService {
     return ''
   }
 
+  private ensureUserFacingReply(reply: ChatReply): ChatReply {
+    const text = String(reply?.text ?? '').trim()
+    if (text) return reply
+
+    const chatAction = String(reply?.chat_action ?? '').trim()
+    const actionParam = reply?.chat_action_param && typeof reply.chat_action_param === 'object'
+      ? (reply.chat_action_param as Record<string, unknown>)
+      : undefined
+
+    let fallbackText = '요청을 처리했지만 답변 문장을 만들지 못했습니다. 다시 질문해 주세요.'
+
+    if (chatAction === 'navigation') {
+      const path = String(actionParam?.path ?? '').trim().replace(/^\/+/, '')
+      fallbackText = path ? `${path} 화면으로 이동을 준비했어요.` : '화면 이동을 준비했어요.'
+    } else if (Array.isArray(actionParam?.suggested_actions) && actionParam.suggested_actions.length > 0) {
+      fallbackText = '요청을 처리했지만 답변 문장을 만들지 못했습니다. 같은 내용을 한 번 더 질문해 주세요.'
+    }
+
+    return {
+      ...reply,
+      text: fallbackText,
+    }
+  }
+
+  private ensurePeriodInEventReply(reply: ChatReply): ChatReply {
+    const action = String(reply?.chat_action ?? '').trim().toLowerCase()
+    if (action !== 'ailog/event/filter') return reply
+
+    const actionParam = reply?.chat_action_param && typeof reply.chat_action_param === 'object'
+      ? (reply.chat_action_param as Record<string, unknown>)
+      : undefined
+    const filters = actionParam?.filters && typeof actionParam.filters === 'object'
+      ? (actionParam.filters as Record<string, unknown>)
+      : undefined
+
+    const startDate = String(filters?.startDate ?? '').trim()
+    const endDate = String(filters?.endDate ?? '').trim()
+    if (!startDate || !endDate) return reply
+
+    const periodText = `조회 기간은 ${startDate} ~ ${endDate}입니다.`
+    const rawText = String(reply?.text ?? '').trim()
+    if (!rawText) {
+      return {
+        ...reply,
+        text: periodText,
+      }
+    }
+
+    // 이미 기간 안내가 있으면 중복 삽입하지 않는다.
+    const normalized = rawText.replace(/\s+/g, '')
+    const hasPeriod =
+      normalized.includes(startDate.replace(/\s+/g, ''))
+      && normalized.includes(endDate.replace(/\s+/g, ''))
+    if (hasPeriod) return reply
+
+    return {
+      ...reply,
+      text: `${periodText} ${rawText}`,
+    }
+  }
+
   async handleChat(body: any): Promise<ChatReply> {
     const reqId = this.ensureReqId(body)
     this.stageLog('1단계:요청수신', 'received', '채팅 요청 수신 및 파이프라인 시작', reqId)
@@ -158,7 +219,7 @@ export class ChatService {
     const ruleFirstReply = await this.tryRuleFirstEventQuery(ctx)
     if (ruleFirstReply) {
       this.stageLog('3단계:룰우선처리', 'served', 'phrase-map/휴리스틱 우선 처리로 응답 완료', reqId)
-      return this.withSuggestedActions(
+      return this.ensureUserFacingReply(this.withSuggestedActions(
         this.withTaskflowExplanationImages(
           this.attachPipelineTrace(
             ruleFirstReply,
@@ -167,7 +228,7 @@ export class ChatService {
           ctx,
         ),
         ctx,
-      )
+      ))
     }
 
     this.stageLog('4단계:화면파이프라인', 'running', '등록 화면 파이프라인 처리 시작', reqId)
@@ -176,7 +237,7 @@ export class ChatService {
       const fallbackReply = await this.tryComposeTaskflowFallback(ctx, pipelineReply)
       if (fallbackReply) {
         this.stageLog('4-1단계:화면파이프라인', 'completed', '화면 파이프라인 후 태스크플로우 draft 폴백 반영 완료', reqId)
-        return this.withSuggestedActions(
+        return this.ensureUserFacingReply(this.withSuggestedActions(
           this.withTaskflowExplanationImages(
             this.attachPipelineTrace(
               fallbackReply,
@@ -185,10 +246,10 @@ export class ChatService {
             ctx,
           ),
           ctx,
-        )
+        ))
       }
       this.stageLog('4-1단계:화면파이프라인', 'completed', '화면 파이프라인에서 응답 생성 완료', reqId)
-      return this.withSuggestedActions(
+      return this.ensureUserFacingReply(this.withSuggestedActions(
         this.withTaskflowExplanationImages(
           this.attachPipelineTrace(
             pipelineReply,
@@ -197,14 +258,14 @@ export class ChatService {
           ctx,
         ),
         ctx,
-      )
+      ))
     }
 
     // 미등록 화면 또는 pipeline 실패 시 기존 guidance 경로
     this.stageLog('5단계:가이던스폴백', 'fallback', '등록 화면 처리 불가로 기본 안내 경로 진입', reqId)
     const guidanceReply = await this.handleGuidance(ctx)
     this.stageLog('5-1단계:가이던스폴백', 'completed', '기본 안내 응답 생성 완료', reqId)
-    return this.withSuggestedActions(
+    return this.ensureUserFacingReply(this.withSuggestedActions(
       this.withTaskflowExplanationImages(
         this.attachPipelineTrace(
           guidanceReply,
@@ -213,15 +274,18 @@ export class ChatService {
         ctx,
       ),
       ctx,
-    )
+    ))
   }
 
   private attachPipelineTrace(reply: ChatReply, fallbackTrace: string): ChatReply {
+    const existingConfidence = Number((reply as Record<string, unknown>)?.pipelineConfidence)
+    const confidence = Number.isFinite(existingConfidence) ? existingConfidence : undefined
     const existingTrace = String((reply as Record<string, unknown>)?.pipelineTrace ?? '').trim()
     if (existingTrace) {
       return {
         ...reply,
         pipelineTrace: existingTrace,
+        ...(confidence !== undefined ? { pipelineConfidence: confidence } : {}),
       }
     }
 
@@ -231,7 +295,23 @@ export class ChatService {
     return {
       ...reply,
       pipelineTrace: trace,
+      ...(confidence !== undefined ? { pipelineConfidence: confidence } : {}),
     }
+  }
+
+  private formatPipelineConfidence(value: unknown): string {
+    const n = Number(value)
+    if (!Number.isFinite(n)) return '-'
+    return n.toFixed(2)
+  }
+
+  private extractPipelineConfidence(meta: unknown): number | undefined {
+    if (!meta || typeof meta !== 'object') return undefined
+    const row = meta as Record<string, unknown>
+    const result = row.pipelineIntentResult
+    if (!result || typeof result !== 'object') return undefined
+    const confidence = Number((result as Record<string, unknown>).confidence)
+    return Number.isFinite(confidence) ? confidence : undefined
   }
 
   private buildOrchestratorPipelineTrace(meta: unknown): string {
@@ -241,16 +321,48 @@ export class ChatService {
 
     const row = meta as Record<string, unknown>
     const pipelineIntent = String(row.pipelineIntent ?? '').trim().toLowerCase()
+    const confidence = this.formatPipelineConfidence(this.extractPipelineConfidence(meta))
 
     if (pipelineIntent === 'action') {
-      return 'llm(공통 프롬프트+앱별 프롬프트)=>분기(action)=>llm(액션 프롬프트)=>tool/응답조립'
+      return `llm(공통 프롬프트+앱별 프롬프트)=>분기(action, 신뢰도 ${confidence})=>llm(액션 프롬프트)=>tool/응답조립`
     }
 
     if (pipelineIntent === 'info') {
-      return 'llm(공통 프롬프트+앱별 프롬프트)=>분기(info)=>rag(화면+공통)=>llm(정보 프롬프트)=>응답조립'
+      const usedCollection = String(row.usedCollection ?? '').trim()
+      const defaultLlmFallback = Boolean(row.defaultLlmFallback)
+      const ragCollections = Array.isArray(row.ragCollections)
+        ? row.ragCollections.map((item) => String(item ?? '').trim()).filter(Boolean)
+        : []
+      const firstCollection = ragCollections[0] ?? ''
+      const hasCommonCollection = ragCollections.includes('common')
+
+      if (hasCommonCollection) {
+        const llmStep = defaultLlmFallback ? '=>llm(정보 프롬프트)' : ''
+        if (usedCollection === 'common') {
+          return `rag(공통, 신뢰도 ${confidence})${llmStep}=>응답조립`
+        }
+
+        if (usedCollection && usedCollection !== 'common') {
+          return `rag(공통, 신뢰도 ${confidence})=>rag(화면)${llmStep}=>응답조립`
+        }
+
+        return `rag(공통, 신뢰도 ${confidence})${llmStep}=>응답조립`
+      }
+
+      if (usedCollection && usedCollection !== 'common') {
+        const llmStep = defaultLlmFallback ? '=>llm(정보 프롬프트)' : ''
+        return `rag(화면, 신뢰도 ${confidence})${llmStep}=>응답조립`
+      }
+
+      if (usedCollection === 'common') {
+        const llmStep = defaultLlmFallback ? '=>llm(정보 프롬프트)' : ''
+        return `rag(공통, 신뢰도 ${confidence})${llmStep}=>응답조립`
+      }
+
+      return `rag(화면, 신뢰도 ${confidence})=>llm(정보 프롬프트)=>응답조립`
     }
 
-    return 'llm(공통 프롬프트+앱별 프롬프트)=>분기(action|info)=>응답조립'
+    return `llm(공통 프롬프트+앱별 프롬프트)=>분기(action|info, 신뢰도 ${confidence})=>응답조립`
   }
 
   private normalizeRouteLike(value: string): string {
@@ -867,6 +979,11 @@ export class ChatService {
       return 'recommend_action'
     }
 
+    // "분석 방법", "가이드" 같은 문장은 실행이 아니라 info RAG 안내로 본다.
+    if (this.includesAny(text, ['설명', '도움말', '가이드', '방법', 'guide'])) {
+      return 'guide'
+    }
+
     if (this.includesAny(text, ['분석', '원인', '왜', '이유', 'analyze'])) {
       return 'analyze'
     }
@@ -877,10 +994,6 @@ export class ChatService {
 
     if (this.includesAny(text, ['조회', '검색', '찾아', '보여', 'list', 'search', '이벤트'])) {
       return 'list'
-    }
-
-    if (this.includesAny(text, ['설명', '도움말', '가이드', '방법', 'guide'])) {
-      return 'guide'
     }
 
     return 'unknown'
@@ -974,7 +1087,7 @@ export class ChatService {
    * 실제 pipeline/orchestrator 실행.
    *
    * 화면과 intent를 먼저 확정한 다음 orchestrator에 넘긴다.
-   * orchestrator 내부에서는 이 screenTask를 기준으로 RAG/data/action 분기하면 된다.
+   * orchestrator 내부에서는 이 screenTask를 기준으로 RAG/action 분기하면 된다.
    */
   private async runOrchestrator(
     ctx: ChatContext,
@@ -996,13 +1109,36 @@ export class ChatService {
     )
     this.stageLog('4-5단계:오케스트레이터결과', 'completed', `handled=${String(out.handled)} hasReply=${String(Boolean(out.reply))}`, ctx.reqId)
     if (out.handled && out.reply) {
+      const pipelineTrace = this.buildOrchestratorPipelineTrace(out.meta)
+      const pipelineConfidence = this.extractPipelineConfidence(out.meta)
+      const meta = out.meta && typeof out.meta === 'object' ? (out.meta as Record<string, unknown>) : undefined
+      const usedCollection = String(meta?.['usedCollection'] ?? '').trim()
+      const usedChunksRaw = meta?.['usedChunks']
+      const usedChunks = Array.isArray(usedChunksRaw)
+        ? usedChunksRaw
+            .map((item) => String(item ?? '').trim())
+            .filter(Boolean)
+        : []
       const tracedReply = this.attachPipelineTrace(
         out.reply,
-        this.buildOrchestratorPipelineTrace(out.meta),
+        pipelineTrace,
       )
-      await this.saveLog(ctx.body, tracedReply, ctx)
+      const normalizedReply = this.ensurePeriodInEventReply(tracedReply)
+      if (pipelineConfidence !== undefined) {
+        normalizedReply.pipelineConfidence = pipelineConfidence
+      }
+      if (usedCollection) {
+        normalizedReply.usedCollection = usedCollection
+      }
+      if (usedChunks.length > 0) {
+        normalizedReply.usedChunks = usedChunks
+      }
+      this.logger.log(
+        `[pipeline] [reqId=${ctx.reqId}] intent=${String((out.meta as Record<string, unknown> | undefined)?.pipelineIntent ?? '-')} confidence=${this.formatPipelineConfidence(pipelineConfidence)} trace=${pipelineTrace}`,
+      )
+      await this.saveLog(ctx.body, normalizedReply, ctx)
       this.stageLog('4-6단계:응답저장', 'saved', '오케스트레이터 응답을 chat_log에 저장 완료', ctx.reqId)
-      return tracedReply
+      return normalizedReply
     }
 
     this.stageLog('4-6단계:응답저장', 'skipped', '오케스트레이터에서 유효 응답이 없어 저장 생략', ctx.reqId)
@@ -1069,9 +1205,10 @@ export class ChatService {
         text: summary || '조회 결과를 확인했습니다.',
       }
 
-      await this.saveLog(ctx.body, reply, ctx)
+      const normalizedReply = this.ensurePeriodInEventReply(reply)
+      await this.saveLog(ctx.body, normalizedReply, ctx)
       this.stageLog('3단계:룰우선처리', 'served', '룰 기반 직접 조회 응답 반환 완료', ctx.reqId)
-      return reply
+      return normalizedReply
     } catch (e: any) {
       this.logger.warn(
         `[rule-first] direct query failed route=${matchedRouteKey} err=${e?.message ?? String(e)}; fallback to pipeline`,

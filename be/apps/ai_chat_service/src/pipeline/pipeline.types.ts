@@ -31,6 +31,9 @@ export type ChatReply = {
   chat_action_param?: Record<string, unknown>
   text: string
   pipelineTrace?: string
+  pipelineConfidence?: number
+  usedCollection?: string
+  usedChunks?: string[]
   images?: ChatReplyImage[]
 }
 

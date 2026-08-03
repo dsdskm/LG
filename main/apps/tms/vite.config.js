@@ -37,7 +37,9 @@ export default defineConfig(({ mode }) => {
       tailwindcss()
     ],
     base: '/tms',
-    server: { port: 5179 },
+    server: {
+      port: 5179,
+    },
     preview: { port: 4179 },
     build: {
       outDir: '../../apps-dist/tms',

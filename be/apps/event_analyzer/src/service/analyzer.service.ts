@@ -196,6 +196,27 @@ export class AnalyzerService {
     return toAnalysisDetailPayload(result);
   }
 
+  async overrideAnalysisTimestampByEventId(
+    eventIdParam: string,
+    at: unknown,
+  ): Promise<{ ok: boolean }> {
+    const eventId = Number(eventIdParam);
+    if (!Number.isInteger(eventId) || eventId <= 0) {
+      return { ok: false };
+    }
+
+    const date = new Date(String(at ?? ''));
+    if (Number.isNaN(date.getTime())) {
+      return { ok: false };
+    }
+
+    const ok = await this.db.overrideAnalysisTimestampsByEventId(eventId, date);
+    this.logger.log(
+      `overrideAnalysisTimestampByEventId eventId=${eventId} at=${date.toISOString()} ok=${ok}`,
+    );
+    return { ok };
+  }
+
   runAnalyzeFlowInBackground(body: AnalyzerPayload, analyzerId: number | null) {
     const id = body?.id ?? -1;
 

@@ -20,7 +20,7 @@ export type ScreenConfig = {
   intentHints?: string
   /** intent-hint 병합 방식. merge(기본) | replace */
   intentHintMode?: 'merge' | 'replace'
-  /** RAG 컬렉션 키(rag.docs). info 인텐트에서 사용. */
+  /** RAG 컬렉션 키(chat_rag_doc.key). info 인텐트에서 사용. */
   ragCollection: string
   /** data 인텐트 tool 목록. */
   dataTools: ToolDefinition[]
@@ -483,11 +483,6 @@ function toChatAction(routeKey: string) {
   return normalized || 'default'
 }
 
-function normalizeIntentHintMode(value: unknown): 'merge' | 'replace' {
-  const mode = String(value ?? '').trim().toLowerCase()
-  return mode === 'replace' ? 'replace' : 'merge'
-}
-
 function isTaskflowCanvasRoute(routeKey: string): boolean {
   const normalized = String(routeKey ?? '').trim().replace(/^\/+/, '')
   if (!normalized) return false
@@ -508,24 +503,18 @@ export function getScreenConfig(routeKey: string, reqId?: string): ScreenConfig 
 
   const commonSystem = store?.getPromptContent('common', 'system') ?? ''
   const commonIntentHint = store?.getPromptContent('common', 'intent-hint') ?? ''
-  const commonIntentHintMode = store?.getPromptContent('common', 'intent-hint-mode') ?? ''
   const screenIntentHint = store?.getPromptContent(normalizedRouteKey, 'intent-hint') ?? ''
-  const screenIntentHintMode = store?.getPromptContent(normalizedRouteKey, 'intent-hint-mode') ?? ''
   const screenDataSystem = store?.getPromptContent(normalizedRouteKey, 'data-system') ?? ''
   const screenActionSystem = store?.getPromptContent(normalizedRouteKey, 'action-system') ?? ''
   const screenFallback = store?.getPromptContent(normalizedRouteKey, 'fallback') ?? ''
 
   const appIntentHint = store?.getPromptContent(appKey, 'intent-hint') ?? ''
-  const appIntentHintMode = store?.getPromptContent(appKey, 'intent-hint-mode') ?? ''
   const appDataSystem = store?.getPromptContent(appKey, 'data-system') ?? ''
   const appActionSystem = store?.getPromptContent(appKey, 'action-system') ?? ''
   const appFallback = store?.getPromptContent(appKey, 'fallback') ?? ''
 
-  const resolvedIntentHintMode = normalizeIntentHintMode(screenIntentHintMode || appIntentHintMode || commonIntentHintMode)
-
-  const resolvedIntentHint = resolvedIntentHintMode === 'replace'
-    ? String(screenIntentHint || appIntentHint || commonIntentHint || '').trim()
-    : [commonIntentHint, appIntentHint, screenIntentHint].filter(Boolean).join('\n\n')
+  const resolvedIntentHint = [commonIntentHint, appIntentHint, screenIntentHint].filter(Boolean).join('\n\n')
+  const resolvedIntentHintMode: 'merge' | 'replace' = 'merge'
   const resolvedDataSystem = screenDataSystem || appDataSystem
   const resolvedActionSystem = screenActionSystem || appActionSystem
   const resolvedFallback = screenFallback || appFallback

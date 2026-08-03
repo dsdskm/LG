@@ -5,7 +5,7 @@
  * 2) answer: 검색된 청크를 컨텍스트로 LLM에 넣어, 문서 근거로만 답하게 한다.
  */
 import type { LlmClient } from '../../llm/llm.types'
-import { getCollection as getStaticCollection, type RagChunk } from './rag.docs'
+import type { RagChunk } from './rag.docs'
 import type { ChatTurn } from '../pipeline.types'
 import { getPromptStore } from '../../db/prompt-store.service'
 
@@ -20,20 +20,24 @@ function scoreChunk(chunk: RagChunk, queryTokens: string[], rawQuery: string): n
   const q = rawQuery.toLowerCase()
   let score = 0
   const isAsciiToken = (value: string) => /^[a-z0-9]+$/.test(value)
+  const tokenLooselyMatches = (left: string, right: string): boolean => {
+    if (!left || !right) return false
+    if (left === right) return true
+
+    // ASCII 토큰(예: ifthen vs ifthenelse)은 부분 일치로 보지 않는다.
+    if (isAsciiToken(left) && isAsciiToken(right) && left.length >= 4 && right.length >= 4) {
+      return false
+    }
+
+    return left.includes(right) || right.includes(left)
+  }
 
   const keywordTokenLooselyMatches = (keyword: string): boolean => {
     const keywordTokens = tokenize(keyword)
     if (keywordTokens.length === 0) return false
 
     return queryTokens.some((queryToken) => keywordTokens.some((keywordToken) => {
-      if (queryToken === keywordToken) return true
-
-      // ASCII 토큰(예: ifthen vs ifthenelse)은 부분 일치로 보지 않는다.
-      if (isAsciiToken(queryToken) && isAsciiToken(keywordToken) && queryToken.length >= 4 && keywordToken.length >= 4) {
-        return false
-      }
-
-      return keywordToken.includes(queryToken) || queryToken.includes(keywordToken)
+      return tokenLooselyMatches(queryToken, keywordToken)
     }))
   }
 
@@ -47,7 +51,13 @@ function scoreChunk(chunk: RagChunk, queryTokens: string[], rawQuery: string): n
   // 제목/본문 토큰 겹침(정확 토큰 기준)
   const haystackTokens = new Set(tokenize(`${chunk.title} ${chunk.body}`))
   for (const t of queryTokens) {
-    if (haystackTokens.has(t)) score += 0.5
+    if (haystackTokens.has(t)) {
+      score += 0.5
+      continue
+    }
+
+    const hasLooseHit = Array.from(haystackTokens).some((haystackToken) => tokenLooselyMatches(t, haystackToken))
+    if (hasLooseHit) score += 0.25
   }
   return score
 }
@@ -84,7 +94,7 @@ export class RagService {
       }
     }
 
-    return getStaticCollection(collectionName)
+    return undefined
   }
 
   private supportsIntent(chunk: RagChunk, intentType?: RagIntentType): boolean {
@@ -136,11 +146,26 @@ export class RagService {
         `collection=${name} 존재 여부 확인`,
         reqId,
       )
-      const found = this.retrieve(name, message, options?.intentType)
+      let found = this.retrieve(name, message, options?.intentType)
       this.stageLog('3-2단계:RAG_컬렉션탐색', found.length > 0 ? 'matched' : 'miss', `collection=${name} 탐색 완료(hitCount=${found.length})`, reqId)
       this.logger.debug?.(
         `================= [3-2단계:RAG_컬렉션탐색_추적] [reqId=${reqId}] collection=${name} intent=${options?.intentType ?? 'any'} hits=${JSON.stringify(found.map((row) => ({ id: row.chunk.id, score: row.score })))}`,
       )
+      if (found.length === 0 && options?.intentType) {
+        const relaxed = this.retrieve(name, message)
+        if (relaxed.length > 0) {
+          this.stageLog(
+            '3-2-1단계:RAG_의도완화재탐색',
+            'matched',
+            `collection=${name} intent=${options.intentType} 조건 미일치로 무의도 재탐색(hitCount=${relaxed.length})`,
+            reqId,
+          )
+          this.logger.debug?.(
+            `================= [3-2-1단계:RAG_의도완화재탐색_추적] [reqId=${reqId}] collection=${name} relaxedHits=${JSON.stringify(relaxed.map((row) => ({ id: row.chunk.id, score: row.score })))}`,
+          )
+          found = relaxed
+        }
+      }
       if (found.length) {
         hits = found
         usedCollection = name

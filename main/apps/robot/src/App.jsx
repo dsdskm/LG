@@ -84,7 +84,7 @@ const appRoutes = [
 
   {
     name: 'aiLogManagement',
-    path: '/robot/ailog/event',
+    path: '/robot/ailog',
     prefix: 'robot',
     icon: 'support',
     element: <AiLogManagement />,

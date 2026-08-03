@@ -39,9 +39,7 @@ async function bootstrap() {
     prefix: '/assets/',
   });
 
-  app.enableCors({
-    origin: true, // 개발 환경: 모든 origin 허용
-  });
+  app.enableCors();
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('ai_chat_service API')

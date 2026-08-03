@@ -38,7 +38,7 @@ async function bootstrap() {
   });
 
   const port = Number(process.env.PORT_ACTION_RUNNER ?? 3004);
-  app.enableCors({ origin: true }); // 개발 환경: 모든 origin 허용
+  app.enableCors();
   await app.listen(port, '0.0.0.0');
   logger.log(`action_runner listening on ${port}`);
 }

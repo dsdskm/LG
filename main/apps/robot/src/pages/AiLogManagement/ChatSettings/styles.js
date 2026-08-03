@@ -288,7 +288,7 @@ export const InlineFields = styled.div`
 
 export const PromptTextarea = styled.textarea`
   width: 100%;
-  min-height: 120px;
+  min-height: 200px;
   border: 1px solid #dbe3ef;
   border-radius: 12px;
   background: #f9fbff;

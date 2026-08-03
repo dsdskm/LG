@@ -259,4 +259,20 @@ export class ReceiverService {
     this.logger.log(`getEventById id=${idParam}`);
     return ret;
   }
+
+  async overrideEventTimestampFromParam(idParam: string, at: unknown): Promise<{ ok: boolean }> {
+    const eventId = Number(idParam);
+    if (!Number.isInteger(eventId) || eventId <= 0) {
+      return { ok: false };
+    }
+
+    const date = new Date(String(at ?? ''));
+    if (Number.isNaN(date.getTime())) {
+      return { ok: false };
+    }
+
+    await this.receiverDb.overrideEventTimestamps(eventId, date);
+    this.logger.log(`overrideEventTimestamp eventId=${eventId} at=${date.toISOString()}`);
+    return { ok: true };
+  }
 }

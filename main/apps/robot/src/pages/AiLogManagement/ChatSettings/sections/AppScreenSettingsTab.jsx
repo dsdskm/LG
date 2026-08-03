@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
     SettingCard,
@@ -33,8 +33,8 @@ import { filterScreenGroupsByRoute, formatDateTime, getPromptDraft, getScreenTit
 
 const LARGE_MODAL_STYLE = {
     width: 'min(760px, 100%)',
-    height: '72vh',
-    minHeight: '72vh',
+    height: 'auto',
+    minHeight: '0',
     maxHeight: '72vh',
     overflowY: 'auto',
 }
@@ -46,6 +46,18 @@ const ACTION_DETAIL_MODAL_STYLE = LARGE_MODAL_STYLE
 const MODAL_BUTTON_STYLE = {
     height: '36px',
     minWidth: '96px',
+}
+
+const ONE_LINE_INPUT_STYLE = {
+    width: '100%',
+    height: '34px',
+    lineHeight: '34px',
+    border: '1px solid #dbe3ef',
+    borderRadius: '10px',
+    padding: '0 10px',
+    fontSize: '13px',
+    color: '#334155',
+    background: '#ffffff',
 }
 
 const PROMPT_FLOW_MODAL_STYLE = LARGE_MODAL_STYLE
@@ -128,13 +140,31 @@ const normalizeToolKind = (value) => {
     return 'action'
 }
 
-const normalizeIntentHintMode = (value) => {
-    const mode = String(value ?? '').trim().toLowerCase()
-    return mode === 'replace' ? 'replace' : 'merge'
+const normalizeCommonRagKey = (value) => {
+    const key = String(value ?? '').trim().toLowerCase()
+    if (key === 'common_info' || key === 'common-info') return 'common_info'
+    if (key === 'common_action' || key === 'common-action') return 'common_action'
+    if (key === 'common') return 'common'
+    return ''
+}
+
+const resolveCommonRagScopeKey = (item) => {
+    const candidates = [
+        item?.key,
+        item?.routeKey,
+        item?.routeParentKey,
+        item?.screenKey,
+    ]
+    for (const candidate of candidates) {
+        const normalized = normalizeCommonRagKey(candidate)
+        if (normalized) return normalized
+    }
+    return ''
 }
 
 const isCommonRagDoc = (item) => {
-    return String(item?.key ?? '').trim().toLowerCase() === 'common'
+    const key = resolveCommonRagScopeKey(item)
+    return key === 'common' || key === 'common_info' || key === 'common_action'
 }
 
 const KeywordListEditor = ({ keywords, onChange, hint }) => {
@@ -510,6 +540,20 @@ const ScreenSettingGroup = ({
         },
         { info: 0, action: 0, both: 0 }
     )
+    const commonInfoRagDocs = (Array.isArray(commonRagDocs) ? commonRagDocs : []).filter((item) => {
+        const key = resolveCommonRagScopeKey(item)
+        if (key === 'common_info') return true
+        if (key === 'common_action') return false
+        const intentType = normalizeRagIntentType(item?.intentType)
+        return intentType === 'info' || intentType === 'both'
+    })
+    const commonActionRagDocs = (Array.isArray(commonRagDocs) ? commonRagDocs : []).filter((item) => {
+        const key = resolveCommonRagScopeKey(item)
+        if (key === 'common_action') return true
+        if (key === 'common_info') return false
+        const intentType = normalizeRagIntentType(item?.intentType)
+        return intentType === 'action' || intentType === 'both'
+    })
     const commonActionToolCount = Array.isArray(commonTools) ? commonTools.length : 0
 
     return (
@@ -527,7 +571,7 @@ const ScreenSettingGroup = ({
 
             <ChatFlowMap
                 intentPromptCount={promptSummary.intent}
-                actionPromptCount={promptSummary.data + promptSummary.action}
+                actionPromptCount={promptSummary.action}
                 guidanceCount={group.guidance.length}
                 routeKey={group.routeKey}
                 infoRagCount={ragSummary.info + ragSummary.both}
@@ -545,7 +589,7 @@ const ScreenSettingGroup = ({
 
             {activeStage ? (
                 <ModalBackdrop>
-                    <ModalCard style={['intent-prompt', 'action-prompt'].includes(activeStage) ? PROMPT_FLOW_MODAL_STYLE : LARGE_MODAL_STYLE}>
+                    <ModalCard style={['intent-prompt', 'action-prompt', 'info-prompt'].includes(activeStage) ? PROMPT_FLOW_MODAL_STYLE : LARGE_MODAL_STYLE}>
                         <ModalTitle>{getStageTitle(activeStage)}</ModalTitle>
                         <ModalDescription>{getStageDescription(activeStage)}</ModalDescription>
 
@@ -595,9 +639,10 @@ const ScreenSettingGroup = ({
                                 />
                             ) : null}
 
-                            {activeStage === 'action-prompt' ? (
+                            {['action-prompt', 'info-prompt'].includes(activeStage) ? (
                                 <div style={{ display: 'grid', gap: '12px' }}>
                                     <ActionPromptPreview
+                                        flowType={activeStage === 'info-prompt' ? 'info' : 'action'}
                                         commonPromptItem={commonPromptItem}
                                         commonPromptDraft={commonPromptDraft}
                                         prompts={group.prompts}
@@ -605,6 +650,7 @@ const ScreenSettingGroup = ({
                                     />
 
                                     <ActionUnifiedPromptSection
+                                        flowType={activeStage === 'info-prompt' ? 'info' : 'action'}
                                         appKey={String(group.routeKey ?? '').split('/')[0] || ''}
                                         routeKey={group.routeKey}
                                         routeParentKey={group.routeParentKey}
@@ -617,13 +663,6 @@ const ScreenSettingGroup = ({
                                         onCreatePrompt={onCreatePrompt}
                                     />
                                 </div>
-                            ) : null}
-
-                            {activeStage === 'intent' ? (
-                                <IntentBranchSummary
-                                    infoRagCount={ragSummary.info + ragSummary.both}
-                                    actionToolCount={actionToolCount}
-                                />
                             ) : null}
 
                             {activeStage === 'action-tool' ? (
@@ -677,17 +716,8 @@ const ScreenSettingGroup = ({
 
                             {activeStage === 'info-rag' ? (
                                 <div style={{ display: 'grid', gap: '12px' }}>
-                                    <FlowStageNoteCard
-                                        title="해당 화면의 RAG 조회 중입니다..."
-                                        description="먼저 현재 화면에 연결된 info RAG를 조회합니다. 매칭이 있으면 여기서 바로 근거를 잡아 응답을 생성합니다."
-                                        details={[
-                                            '해당 화면의 RAG를 우선 조회합니다.',
-                                            '매칭이 있으면 화면 근거로 응답을 생성합니다.',
-                                            '매칭이 없으면 공통 RAG를 한 번 더 조회합니다.',
-                                        ]}
-                                    />
-
                                     <ScreenRagList
+                                        key="info-rag-list"
                                         appKey={String(group.routeKey ?? '').split('/')[0] || ''}
                                         routeKey={group.routeKey}
                                         routeParentKey={group.routeParentKey}
@@ -701,26 +731,19 @@ const ScreenSettingGroup = ({
                                         onCreateRag={onCreateRag}
                                         onDeleteRag={onDeleteRag}
                                         initialIntentType="info"
+                                        fixedIntentType="info"
                                     />
                                 </div>
                             ) : null}
 
                             {activeStage === 'info-common-rag' ? (
                                 <div style={{ display: 'grid', gap: '12px' }}>
-                                    <FlowStageNoteCard
-                                        title="공통 RAG 추가 조회 중입니다..."
-                                        description="이 단계는 공통 탭에 저장된 info 공통 RAG를 확인하는 단계입니다."
-                                        details={[
-                                            '공통 RAG는 공통 탭에서만 편집합니다.',
-                                            '앱 화면에서는 공통 RAG 내용을 조회만 할 수 있습니다.',
-                                        ]}
-                                    />
-
                                     <ScreenRagList
+                                        key="info-common-rag-list"
                                         appKey="common"
-                                        routeKey="common"
-                                        routeParentKey="common"
-                                        ragDocs={Array.isArray(commonRagDocs) ? commonRagDocs : []}
+                                        routeKey="common_info"
+                                        routeParentKey="common_info"
+                                        ragDocs={commonInfoRagDocs}
                                         ragDrafts={ragDrafts}
                                         savingRagKey={savingRagKey}
                                         deletingRagKey={deletingRagKey}
@@ -730,6 +753,7 @@ const ScreenSettingGroup = ({
                                         onCreateRag={onCreateRag}
                                         onDeleteRag={onDeleteRag}
                                         initialIntentType="info"
+                                        fixedIntentType="info"
                                         readOnly
                                     />
                                 </div>
@@ -749,17 +773,8 @@ const ScreenSettingGroup = ({
 
                             {activeStage === 'action-rag' ? (
                                 <div style={{ display: 'grid', gap: '12px' }}>
-                                    <FlowStageNoteCard
-                                        title="액션 RAG를 조회 중입니다..."
-                                        description="현재 화면의 action RAG를 먼저 조회하고, 부족하면 공통 action RAG와 공통 action 툴로 한 번 더 보강합니다."
-                                        details={[
-                                            '액션 실행 전에 화면 action RAG를 먼저 확인합니다.',
-                                            '매칭이 없거나 부족하면 공통 action RAG를 다시 조회합니다.',
-                                            '그래도 부족하면 공통 action 툴을 한 번 더 실행하고 fallback text로 내려갑니다.',
-                                        ]}
-                                    />
-
                                     <ScreenRagList
+                                        key="action-rag-list"
                                         appKey={String(group.routeKey ?? '').split('/')[0] || ''}
                                         routeKey={group.routeKey}
                                         routeParentKey={group.routeParentKey}
@@ -773,26 +788,19 @@ const ScreenSettingGroup = ({
                                         onCreateRag={onCreateRag}
                                         onDeleteRag={onDeleteRag}
                                         initialIntentType="action"
+                                        fixedIntentType="action"
                                     />
                                 </div>
                             ) : null}
 
                             {activeStage === 'action-common-rag' ? (
                                 <div style={{ display: 'grid', gap: '12px' }}>
-                                    <FlowStageNoteCard
-                                        title="공통 action RAG를 확인 중입니다..."
-                                        description="이 단계는 공통 탭에 저장된 action 공통 RAG를 확인하는 단계입니다."
-                                        details={[
-                                            '공통 action RAG는 공통 탭에서만 편집합니다.',
-                                            '앱 화면에서는 공통 action RAG 내용을 조회만 할 수 있습니다.',
-                                        ]}
-                                    />
-
                                     <ScreenRagList
+                                        key="action-common-rag-list"
                                         appKey="common"
-                                        routeKey="common"
-                                        routeParentKey="common"
-                                        ragDocs={Array.isArray(commonRagDocs) ? commonRagDocs : []}
+                                        routeKey="common_action"
+                                        routeParentKey="common_action"
+                                        ragDocs={commonActionRagDocs}
                                         ragDrafts={ragDrafts}
                                         savingRagKey={savingRagKey}
                                         deletingRagKey={deletingRagKey}
@@ -802,6 +810,7 @@ const ScreenSettingGroup = ({
                                         onCreateRag={onCreateRag}
                                         onDeleteRag={onDeleteRag}
                                         initialIntentType="action"
+                                        fixedIntentType="action"
                                         readOnly
                                     />
                                 </div>
@@ -809,7 +818,7 @@ const ScreenSettingGroup = ({
 
                         </div>
 
-                        <ModalActions>
+                        <ModalActions style={{ gap: '10px' }}>
                             {['info-common-rag', 'action-common-rag', 'common-action-tool'].includes(activeStage) && onGoToCommonTab ? (
                                 <SecondaryTextButton
                                     type="button"
@@ -835,13 +844,13 @@ const getStageTitle = (stageKey) => {
         guidance: '1) 메세지',
         'screen-route': '2) 화면별 분기',
         'intent-prompt': '3) 분기 프롬프트',
-        intent: '4) 인텐트 분기',
-        'action-prompt': '액션 프롬프트 적용',
-        'info-rag': 'info 경로: RAG 조회',
-        'info-common-rag': 'info 경로: 공통 RAG 추가 조회',
+        'info-prompt': 'info 경로: 공통+화면 정보 프롬프트',
+        'action-prompt': 'action 경로: 공통+화면 액션 프롬프트',
+        'info-rag': 'info 경로: 화면 정보 RAG',
+        'info-common-rag': '공통 정보 RAG',
         'info-llm-fallback': 'info 경로: RAG 미충족시 LLM 호출',
-        'action-rag': 'action 경로: 액션 RAG 조회/편집',
-        'action-common-rag': 'action 경로: 공통 action RAG 조회',
+        'action-rag': 'action 경로: 화면 액션 RAG 조회/편집',
+        'action-common-rag': '공통 action RAG',
         'action-tool': 'action 경로: 통합 툴 실행',
         'common-action-tool': 'action 경로: 공통 액션 툴 조회',
     }
@@ -853,12 +862,12 @@ const getStageDescription = (stageKey) => {
         guidance: '추천 카드 선택 또는 직접 입력으로 들어온 사용자 메세지 단계입니다.',
         'screen-route': '현재 화면(routeKey)에 맞는 ScreenConfig를 먼저 확정합니다.',
         'intent-prompt': 'LLM 분류가 참고하는 분기용 프롬프트입니다.',
-        intent: 'LLM 분류 결과 + 보정 규칙으로 처리 경로를 최종 확정합니다.',
-        'action-prompt': 'action 경로에서 통합 프롬프트를 적용해 tool 선택과 응답 포맷을 결정합니다.',
-        'info-rag': '해당 화면의 info RAG를 먼저 조회하고, 부족하면 공통 RAG를 다시 확인합니다.',
-        'info-common-rag': '공통 탭에 등록된 info 공통 RAG를 조회합니다. 이 화면에서는 읽기 전용입니다.',
+        'info-prompt': 'info 경로에서 RAG 미충족 시 기본 LLM 호출 직전에 공통+화면 정보 프롬프트를 병합해 사용합니다.',
+        'action-prompt': 'action 경로에서 툴 선택/파라미터 추론을 위해 공통+화면 액션 프롬프트를 병합해 사용합니다.',
+        'info-rag': '공통 정보 RAG를 먼저 조회하고, 부족하면 화면 정보 RAG를 다시 확인합니다.',
+        'info-common-rag': '공통 탭에 등록된 공통 정보 RAG를 조회합니다. 이 화면에서는 읽기 전용입니다.',
         'info-llm-fallback': '화면 RAG와 공통 RAG를 모두 확인했는데도 부족하면 기본 LLM 응답으로 전환합니다.',
-        'action-rag': '해당 화면의 action RAG를 먼저 조회하고, 부족하면 공통 action RAG와 공통 action 툴을 다시 확인합니다.',
+        'action-rag': '해당 화면의 화면 액션 RAG를 먼저 조회하고, 부족하면 공통 action RAG와 공통 action 툴을 다시 확인합니다.',
         'action-common-rag': '공통 탭에 등록된 action 공통 RAG를 조회합니다. 이 화면에서는 읽기 전용입니다.',
         'action-tool': 'action 툴을 통합 실행합니다. 응답 포맷에 따라 사이트 추가 액션 여부가 결정됩니다.',
         'common-action-tool': '공통 탭에 등록된 공통 action 툴을 조회합니다. 이 화면에서는 읽기 전용입니다.',
@@ -879,50 +888,6 @@ const FlowStageNoteCard = ({ title, description, details = [] }) => {
                 <PageDescription key={`stage-note-${index}`}>{index + 1}) {row}</PageDescription>
             ))}
         </PromptCard>
-    )
-}
-
-const IntentBranchSummary = ({ infoRagCount, actionToolCount }) => {
-    return (
-        <div style={{ display: 'grid', gap: '10px' }}>
-            <PromptCard>
-                <PromptMeta>
-                    <span>분기/실행 규칙 (코드 기준)</span>
-                </PromptMeta>
-                <PageDescription>
-                    1) LLM은 intent 라벨(info/data/action)과 confidence를 반환합니다.
-                </PageDescription>
-                <PageDescription>
-                    2) confidence가 낮으면 fallback 규칙으로 action/info를 재결정합니다. (저신뢰도 fallback에서는 data를 직접 선택하지 않음)
-                </PageDescription>
-                <PageDescription>
-                    3) 처리 경로는 최종적으로 info 또는 action 두 갈래이며, data/action 라벨은 action 경로에서 통합 처리됩니다.
-                </PageDescription>
-                <PageDescription>
-                    4) 실행 가능한 tool이 없으면 info 경로로 강등되고, TMS taskflow compose 패턴은 action으로 강제 전환됩니다.
-                </PageDescription>
-            </PromptCard>
-
-            <PromptCard>
-                <PromptMeta>
-                    <span>info intent</span>
-                    <span>RAG {infoRagCount}개</span>
-                </PromptMeta>
-                <PageDescription>해당 화면의 RAG를 먼저 조회합니다.</PageDescription>
-                <PageDescription>매칭이 없으면 공통 RAG를 다시 조회합니다.</PageDescription>
-                <PageDescription>공통 RAG까지 비면 기본 LLM 호출로 응답을 생성합니다.</PageDescription>
-            </PromptCard>
-
-            <PromptCard>
-                <PromptMeta>
-                    <span>action 경로</span>
-                    <span>액션 툴 {actionToolCount}개</span>
-                </PromptMeta>
-                <PageDescription>해당 화면의 action RAG를 먼저 조회합니다.</PageDescription>
-                <PageDescription>매칭이 없으면 공통 action RAG를 다시 조회합니다.</PageDescription>
-                <PageDescription>공통 action RAG도 부족하면 공통 action 툴을 한 번 더 시도하고, 그래도 부족하면 fallback text로 내려갑니다.</PageDescription>
-            </PromptCard>
-        </div>
     )
 }
 
@@ -984,7 +949,7 @@ const ActionToolPriorityPreview = ({ tools }) => {
     )
 }
 
-const ActionPromptPreview = ({ commonPromptItem, commonPromptDraft, prompts, promptDrafts }) => {
+const ActionPromptPreview = ({ flowType = 'action', commonPromptItem, commonPromptDraft, prompts, promptDrafts }) => {
     const pickPromptContent = (promptType) => {
         const item = (Array.isArray(prompts) ? prompts : []).find(
             (row) => String(row?.promptType ?? row?.category ?? '').toLowerCase() === String(promptType ?? '').toLowerCase(),
@@ -1001,9 +966,8 @@ const ActionPromptPreview = ({ commonPromptItem, commonPromptDraft, prompts, pro
     const commonContent = commonEnabled
         ? String(commonPromptDraft?.content ?? commonPromptItem?.content ?? '').trim()
         : ''
-    const dataContent = pickPromptContent('data-system')
     const actionContent = pickPromptContent('action-system')
-    const mergedBlocks = [commonContent, dataContent, actionContent].filter(Boolean)
+    const mergedBlocks = [commonContent, actionContent].filter(Boolean)
     const mergedContent = mergedBlocks.join('\n\n')
 
     return (
@@ -1015,11 +979,13 @@ const ActionPromptPreview = ({ commonPromptItem, commonPromptDraft, prompts, pro
             </PromptMeta>
 
             <PageDescription>
-                action 경로에서 공통/액션 프롬프트를 병합해 tool agent에 전달합니다.
+                {flowType === 'info'
+                    ? 'info 경로에서는 공통/화면 프롬프트를 병합해 RAG 미충족 시 LLM 호출에 사용합니다.'
+                    : 'action 경로에서는 공통/액션 프롬프트를 병합해 tool agent에 전달합니다.'}
             </PageDescription>
 
             <PromptTextarea
-                value={mergedContent || '활성화된 액션 프롬프트가 없습니다.'}
+                value={mergedContent || (flowType === 'info' ? '활성화된 정보 프롬프트가 없습니다.' : '활성화된 액션 프롬프트가 없습니다.')}
                 readOnly
                 style={{ minHeight: '180px', background: '#f8fafc', color: '#334155' }}
             />
@@ -1028,18 +994,37 @@ const ActionPromptPreview = ({ commonPromptItem, commonPromptDraft, prompts, pro
 }
 
 const ChatFlowMap = ({ intentPromptCount, actionPromptCount, guidanceCount, routeKey, infoRagCount, actionRagCount, commonInfoRagCount, commonActionRagCount, actionToolCount, commonActionToolCount, onSelectStage }) => {
-    const infoFlowItems = [
+    const defaultFlowItems = [
         {
-            key: 'info-rag',
-            node: <FlowNode title="RAG 조회" desc={`해당 화면의 RAG ${infoRagCount}개를 먼저 확인`} tone="info" onClick={() => onSelectStage('info-rag')} />,
+            key: 'guidance',
+            node: <FlowNode title="메세지" desc={`추천 카드(${guidanceCount}개) 또는 직접 입력`} tone="guide" onClick={() => onSelectStage('guidance')} />,
         },
         {
+            key: 'screen-route',
+            node: <FlowNode title="화면별 분기" desc={`${routeKey || '-'}`} tone="route" onClick={() => onSelectStage('screen-route')} />,
+        },
+        {
+            key: 'intent-prompt',
+            node: <FlowNode title="분기 프롬프트" desc={`intent-hint (${intentPromptCount}개)`} tone="prompt" onClick={() => onSelectStage('intent-prompt')} />,
+        },
+    ]
+
+    const infoFlowItems = [
+        {
             key: 'info-common-rag',
-            node: <FlowNode title="공통 RAG 추가 조회" desc={`공통 info RAG ${commonInfoRagCount}개 확인`} tone="actionRag" onClick={() => onSelectStage('info-common-rag')} />,
+            node: <FlowNode title="공통 정보 RAG" desc={`공통 정보 RAG ${commonInfoRagCount}개를 먼저 확인`} tone="rag" onClick={() => onSelectStage('info-common-rag')} />,
+        },
+        {
+            key: 'info-rag',
+            node: <FlowNode title="화면 정보 RAG" desc={`해당 화면의 정보 RAG ${infoRagCount}개 확인`} tone="rag" dashed onClick={() => onSelectStage('info-rag')} />,
+        },
+        {
+            key: 'info-prompt',
+            node: <FlowNode title="공통+화면 정보 프롬프트" desc={`system/action (${actionPromptCount}개)`} tone="prompt" dashed onClick={() => onSelectStage('info-prompt')} />,
         },
         {
             key: 'info-llm-fallback',
-            node: <FlowNode title="RAG 미충족시 LLM 호출" desc="공통 RAG까지 비면 기본 LLM 폴백" tone="fallback" onClick={() => onSelectStage('info-llm-fallback')} />,
+            node: <FlowNode title="RAG 미충족시 LLM 호출" desc="공통 RAG까지 비면 기본 LLM 폴백" tone="fallback" dashed onClick={() => onSelectStage('info-llm-fallback')} />,
         },
         {
             key: 'info-result',
@@ -1049,16 +1034,16 @@ const ChatFlowMap = ({ intentPromptCount, actionPromptCount, guidanceCount, rout
 
     const actionFlowItems = [
         {
-            key: 'action-prompt',
-            node: <FlowNode title="액션 프롬프트 적용" desc={`통합 액션 프롬프트 (${actionPromptCount}개)`} tone="prompt" onClick={() => onSelectStage('action-prompt')} />,
-        },
-        {
             key: 'action-rag',
-            node: <FlowNode title="액션 RAG" desc={`해당 화면의 action RAG ${actionRagCount}개를 먼저 확인`} tone="actionRag" onClick={() => onSelectStage('action-rag')} />,
+            node: <FlowNode title="화면 액션 RAG" desc={`해당 화면의 action RAG ${actionRagCount}개를 먼저 확인`} tone="rag" onClick={() => onSelectStage('action-rag')} />,
         },
         {
             key: 'action-common-rag',
-            node: <FlowNode title="공통 액션 RAG" desc={`공통 action RAG ${commonActionRagCount}개 확인`} tone="actionRag" onClick={() => onSelectStage('action-common-rag')} />,
+            node: <FlowNode title="공통 액션 RAG" desc={`공통 action RAG ${commonActionRagCount}개 확인`} tone="rag" dashed onClick={() => onSelectStage('action-common-rag')} />,
+        },
+        {
+            key: 'action-prompt',
+            node: <FlowNode title="공통+화면 액션 프롬프트" desc={`공통+화면 액션 프롬프트 병합 (${actionPromptCount}개)`} tone="prompt" dashed onClick={() => onSelectStage('action-prompt')} />,
         },
         {
             key: 'action-tool',
@@ -1066,15 +1051,15 @@ const ChatFlowMap = ({ intentPromptCount, actionPromptCount, guidanceCount, rout
         },
         {
             key: 'common-action-tool',
-            node: <FlowNode title="공통 액션 툴" desc={`공통 action 툴 ${commonActionToolCount}개 확인`} tone="action" onClick={() => onSelectStage('common-action-tool')} />,
+            node: <FlowNode title="공통 액션 툴" desc={`공통 action 툴 ${commonActionToolCount}개 확인`} tone="actionCommonTool" dashed onClick={() => onSelectStage('common-action-tool')} />,
         },
         {
             key: 'action-fallback',
-            node: <FlowNode title="툴 미선택/미충족" desc="공통 액션도 부족하면 fallback text" tone="fallback" clickable={false} />,
+            node: <FlowNode title="툴 미선택/미충족" desc="공통 액션도 부족하면 fallback text" tone="fallback" dashed clickable={false} />,
         },
         {
             key: 'action-result',
-            node: <FlowNode title="응답 포맷 판정" desc="사이트 액션 필요 여부 결정" tone="result" clickable={false} />,
+            node: <FlowNode title="응답 생성" desc="사이트 액션 필요 여부 결정" tone="result" clickable={false} />,
         },
     ]
 
@@ -1083,52 +1068,43 @@ const ChatFlowMap = ({ intentPromptCount, actionPromptCount, guidanceCount, rout
             <SectionTitleRow>
                 <CardHeader>
                     <CardTitle>AI Assistant Flow</CardTitle>
-                    <SmallBadge>가시화</SmallBadge>
                 </CardHeader>
             </SectionTitleRow>
 
             <div style={{ marginTop: '8px', display: 'grid', gap: '10px' }}>
-                <div style={{ display: 'grid', gap: '8px', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
-                    <FlowNode title="1) 메세지" desc={`추천 카드(${guidanceCount}개) 또는 직접 입력`} tone="guide" onClick={() => onSelectStage('guidance')} />
-                    <FlowNode title="2) 화면별 분기" desc={`${routeKey || '-'}`} tone="route" onClick={() => onSelectStage('screen-route')} />
-                    <FlowNode title="3) 분기 프롬프트" desc={`intent-hint (${intentPromptCount}개)`} tone="prompt" onClick={() => onSelectStage('intent-prompt')} />
-                    <FlowNode title="4) 인텐트 분기" desc="LLM 분류 + 보정 규칙" tone="intent" onClick={() => onSelectStage('intent')} />
+                <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>default 경로</div>
+                <FlowSequence items={defaultFlowItems} singleRow />
+
+                <div style={{ border: '1px solid #bfdbfe', borderRadius: '12px', background: '#f8fbff', padding: '10px' }}>
+                    <div style={{ fontSize: '12px', color: '#1d4ed8', fontWeight: 800, marginBottom: '8px' }}>info 경로</div>
+                    <FlowSequence items={infoFlowItems} singleRow />
                 </div>
 
-                <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>info 경로 (좌 → 우 순서)</div>
-                <FlowSequence items={infoFlowItems} />
-
-                <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>action 경로 (좌 → 우 순서)</div>
-                <FlowSequence items={actionFlowItems} />
+                <div style={{ border: '1px solid #fecaca', borderRadius: '12px', background: '#fff7f7', padding: '10px' }}>
+                    <div style={{ fontSize: '12px', color: '#b91c1c', fontWeight: 800, marginBottom: '8px' }}>action 경로</div>
+                    <FlowSequence items={actionFlowItems} singleRow />
+                </div>
             </div>
         </div>
     )
 }
 
-const FlowSequence = ({ items }) => {
+const FlowSequence = ({ items, singleRow = false }) => {
     return (
         <div
             style={{
                 display: 'flex',
-                alignItems: 'stretch',
-                gap: '0px',
-                overflowX: 'auto',
-                paddingBottom: '4px',
+                flexWrap: singleRow ? 'nowrap' : 'wrap',
+                alignItems: 'center',
+                gap: '8px',
+                overflowX: 'hidden',
             }}
         >
             {(Array.isArray(items) ? items : []).map((item, index) => (
-                <div
-                    key={String(item?.key ?? index)}
-                    style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0px',
-                        flex: '0 0 auto',
-                    }}
-                >
+                <Fragment key={String(item?.key ?? index)}>
                     {index > 0 ? <FlowSequenceArrow /> : null}
-                    <div style={{ minWidth: '220px' }}>{item?.node}</div>
-                </div>
+                    <div style={{ flex: singleRow ? '1 1 0' : '1 1 190px', minWidth: singleRow ? '0' : '190px' }}>{item?.node}</div>
+                </Fragment>
             ))}
         </div>
     )
@@ -1151,6 +1127,7 @@ const FlowSequenceArrow = () => {
                 fontSize: '12px',
                 fontWeight: 800,
                 lineHeight: 1,
+                flex: '0 0 auto',
             }}
         >
             &gt;
@@ -1160,18 +1137,22 @@ const FlowSequenceArrow = () => {
 
 const FLOW_NODE_TONE = {
     prompt: { border: '#bfdbfe', bg: '#eff6ff', title: '#1d4ed8' },
+    rag: { border: '#99f6e4', bg: '#f0fdfa', title: '#0f766e' },
     guide: { border: '#c7d2fe', bg: '#eef2ff', title: '#3730a3' },
     route: { border: '#a7f3d0', bg: '#ecfdf5', title: '#065f46' },
     intent: { border: '#dbeafe', bg: '#f8fbff', title: '#1e40af' },
     info: { border: '#bbf7d0', bg: '#ecfdf5', title: '#065f46' },
+    infoCommon: { border: '#99f6e4', bg: '#f0fdfa', title: '#0f766e' },
     data: { border: '#bae6fd', bg: '#f0f9ff', title: '#0369a1' },
     actionRag: { border: '#fde68a', bg: '#fffbeb', title: '#92400e' },
+    actionCommonRag: { border: '#fdba74', bg: '#fff7ed', title: '#9a3412' },
     action: { border: '#fecaca', bg: '#fef2f2', title: '#991b1b' },
+    actionCommonTool: { border: '#fbcfe8', bg: '#fdf2f8', title: '#9d174d' },
     fallback: { border: '#e2e8f0', bg: '#f8fafc', title: '#334155' },
     result: { border: '#ddd6fe', bg: '#f5f3ff', title: '#5b21b6' },
 }
 
-const FlowNode = ({ title, desc, tone, onClick, clickable = true }) => {
+const FlowNode = ({ title, tone, onClick, clickable = true, dashed = false }) => {
     const theme = FLOW_NODE_TONE[tone] ?? FLOW_NODE_TONE.fallback
 
     return (
@@ -1183,21 +1164,23 @@ const FlowNode = ({ title, desc, tone, onClick, clickable = true }) => {
                 width: '100%',
                 display: 'block',
                 border: `1px solid ${theme.border}`,
+                borderStyle: dashed ? 'dashed' : 'solid',
                 background: theme.bg,
                 borderRadius: '12px',
-                padding: '10px 12px',
+                minHeight: '64px',
+                padding: '12px',
                 textAlign: 'left',
                 cursor: clickable ? 'pointer' : 'default',
                 opacity: clickable ? 1 : 0.9,
             }}
         >
             <div style={{ fontSize: '12px', fontWeight: 800, color: theme.title }}>{title}</div>
-            <div style={{ marginTop: '4px', fontSize: '12px', color: '#475569', lineHeight: 1.5 }}>{desc}</div>
         </button>
     )
 }
 
 const ActionUnifiedPromptSection = ({
+    flowType = 'action',
     appKey,
     routeKey,
     routeParentKey,
@@ -1211,9 +1194,15 @@ const ActionUnifiedPromptSection = ({
 }) => {
     const normalizedRouteKey = String(routeKey ?? '').trim()
     const isCreatingHere = creatingPromptRouteKey === normalizedRouteKey
-    const dataPrompt = (Array.isArray(prompts) ? prompts : []).find((item) => String(item?.promptType ?? '').toLowerCase() === 'data-system')
+    const promptLabel = flowType === 'info' ? '정보 프롬프트' : '액션 프롬프트'
+    const promptMetaDetail = flowType === 'info'
+        ? '저장 시 info 경로용 action-system에 반영'
+        : '저장 시 action-system에 반영'
+    const promptDescription = flowType === 'info'
+        ? 'info 경로에서는 공통+화면 프롬프트를 함께 사용하며, 이 값은 action-system 기준으로 관리됩니다.'
+        : 'action 경로 프롬프트는 action-system 단일 타입으로 관리합니다.'
     const actionPrompt = (Array.isArray(prompts) ? prompts : []).find((item) => String(item?.promptType ?? '').toLowerCase() === 'action-system')
-    const sourcePrompt = dataPrompt ?? actionPrompt ?? null
+    const sourcePrompt = actionPrompt ?? null
 
     const [draft, setDraft] = useState({
         content: '',
@@ -1237,13 +1226,12 @@ const ActionUnifiedPromptSection = ({
     }, [sourcePrompt, promptDrafts])
 
     const isSaving = Boolean(
-        (dataPrompt && savingPromptKey === String(dataPrompt.id)) ||
         (actionPrompt && savingPromptKey === String(actionPrompt.id)) ||
-        (!dataPrompt && !actionPrompt && isCreatingHere),
+        (!actionPrompt && isCreatingHere),
     )
 
     const handleSave = async () => {
-        const requiredPromptTypes = ['data-system', 'action-system']
+        const requiredPromptTypes = ['action-system']
         const existingMap = new Map(
             (Array.isArray(prompts) ? prompts : [])
                 .filter((item) => requiredPromptTypes.includes(String(item?.promptType ?? '').toLowerCase()))
@@ -1269,7 +1257,7 @@ const ActionUnifiedPromptSection = ({
                 routeKey: normalizedRouteKey,
                 routeParentKey,
                 content: draft.content,
-                label: '액션 프롬프트',
+                label: promptLabel,
                 promptType,
                 enabled: draft.enabled,
             })
@@ -1279,15 +1267,15 @@ const ActionUnifiedPromptSection = ({
     return (
         <PromptCard>
             <PromptMeta>
-                <span>액션 프롬프트 (단일 입력)</span>
-                <span>저장 시 data-system/action-system에 동일 반영</span>
+                <span>{promptLabel} (단일 입력)</span>
+                <span>{promptMetaDetail}</span>
             </PromptMeta>
 
             <PageDescription>
-                action 경로에서는 data/action 프롬프트를 합쳐 사용하므로, 여기서는 한 번만 입력하면 두 타입에 동시에 반영합니다.
+                {promptDescription}
             </PageDescription>
 
-            <FieldLabel>액션 프롬프트</FieldLabel>
+            <FieldLabel>{promptLabel}</FieldLabel>
             <PromptTextarea
                 value={draft.content}
                 onChange={(e) => setDraft((prev) => ({ ...prev, content: e.target.value }))}
@@ -1327,11 +1315,7 @@ const ScreenPromptSection = ({ appKey, routeKey, routeParentKey, prompts, allPro
     const filteredPrompts = (Array.isArray(prompts) ? prompts : []).filter((item) => String(item?.promptType ?? item?.category ?? '').toLowerCase() === String(promptType ?? '').toLowerCase())
     const visiblePrompts = singleOnly ? filteredPrompts.slice(0, 1) : filteredPrompts
     const singlePrompt = singleOnly ? (visiblePrompts[0] ?? null) : null
-    const intentModePrompt = promptType === 'intent-hint'
-        ? (Array.isArray(prompts) ? prompts : []).find((item) => String(item?.promptType ?? item?.category ?? '').toLowerCase() === 'intent-hint-mode') ?? null
-        : null
     const [singleDraft, setSingleDraft] = useState({ content: '', enabled: true })
-    const [intentHintMode, setIntentHintMode] = useState('merge')
 
     useEffect(() => {
         if (!singleOnly) return
@@ -1350,18 +1334,6 @@ const ScreenPromptSection = ({ appKey, routeKey, routeParentKey, prompts, allPro
             enabled: createDraft.enabled !== false,
         })
     }, [singleOnly, singlePrompt, promptDrafts, createDraft.content, createDraft.enabled, promptType])
-
-    useEffect(() => {
-        if (promptType !== 'intent-hint') return
-
-        if (intentModePrompt) {
-            const modeDraft = getPromptDraft(promptDrafts, intentModePrompt)
-            setIntentHintMode(normalizeIntentHintMode(modeDraft.content))
-            return
-        }
-
-        setIntentHintMode('merge')
-    }, [promptType, intentModePrompt, promptDrafts])
 
     const handleCreateSubmit = async () => {
         const ok = await onCreatePrompt({
@@ -1404,24 +1376,6 @@ const ScreenPromptSection = ({ appKey, routeKey, routeParentKey, prompts, allPro
 
         if (!promptSaved) return
 
-        if (promptType === 'intent-hint') {
-            if (intentModePrompt) {
-                await onSavePrompt(intentModePrompt, {
-                    content: intentHintMode,
-                    enabled: true,
-                })
-            } else {
-                await onCreatePrompt({
-                    appKey,
-                    routeKey: normalizedRouteKey,
-                    routeParentKey,
-                    content: intentHintMode,
-                    label: '분기 프롬프트 병합 모드',
-                    promptType: 'intent-hint-mode',
-                    enabled: true,
-                })
-            }
-        }
     }
 
     const isSingleSaving = singlePrompt
@@ -1456,12 +1410,8 @@ const ScreenPromptSection = ({ appKey, routeKey, routeParentKey, prompts, allPro
             ? String(singleDraft.content ?? '').trim()
             : ''
 
-        if (normalizeIntentHintMode(intentHintMode) === 'replace') {
-            return screenContent || appContent || commonContent
-        }
-
         return [commonContent, appContent, screenContent].filter(Boolean).join('\n\n')
-    }, [promptType, commonIntentPromptDraft, commonIntentPromptItem, appIntentPrompt, promptDrafts, singleDraft, intentHintMode])
+    }, [promptType, commonIntentPromptDraft, commonIntentPromptItem, appIntentPrompt, promptDrafts, singleDraft])
 
     return (
         <div style={{ display: 'grid', gap: '12px' }}>
@@ -1500,10 +1450,6 @@ const ScreenPromptSection = ({ appKey, routeKey, routeParentKey, prompts, allPro
                         readOnly
                         style={{ minHeight: '180px', background: '#f8fafc', color: '#334155' }}
                     />
-
-                    <FieldHint>
-                        모드: {normalizeIntentHintMode(intentHintMode) === 'replace' ? 'replace (화면 프롬프트 우선 단독 사용)' : 'merge (common + app + screen 순서 병합)'}
-                    </FieldHint>
                 </PromptCard>
             ) : null}
 
@@ -1524,40 +1470,6 @@ const ScreenPromptSection = ({ appKey, routeKey, routeParentKey, prompts, allPro
                     />
 
                     <FieldHint>분기 판단에 사용할 대표 문구를 한 번만 관리합니다.</FieldHint>
-
-                    {promptType === 'intent-hint' ? (
-                        <>
-                            <FieldLabel>공통 분기 프롬프트 적용 방식</FieldLabel>
-                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                {[
-                                    { key: 'merge', label: 'merge (공통+화면 병합)' },
-                                    { key: 'replace', label: 'replace (화면만 사용)' },
-                                ].map((option) => {
-                                    const active = normalizeIntentHintMode(intentHintMode) === option.key
-                                    return (
-                                        <button
-                                            key={`intent-mode-${option.key}`}
-                                            type="button"
-                                            onClick={() => setIntentHintMode(option.key)}
-                                            style={{
-                                                height: '32px',
-                                                padding: '0 10px',
-                                                borderRadius: '999px',
-                                                border: active ? '1px solid #2563eb' : '1px solid #dbe3ef',
-                                                background: active ? '#eff6ff' : '#ffffff',
-                                                color: active ? '#1d4ed8' : '#475569',
-                                                fontSize: '12px',
-                                                fontWeight: 700,
-                                                cursor: 'pointer',
-                                            }}
-                                        >
-                                            {option.label}
-                                        </button>
-                                    )
-                                })}
-                            </div>
-                        </>
-                    ) : null}
 
                     <PromptFooter>
                         <ToggleButton
@@ -1672,7 +1584,7 @@ const ScreenPromptSection = ({ appKey, routeKey, routeParentKey, prompts, allPro
                 <ModalBackdrop>
                     <ModalCard style={LARGE_MODAL_STYLE}>
                         <ModalTitle>분기 프롬프트 설명</ModalTitle>
-                        <ModalDescription>이 프롬프트는 info/data/action 분기 판단을 돕는 용도입니다.</ModalDescription>
+                        <ModalDescription>이 프롬프트는 info/action 분기 판단을 돕는 용도입니다.</ModalDescription>
 
                         <div style={{ marginTop: '14px', display: 'grid', gap: '10px' }}>
                             <PromptTextarea
@@ -1869,6 +1781,7 @@ const ScreenRagList = ({
     onCreateRag,
     onDeleteRag,
     initialIntentType = 'info',
+    fixedIntentType = '',
     readOnly = false,
 }) => {
     const sortedRagDocs = useMemo(() => {
@@ -1880,7 +1793,12 @@ const ScreenRagList = ({
         })
     }, [ragDocs])
 
-    const [activeIntentType, setActiveIntentType] = useState(initialIntentType)
+    const normalizedFixedIntentType = normalizeRagIntentType(fixedIntentType)
+    const isIntentFixed = normalizedFixedIntentType === 'info' || normalizedFixedIntentType === 'action'
+    const displayRouteKey = (appKey === 'common' && isIntentFixed)
+        ? (normalizedFixedIntentType === 'action' ? 'common_action' : 'common_info')
+        : routeKey
+    const [activeIntentType, setActiveIntentType] = useState(isIntentFixed ? normalizedFixedIntentType : initialIntentType)
     const [activeRagKey, setActiveRagKey] = useState('')
     const [creatingOpen, setCreatingOpen] = useState(false)
     const [newRagDraft, setNewRagDraft] = useState({
@@ -1895,17 +1813,28 @@ const ScreenRagList = ({
 
     useEffect(() => {
         const nextIntent = normalizeRagIntentType(initialIntentType)
-        setActiveIntentType(nextIntent)
-        setNewRagDraft((prev) => ({ ...prev, intentType: nextIntent }))
-    }, [initialIntentType])
+        const targetIntent = isIntentFixed ? normalizedFixedIntentType : nextIntent
+        setActiveIntentType(targetIntent)
+        setNewRagDraft((prev) => ({ ...prev, intentType: targetIntent }))
+    }, [initialIntentType, isIntentFixed, normalizedFixedIntentType])
+
+    const scopedCommonKey = appKey === 'common' ? normalizeCommonRagKey(routeKey) : ''
+    const scopedRagDocs = useMemo(() => {
+        if (!scopedCommonKey) return sortedRagDocs
+
+        const keyMatched = sortedRagDocs.filter((item) => resolveCommonRagScopeKey(item) === scopedCommonKey)
+        if (keyMatched.length > 0) return keyMatched
+
+        return sortedRagDocs
+    }, [sortedRagDocs, scopedCommonKey])
 
     const filteredRagDocs = useMemo(() => {
-        return sortedRagDocs.filter((item) => {
+        return scopedRagDocs.filter((item) => {
             const intentType = normalizeRagIntentType(item?.intentType)
             if (activeIntentType === 'info') return intentType === 'info' || intentType === 'both'
             return intentType === 'action' || intentType === 'both'
         })
-    }, [sortedRagDocs, activeIntentType])
+    }, [scopedRagDocs, activeIntentType])
 
     const infoCount = useMemo(() => {
         return sortedRagDocs.filter((item) => {
@@ -1938,15 +1867,22 @@ const ScreenRagList = ({
     const activeRagDoc = filteredRagDocs.find((item) => String(item.id) === activeRagKey) ?? null
     const activeRagIsReadOnly = readOnly || isCommonRagDoc(activeRagDoc)
     const activeRagDraft = activeRagDoc
-        ? ragDrafts[activeRagKey] ?? {
-            title: String(activeRagDoc.title ?? ''),
-            body: String(activeRagDoc.body ?? ''),
-            imageUrl: String(activeRagDoc.imageUrl ?? ''),
-            imageAttachMode: normalizeImageAttachMode(activeRagDoc.imageAttachMode),
-            keywords: normalizeKeywordArray(activeRagDoc.keywords ?? []),
-            intentType: normalizeRagIntentType(activeRagDoc.intentType),
-            enabled: activeRagDoc.enabled !== false,
-        }
+        ? (() => {
+            const draft = ragDrafts[activeRagKey] ?? {
+                title: String(activeRagDoc.title ?? ''),
+                body: String(activeRagDoc.body ?? ''),
+                imageUrl: String(activeRagDoc.imageUrl ?? ''),
+                imageAttachMode: normalizeImageAttachMode(activeRagDoc.imageAttachMode),
+                keywords: normalizeKeywordArray(activeRagDoc.keywords ?? []),
+                intentType: normalizeRagIntentType(activeRagDoc.intentType),
+                enabled: activeRagDoc.enabled !== false,
+            }
+
+            return {
+                ...draft,
+                intentType: isIntentFixed ? normalizedFixedIntentType : normalizeRagIntentType(draft.intentType),
+            }
+        })()
         : null
 
     const handleCreateRag = async () => {
@@ -1955,7 +1891,7 @@ const ScreenRagList = ({
             key: routeKey,
             routeKey: routeParentKey,
             ...newRagDraft,
-            intentType: normalizeRagIntentType(newRagDraft.intentType),
+            intentType: isIntentFixed ? normalizedFixedIntentType : normalizeRagIntentType(newRagDraft.intentType),
         })
         if (ok) {
             setNewRagDraft({ title: '', body: '', imageUrl: '', imageAttachMode: 'auto', keywords: [], intentType: activeIntentType, enabled: true })
@@ -1967,7 +1903,11 @@ const ScreenRagList = ({
             <SectionTitleRow>
                 <CardHeader>
                     <CardTitle>RAG 데이터</CardTitle>
-                    <SmallBadge>정보 {infoCount}개 · 액션 {actionCount}개</SmallBadge>
+                    <SmallBadge>
+                        {isIntentFixed
+                            ? `${getRagIntentLabel(normalizedFixedIntentType)} ${filteredRagDocs.length}개`
+                            : `정보 ${infoCount}개 · 액션 ${actionCount}개`}
+                    </SmallBadge>
                 </CardHeader>
 
                 {!readOnly ? (
@@ -1983,40 +1923,44 @@ const ScreenRagList = ({
             </SectionTitleRow>
 
             <PageDescription>
-                info 인텐트와 action 인텐트에서 참조할 RAG를 분리해서 관리합니다.
+                {isIntentFixed
+                    ? `${getRagIntentLabel(normalizedFixedIntentType)}에서 사용하는 RAG만 표시합니다.`
+                    : 'info 인텐트와 action 인텐트에서 참조할 RAG를 분리해서 관리합니다.'}
                 {readOnly ? ' 앱 화면에서는 조회만 가능하고, 편집은 공통 탭에서 합니다.' : ''}
             </PageDescription>
 
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                {RAG_INTENT_OPTIONS.map((option) => {
-                    const active = activeIntentType === option.key
-                    const count = option.key === 'info' ? infoCount : actionCount
+            {!isIntentFixed ? (
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {RAG_INTENT_OPTIONS.map((option) => {
+                        const active = activeIntentType === option.key
+                        const count = option.key === 'info' ? infoCount : actionCount
 
-                    return (
-                        <button
-                            key={option.key}
-                            type="button"
-                            onClick={() => {
-                                setActiveIntentType(option.key)
-                                setNewRagDraft((prev) => ({ ...prev, intentType: option.key }))
-                            }}
-                            style={{
-                                height: '34px',
-                                padding: '0 12px',
-                                borderRadius: '999px',
-                                border: active ? '1px solid #2563eb' : '1px solid #dbe3ef',
-                                background: active ? '#eff6ff' : '#ffffff',
-                                color: active ? '#1d4ed8' : '#475569',
-                                fontSize: '12px',
-                                fontWeight: 700,
-                                cursor: 'pointer',
-                            }}
-                        >
-                            {option.label} ({count})
-                        </button>
-                    )
-                })}
-            </div>
+                        return (
+                            <button
+                                key={option.key}
+                                type="button"
+                                onClick={() => {
+                                    setActiveIntentType(option.key)
+                                    setNewRagDraft((prev) => ({ ...prev, intentType: option.key }))
+                                }}
+                                style={{
+                                    height: '34px',
+                                    padding: '0 12px',
+                                    borderRadius: '999px',
+                                    border: active ? '1px solid #2563eb' : '1px solid #dbe3ef',
+                                    background: active ? '#eff6ff' : '#ffffff',
+                                    color: active ? '#1d4ed8' : '#475569',
+                                    fontSize: '12px',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                {option.label} ({count})
+                            </button>
+                        )
+                    })}
+                </div>
+            ) : null}
 
             {filteredRagDocs.length > 0 ? (
                 <>
@@ -2074,7 +2018,7 @@ const ScreenRagList = ({
                             <PromptCard>
                                 <PromptMeta>
                                     <span>{activeRagDoc.title || activeRagDoc.chunkKey}</span>
-                                    <span>key: {routeKey}</span>
+                                    <span>key: {displayRouteKey}</span>
                                     <span>intent: {getRagIntentLabel(activeRagDraft.intentType)}</span>
                                     <span>updated: {formatDateTime(activeRagDoc.updatedAt)}</span>
                                 </PromptMeta>
@@ -2141,44 +2085,51 @@ const ScreenRagList = ({
                         <PromptCard>
                             <PromptMeta>
                                 <span>{activeRagDoc.title || activeRagDoc.chunkKey}</span>
-                                <span>key: {routeKey}</span>
+                                <span>key: {displayRouteKey}</span>
                                 <span>intent: {getRagIntentLabel(activeRagDraft.intentType)}</span>
                                 <span>updated: {formatDateTime(activeRagDoc.updatedAt)}</span>
                             </PromptMeta>
 
                             <FieldLabel>인텐트 용도</FieldLabel>
-                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                {[...RAG_INTENT_OPTIONS, { key: 'both', label: '공용(정보/액션)' }].map((option) => {
-                                    const active = normalizeRagIntentType(activeRagDraft.intentType) === option.key
-                                    return (
-                                        <button
-                                            key={`intent-${option.key}`}
-                                            type="button"
-                                            onClick={() => onRagChange(activeRagKey, 'intentType', option.key)}
-                                            style={{
-                                                height: '32px',
-                                                padding: '0 10px',
-                                                borderRadius: '999px',
-                                                border: active ? '1px solid #2563eb' : '1px solid #dbe3ef',
-                                                background: active ? '#eff6ff' : '#ffffff',
-                                                color: active ? '#1d4ed8' : '#475569',
-                                                fontSize: '12px',
-                                                fontWeight: 700,
-                                                cursor: 'pointer',
-                                            }}
-                                        >
-                                            {option.label}
-                                        </button>
-                                    )
-                                })}
-                            </div>
-                            <FieldHint>info 응답용인지, action 실행 전/후 보강용인지 명확히 분리하세요.</FieldHint>
+                            {isIntentFixed ? (
+                                <FieldHint>{getRagIntentLabel(normalizedFixedIntentType)} 고정</FieldHint>
+                            ) : (
+                                <>
+                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                        {[...RAG_INTENT_OPTIONS, { key: 'both', label: '공용(정보/액션)' }].map((option) => {
+                                            const active = normalizeRagIntentType(activeRagDraft.intentType) === option.key
+                                            return (
+                                                <button
+                                                    key={`intent-${option.key}`}
+                                                    type="button"
+                                                    onClick={() => onRagChange(activeRagKey, 'intentType', option.key)}
+                                                    style={{
+                                                        height: '32px',
+                                                        padding: '0 10px',
+                                                        borderRadius: '999px',
+                                                        border: active ? '1px solid #2563eb' : '1px solid #dbe3ef',
+                                                        background: active ? '#eff6ff' : '#ffffff',
+                                                        color: active ? '#1d4ed8' : '#475569',
+                                                        fontSize: '12px',
+                                                        fontWeight: 700,
+                                                        cursor: 'pointer',
+                                                    }}
+                                                >
+                                                    {option.label}
+                                                </button>
+                                            )
+                                        })}
+                                    </div>
+                                    <FieldHint>info 응답용인지, action 실행 전/후 보강용인지 명확히 분리하세요.</FieldHint>
+                                </>
+                            )}
 
                             <FieldLabel>제목</FieldLabel>
-                            <PromptTextarea
+                            <input
+                                type="text"
+                                style={ONE_LINE_INPUT_STYLE}
                                 value={activeRagDraft.title}
                                 onChange={(e) => onRagChange(activeRagKey, 'title', e.target.value)}
-                                style={{ minHeight: '56px' }}
                             />
                             <FieldHint>질문 의도와 바로 연결되는 제목으로 작성하세요.</FieldHint>
 
@@ -2198,10 +2149,11 @@ const ScreenRagList = ({
                             <FieldHint>한 청크는 한 주제만 다루는 것이 좋습니다.</FieldHint>
 
                             <FieldLabel>imageUrl</FieldLabel>
-                            <PromptTextarea
+                            <input
+                                type="text"
+                                style={ONE_LINE_INPUT_STYLE}
                                 value={String(activeRagDraft.imageUrl ?? '')}
                                 onChange={(e) => onRagChange(activeRagKey, 'imageUrl', e.target.value)}
-                                style={{ minHeight: '56px' }}
                             />
                             <FieldHint>설명 응답에 함께 표시할 이미지 URL입니다.</FieldHint>
 
@@ -2276,38 +2228,43 @@ const ScreenRagList = ({
 
                         <div style={{ marginTop: '14px', display: 'grid', gap: '10px' }}>
                             <FieldLabel>제목</FieldLabel>
-                            <PromptTextarea
+                            <input
+                                type="text"
+                                style={ONE_LINE_INPUT_STYLE}
                                 value={newRagDraft.title}
                                 onChange={(e) => setNewRagDraft((prev) => ({ ...prev, title: e.target.value }))}
-                                style={{ minHeight: '56px' }}
                             />
 
                             <FieldLabel>인텐트 용도</FieldLabel>
-                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                {[...RAG_INTENT_OPTIONS, { key: 'both', label: '공용(정보/액션)' }].map((option) => {
-                                    const active = normalizeRagIntentType(newRagDraft.intentType) === option.key
-                                    return (
-                                        <button
-                                            key={`create-intent-${option.key}`}
-                                            type="button"
-                                            onClick={() => setNewRagDraft((prev) => ({ ...prev, intentType: option.key }))}
-                                            style={{
-                                                height: '32px',
-                                                padding: '0 10px',
-                                                borderRadius: '999px',
-                                                border: active ? '1px solid #2563eb' : '1px solid #dbe3ef',
-                                                background: active ? '#eff6ff' : '#ffffff',
-                                                color: active ? '#1d4ed8' : '#475569',
-                                                fontSize: '12px',
-                                                fontWeight: 700,
-                                                cursor: 'pointer',
-                                            }}
-                                        >
-                                            {option.label}
-                                        </button>
-                                    )
-                                })}
-                            </div>
+                            {isIntentFixed ? (
+                                <FieldHint>{getRagIntentLabel(normalizedFixedIntentType)} 고정</FieldHint>
+                            ) : (
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                    {[...RAG_INTENT_OPTIONS, { key: 'both', label: '공용(정보/액션)' }].map((option) => {
+                                        const active = normalizeRagIntentType(newRagDraft.intentType) === option.key
+                                        return (
+                                            <button
+                                                key={`create-intent-${option.key}`}
+                                                type="button"
+                                                onClick={() => setNewRagDraft((prev) => ({ ...prev, intentType: option.key }))}
+                                                style={{
+                                                    height: '32px',
+                                                    padding: '0 10px',
+                                                    borderRadius: '999px',
+                                                    border: active ? '1px solid #2563eb' : '1px solid #dbe3ef',
+                                                    background: active ? '#eff6ff' : '#ffffff',
+                                                    color: active ? '#1d4ed8' : '#475569',
+                                                    fontSize: '12px',
+                                                    fontWeight: 700,
+                                                    cursor: 'pointer',
+                                                }}
+                                            >
+                                                {option.label}
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            )}
 
                             <FieldLabel>keywords</FieldLabel>
                             <KeywordListEditor
@@ -2323,10 +2280,11 @@ const ScreenRagList = ({
                             />
 
                             <FieldLabel>imageUrl</FieldLabel>
-                            <PromptTextarea
+                            <input
+                                type="text"
+                                style={ONE_LINE_INPUT_STYLE}
                                 value={String(newRagDraft.imageUrl ?? '')}
                                 onChange={(e) => setNewRagDraft((prev) => ({ ...prev, imageUrl: e.target.value }))}
-                                style={{ minHeight: '56px' }}
                             />
                             <FieldHint>설명 응답과 함께 표시할 이미지 URL입니다.</FieldHint>
 

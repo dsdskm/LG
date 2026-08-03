@@ -495,6 +495,12 @@ export const StyledAiComposerFooter = styled.div`
   padding: 0.6rem 0.8rem 0.8rem;
 `
 
+export const StyledAiComposerActions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+`
+
 export const StyledAiContextChips = styled.div`
   display: flex;
   gap: 0.6rem;
@@ -537,6 +543,26 @@ export const StyledAiSendButton = styled.button`
 
   &:hover:not(:disabled) {
     opacity: 0.88;
+  }
+`
+
+export const StyledAiStopButton = styled.button`
+  height: 3.2rem;
+  padding: 0 1.2rem;
+  border-radius: 999px;
+  border: 1px solid #fda4af;
+  background: #fff1f2;
+  color: #be123c;
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+
+  &:hover {
+    background: #ffe4e6;
+    border-color: #fb7185;
+    color: #9f1239;
   }
 `
 

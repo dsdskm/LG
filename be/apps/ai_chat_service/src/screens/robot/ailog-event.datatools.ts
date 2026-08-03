@@ -35,48 +35,35 @@ async function resolveFuncFilter(
 ): Promise<{ func?: string; keyword?: string }> {
   const func = funcArg ? String(funcArg).trim() : undefined
   let keyword = keywordArg ? String(keywordArg) : undefined
-  const sourceText = String(sourceTextArg ?? '').trim()
   const catalog = await fetchFuncs(ctx).catch((): FuncCatalogItem[] => [])
+  const catalogNames = Array.from(
+    new Set(
+      catalog
+        .map((item) => String(item?.func ?? '').trim())
+        .filter(Boolean),
+    ),
+  )
 
-  const matchByToken = (token?: string) => {
+  const matchByExactName = (token?: string) => {
     const target = normKey(token)
     if (!target) return undefined
-    return catalog.find((f) => normKey(f.func) === target || f.tags.some((t) => normKey(t) === target))
-  }
-
-  const matchBySentence = (sentence?: string) => {
-    const target = normKey(sentence)
-    if (!target) return undefined
-
-    return catalog.find((f) => {
-      const func = normKey(f.func)
-      if (func && target.includes(func)) return true
-      return f.tags.some((t) => {
-        const alias = normKey(t)
-        return Boolean(alias) && target.includes(alias)
-      })
-    })
+    return catalogNames.find((name) => normKey(name) === target)
   }
 
   if (!func) {
-    const matchedByKeyword = matchByToken(keyword)
+    const matchedByKeyword = matchByExactName(keyword)
     if (matchedByKeyword) {
-      return { func: matchedByKeyword.func, keyword: undefined }
-    }
-
-    const matchedBySentence = matchBySentence(keyword) ?? matchBySentence(sourceText)
-    if (matchedBySentence) {
-      return { func: matchedBySentence.func, keyword: undefined }
+      return { func: matchedByKeyword, keyword: undefined }
     }
 
     return { func: undefined, keyword }
   }
 
-  const matched = matchByToken(func)
+  const matched = matchByExactName(func)
 
-  if (matched) return { func: matched.func, keyword }
+  if (matched) return { func: matched, keyword }
 
-  // 존재하지 않는 기능 → 키워드 검색으로 폴백.
+  // 드롭다운에 없는 기능명은 전부 키워드 검색으로 폴백.
   if (!keyword) keyword = func
   return { func: undefined, keyword }
 }
@@ -277,33 +264,102 @@ function extractDateRangeFromText(value?: string): { start?: string; end?: strin
   return {}
 }
 
+function hasExplicitPeriodOrDateInText(value?: string): boolean {
+  const raw = String(value ?? '').trim().toLowerCase()
+  if (!raw) return false
+
+  if (/\d{4}-\d{1,2}-\d{1,2}/.test(raw)) return true
+  if (/\d{1,2}\s*월\s*\d{1,2}\s*일/.test(raw)) return true
+  if (/\d{1,2}\/\d{1,2}/.test(raw)) return true
+
+  const compact = compactForMatch(raw)
+  if (
+    compact.includes('오늘')
+    || compact.includes('어제')
+    || compact.includes('일주일')
+    || compact.includes('한달')
+    || compact.includes('1개월')
+    || compact.includes('3개월')
+    || compact.includes('3달')
+    || compact.includes('최근')
+  ) {
+    return true
+  }
+
+  if (/\b(today|yesterday|week|month)\b/.test(raw)) return true
+  if (/(부터|까지|~|\bto\b|에서)/.test(raw)) return true
+  return false
+}
+
+function getContextEventDateRange(ctx: ToolContext): { start?: string; end?: string } {
+  const contextScope = toObject(ctx.context)
+  const eventFilters = toObject(contextScope.eventFilters)
+  const start = parseLooseDate(pickOptionalString(eventFilters.startDate))
+  const end = parseLooseDate(pickOptionalString(eventFilters.endDate))
+  return { start, end }
+}
+
 function normalizeSeverity(severityArg?: string, sourceTextArg?: string): string | undefined {
   const severity = String(severityArg ?? '').trim().toLowerCase()
   if (['critical', 'high', 'medium', 'low'].includes(severity)) return severity
 
   const source = String(sourceTextArg ?? '').toLowerCase()
   if (!source) return undefined
-  if (/(critical|치명)/.test(source)) return 'critical'
-  if (/(high|높음)/.test(source)) return 'high'
-  if (/(medium|중간|보통)/.test(source)) return 'medium'
-  if (/(low|낮음)/.test(source)) return 'low'
+  if (/\bcritical\b/.test(source)) return 'critical'
+  if (/\bhigh\b/.test(source)) return 'high'
+  if (/\bmedium\b/.test(source)) return 'medium'
+  if (/\blow\b/.test(source)) return 'low'
   return undefined
 }
 
-function normalizeStatus(statusArg?: string, sourceTextArg?: string): string | undefined {
+const STATUS_DROPDOWN_VALUES = [
+  'received',
+  'prepared',
+  'prepare_failed',
+  'analyzing',
+  'analyzed',
+  'analyze_failed',
+  'completed',
+  'failed',
+]
+
+const STATUS_DROPDOWN_LABELS: Record<string, string> = {
+  '로그획득': 'received',
+  '분석준비완료': 'prepared',
+  '분석준비실패': 'prepare_failed',
+  '분석중': 'analyzing',
+  '분석완료': 'analyzed',
+  '분석실패': 'analyze_failed',
+  '조치완료': 'completed',
+  '오류발생': 'failed',
+}
+
+function normalizeStatusByDropdown(statusArg?: string): string | undefined {
   const status = String(statusArg ?? '').trim().toLowerCase()
-  if (status) return status
+  if (!status) return undefined
+
+  if (STATUS_DROPDOWN_VALUES.includes(status)) return status
+
+  const compact = compactForMatch(status)
+  return STATUS_DROPDOWN_LABELS[compact]
+}
+
+function normalizeStatus(statusArg?: string, sourceTextArg?: string): string | undefined {
+  const normalizedArg = normalizeStatusByDropdown(statusArg)
+  if (normalizedArg) return normalizedArg
 
   const source = String(sourceTextArg ?? '').toLowerCase()
   if (!source) return undefined
+  return normalizeStatusByDropdown(source)
+}
 
-  if (/(분석\s*실패|analyze\s*failed)/.test(source)) return 'analyze_failed'
-  if (/(준비\s*실패|prepare\s*failed)/.test(source)) return 'prepare_failed'
-  if (/(분석\s*완료|analyzed)/.test(source)) return 'analyzed'
-  if (/(처리\s*완료|조치\s*완료|completed)/.test(source)) return 'completed'
-  if (/(실패|failed)/.test(source)) return 'failed'
+function mergeKeyword(...values: Array<string | undefined>): string | undefined {
+  const tokens = values
+    .map((value) => String(value ?? '').trim())
+    .filter(Boolean)
 
-  return undefined
+  if (tokens.length === 0) return undefined
+  return Array.from(new Set(tokens)).join(' ')
 }
 
 /** LLM이 넘긴 상대 기간 키워드를 start/end로 정규화. */
@@ -450,20 +506,48 @@ export const queryEvents: ToolDefinition = {
       return s || undefined
     }
 
+    const explicitPeriodArg = asOptionalString(mergedArgs.period)
+    const explicitStartArg = asOptionalString(mergedArgs.start)
+    const explicitEndArg = asOptionalString(mergedArgs.end)
+    const hasExplicitArgPeriod = Boolean(explicitPeriodArg || explicitStartArg || explicitEndArg)
+    const hasExplicitTextPeriod = hasExplicitPeriodOrDateInText(sourceTextWithMappedArgs || sourceText)
+    const contextDateRange = getContextEventDateRange(ctx)
+
+    const effectiveStartArg = hasExplicitArgPeriod || hasExplicitTextPeriod
+      ? explicitStartArg
+      : (contextDateRange.start ?? explicitStartArg)
+    const effectiveEndArg = hasExplicitArgPeriod || hasExplicitTextPeriod
+      ? explicitEndArg
+      : (contextDateRange.end ?? explicitEndArg)
+
+    if (!hasExplicitArgPeriod && !hasExplicitTextPeriod && contextDateRange.start && contextDateRange.end) {
+      ctx.log?.log(
+        `[query_events] period-source=context start=${contextDateRange.start} end=${contextDateRange.end}`,
+      )
+    }
+
     const { start, end } = resolvePeriod(
-      asOptionalString(mergedArgs.period),
-      asOptionalString(mergedArgs.start),
-      asOptionalString(mergedArgs.end),
+      explicitPeriodArg,
+      effectiveStartArg,
+      effectiveEndArg,
       sourceTextWithMappedArgs || sourceText,
     )
-    const severity = normalizeSeverity(asOptionalString(mergedArgs.severity), sourceTextWithMappedArgs || sourceText)
-    const status = normalizeStatus(asOptionalString(mergedArgs.status), sourceTextWithMappedArgs || sourceText)
-    const { func, keyword } = await resolveFuncFilter(
+    const rawSeverity = asOptionalString(mergedArgs.severity)
+    const rawStatus = asOptionalString(mergedArgs.status)
+    const rawFunc = asOptionalString(mergedArgs.func)
+
+    const severity = normalizeSeverity(rawSeverity, sourceTextWithMappedArgs || sourceText)
+    const status = normalizeStatus(rawStatus, sourceTextWithMappedArgs || sourceText)
+    const { func, keyword: resolvedKeyword } = await resolveFuncFilter(
       ctx,
-      asOptionalString(mergedArgs.func),
+      rawFunc,
       asOptionalString(mergedArgs.keyword),
       sourceTextWithMappedArgs || sourceText,
     )
+
+    const severityFallbackKeyword = rawSeverity && !severity ? rawSeverity : undefined
+    const statusFallbackKeyword = rawStatus && !status ? rawStatus : undefined
+    const keyword = mergeKeyword(resolvedKeyword, severityFallbackKeyword, statusFallbackKeyword)
 
     const contextScope = toObject(ctx.context)
     const cacheScope = {

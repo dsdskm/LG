@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Title } from '@repo/ui'
@@ -27,6 +27,12 @@ const AiLogManagement = () => {
   const { t } = useTranslation('robot')
   const navigate = useNavigate()
   const { tab } = useParams()
+
+  useEffect(() => {
+    if (!VALID_TABS.includes(tab)) {
+      navigate(`/robot/ailog/${TAB_EVENT}`, { replace: true })
+    }
+  }, [tab, navigate])
 
   // URL(:tab)을 활성 탭의 단일 소스로 사용 → 새로고침해도 보던 탭 유지.
   const activeTab = VALID_TABS.includes(tab) ? tab : TAB_EVENT

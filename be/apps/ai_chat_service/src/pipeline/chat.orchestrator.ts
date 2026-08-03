@@ -9,7 +9,7 @@
  *   예) list, analyze, recommend_action, run_action, create, update
  *
  * - pipelineIntent: Orchestrator 내부에서 처리 경로를 정하기 위한 분기 단위
- *   예) info, data, action (data/action은 action 경로로 통합 처리)
+ *   예) info, action 
  */
 
 import { Logger } from '@nestjs/common'
@@ -20,12 +20,13 @@ import { IntentClassifier } from './intent.classifier'
 import { RagService } from './rag/rag.service'
 import { ToolAgent, type ExecutedCall } from './agent/tool-agent'
 import { getScreenConfig, type ScreenConfig } from './screen-registry'
-import { COMMON_COLLECTION } from './rag/rag.docs'
 import type { ChatIntent, ChatReply, ChatTurn } from './pipeline.types'
 import type { ChatPipelineConfig } from './pipeline.config'
 import { getPromptStore } from '../db/prompt-store.service'
 import { getChatSettingService } from '../db/chat-setting.service'
 import { buildToolContextFromBody } from './tool-context.util'
+
+const COMMON_COLLECTION = 'common'
 
 export type OrchestrationOutput = {
   handled: boolean
@@ -336,6 +337,17 @@ export class ChatOrchestrator {
     return result
   }
 
+  private isGuideLikeInfoQuery(message: string): boolean {
+    const text = String(message ?? '').trim().toLowerCase()
+    if (!text) return false
+
+    const hasInfoCue = /(방법|설명|가이드|소개|구성|프로세스|플로우|원리|어떻게|무엇|뭐야|이유|왜|알려줘|알려주)/i.test(text)
+    if (!hasInfoCue) return false
+
+    const hasActionCue = /(실행|수행|조치해|처리해|추가해|생성해|수정해|삭제해|변경해|이동해|저장해|적용해|필터해)/i.test(text)
+    return !hasActionCue
+  }
+
   /**
    * 등록된 화면이면 처리하고, 아니면 handled:false로 반환한다.
    * handled:false는 ChatService에서 guidance fallback으로 이어진다.
@@ -393,7 +405,7 @@ export class ChatOrchestrator {
     const fallbackIntentConfig = await this.resolveFallbackIntentConfig(screen.key)
 
     let pipelineIntent: ChatIntent = pipelineIntentResult.intent
-    let infoRagCollections = this.uniqueCollections([screen.ragCollection, screen.appKey, COMMON_COLLECTION])
+    let infoRagCollections = this.uniqueCollections([COMMON_COLLECTION, screen.ragCollection, screen.appKey])
     const actionRagCollections = this.uniqueCollections([screen.ragCollection, screen.appKey, COMMON_COLLECTION])
     this.stageLog('2-4단계:의도분류_초안', reqId, `status=drafted reason=초기 의도=${pipelineIntent}`)
     // 의도 분석 실패(저신뢰도) 시 common action 또는 common RAG로 우선 복구한다.
@@ -404,7 +416,6 @@ export class ChatOrchestrator {
         screenTask,
         fallbackIntentConfig,
       )
-      infoRagCollections = this.uniqueCollections([COMMON_COLLECTION, screen.ragCollection, screen.appKey])
       this.stageLog(
         '2-5단계:저신뢰도_보정',
         reqId,
@@ -438,6 +449,16 @@ export class ChatOrchestrator {
         '2-6-2단계:데이터의도_통합',
         reqId,
         'status=merged reason=data intent를 action 처리 경로로 통합',
+      )
+    }
+
+    const shouldForceInfoIntent = screenTask === 'guide' || this.isGuideLikeInfoQuery(effectiveMessage)
+    if (shouldForceInfoIntent && pipelineIntent !== 'info') {
+      pipelineIntent = 'info'
+      this.stageLog(
+        '2-6-3단계:가이드의도_강제',
+        reqId,
+        'status=forced reason=방법/설명/가이드성 질의로 판단되어 info(RAG) 경로로 강제 전환',
       )
     }
 
@@ -703,6 +724,7 @@ export class ChatOrchestrator {
         screenTask,
         pipelineIntent: 'info',
         pipelineIntentResult,
+        ragCollections,
         usedCollection,
         usedChunks,
         defaultLlmFallback: Boolean(defaultLlmText),
@@ -834,7 +856,9 @@ export class ChatOrchestrator {
         reply: {
           chat_action: navigation
             ? 'navigation'
-            : screen.chatActions.action,
+            : resolvedFilters
+              ? screen.chatActions.data
+              : screen.chatActions.action,
           chat_action_param: navigation
             ? { path: navigation.path, app: navigation.app }
             : hasSiteAction

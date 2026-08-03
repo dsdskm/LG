@@ -11,9 +11,42 @@ import { create } from 'zustand'
  */
 export const useAiLogEventStore = create((set) => ({
   pendingFilters: null,
+  currentFilters: null,
   /** 챗봇 → 이벤트 탭: 적용할 필터 요청. _ts 로 동일 값 재요청도 트리거되게 함. */
   requestFilters: (filters) =>
     set({ pendingFilters: { ...filters, _ts: Date.now() } }),
+  /** 이벤트 탭 → 챗봇: 현재 화면 필터 스냅샷 공유(기간 컨텍스트 포함). */
+  setCurrentFilters: (filters) =>
+    set((state) => {
+      const prev = state.currentFilters && typeof state.currentFilters === 'object'
+        ? state.currentFilters
+        : null
+      const next = filters && typeof filters === 'object'
+        ? {
+          startDate: String(filters.startDate ?? '').trim() || undefined,
+          endDate: String(filters.endDate ?? '').trim() || undefined,
+          datePreset: String(filters.datePreset ?? '').trim() || undefined,
+          severity: String(filters.severity ?? '').trim() || undefined,
+          func: String(filters.func ?? '').trim() || undefined,
+          status: String(filters.status ?? '').trim() || undefined,
+          searchQuery: String(filters.searchQuery ?? '').trim() || undefined,
+        }
+        : null
+
+      if (
+        prev?.startDate === next?.startDate
+        && prev?.endDate === next?.endDate
+        && prev?.datePreset === next?.datePreset
+        && prev?.severity === next?.severity
+        && prev?.func === next?.func
+        && prev?.status === next?.status
+        && prev?.searchQuery === next?.searchQuery
+      ) {
+        return state
+      }
+
+      return { currentFilters: next }
+    }),
   /** 이벤트 탭이 소비 후 비운다. */
   clearPendingFilters: () => set({ pendingFilters: null })
 }))

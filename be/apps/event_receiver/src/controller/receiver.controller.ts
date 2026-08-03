@@ -131,4 +131,30 @@ export class ReceiverController {
     this.logger.log(`getEventById id ${id}`)
     return ok(event);
   }
+
+  /**
+   * API: 단건 이벤트의 createdAt/updatedAt 시각을 강제로 덮어쓴다. (mock 데이터 생성용)
+   * Method/Path: PATCH /events/:id/timestamp
+   * Body: { "at": "2026-08-01T10:20:30.000Z" }
+   */
+  @Patch('/:id/timestamp')
+  @ApiOperation({ summary: '이벤트 단건의 타임스탬프를 강제로 갱신 (mock 용)' })
+  @ApiParam({ name: 'id', description: '이벤트 ID', example: '123' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        at: { type: 'string', example: '2026-08-01T10:20:30.000Z' },
+      },
+      required: ['at'],
+    },
+  })
+  @ApiOkResponse({ description: '타임스탬프 갱신 결과 반환' })
+  async overrideEventTimestamp(
+    @Param('id') id: string,
+    @Body() body: { at?: unknown },
+  ) {
+    const result = await this.svc.overrideEventTimestampFromParam(id, body?.at);
+    return ok(result);
+  }
 }
