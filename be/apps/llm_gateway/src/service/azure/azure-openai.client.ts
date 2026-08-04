@@ -42,7 +42,7 @@ export class AzureOpenaiClient {
     // URL 구성
     const url = `${endpoint.replace(/\/$/, '')}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
 
-    this.logger.debug(
+    this.logger.log(
       `[AzureOpenai] generateContent url=${url} messageCount=${messages.length}`,
     );
 
@@ -121,7 +121,7 @@ export class AzureOpenaiClient {
       const text =
         jsonData?.choices?.[0]?.message?.content ?? '';
 
-      this.logger.debug(
+      this.logger.log(
         `[AzureOpenai] generateContent success elapsedMs=${elapsedMs}`,
       );
 

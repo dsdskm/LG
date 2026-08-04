@@ -1196,7 +1196,12 @@ const ChatSettings = () => {
           ) : null}
 
           {activeAppTab === APP_TAB.HISTORY ? (
-            <HistoryTab history={management.history} />
+            <HistoryTab
+              history={management.history}
+              ragDocs={management.ragDocs}
+              onRefresh={load}
+              refreshing={loading}
+            />
           ) : null}
 
           {activeAppTab !== APP_TAB.COMMON && activeAppTab !== APP_TAB.HISTORY ? (

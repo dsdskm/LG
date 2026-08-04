@@ -618,10 +618,7 @@ const CommonRagManagementCard = ({
     const [creatingOpen, setCreatingOpen] = useState(false)
 
     const handleCreateCommonRagSubmit = async () => {
-        const ok = await onCreateCommonRag()
-        if (ok !== false) {
-            setCreatingOpen(false)
-        }
+        await onCreateCommonRag()
     }
 
     const toggleCreatingOpen = () => {

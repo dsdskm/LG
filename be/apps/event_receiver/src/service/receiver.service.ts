@@ -177,7 +177,7 @@ export class ReceiverService {
       this.logger.error(
         `[${eventId ?? requestKey}] ingest failed -> 500 elapsedMs=${elapsedMs} err=${e?.message ?? String(e)}`,
       );
-      this.logger.debug(e?.stack ?? '');
+      this.logger.log(e?.stack ?? '');
       return 500;
     } finally {
       await rm(filePath, { force: true }).catch(() => {});

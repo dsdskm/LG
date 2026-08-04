@@ -18,7 +18,7 @@ export class AzureOpenaiService {
      */
     private readonly client = new AzureOpenaiClient({
         log: (msg: string) => this.logger.log(msg),
-        debug: (msg: string) => this.logger.debug(msg),
+        debug: (msg: string) => this.logger.log(msg),
         error: (msg: string) => this.logger.error(msg),
     });
 

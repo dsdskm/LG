@@ -382,7 +382,7 @@ export class AnalyzerService {
       this.logger.error(
         `runAnalyzeFlow failed id=${eventId} ${errDetail}`,
       );
-      this.logger.debug(e?.stack ?? '');
+      this.logger.log(e?.stack ?? '');
 
       // 분석 실패 원인을 요약에 저장해 FE(robot/ailog)에서 노출되게 한다.
       if (analyzerId) {

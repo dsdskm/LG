@@ -26,7 +26,7 @@ export class VertexGeminiService {
   private readonly client = new VertexGeminiClient(
     {
       log: (msg: string) => this.logger.log(msg),
-      debug: (msg: string) => this.logger.debug(msg),
+      debug: (msg: string) => this.logger.log(msg),
       error: (msg: string) => this.logger.error(msg),
     },
     this.cfg.googleAuthScope,

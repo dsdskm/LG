@@ -44,6 +44,29 @@ type ChatContext = {
   history: ChatTurn[]
 }
 
+type ChatLogDebugMeta = {
+  reqId?: string
+  pipelineIntent?: string
+  pipelineConfidence?: number
+  pipelineTrace?: string
+  screenTask?: string
+  defaultLlmFallback?: boolean
+  ragMinScore?: number
+  ragSelectionRule?: string
+  usedCollection?: string
+  primaryChunkKey?: string
+  usedChunks?: string[]
+  ragScores?: unknown[]
+  executed?: unknown[]
+  loginUser?: {
+    userId?: string
+    userName?: string
+    userEmail?: string
+    accountId?: string
+  }
+  source?: 'orchestrator' | 'rule-first' | 'guidance'
+}
+
 type ScreenSummary = {
   appKey: string
   key: string
@@ -86,11 +109,65 @@ export class ChatService {
   constructor(
     private readonly chatLog: ChatLogService,
     private readonly chatSetting: ChatSettingService,
-  ) { }
+  ) {
+    this.silenceVerboseLogs()
+  }
+
+  private silenceVerboseLogs() {
+    ;(this.logger as unknown as { log: (...args: any[]) => void }).log = () => undefined
+    ;(this.logger as unknown as { debug: (...args: any[]) => void }).debug = () => undefined
+  }
 
   private stageLog(stage: string, status: string, reason: string, reqId?: string) {
-    const normalizedReqId = String(reqId ?? '').trim() || '-'
-    this.logger.log(`================= [${stage}] [reqId=${normalizedReqId}] status=${status} reason=${reason}`)
+    void stage
+    void status
+    void reason
+    void reqId
+  }
+
+  private emitCompactPipelineWarnLogs(ctx: ChatContext, meta: Record<string, unknown> | undefined, reply: ChatReply) {
+    const reqId = String(ctx.reqId ?? '-').trim() || '-'
+    const intent = String(meta?.pipelineIntent ?? 'unknown').trim().toLowerCase() || 'unknown'
+
+    this.logger.warn(`[chatSiteAssitant] [1단계:인텐트] [reqId=${reqId}] intent=${intent}`)
+
+    const ragScores = Array.isArray(reply.ragScores) ? reply.ragScores : []
+    if (ragScores.length > 0) {
+      const common = ragScores.find((item) => String(item.collection) === 'common')
+      const screenBest = ragScores
+        .filter((item) => String(item.collection) !== 'common')
+        .sort((a, b) => Number(b.adjustedScore ?? 0) - Number(a.adjustedScore ?? 0))[0]
+
+      const commonScore = common ? Number(common.adjustedScore ?? common.topScore ?? 0).toFixed(2) : '-'
+      const screenScore = screenBest ? Number(screenBest.adjustedScore ?? screenBest.topScore ?? 0).toFixed(2) : '-'
+      const screenCollection = screenBest?.collection ?? '-'
+      const usedCollection = String(reply.usedCollection ?? '-').trim() || '-'
+      const threshold = Number(this.pipelineCfg.infoRagMinScore ?? 0).toFixed(2)
+
+      this.logger.warn(
+        `[chatSiteAssitant] [2단계:RAG점수] [reqId=${reqId}] threshold=${threshold} common=${commonScore} screen(${screenCollection})=${screenScore} selected=${usedCollection}`,
+      )
+    }
+
+    if (intent === 'action') {
+      const executed = Array.isArray(meta?.executed) ? (meta?.executed as Array<Record<string, unknown>>) : []
+      const summary = executed.length > 0
+        ? executed
+            .map((row) => {
+              const name = String(row.name ?? '-').trim() || '-'
+              const err = String(row.error ?? '').trim()
+              return err ? `${name}(error)` : `${name}(ok)`
+            })
+            .join(', ')
+        : String(reply.chat_action ?? '-').trim() || '-'
+      this.logger.warn(`[chatSiteAssitant] [3단계:Action수행] [reqId=${reqId}] ${summary}`)
+    }
+
+    const finalText = String(reply.text ?? '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 300)
+    this.logger.warn(`[chatSiteAssitant] [4단계:최종응답] [reqId=${reqId}] ${finalText || '-'}`)
   }
 
   private ensureReqId(body: any): string {
@@ -142,7 +219,16 @@ export class ChatService {
 
   private ensureUserFacingReply(reply: ChatReply): ChatReply {
     const text = String(reply?.text ?? '').trim()
-    if (text) return reply
+    if (text) {
+      const sanitized = this.sanitizeLeadingAssistantPreface(text)
+      if (sanitized && sanitized !== text) {
+        return {
+          ...reply,
+          text: sanitized,
+        }
+      }
+      return reply
+    }
 
     const chatAction = String(reply?.chat_action ?? '').trim()
     const actionParam = reply?.chat_action_param && typeof reply.chat_action_param === 'object'
@@ -162,6 +248,37 @@ export class ChatService {
       ...reply,
       text: fallbackText,
     }
+  }
+
+  private sanitizeLeadingAssistantPreface(text: string): string {
+    const raw = String(text ?? '').trim()
+    if (!raw) return ''
+
+    const hasStructuredBody = (value: string): boolean => {
+      const v = String(value ?? '').trim()
+      if (v.length < 20) return false
+      return /\n/.test(v) || /(^#|^[-*]\s|^\d+\)|!\[|```|Taskflow|태스크\s*플로우|태스크플로우)/im.test(v)
+    }
+
+    // 1) "죄송합니다. 제공된 문서에는 ... 정보가 없습니다." + 실제 본문 형태
+    const noDocLead = /^죄송합니다\.\s*제공된\s*문서에는\s*[^\n.!?]*정보가\s*없습니다\.?\s*/i
+    if (noDocLead.test(raw)) {
+      const stripped = raw.replace(noDocLead, '').trim()
+      if (stripped.length >= 12) {
+        return stripped
+      }
+    }
+
+    // 2) "저는 ... 처리할 수 있습니다." 같은 소개성 선행 문구
+    const capabilityLead = /^저는\s+[^\n]{0,140}?(?:할\s*수\s*있습니다|해드릴\s*수\s*있습니다|지원합니다|가능합니다)\.?\s*/i
+    if (capabilityLead.test(raw)) {
+      const stripped = raw.replace(capabilityLead, '').trim()
+      if (hasStructuredBody(stripped)) {
+        return stripped
+      }
+    }
+
+    return raw
   }
 
   private ensurePeriodInEventReply(reply: ChatReply): ChatReply {
@@ -333,30 +450,23 @@ export class ChatService {
       const ragCollections = Array.isArray(row.ragCollections)
         ? row.ragCollections.map((item) => String(item ?? '').trim()).filter(Boolean)
         : []
-      const firstCollection = ragCollections[0] ?? ''
       const hasCommonCollection = ragCollections.includes('common')
 
-      if (hasCommonCollection) {
-        const llmStep = defaultLlmFallback ? '=>llm(정보 프롬프트)' : ''
-        if (usedCollection === 'common') {
-          return `rag(공통, 신뢰도 ${confidence})${llmStep}=>응답조립`
-        }
+      const llmStep = defaultLlmFallback ? '=>llm(정보 프롬프트)' : ''
 
-        if (usedCollection && usedCollection !== 'common') {
-          return `rag(공통, 신뢰도 ${confidence})=>rag(화면)${llmStep}=>응답조립`
-        }
-
-        return `rag(공통, 신뢰도 ${confidence})${llmStep}=>응답조립`
-      }
-
-      if (usedCollection && usedCollection !== 'common') {
-        const llmStep = defaultLlmFallback ? '=>llm(정보 프롬프트)' : ''
-        return `rag(화면, 신뢰도 ${confidence})${llmStep}=>응답조립`
-      }
-
+      // 실제로 조회에 성공한 컬렉션 기준으로 파이프라인 트레이스를 표기한다.
+      // ragCollections 에 common 이 포함되어도 usedCollection 이 화면 컬렉션이면 화면 RAG로 기록한다.
       if (usedCollection === 'common') {
-        const llmStep = defaultLlmFallback ? '=>llm(정보 프롬프트)' : ''
         return `rag(공통, 신뢰도 ${confidence})${llmStep}=>응답조립`
+      }
+
+      if (usedCollection) {
+        const usedLabel = usedCollection === 'common' ? '공통' : '화면'
+        return `rag(${usedLabel}, 신뢰도 ${confidence})${llmStep}=>응답조립`
+      }
+
+      if (hasCommonCollection) {
+        return `rag(화면, 신뢰도 ${confidence})=>rag(공통)=>llm(정보 프롬프트)=>응답조립`
       }
 
       return `rag(화면, 신뢰도 ${confidence})=>llm(정보 프롬프트)=>응답조립`
@@ -701,7 +811,7 @@ export class ChatService {
     this.logger.log(
       `[chat] [reqId=${reqId}] status=loaded reason=대화 히스토리 컨텍스트 조회 완료`,
     )
-    this.logger.debug(
+    this.logger.log(
       `[chat] [trace][reqId=${reqId}] author=${author || '-'} conversationId=${conversationId || '-'} currentApp=${currentApp || '-'} turns=${history.length}`,
     )
 
@@ -737,7 +847,7 @@ export class ChatService {
       this.logger.log(
         `[route-key] [reqId=${String(reqId ?? '-').trim() || '-'}] status=resolved reason=명시적 route 입력값(${explicit.source}) 사용`,
       )
-      this.logger.debug(
+      this.logger.log(
         `[route-key] [trace][reqId=${String(reqId ?? '-').trim() || '-'}] source=${explicit.source} key=${explicit.value} currentApp=${currentApp || '-'} currentPath=${currentPath || '-'}`,
       )
       return explicit.value
@@ -751,14 +861,14 @@ export class ChatService {
         this.logger.log(
           `[route-key] [reqId=${String(reqId ?? '-').trim() || '-'}] status=resolved reason=currentPath가 app prefix 규칙을 만족`,
         )
-        this.logger.debug(`[route-key] [trace][reqId=${String(reqId ?? '-').trim() || '-'}] source=currentPath key=${path}`)
+        this.logger.log(`[route-key] [trace][reqId=${String(reqId ?? '-').trim() || '-'}] source=currentPath key=${path}`)
         return path
       }
       const normalized = `${app}/${path}`.replace(/\/+/g, '/')
       this.logger.log(
         `[route-key] [reqId=${String(reqId ?? '-').trim() || '-'}] status=resolved reason=currentApp/currentPath 결합 규칙으로 route 생성`,
       )
-      this.logger.debug(`[route-key] [trace][reqId=${String(reqId ?? '-').trim() || '-'}] source=currentApp+currentPath key=${normalized}`)
+      this.logger.log(`[route-key] [trace][reqId=${String(reqId ?? '-').trim() || '-'}] source=currentApp+currentPath key=${normalized}`)
       return normalized
     }
 
@@ -766,17 +876,62 @@ export class ChatService {
     this.logger.log(
       `[route-key] [reqId=${String(reqId ?? '-').trim() || '-'}] status=fallback reason=명시적 route 정보가 없어 fallback 규칙 적용`,
     )
-    this.logger.debug(`[route-key] [trace][reqId=${String(reqId ?? '-').trim() || '-'}] source=fallback key=${fallback || '-'}`)
+    this.logger.log(`[route-key] [trace][reqId=${String(reqId ?? '-').trim() || '-'}] source=fallback key=${fallback || '-'}`)
     return fallback
   }
 
   private resolveAuthor(body: any): string {
     return (
       this.normalize(body?.author) ||
+      this.normalize(body?.user?.id) ||
+      this.normalize(body?.user?.userId) ||
+      this.normalize(body?.context?.user?.id) ||
+      this.normalize(body?.context?.user?.userId) ||
       this.normalize(body?.context?.userId) ||
       this.normalize(body?.context?.accountId) ||
       ''
     )
+  }
+
+  private resolveLoginUser(body: any): {
+    userId?: string
+    userName?: string
+    userEmail?: string
+    accountId?: string
+  } | undefined {
+    const userId =
+      this.normalize(body?.user?.id) ||
+      this.normalize(body?.user?.userId) ||
+      this.normalize(body?.context?.user?.id) ||
+      this.normalize(body?.context?.user?.userId) ||
+      this.normalize(body?.context?.userId) ||
+      this.normalize(body?.author)
+
+    const userName =
+      this.normalize(body?.user?.name) ||
+      this.normalize(body?.user?.userName) ||
+      this.normalize(body?.context?.user?.name) ||
+      this.normalize(body?.context?.user?.userName)
+
+    const userEmail =
+      this.normalize(body?.user?.email) ||
+      this.normalize(body?.context?.user?.email)
+
+    const accountId =
+      this.normalize(body?.user?.accountId) ||
+      this.normalize(body?.context?.user?.accountId) ||
+      this.normalize(body?.context?.accountId)
+
+    if (!userId && !userName && !userEmail && !accountId) {
+      return undefined
+    }
+
+    return {
+      userId: userId || undefined,
+      userName: userName || undefined,
+      userEmail: userEmail || undefined,
+      accountId: accountId || undefined,
+    }
   }
 
   private resolveConversationId(body: any): string {
@@ -823,7 +978,7 @@ export class ChatService {
 
     if (matchedRouteKey !== ctx.key) {
       this.stageLog('4-2단계:라우트보정', 'adjusted', '요청 route가 미등록이라 근접 등록 route로 보정', ctx.reqId)
-      this.logger.debug(`[handleScreenPipeline] [trace] original=${ctx.key} matched=${matchedRouteKey}`)
+      this.logger.log(`[handleScreenPipeline] [trace] original=${ctx.key} matched=${matchedRouteKey}`)
     }
 
     this.stageLog('4-3단계:화면디스패치', 'dispatched', `route=${routeCtx.key} 화면 핸들러로 분기`, ctx.reqId)
@@ -1113,12 +1268,15 @@ export class ChatService {
       const pipelineConfidence = this.extractPipelineConfidence(out.meta)
       const meta = out.meta && typeof out.meta === 'object' ? (out.meta as Record<string, unknown>) : undefined
       const usedCollection = String(meta?.['usedCollection'] ?? '').trim()
+      const primaryChunkKey = String(meta?.['primaryChunkKey'] ?? '').trim()
       const usedChunksRaw = meta?.['usedChunks']
       const usedChunks = Array.isArray(usedChunksRaw)
         ? usedChunksRaw
             .map((item) => String(item ?? '').trim())
             .filter(Boolean)
         : []
+      const ragScoresRaw = meta?.['ragScores']
+      const ragScores = Array.isArray(ragScoresRaw) ? ragScoresRaw : []
       const tracedReply = this.attachPipelineTrace(
         out.reply,
         pipelineTrace,
@@ -1130,13 +1288,35 @@ export class ChatService {
       if (usedCollection) {
         normalizedReply.usedCollection = usedCollection
       }
+      if (primaryChunkKey) {
+        normalizedReply.primaryChunkKey = primaryChunkKey
+      }
       if (usedChunks.length > 0) {
         normalizedReply.usedChunks = usedChunks
       }
-      this.logger.log(
-        `[pipeline] [reqId=${ctx.reqId}] intent=${String((out.meta as Record<string, unknown> | undefined)?.pipelineIntent ?? '-')} confidence=${this.formatPipelineConfidence(pipelineConfidence)} trace=${pipelineTrace}`,
-      )
-      await this.saveLog(ctx.body, normalizedReply, ctx)
+      if (ragScores.length > 0) {
+        normalizedReply.ragScores = ragScores.map((item) => ({
+          collection: String((item as Record<string, unknown>)?.collection ?? '').trim(),
+          topScore: Number((item as Record<string, unknown>)?.topScore ?? 0),
+          adjustedScore: Number((item as Record<string, unknown>)?.adjustedScore ?? 0),
+          hitCount: Number((item as Record<string, unknown>)?.hitCount ?? 0),
+          topChunks: Array.isArray((item as Record<string, unknown>)?.topChunks)
+            ? ((item as Record<string, unknown>)?.topChunks as unknown[])
+              .map((row) => ({
+                chunkKey: String((row as Record<string, unknown>)?.chunkKey ?? '').trim(),
+                finalScore: Number((row as Record<string, unknown>)?.finalScore ?? 0),
+                rawScore: Number((row as Record<string, unknown>)?.rawScore ?? 0),
+              }))
+              .filter((row) => Boolean(row.chunkKey))
+            : [],
+          topChunkIds: Array.isArray((item as Record<string, unknown>)?.topChunkIds)
+            ? ((item as Record<string, unknown>)?.topChunkIds as unknown[]).map((chunkId) => String(chunkId ?? '').trim()).filter(Boolean)
+            : [],
+          relaxed: Boolean((item as Record<string, unknown>)?.relaxed),
+        }))
+      }
+      this.emitCompactPipelineWarnLogs(ctx, meta, normalizedReply)
+      await this.saveLog(ctx.body, normalizedReply, ctx, this.buildChatLogDebugMeta(ctx, normalizedReply, meta, 'orchestrator'))
       this.stageLog('4-6단계:응답저장', 'saved', '오케스트레이터 응답을 chat_log에 저장 완료', ctx.reqId)
       return normalizedReply
     }
@@ -1206,11 +1386,11 @@ export class ChatService {
       }
 
       const normalizedReply = this.ensurePeriodInEventReply(reply)
-      await this.saveLog(ctx.body, normalizedReply, ctx)
+      await this.saveLog(ctx.body, normalizedReply, ctx, this.buildChatLogDebugMeta(ctx, normalizedReply, undefined, 'rule-first'))
       this.stageLog('3단계:룰우선처리', 'served', '룰 기반 직접 조회 응답 반환 완료', ctx.reqId)
       return normalizedReply
     } catch (e: any) {
-      this.logger.warn(
+      this.logger.debug(
         `[rule-first] direct query failed route=${matchedRouteKey} err=${e?.message ?? String(e)}; fallback to pipeline`,
       )
       this.stageLog('3단계:룰우선처리', 'error', '직접 조회 실패로 일반 파이프라인으로 폴백', ctx.reqId)
@@ -1240,7 +1420,7 @@ export class ChatService {
     this.logger.log(
       `[chat] [reqId=${ctx.reqId}] status=fallback reason=guidance 경로에서 기본 LLM 호출`,
     )
-    this.logger.debug(
+    this.logger.log(
       `[chat] [trace][reqId=${ctx.reqId}] commonSystemApplied=${Boolean(commonSystem)} route=${routeKey || '-'} routeHintApplied=${Boolean(routeHint)}`,
     )
 
@@ -1253,7 +1433,7 @@ export class ChatService {
     const finalText = text || ''
 
     if (!text) {
-      this.logger.warn(
+      this.logger.debug(
         `[chat] guidance-empty-text route=${routeKey || '-'} fallbackApplied=false`,
       )
     }
@@ -1263,12 +1443,58 @@ export class ChatService {
       text: finalText,
     }
 
-    await this.saveLog(ctx.body, reply, ctx)
+    await this.saveLog(ctx.body, reply, ctx, this.buildChatLogDebugMeta(ctx, reply, undefined, 'guidance'))
 
     return reply
   }
 
-  private async saveLog(body: any, reply: ChatReply, ctx?: ChatContext) {
+  private buildChatLogDebugMeta(
+    ctx: ChatContext,
+    reply: ChatReply,
+    meta?: Record<string, unknown>,
+    source: 'orchestrator' | 'rule-first' | 'guidance' = 'orchestrator',
+  ): ChatLogDebugMeta | undefined {
+    const reqId = String(ctx?.reqId ?? '').trim() || undefined
+    const pipelineIntent = String(meta?.pipelineIntent ?? '').trim().toLowerCase() || undefined
+    const pipelineTrace = String(reply?.pipelineTrace ?? '').trim() || undefined
+    const pipelineConfidence = Number(reply?.pipelineConfidence)
+    const usedCollection = String(reply?.usedCollection ?? '').trim() || undefined
+    const primaryChunkKey = String(reply?.primaryChunkKey ?? '').trim() || undefined
+    const usedChunks = Array.isArray(reply?.usedChunks)
+      ? reply.usedChunks.map((item) => String(item ?? '').trim()).filter(Boolean)
+      : []
+    const ragScores = Array.isArray(reply?.ragScores) ? reply.ragScores : []
+    const screenTask = String(meta?.screenTask ?? '').trim() || undefined
+    const defaultLlmFallback = Boolean(meta?.defaultLlmFallback)
+    const ragMinScoreRaw = Number(this.pipelineCfg.infoRagMinScore)
+    const ragMinScore = Number.isFinite(ragMinScoreRaw) ? ragMinScoreRaw : undefined
+    const ragSelectionRule = 'topScore >= minScore, rank by adjustedScore'
+    const executed = Array.isArray(meta?.executed) ? meta.executed : []
+    const loginUser = this.resolveLoginUser(ctx?.body)
+
+    const debugMeta: ChatLogDebugMeta = {
+      reqId,
+      pipelineIntent,
+      pipelineConfidence: Number.isFinite(pipelineConfidence) ? pipelineConfidence : undefined,
+      pipelineTrace,
+      screenTask,
+      defaultLlmFallback,
+      ragMinScore,
+      ragSelectionRule,
+      usedCollection,
+      primaryChunkKey,
+      usedChunks: usedChunks.length > 0 ? usedChunks : undefined,
+      ragScores: ragScores.length > 0 ? ragScores : undefined,
+      executed: executed.length > 0 ? executed : undefined,
+      loginUser,
+      source,
+    }
+
+    const hasValues = Object.values(debugMeta).some((value) => value !== undefined)
+    return hasValues ? debugMeta : undefined
+  }
+
+  private async saveLog(body: any, reply: ChatReply, ctx?: ChatContext, debugMeta?: ChatLogDebugMeta) {
     const author = ctx?.author || this.resolveAuthor(body)
     const conversationId =
       ctx?.conversationId ||
@@ -1282,6 +1508,7 @@ export class ChatService {
       chatAction: reply.chat_action,
       userMessage: this.normalize(body.message) || undefined,
       assistantText: reply.text,
+      debugMeta,
     })
   }
 }

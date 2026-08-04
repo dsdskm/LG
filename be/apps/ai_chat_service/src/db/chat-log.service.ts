@@ -13,6 +13,7 @@ export type ChatLogInput = {
   chatAction?: string
   userMessage?: string
   assistantText?: string
+  debugMeta?: Record<string, unknown>
 }
 
 export type ChatLogListQuery = {
@@ -44,6 +45,7 @@ export class ChatLogService {
         chatAction: input.chatAction,
         userMessage: input.userMessage,
         assistantText: input.assistantText,
+        debugMeta: input.debugMeta,
       })
       const saved = await this.repo.save(entity)
       this.logger.log(`[db] insert chat_log OK id=${saved.id} action=${input.chatAction}`)
@@ -65,6 +67,7 @@ export class ChatLogService {
         'log.conversation_id AS "conversationId"',
         'log.user_message AS "userMessage"',
         'log.assistant_text AS "assistantText"',
+        'log.debug_meta AS "debugMeta"',
         'log.created_at AS "createdAt"',
       ])
 
@@ -98,6 +101,9 @@ export class ChatLogService {
       chatAction: String(row.chatAction ?? '').trim() || undefined,
       userMessage: String(row.userMessage ?? '').trim() || undefined,
       assistantText: String(row.assistantText ?? '').trim() || undefined,
+      debugMeta: row.debugMeta && typeof row.debugMeta === 'object'
+        ? (row.debugMeta as Record<string, unknown>)
+        : undefined,
       createdAt: row.createdAt instanceof Date ? row.createdAt : new Date(row.createdAt),
     }))
   }

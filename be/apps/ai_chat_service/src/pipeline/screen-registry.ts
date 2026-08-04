@@ -571,39 +571,6 @@ export function getScreenConfig(routeKey: string, reqId?: string): ScreenConfig 
 
   const baseAction = toChatAction(normalizedRouteKey)
 
-  logger.log(
-    [
-      '================= [1단계:화면설정_프롬프트적용]',
-      `[reqId=${resolvedReqId}]`,
-      `route=${normalizedRouteKey}`,
-      `app=${appKey}`,
-      `commonSystemApplied=${Boolean(commonSystem)}`,
-      `intentHintSource=${intentHintSource}`,
-      `intentHintMode=${resolvedIntentHintMode}`,
-      `dataPromptSource=${dataPromptSource}`,
-      `actionPromptSource=${actionPromptSource}`,
-      `dataPromptLen=${mergedDataSystemPrompt.length}`,
-      `actionPromptLen=${mergedActionSystemPrompt.length}`,
-      `dataTools=${dataTools.length}`,
-      `actionTools=${actionTools.length}`,
-    ].join(' '),
-  )
-  
-  logger.log(
-    [
-      '================= [1-2단계:화면프롬프트_최종머지결과]',
-      `[reqId=${resolvedReqId}]`,
-      `route=${normalizedRouteKey}`,
-      `dataPromptLen=${mergedDataSystemPrompt.length}`,
-      `actionPromptLen=${mergedActionSystemPrompt.length}`,
-      `dataPromptLines=${mergedDataSystemPrompt ? mergedDataSystemPrompt.split(/\r?\n/).length : 0}`,
-      `actionPromptLines=${mergedActionSystemPrompt ? mergedActionSystemPrompt.split(/\r?\n/).length : 0}`,
-      `dataPromptSource=${dataPromptSource}`,
-      `actionPromptSource=${actionPromptSource}`,
-      `fallbackLen=${String(resolvedFallback ?? '').length}`,
-      `fallbackPreview=${JSON.stringify(String(resolvedFallback ?? '').slice(0, 80))}`,
-    ].join(' '),
-  )
 
   return {
     key: normalizedRouteKey,

@@ -39,6 +39,10 @@ export class ChatLogEntity {
   @Column({ type: 'text', name: 'assistant_text', nullable: true })
   assistantText?: string
 
+  // 디버그/추적 메타 (intent, ragScores 등)
+  @Column({ type: 'jsonb', name: 'debug_meta', nullable: true })
+  debugMeta?: Record<string, unknown>
+
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date
 }

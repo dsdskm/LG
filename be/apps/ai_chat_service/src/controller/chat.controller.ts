@@ -57,19 +57,8 @@ export class ChatController {
     const flowDef = taskflowObj.flowDefinition && typeof taskflowObj.flowDefinition === 'object' && !Array.isArray(taskflowObj.flowDefinition)
       ? (taskflowObj.flowDefinition as Record<string, unknown>)
       : {}
+      this.logger.debug(`[chatSiteAssitant] [0단계:요청수신] [reqId=${reqId}] message=${JSON.stringify(body.message)}`)
 
-    this.logger.log(`[chatSiteAssitant] [1단계:요청수신] [reqId=${reqId}] status=received reason=사용자 메시지 기반 assistant 처리 시작`)
-    this.logger.log(`[chatSiteAssitant] [1-1단계:엔드포인트검증] [reqId=${reqId}] status=checked reason=외부 연동 URL 존재여부 점검 완료`)
-    this.logger.log(
-      `[chatSiteAssitant] [2단계:컨텍스트선정] [reqId=${reqId}] status=selected reason=source=${selectedTaskflowContext.source}, taskflow=${Boolean(contextObj.taskflow)}, flowContext=${Boolean(contextObj.flowContext)}, flowDefinition=${Boolean(taskflowObj.flowDefinition)}`,
-    )
-    this.logger.log(
-      `[chatSiteAssitant] [2-1단계:라우트결정] [reqId=${reqId}] status=resolved reason=key/routeKey/screenRouteKey를 현재 화면 기준으로 정규화`,
-    )
-
-    this.logger.debug(
-      `[chatSiteAssitant] [trace] ########[reqId=${reqId}] message=${body.message} currentPath=${body.currentPath} key=${String((body as any)?.key ?? '') || '-'} routeKey=${String((body as any)?.routeKey ?? '') || '-'} screenRouteKey=${String((body as any)?.screenRouteKey ?? '') || '-'} currentApp=${String((body as any)?.currentApp ?? '') || '-'} flowDefNodes=${Array.isArray(flowDef.nodes) ? flowDef.nodes.length : 0} flowDefEdges=${Array.isArray(flowDef.edges) ? flowDef.edges.length : 0}`,
-    )
     // this.logger.log(`[chatSiteAssitant] history=${JSON.stringify(body.history)}`)
 
     const reply = await this.chatService.handleChat(body);
@@ -85,9 +74,13 @@ export class ChatController {
       ),
     )
     const paramKeys = actionParam ? Object.keys(actionParam) : []
-    this.logger.log(
-      `[chatSiteAssitant] [3단계:응답생성] [reqId=${reqId}] status=completed reason=assistant 응답 생성 완료(chatAction=${String((reply as any)?.chat_action ?? '-')}, hasParam=${Boolean(actionParam)}, hasTaskflowDraft=${hasTaskflowDraft}, paramKeys=${paramKeys.join('|') || '-'})`,
-    )
+    void selectedTaskflowContext
+    void contextObj
+    void taskflowObj
+    void flowDef
+    void actionParam
+    void hasTaskflowDraft
+    void paramKeys
     return ret
   }
 }

@@ -537,15 +537,26 @@ const extractPipelineConfidence = (result) => {
 const extractRagMatchInfo = (result) => {
   const payload = result?.data ?? result ?? null
   if (!payload || typeof payload !== 'object') {
-    return { usedCollection: '', usedChunkKeys: [] }
+    return { usedCollection: '', usedChunkKeys: [], ragScores: [] }
   }
 
   const usedCollection = String(payload?.usedCollection ?? '').trim()
   const usedChunks = Array.isArray(payload?.usedChunks) ? payload.usedChunks : []
+  const ragScores = Array.isArray(payload?.ragScores) ? payload.ragScores : []
 
   return {
     usedCollection,
     usedChunkKeys: usedChunks.map((item) => String(item ?? '').trim()).filter(Boolean),
+    ragScores: ragScores.map((item) => ({
+      collection: String(item?.collection ?? '').trim(),
+      topScore: Number(item?.topScore ?? 0),
+      adjustedScore: Number(item?.adjustedScore ?? 0),
+      hitCount: Number(item?.hitCount ?? 0),
+      topChunkIds: Array.isArray(item?.topChunkIds)
+        ? item.topChunkIds.map((chunkId) => String(chunkId ?? '').trim()).filter(Boolean)
+        : [],
+      relaxed: Boolean(item?.relaxed),
+    })),
   }
 }
 
@@ -1364,6 +1375,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
         usedCollection: ragMatchInfo.usedCollection || '-'
         , usedChunkKeys: ragMatchInfo.usedChunkKeys,
       })
+      console.log('[AI_CHAT][RAG_SCORES]', ragMatchInfo.ragScores)
       const navigationPath = String(chat_action_param?.path ?? '').trim().replace(/^\/+/, '')
       const hasNavigationParams = chat_action === 'navigation' && extractPathParams(navigationPath).length > 0
       const suggestedActions = chat_action === 'ailog/event/filter' ? [] : extractSuggestedActions(result)

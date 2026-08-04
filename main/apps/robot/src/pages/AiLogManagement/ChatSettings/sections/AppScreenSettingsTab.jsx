@@ -1010,13 +1010,14 @@ const ChatFlowMap = ({ intentPromptCount, actionPromptCount, guidanceCount, rout
     ]
 
     const infoFlowItems = [
-        {
-            key: 'info-common-rag',
-            node: <FlowNode title="공통 정보 RAG" desc={`공통 정보 RAG ${commonInfoRagCount}개를 먼저 확인`} tone="rag" onClick={() => onSelectStage('info-common-rag')} />,
-        },
+
         {
             key: 'info-rag',
             node: <FlowNode title="화면 정보 RAG" desc={`해당 화면의 정보 RAG ${infoRagCount}개 확인`} tone="rag" dashed onClick={() => onSelectStage('info-rag')} />,
+        },
+                {
+            key: 'info-common-rag',
+            node: <FlowNode title="공통 정보 RAG" desc={`공통 정보 RAG ${commonInfoRagCount}개를 먼저 확인`} tone="rag" onClick={() => onSelectStage('info-common-rag')} />,
         },
         {
             key: 'info-prompt',

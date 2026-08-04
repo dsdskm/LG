@@ -26,6 +26,20 @@ export type ChatReplyImage = {
   caption?: string
 }
 
+export type RagScoreEntry = {
+  collection: string
+  topScore: number
+  adjustedScore: number
+  hitCount: number
+  topChunks?: Array<{
+    chunkKey: string
+    finalScore: number
+    rawScore: number
+  }>
+  topChunkIds: string[]
+  relaxed: boolean
+}
+
 export type ChatReply = {
   chat_action: string
   chat_action_param?: Record<string, unknown>
@@ -33,7 +47,9 @@ export type ChatReply = {
   pipelineTrace?: string
   pipelineConfidence?: number
   usedCollection?: string
+  primaryChunkKey?: string
   usedChunks?: string[]
+  ragScores?: RagScoreEntry[]
   images?: ChatReplyImage[]
 }
 

@@ -132,7 +132,7 @@ export class VertexLlmClient implements LlmClient {
         .join('\n');
       const toolCalls = extractToolCalls(parts);
 
-      this.logger.debug(
+      this.logger.log(
         `[Vertex] generateContent success elapsedMs=${elapsedMs} finish=${candidate?.finishReason} toolCalls=${
           toolCalls?.length ?? 0
         }`,

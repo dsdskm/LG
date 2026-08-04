@@ -85,8 +85,19 @@ export class ChatOrchestrator {
     private readonly pipeline: ChatPipelineConfig,
     private readonly logger = new Logger(ChatOrchestrator.name),
   ) {
+    ;(this.logger as unknown as { log: (...args: any[]) => void }).log = () => undefined
+    ;(this.logger as unknown as { debug: (...args: any[]) => void }).debug = () => undefined
     this.classifier = new IntentClassifier(this.client, this.maxOutputTokens)
-    this.rag = new RagService(this.client, this.maxOutputTokens, pipeline.ragTopK, logger)
+    this.rag = new RagService(
+      this.client,
+      this.maxOutputTokens,
+      {
+        topK: pipeline.ragTopK,
+        minScore: pipeline.infoRagMinScore,
+        screenBonus: pipeline.infoRagScreenBonus,
+      },
+      logger,
+    )
     this.agent = new ToolAgent(this.client, this.maxOutputTokens, pipeline.maxToolTurns, logger)
   }
 
@@ -95,8 +106,9 @@ export class ChatOrchestrator {
   }
 
   private stageLog(stage: string, reqId: string, detail?: string) {
-    const suffix = detail ? ` ${detail}` : ''
-    this.logger.log(`================= [${stage}] [reqId=${reqId}]${suffix}`)
+    void stage
+    void reqId
+    void detail
   }
 
   private async generateDefaultLlmReply(
@@ -108,11 +120,11 @@ export class ChatOrchestrator {
   ): Promise<string | undefined> {
     const systemPrompt = [screen.dataSystemPrompt, screen.actionSystemPrompt].filter(Boolean).join('\n\n')
 
-    this.logger.warn(
+    this.logger.debug(
       `================= [5단계:기본LLM_폴백] [reqId=${reqId}] status=fallback reason=${reason}`,
     )
 
-    this.logger.debug(
+    this.logger.log(
       `================= [5단계:기본LLM_폴백_추적] [reqId=${reqId}] route=${screen.key} systemPromptLen=${systemPrompt.length}`,
     )
 
@@ -319,7 +331,7 @@ export class ChatOrchestrator {
       reqId,
       'status=rewritten reason=이전 clarification 문맥을 반영해 후속 발화를 실행 가능 문장으로 변환',
     )
-    this.logger.debug(`================= [2-2단계:멀티턴_문맥복원_추적] [reqId=${reqId}] original=${raw} effective=${merged}`)
+    this.logger.log(`================= [2-2단계:멀티턴_문맥복원_추적] [reqId=${reqId}] original=${raw} effective=${merged}`)
     return merged
   }
 
@@ -348,6 +360,30 @@ export class ChatOrchestrator {
     return !hasActionCue
   }
 
+  private looksLikeNodeUsageGuideQuery(message: string): boolean {
+    const text = String(message ?? '').trim()
+    if (!text) return false
+    if (!/(노드|node|and|or|ifthenelse|ifthen|repeat|parallel)/i.test(text)) return false
+    return /(사용법|어떻게\s*써|설명|가이드|알려줘|알려\s*줘|what\s*is|how\s*to\s*use)/i.test(text)
+  }
+
+  private resolveNodeGuideFallbackChunkKeys(): string[] {
+    const configured = Array.isArray(this.pipeline.infoNodeGuideFallbackChunkKeys)
+      ? this.pipeline.infoNodeGuideFallbackChunkKeys
+      : []
+    const seen = new Set<string>()
+    const result: string[] = []
+
+    for (const raw of configured) {
+      const key = String(raw ?? '').trim()
+      if (!key || seen.has(key)) continue
+      seen.add(key)
+      result.push(key)
+    }
+
+    return result
+  }
+
   /**
    * 등록된 화면이면 처리하고, 아니면 handled:false로 반환한다.
    * handled:false는 ChatService에서 guidance fallback으로 이어진다.
@@ -364,7 +400,7 @@ export class ChatOrchestrator {
       return { handled: false }
     }
 
-    this.logger.debug(
+    this.logger.log(
       `================= [2단계:화면설정_확정_추적] [reqId=${reqId}] route=${routeKey} screenKey=${screen.key} appKey=${screen.appKey} dataTools=${screen.dataTools.length} actionTools=${screen.actionTools.length} ragCollection=${screen.ragCollection}`,
     )
 
@@ -398,7 +434,7 @@ export class ChatOrchestrator {
       `status=classified reason=intent=${pipelineIntentResult.intent}, confidence=${pipelineIntentResult.confidence}`,
     )
 
-    this.logger.debug(
+    this.logger.log(
       `================= [2-3단계:의도분류_원결과_추적] [reqId=${reqId}] reasonText=${pipelineIntentResult.reason}`,
     )
 
@@ -473,7 +509,7 @@ export class ChatOrchestrator {
       `status=classified reason=${pipelineIntent === 'action' ? '액션 요청' : '정보 문의'}`,
     )
 
-    this.logger.debug(
+    this.logger.log(
       `================= [2-6단계:최종의도_확정_추적] [reqId=${reqId}] confidence=${pipelineIntentResult.confidence} classifierReason=${pipelineIntentResult.reason} infoRagCollections=${infoRagCollections.join(',')}`,
     )
 
@@ -677,7 +713,7 @@ export class ChatOrchestrator {
         toolResult: objectResult,
       }
     } catch (e: any) {
-      this.logger.warn(`[prompt-apply] route=${screen.key} deterministic-taskflow-draft-failed err=${e?.message ?? String(e)}`)
+      this.logger.debug(`[prompt-apply] route=${screen.key} deterministic-taskflow-draft-failed err=${e?.message ?? String(e)}`)
       return undefined
     }
   }
@@ -692,7 +728,7 @@ export class ChatOrchestrator {
     reqId: string,
   ): Promise<OrchestrationOutput> {
     this.stageLog('3단계:INFO처리_RAG조회', reqId, `status=running reason=정보성 질의로 RAG 우선 조회`)
-    this.logger.debug(
+    this.logger.log(
       `================= [3단계:INFO처리_RAG조회_추적] [reqId=${reqId}] route=${screen.key} ragCollections=${ragCollections.join(',')}`,
     )
 
@@ -700,7 +736,7 @@ export class ChatOrchestrator {
     // 1. screen/app RAG collection
     // 2. common RAG collection
     // 3. default LLM
-    const { text, usedCollection, usedChunks } = await this.rag.answer(
+    const primary = await this.rag.answer(
       ragCollections,
       message,
       history,
@@ -708,11 +744,44 @@ export class ChatOrchestrator {
       { intentType: 'info' },
     )
 
+    let text = primary.text
+    let usedCollection = primary.usedCollection
+    let primaryChunkKey = primary.primaryChunkKey
+    let usedChunks = primary.usedChunks
+    let ragScores = primary.ragScores
+
+    const shouldTryNodeGuideFallback =
+      this.looksLikeNodeUsageGuideQuery(message) &&
+      (usedChunks.length === 0 || !String(text ?? '').trim())
+
+    if (shouldTryNodeGuideFallback) {
+      const fallbackChunkKeys = this.resolveNodeGuideFallbackChunkKeys()
+      if (fallbackChunkKeys.length > 0) {
+        const fallback = await this.rag.answerFromChunkKeys(
+          ragCollections,
+          fallbackChunkKeys,
+          message,
+          history,
+          reqId,
+          { intentType: 'info' },
+        )
+
+        ragScores = [...ragScores, ...fallback.ragScores]
+
+        if (fallback.usedChunks.length > 0 && String(fallback.text ?? '').trim()) {
+          text = fallback.text
+          usedCollection = fallback.usedCollection
+          primaryChunkKey = fallback.primaryChunkKey
+          usedChunks = fallback.usedChunks
+        }
+      }
+    }
+
     const defaultLlmText =
       usedChunks.length === 0 || !text?.trim()
         ? await this.generateDefaultLlmReply(screen, message, history, usedChunks.length === 0 ? 'no-rag-hit' : 'rag-empty-text', reqId)
         : undefined
-    const finalText = defaultLlmText || text || ''
+    const finalText = this.sanitizeInfoFinalText(defaultLlmText || text || '', usedCollection)
 
     return {
       handled: true,
@@ -726,10 +795,49 @@ export class ChatOrchestrator {
         pipelineIntentResult,
         ragCollections,
         usedCollection,
+        primaryChunkKey,
         usedChunks,
+        ragScores,
         defaultLlmFallback: Boolean(defaultLlmText),
       },
     }
+  }
+
+  private sanitizeInfoFinalText(value: string, usedCollection?: string): string {
+    const raw = String(value ?? '').trim()
+    if (!raw) return ''
+
+    const hasStructuredBody = (text: string): boolean => {
+      if (!text) return false
+      if (text.length < 20) return false
+      return /\n/.test(text) || /(^#|^[-*]\s|^\d+\)|!\[|```|Taskflow|태스크\s*플로우|태스크플로우)/im.test(text)
+    }
+
+    // RAG miss 문구가 상단에 붙은 뒤 실제 설명 본문이 이어지는 경우, 안내 문구만 제거한다.
+    // 예: "죄송합니다. 제공된 문서에는 ... 정보가 없습니다." + "Taskflow 기본 구성 ..."
+    const leadNoDocPattern = /^죄송합니다\.\s*제공된\s*문서에는\s*[^\n.!?]*정보가\s*없습니다\.?\s*/i
+    if (leadNoDocPattern.test(raw)) {
+      const strippedNoDoc = raw.replace(leadNoDocPattern, '').trim()
+      if (strippedNoDoc.length >= 12) {
+        return strippedNoDoc
+      }
+    }
+
+    // 화면별 info RAG 응답에서 "저는 ... 처리할 수 있습니다." 류의 선행 문구가
+    // 본문 앞에 자동으로 붙는 경우가 있어, 본문이 충분하면 선행 문장만 제거한다.
+    // 공통 컬렉션/폴백 문구까지 과도하게 제거하지 않도록 화면 컬렉션일 때만 적용한다.
+    const isScreenCollection = Boolean(usedCollection && usedCollection !== 'common')
+    if (isScreenCollection) {
+      const leadCapabilityPattern = /^저는\s+[^\n]{0,120}?(?:할\s*수\s*있습니다|해드릴\s*수\s*있습니다|지원합니다|가능합니다)\.?\s*/i
+      if (leadCapabilityPattern.test(raw)) {
+        const strippedCapability = raw.replace(leadCapabilityPattern, '').trim()
+        if (hasStructuredBody(strippedCapability)) {
+          return strippedCapability
+        }
+      }
+    }
+
+    return raw
   }
 
   private async handleExecution(
@@ -787,7 +895,7 @@ export class ChatOrchestrator {
     const systemPrompt = this.buildExecutionPrompt(screen, previousFilters, actionRag.context)
 
     this.stageLog('3단계:ACTION처리_툴실행', reqId, 'status=running reason=action 통합 경로로 tool 실행')
-    this.logger.debug(
+    this.logger.log(
       `================= [3단계:ACTION처리_툴실행_추적] [reqId=${reqId}] route=${screen.key} promptLen=${systemPrompt.length} toolCount=${executionTools.length}`,
     )
 
