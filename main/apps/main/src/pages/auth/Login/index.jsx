@@ -88,6 +88,9 @@ function Login() {
       case 'SITE_MANAGER':
         returnLevel = 0
         break
+      case 'TERM_MANAGER':
+        returnLevel = 4
+        break
     }
     return returnLevel
   }

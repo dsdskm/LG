@@ -6,6 +6,7 @@ import { labelApis } from '@/apis'
 import { toast } from 'react-toastify'
 import { ButtonWrap, SelectionTypeContainer } from '@/components/common/styles'
 import { useOrganizationStore } from '@repo/stores'
+import { guardAction } from '@/utils/actionGuard'
 
 const LabelDetail = () => {
   const { id } = useParams()
@@ -90,7 +91,11 @@ const LabelDetail = () => {
         {t('labelTitle')} &gt; {tCommon('detail')}
       </Title>
       <ButtonWrap className="alignRight">
-        <Button variant="contained" onClick={handleSave} disabled={isLoading || isDisabled()}>
+        <Button
+          variant="contained"
+          onClick={guardAction(handleSave, [{ when: isDisabled(), message: '라벨 이름을 입력하세요.' }])}
+          disabled={isLoading}
+        >
           {id ? t('modify') : t('create')}
         </Button>
         <Button variant="contained" onClick={handleCancel} disabled={isLoading}>

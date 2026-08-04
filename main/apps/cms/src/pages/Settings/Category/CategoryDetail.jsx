@@ -7,6 +7,7 @@ import { useOrganizationStore } from '@repo/stores'
 import { uploadSingleFileToS3 } from '@repo/utils'
 import { categoryNodeApis, languageApis, contentTypeApis, externalServiceApis, fileContentApis } from '@/apis'
 import { resolveOrgIds } from '@/utils/org'
+import { guardAction } from '@/utils/actionGuard'
 import CategoryTree from '@/components/Settings/Category/CategoryTree'
 import CategorySettingsPanel from '@/components/Settings/Category/CategorySettingsPanel'
 import { HeaderBar, Breadcrumb, HeaderActions, TwoPane, Pane, PaneHeader } from '@/components/Settings/Category/styles'
@@ -241,7 +242,19 @@ const CategoryDetail = () => {
           <span className="current">{service?.displayName || service?.externalServiceCode || ''}</span>
         </Breadcrumb>
         <HeaderActions>
-          <Button type="button" theme="primary" size="md" onClick={handleSave} disabled={isSaveDisabled}>
+          <Button
+            type="button"
+            theme="primary"
+            size="md"
+            onClick={guardAction(handleSave, [
+              { when: tree.length === 0, message: t('addCategoryFirst', '카테고리를 추가하세요.') },
+              { when: codeStats.hasEmpty, message: t('codeRequired') },
+              { when: codeStats.hasDuplicate, message: t('duplicateCode') },
+              { when: codeStats.hasTooLong, message: t('codeTooLong', '코드는 100자 이하로 입력하세요') },
+              { when: hasMissingContentType, message: t('contentTypeRequired', '콘텐츠 타입을 선택하세요') }
+            ])}
+            disabled={loading || saving}
+          >
             {t('save')}
           </Button>
           <Button type="button" theme="tertiary" size="md" onClick={handleCancel} disabled={saving}>

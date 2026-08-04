@@ -4,15 +4,10 @@ import { Checkbox, Input } from '@repo/ui'
 import { SelectedData } from '../types'
 import { useFlowEditorStore } from '@/store/taskflow.canvas.store'
 import { PropertyDef } from '../../../types'
-import {
-  EXECUTION_CONDITION_KEY,
-  EXECUTION_CONDITION_OPTIONS,
-  EXECUTION_CONDITION_DEFAULT
-} from '@/common/constants'
+import { EXECUTION_CONDITION_KEY, EXECUTION_CONDITION_OPTIONS, EXECUTION_CONDITION_DEFAULT } from '@/common/constants'
 import { Select } from '../../../styles'
 import { FieldBody, FieldCard, FieldLabel, InfoBox, TextInput } from './styles.sections'
 import ParallelMainNodesSection from '../../ParallelMainNodesSection'
-
 
 type TaskInfoSectionProps = {
   selectedData: SelectedData | null
@@ -20,10 +15,7 @@ type TaskInfoSectionProps = {
   readOnly?: boolean
 }
 
-export default function TaskInfoSection({
-  selectedData,
-  readOnly = false
-}: TaskInfoSectionProps) {
+export default function TaskInfoSection({ selectedData, readOnly = false }: TaskInfoSectionProps) {
   const { t } = useTranslation('tms')
   const updateSelectedNodeProps = useFlowEditorStore((s) => s.updateSelectedNodeProps)
 
@@ -31,10 +23,10 @@ export default function TaskInfoSection({
     if (!selectedData) return []
 
     return [
-      {
-        label: 'label',
-        value: selectedData.label ?? ''
-      },
+      // {
+      //   label: 'label',
+      //   value: selectedData.label ?? ''
+      // },
       {
         label: 'taskId',
         value: selectedData.taskId ?? ''
@@ -52,12 +44,9 @@ export default function TaskInfoSection({
 
   // CONTROL/ROOT 타입, 그리고 content 없는 ACTION 타입은
   // property_schema 로 속성을 표현·편집한다. (content 없는 ACTION 은 CONTROL 과 동일하게 취급)
-  const isContentlessAction =
-    selectedData?.taskType === 'ACTION' && selectedData?.contentId == null
+  const isContentlessAction = selectedData?.taskType === 'ACTION' && selectedData?.contentId == null
   const hasEditableProperties =
-    selectedData?.taskType === 'CONTROL' ||
-    selectedData?.taskType === 'ROOT' ||
-    isContentlessAction
+    selectedData?.taskType === 'CONTROL' || selectedData?.taskType === 'ROOT' || isContentlessAction
 
   const controlPropertyRows = useMemo(() => {
     if (!selectedData) return []
@@ -72,16 +61,16 @@ export default function TaskInfoSection({
     return Object.entries(properties)
       .filter(([key]) => key !== 'main_nodes')
       .map(([key, value]) => {
-      const schema = schemaProperties[key] as PropertyDef | undefined
+        const schema = schemaProperties[key] as PropertyDef | undefined
 
-      return {
-        key,
-        label: key,
-        value,
-        type: schema?.type ?? 'string',
-        required: Boolean(schema?.required)
-      }
-    })
+        return {
+          key,
+          label: key,
+          value,
+          type: schema?.type ?? 'string',
+          required: Boolean(schema?.required)
+        }
+      })
   }, [selectedData, hasEditableProperties])
 
   if (!taskRows.length) {
@@ -92,12 +81,7 @@ export default function TaskInfoSection({
     <>
       {taskRows.map((row) => (
         <Field key={row.label} label={row.label}>
-          <TextInput
-            type="text"
-            value={String(row.value)}
-            disabled
-            readOnly
-          />
+          <TextInput type="text" value={String(row.value)} disabled readOnly />
         </Field>
       ))}
 
@@ -105,10 +89,7 @@ export default function TaskInfoSection({
         <>
           {controlPropertyRows.length > 0 ? (
             controlPropertyRows.map((row) => (
-              <Field
-                key={`property-${row.key}`}
-                label={row.required ? `${row.label} *` : row.label}
-              >
+              <Field key={`property-${row.key}`} label={row.required ? `${row.label} *` : row.label}>
                 {row.key === EXECUTION_CONDITION_KEY ? (
                   <Select
                     value={
@@ -145,11 +126,7 @@ export default function TaskInfoSection({
                   <Input
                     size="sm"
                     type={row.type === 'number' ? 'number' : 'text'}
-                    value={
-                      row.value === null || row.value === undefined
-                        ? ''
-                        : String(row.value)
-                    }
+                    value={row.value === null || row.value === undefined ? '' : String(row.value)}
                     disabled={readOnly}
                     readOnly={readOnly}
                     onChange={(e: ChangeEvent<HTMLInputElement>) => {
@@ -184,13 +161,7 @@ export default function TaskInfoSection({
   )
 }
 
-function Field({
-  label,
-  children
-}: {
-  label: string
-  children: ReactNode
-}) {
+function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <FieldCard>
       <FieldLabel>{label}</FieldLabel>

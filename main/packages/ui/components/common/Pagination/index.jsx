@@ -46,7 +46,7 @@ const Pagination = ({
               size="sm"
               options={paginationRowsPerPageOptions}
               onChange={handleChangePerPage}
-              defaultValue={paginationRowsPerPageOptions[0]}
+              value={rowsPerPage}
             />
             <span className="typographyBody5">{t('itemsPerPage')}</span>
           </div>

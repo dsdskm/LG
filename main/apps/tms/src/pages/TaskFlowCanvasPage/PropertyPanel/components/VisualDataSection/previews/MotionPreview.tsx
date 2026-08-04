@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import { Canvas, useFrame, useLoader } from '@react-three/fiber'
 import { Center, OrbitControls } from '@react-three/drei'
 import URDFLoader, { URDFRobot } from 'urdf-loader'
@@ -7,9 +7,12 @@ import { PreviewProps } from './types.preview'
 import { parseMotionYaml } from '@/utils/motionParser'
 import { MotionData } from '@/types/motion'
 import { MotionCollision } from './MotionCollision'
-import { useContentTaskStore } from '@/pages/TaskFlowCanvasPage/store/useContentTaskStore'
-import { useDownloadContentUrl } from '@/api/contentApis'
-import { DownloadContentUrlResponse } from '@/types/api/content'
+import PreviewProgress from './PreviewProgress'
+import PreviewHeader from './PreviewHeader'
+import { usePreviewPlayback } from '../hook/usePreviewPlayback'
+import { usePreviewContentUrl } from '../hook/usePreviewContentUrl'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
 const URDF_BASE = '/tms/urdf/cloid_description_1k'
 
 function useUrdfRobot(url: string) {
@@ -18,6 +21,26 @@ function useUrdfRobot(url: string) {
     loader.packages = { cloid_description: URDF_BASE }
     // 충돌 감지를 위해 collision geometry 를 반드시 파싱하도록 설정 (기본값 false)
     loader.parseCollision = true
+
+    const gltfLoader = new GLTFLoader(loader.manager)
+    // meshopt 압축된 GLB(EXT_meshopt_compression) 를 디코딩. 압축 안 된 파일엔 영향 없음.
+    gltfLoader.setMeshoptDecoder(MeshoptDecoder)
+
+    loader.loadMeshCb = (path: string, _manager: any, onComplete: (mesh: any, err?: any) => void) => {
+      // /tms/.../meshes/omnihand/thumb_dip.STL
+      // -> /tms/.../meshes-glb/omnihand/thumb_dip.glb
+      const glbPath = path.replace('/meshes/', '/meshes-glb/').replace(/\.stl$/i, '.glb')
+
+      gltfLoader.load(
+        glbPath,
+        (gltf) => onComplete(gltf.scene),
+        undefined,
+        (err) => {
+          console.error('GLB 로드 실패:', glbPath, err)
+          onComplete(null, err)
+        }
+      )
+    }
   })
 }
 
@@ -48,21 +71,22 @@ function Robot({ urdfUrl, motionData, nodeId }: RobotProps) {
   const robotRef = useRef<URDFRobot>(null!)
   const timeRef = useRef(0)
 
-  const updatePlayStatus = useContentTaskStore((state) => state.updatePlayStatus)
-
+  const play = usePreviewPlayback(nodeId)
   const duration = motionData?.frames[motionData?.frames.length - 1].t ?? 1
 
   useEffect(() => {
     timeRef.current = 0
-  }, [nodeId])
+    play.resetProgress()
+  }, [nodeId, play])
 
   useFrame((_, delta) => {
     if (!motionData || motionData.frames.length === 0) return
 
     if (timeRef.current > duration) {
-      updatePlayStatus(nodeId, 'COMPLETED')
+      play.setCompleted()
     } else {
-      updatePlayStatus(nodeId, 'PLAYING')
+      play.setPlaying()
+      play.pushCurrent(timeRef.current)
     }
     timeRef.current = timeRef.current + delta
     const joints = sampleFrame(motionData.frames, timeRef.current)
@@ -81,54 +105,19 @@ function Robot({ urdfUrl, motionData, nodeId }: RobotProps) {
   )
 }
 
+function getDuration(data: MotionData) {
+  if (data.frames.length < 1) {
+    return 0
+  } else {
+    return data.frames[data.frames.length - 1].t - data.frames[0].t
+  }
+}
 export default function MotionPreview({ node, nodeId }: PreviewProps) {
-  const [contentUrl, setContentUrl] = useState('')
+  const [contentOpen, setContentOpen] = useState(true)
   const [motion, setMotion] = useState<MotionData>()
 
-  const { mutate } = useDownloadContentUrl()
-
-  const contentId = useMemo(() => {
-    try {
-      let jsonStr = node?.data?.contentValue
-      if (!jsonStr) {
-        return -1
-      }
-      let result = -1
-      const data: Record<string, any> = JSON.parse(jsonStr)
-      const contentArray = data['fileContents']
-
-      if (Array.isArray(contentArray)) {
-        result = contentArray[0]['id']
-      }
-
-      return result
-    } catch (e) {
-      console.log('parsing error', e)
-      return -1
-    }
-  }, [node])
-
-  useEffect(() => {
-    if (contentId !== -1) {
-      mutate(
-        { fileContentId: contentId },
-        {
-          onSuccess: (data) => {
-            console.log('get url success', data)
-            const response = data as DownloadContentUrlResponse
-            if (response.results) {
-              setContentUrl(response.results)
-            }
-            //dismissPopup()
-          },
-          onError: (error) => {
-            console.error('get url failure', error)
-            //dismissPopup()
-          }
-        }
-      )
-    }
-  }, [contentId])
+  const { url: contentUrl } = usePreviewContentUrl(node)
+  const play = usePreviewPlayback(nodeId)
 
   // 다운로드 링크에서 trajectory 파일 텍스트를 받아 파싱한다.
   useEffect(() => {
@@ -140,7 +129,11 @@ export default function MotionPreview({ node, nodeId }: PreviewProps) {
       .then((text) => {
         if (cancelled) return
         const parsed = parseMotionYaml(text)
-        if (parsed) setMotion(parsed)
+        if (parsed) {
+          const t = getDuration(parsed)
+          play.setDuration(t)
+          setMotion(parsed)
+        }
       })
       .catch((err) => console.error('모션 파일 다운로드/파싱 실패', err))
 
@@ -153,20 +146,26 @@ export default function MotionPreview({ node, nodeId }: PreviewProps) {
     return <></>
   }
 
+  const data = node.data
+
   return (
-    <PreviewCard>
-      <Canvas camera={{ position: [0, 0, 5], fov: 25, zoom: 1.25 }}>
-        <ambientLight intensity={0.5} />
-        <directionalLight position={[3, 3, 3]} />
-        <Suspense fallback={null}>
-          <Center>
-            <group rotation={[-Math.PI / 2, 0, -Math.PI / 2]}>
-              <Robot urdfUrl={`${URDF_BASE}/model/cloid_v1_hand.urdf`} motionData={motion} nodeId={nodeId} />
-            </group>
-          </Center>
-        </Suspense>
-        <OrbitControls target={[0, 0, 0]} />
-      </Canvas>
-    </PreviewCard>
+    <>
+      <PreviewHeader label={data.label} open={contentOpen} onToggle={() => setContentOpen((prev) => !prev)} />
+      <PreviewCard $hidden={!contentOpen}>
+        <Canvas camera={{ position: [0, 0, 5], fov: 25, zoom: 1.25 }}>
+          <ambientLight intensity={0.5} />
+          <directionalLight position={[3, 3, 3]} />
+          <Suspense fallback={null}>
+            <Center>
+              <group rotation={[-Math.PI / 2, 0, -Math.PI / 2]}>
+                <Robot urdfUrl={`${URDF_BASE}/model/cloid_v1_hand.urdf`} motionData={motion} nodeId={nodeId} />
+              </group>
+            </Center>
+          </Suspense>
+          <OrbitControls target={[0, 0, 0]} />
+        </Canvas>
+      </PreviewCard>
+      {nodeId && <PreviewProgress nodeId={nodeId} />}
+    </>
   )
 }

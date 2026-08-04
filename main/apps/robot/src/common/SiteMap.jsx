@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react'
 import styled from 'styled-components'
-import { createSvgUrlFromPng, getSvgSize, parseMultigrid, worldToSvgPixel } from '@/utils/mapUtils'
+import { getImageNaturalSize, getSvgSize, parseMultigrid, worldToSvgPixel } from '@/utils/mapUtils'
 import { getLocalizedName } from '@/utils/robotUtils'
 import { RobotImange } from '@/assets/image'
 import { useNavigate } from 'react-router-dom'
@@ -84,6 +84,7 @@ const Canvas = styled.div`
   left: 50%;
   top: 50%;
   will-change: transform;
+  z-index: 100;
 `
 
 const MapImage = styled.img`
@@ -119,6 +120,8 @@ const PoiIcon = styled.img`
   display: block;
   pointer-events: none;
   -webkit-user-drag: none;
+  position: relative;
+  z-index: 0;
 `
 
 const RobotAvatar = styled.div`
@@ -185,6 +188,7 @@ const PoiMarker = styled.div`
   transform: translate(-50%, -100%);
   cursor: ${({ $clickable }) => ($clickable ? 'pointer' : 'default')};
   filter: drop-shadow(0px 2px 4px rgba(17, 17, 17, 0.2));
+  overflow: visible;
 `
 
 // const PoiDot = styled.div`
@@ -204,11 +208,64 @@ const PoiLabel = styled.div`
   color: #484848;
   white-space: nowrap;
   font-weight: 600;
+  font-family: 'LG_Smart_UI', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   pointer-events: none;
   background: rgba(255, 255, 255, 0.8);
-  opacity: 0.8;
   padding: 4px 8px;
   border-radius: 4px;
+  box-shadow: 0px 2px 4px rgba(17, 17, 17, 0.2);
+  position: relative;
+  z-index: 1;
+`
+
+const PoiTooltip = styled.div`
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.9);
+  color: #ffffff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: 'LG_Smart_UI', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  z-index: 10000;
+  pointer-events: none;
+  margin-bottom: 8px;
+  display: ${({ $show }) => ($show ? 'block' : 'none')};
+  white-space: nowrap;
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: rgba(0, 0, 0, 0.9);
+  }
+`
+
+const PoiTooltipContent = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+`
+
+const PoiTooltipRow = styled.div`
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  white-space: nowrap;
+
+  & > span:first-child {
+    color: #b0b0b0;
+    min-width: 50px;
+  }
+
+  & > span:last-child {
+    color: #ffffff;
+  }
 `
 
 // ---------------- component ----------------
@@ -227,11 +284,15 @@ const SiteMap = ({
     height: 0
   })
   const [multigrid, setMultigrid] = useState(null)
+  // full NAVI raster size — the MULTIGRID matrix's translation term assumes this pixel space
+  const [naviImageSize, setNaviImageSize] = useState({ width: 0, height: 0 })
   const svgUrlRef = useRef(null)
   const viewportRef = useRef(null)
   const navigate = useNavigate()
   const { i18n } = useTranslation()
 
+  const [hoveredPoiId, setHoveredPoiId] = useState(null)
+  const [poiRect, setPoiRect] = useState(null)
   const [viewportSize, setViewportSize] = useState({
     width: 0,
     height: 500
@@ -278,6 +339,13 @@ const SiteMap = ({
           const svgTextContent = await svgResponse.text()
           setMultigrid(parseMultigrid(svgTextContent))
 
+          // MULTIGRID matrix의 translation은 전체 NAVI 원본 래스터 픽셀 좌표계를 기준으로 하므로,
+          // (SVG 자체는 crop된 영역만 포함) 좌표 변환에는 원본 PNG의 실제 크기가 필요함
+          if (mapServer?.navi?.pngDownloadUrl) {
+            const naviSize = await getImageNaturalSize(mapServer.navi.pngDownloadUrl)
+            setNaviImageSize(naviSize)
+          }
+
           // 3. 텍스트 → Blob → 임시 Object URL 생성
           const svgBlob = new Blob([svgTextContent], { type: 'image/svg+xml' })
           const svgLocalUrl = URL.createObjectURL(svgBlob)
@@ -299,26 +367,17 @@ const SiteMap = ({
 
         // fallback (PNG) — 도면 변환이 없으므로 MULTIGRID 없음
         setMultigrid(null)
-        // 1. PRESIGNED_URL_PNG 에서 PNG 바이너리 다운로드
-        const response = await fetch(mapData?.url)
-        if (!response.ok) throw new Error(`이미지 다운로드 실패: ${response.status}`)
-
-        // 2. Blob → 임시 Object URL 생성
-        const blob = await response.blob()
-        const localUrl = URL.createObjectURL(blob)
-
-        // 3. 기존 createSvgUrlFromPng 에 localUrl 전달
-        const { url, width, height } = await createSvgUrlFromPng(localUrl)
-
-        // 4. 중간 단계 임시 URL은 바로 해제
-        URL.revokeObjectURL(localUrl)
+        // presigned PNG URL을 <img src>에 직접 사용 — SVG로 감싸서 <img>에 넣으면 브라우저가
+        // "이미지 컨텍스트"로 취급해 SVG 내부에서 참조하는 외부 리소스(<image href>)를 보안상
+        // 로드하지 않으므로 PNG가 표시되지 않음. fetch로 미리 받으면 CORS에 막혀 다운로드 자체가 실패함.
+        const { width, height } = await getImageNaturalSize(mapData?.url)
 
         if (svgUrlRef.current) {
           URL.revokeObjectURL(svgUrlRef.current)
         }
 
-        svgUrlRef.current = url
-        setMapSvgUrl(url)
+        svgUrlRef.current = null
+        setMapSvgUrl(mapData.url)
         setImageNaturalSize({ width, height })
       } catch (error) {
         console.error('맵 로드 실패:', error)
@@ -332,7 +391,7 @@ const SiteMap = ({
         URL.revokeObjectURL(svgUrlRef.current)
       }
     }
-  }, [mapData])
+  }, [mapData, mapServer?.navi?.pngDownloadUrl])
 
   // viewport resize
   useEffect(() => {
@@ -458,7 +517,9 @@ const SiteMap = ({
 
   // world → SVG pixel (MULTIGRID transform 적용) → 화면 픽셀
   const toRenderCoords = (x, y, navi, renderScale) => {
-    const { x: sx, y: sy } = worldToSvgPixel(x, y, navi, multigrid, imageNaturalSize.height)
+    // multigrid가 있으면 원본 NAVI 래스터 높이로 Y-flip 후 matrix 적용, 없으면 표시 중인 이미지 높이 사용
+    const flipHeight = multigrid ? naviImageSize.height : imageNaturalSize.height
+    const { x: sx, y: sy } = worldToSvgPixel(x, y, navi, multigrid, flipHeight)
     return {
       renderX: sx * renderScale.x,
       renderY: sy * renderScale.y
@@ -647,7 +708,7 @@ const SiteMap = ({
         }
         return { ...robotData, renderX, renderY, headingDeg }
       })
-  }, [canvasSize, renderScale, robotDatas, mapServer, multigrid, imageNaturalSize])
+  }, [canvasSize, renderScale, robotDatas, mapServer, multigrid, imageNaturalSize, naviImageSize])
 
   const poiMarkers = useMemo(() => {
     if (!canvasSize.width || !canvasSize.height) return []
@@ -655,11 +716,13 @@ const SiteMap = ({
     const navi = mapServer?.navi
     if (!navi?.resolution || !navi?.origin) return []
 
-    return (mapServer?.poi?.pois ?? []).map((poi) => {
+    const pois = (mapServer?.poi?.pois ?? []).map((poi) => {
       const { renderX, renderY } = toRenderCoords(poi.x, poi.y, navi, renderScale)
       return { ...poi, renderX, renderY }
     })
-  }, [canvasSize, renderScale, mapServer, multigrid, imageNaturalSize])
+
+    return pois
+  }, [canvasSize, renderScale, mapServer, multigrid, imageNaturalSize, naviImageSize])
 
   return (
     <Viewport ref={viewportRef} onMouseDown={handleMouseDown} $height={height}>
@@ -704,6 +767,7 @@ const SiteMap = ({
           {poiMarkers.map((poi) => {
             // CHARGING POI는 클릭 대상에서 제외 (3D SiteMap3D 와 동일한 규칙)
             const clickable = clickPoi && poi.type !== 'CHARGING'
+            const isHovered = hoveredPoiId === poi.poiId
             return (
               <PoiMarker
                 key={poi.poiId}
@@ -711,6 +775,19 @@ const SiteMap = ({
                 style={{
                   left: `${poi.renderX}px`,
                   top: `${poi.renderY}px`
+                }}
+                onMouseEnter={(e) => {
+                  setHoveredPoiId(poi.poiId)
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  setPoiRect({
+                    left: rect.left + rect.width / 2,  // POI 마커 중앙
+                    top: rect.top,  // POI 마커 상단
+                    height: rect.height  // POI 마커 높이
+                  })
+                }}
+                onMouseLeave={() => {
+                  setHoveredPoiId(null)
+                  setPoiRect(null)
                 }}
                 onClick={() => {
                   if (clickable) onPoiClick?.(poi)
@@ -723,6 +800,62 @@ const SiteMap = ({
           })}
         </Canvas>
       )}
+
+      {/* POI Tooltip Layer - Right side of POI marker */}
+      {hoveredPoiId && poiRect && poiMarkers.map((poi) => {
+        if (poi.poiId !== hoveredPoiId) return null
+
+        return (
+          <div
+            key={`tooltip-${poi.poiId}`}
+            style={{
+              position: 'fixed',
+              left: `${poiRect.left + 10}px`,
+              top: `${poiRect.top + 5}px`,
+              background: 'rgba(0, 0, 0, 0.9)',
+              color: '#ffffff',
+              padding: '8px 12px',
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontFamily: "'LG_Smart_UI', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+              zIndex: 10000,
+              pointerEvents: 'none',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Name:</span>
+                <span>{getLocalizedName(poi.name, i18n.language)}</span>
+              </div>
+              {poi.x != null && poi.y != null && (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Position:</span>
+                  <span>X: {poi.x.toFixed(2)}, Y: {poi.y.toFixed(2)}</span>
+                </div>
+              )}
+              {poi.yawDeg != null && (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Yaw:</span>
+                  <span>{poi.yawDeg.toFixed(1)}°</span>
+                </div>
+              )}
+              {poi.tolerance != null && (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Tolerance:</span>
+                  <span>{poi.tolerance.toFixed(2)}m</span>
+                </div>
+              )}
+              {poi.properties?.description && (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Description:</span>
+                  <span>{poi.properties.description}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })}
     </Viewport>
   )
 }

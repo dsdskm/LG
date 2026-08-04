@@ -38,14 +38,14 @@ export const StyledAiFloatingTrigger = styled.button`
   width: 4.4rem;
   height: 4.4rem;
   border-radius: 50% 0 0 50%;
-  background: linear-gradient(135deg, #7b5ef8 0%, #5b8dee 100%);
+  background: linear-gradient(135deg, #CD7B94 0%, #BF2D59 50%, #B91C4C 100%);
   color: #fff;
   border: none;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1.8rem;
-  box-shadow: -3px 3px 14px rgba(123, 94, 248, 0.45);
+  box-shadow: -3px 3px 14px rgba(205, 123, 148, 0.45);
   cursor: grab;
   user-select: none;
   touch-action: none;
@@ -53,7 +53,7 @@ export const StyledAiFloatingTrigger = styled.button`
   transition: box-shadow 0.15s, opacity 0.15s;
 
   &:hover {
-    box-shadow: -4px 4px 18px rgba(123, 94, 248, 0.6);
+    box-shadow: -4px 4px 18px rgba(205, 123, 148, 0.6);
     opacity: 0.95;
   }
 
@@ -90,7 +90,7 @@ export const StyledAiBotAvatar = styled.div`
   width: 2.8rem;
   height: 2.8rem;
   border-radius: 50%;
-  background: linear-gradient(135deg, #7b5ef8 0%, #5b8dee 100%);
+  background: linear-gradient(135deg, #CD7B94 0%, #BF2D59 50%, #B91C4C 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -246,7 +246,7 @@ export const StyledAiAssistantMessageBubble = styled.div`
   border-radius: ${({ $role }) => ($role === 'user' ? '1.6rem 1.6rem 0.4rem 1.6rem' : '1.6rem 1.6rem 1.6rem 0.4rem')};
   padding: 1rem 1.3rem;
   background: ${({ $role }) =>
-    $role === 'user' ? 'linear-gradient(135deg,#7b5ef8,#5b8dee)' : 'var(--color-secondary-10, #f4f5f7)'};
+    $role === 'user' ? 'linear-gradient(135deg,#CD7B94,#BF2D59,#B91C4C)' : 'var(--color-secondary-10, #f4f5f7)'};
   color: ${({ $role }) => ($role === 'user' ? '#ffffff' : 'var(--color-secondary-90, #262f44)')};
   font-size: 1.3rem;
   line-height: 1.6;
@@ -464,8 +464,8 @@ export const StyledAiComposerBox = styled.div`
   transition: border-color 0.15s, box-shadow 0.15s;
 
   &:focus-within {
-    border-color: #7b5ef8;
-    box-shadow: 0 0 0 3px rgba(123, 94, 248, 0.12);
+    border-color: #BF2D59;
+    box-shadow: 0 0 0 3px rgba(191, 45, 89, 0.12);
   }
 `
 
@@ -510,18 +510,18 @@ export const StyledAiContextChips = styled.div`
 export const StyledAiContextChip = styled.button`
   padding: 0.4rem 0.9rem;
   border-radius: 20px;
-  border: 1px solid ${({ $active }) => ($active ? '#7b5ef8' : 'var(--color-secondary-20, #dadde2)')};
-  background: ${({ $active }) => ($active ? 'rgba(123,94,248,0.08)' : 'transparent')};
-  color: ${({ $active }) => ($active ? '#7b5ef8' : 'var(--color-secondary-50, #848c9d)')};
+  border: 1px solid ${({ $active }) => ($active ? '#BF2D59' : 'var(--color-secondary-20, #dadde2)')};
+  background: ${({ $active }) => ($active ? 'rgba(191,45,89,0.08)' : 'transparent')};
+  color: ${({ $active }) => ($active ? '#BF2D59' : 'var(--color-secondary-50, #848c9d)')};
   font-size: 1.15rem;
   cursor: pointer;
   transition: all 0.15s;
   white-space: nowrap;
 
   &:hover {
-    border-color: #7b5ef8;
-    color: #7b5ef8;
-    background: rgba(123, 94, 248, 0.06);
+    border-color: #BF2D59;
+    color: #BF2D59;
+    background: rgba(191, 45, 89, 0.06);
   }
 `
 
@@ -530,7 +530,7 @@ export const StyledAiSendButton = styled.button`
   height: 3.2rem;
   border-radius: 50%;
   border: none;
-  background: ${({ disabled }) => (disabled ? 'var(--color-secondary-20, #dadde2)' : 'linear-gradient(135deg,#7b5ef8,#5b8dee)')};
+  background: ${({ disabled }) => (disabled ? 'var(--color-secondary-20, #dadde2)' : 'linear-gradient(135deg,#CD7B94,#BF2D59,#B91C4C)')};
   color: ${({ disabled }) => (disabled ? 'var(--color-secondary-40, #adb5bd)' : '#fff')};
   display: flex;
   align-items: center;

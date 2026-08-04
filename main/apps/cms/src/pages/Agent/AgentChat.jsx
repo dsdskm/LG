@@ -5,6 +5,7 @@ import { StyledPageContent, Section, Title, Button, Textarea, OrganizationSelect
 import { useOrganizationStore, useUserStore } from '@repo/stores'
 import { agentApis } from '@/apis'
 import { resolveOrgIds } from '@/utils/org'
+import { guardAction } from '@/utils/actionGuard'
 import { PageHeadWrap } from '@/components/common/styles'
 
 // 최종답변 마크다운 렌더링 (GFM 표 지원) — 표/셀/문단 스타일
@@ -312,7 +313,14 @@ const AgentChat = () => {
               disabled={running || !!pending}
             />
           </div>
-          <Button variant="contained" disabled={running || !!pending || !message.trim()} onClick={run}>
+          <Button
+            variant="contained"
+            disabled={running}
+            onClick={guardAction(run, [
+              { when: !!pending, message: '확인 대기 중입니다.' },
+              { when: !message.trim(), message: '메시지를 입력하세요.' }
+            ])}
+          >
             {running ? '처리 중…' : '실행'}
           </Button>
         </div>

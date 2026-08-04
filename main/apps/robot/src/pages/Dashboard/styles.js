@@ -232,16 +232,16 @@ export const PlayButton = styled.button`
 
   font-size: 11px;
 
-  border: 1px solid #6ee7b7;
-  background-color: #f0fdf4;
-  color: #059669;
+  border: 1px solid var(--t-play-btn-border);
+  background-color: var(--t-play-btn-bg);
+  color: var(--t-play-btn-text);
 
   cursor: pointer;
 
   transition: background-color 0.2s ease;
 
   &:hover {
-    background-color: #dcfce7;
+    background-color: var(--t-play-btn-hover-bg);
   }
 `
 
@@ -307,4 +307,3 @@ export const LiveSpan = styled.span`
     animation: ${pulse} 1s infinite;
   }
 `
-

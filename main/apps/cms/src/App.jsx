@@ -1,19 +1,46 @@
-import React, { useMemo, Suspense, useEffect } from 'react'
+import React, { useMemo, Suspense, useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import Router from './router/Router'
-import { appRoutes, getAppPrefix, flattenRoutes } from './router/routes'
+import { getAppRoutes, getAppPrefix, flattenRoutes } from './router/routes'
 import { GlobalStyle } from '@repo/ui/styles'
 import { useWindowDimensions } from '@repo/hooks'
 import { useTranslation } from 'react-i18next'
-import { Toast } from '@repo/ui'
+import { Toast, GlobalErrorModal } from '@repo/ui'
 import 'react-toastify/dist/ReactToastify.css'
-import { languageApis } from '@/apis'
+import { useOrganizationStore } from '@repo/stores'
+import { languageApis, featureApis } from '@/apis'
+import { resolveOrgIds } from '@/utils/org'
 
 const App = () => {
   useWindowDimensions()
   const { pathname } = useLocation()
   const { t: layoutT } = useTranslation('layout')
   const { t: appT } = useTranslation('route')
+
+  // 조직별 기능 on/off: 현재 선택된 org 의 활성 feature 집합 (기본 OFF)
+  const { selectedOrgs, allOrgs } = useOrganizationStore()
+  const [enabledFeatures, setEnabledFeatures] = useState(() => new Set())
+
+  useEffect(() => {
+    let active = true
+    const fetchEnabled = async () => {
+      const { groupId, siteId } = resolveOrgIds(selectedOrgs, allOrgs)
+      // groupId 없어도 호출 → BE가 기능별 기본값(defaultEnabled) 반영 (기본 ON 기능은 org 미선택에도 노출)
+      try {
+        const params = {}
+        if (groupId != null) params.groupId = groupId
+        if (siteId != null) params.siteId = siteId
+        const res = await featureApis.getEnabled(params)
+        if (active) setEnabledFeatures(new Set(res?.results || []))
+      } catch {
+        if (active) setEnabledFeatures(new Set())
+      }
+    }
+    fetchEnabled()
+    return () => {
+      active = false
+    }
+  }, [selectedOrgs, allOrgs])
 
   useEffect(() => {
     const fetchLanguages = async () => {
@@ -45,14 +72,15 @@ const App = () => {
       })
     }
 
-    return processRoutes(appRoutes)
-  }, [])
+    return processRoutes(getAppRoutes(enabledFeatures))
+  }, [enabledFeatures])
 
   const allRoutes = useMemo(() => flattenRoutes(processedAppRoutes), [processedAppRoutes])
 
   return (
     <>
       <GlobalStyle />
+      <GlobalErrorModal />
       <Toast />
       <Suspense fallback={<div>{layoutT('loading')}</div>}>
         <Router allRoutes={allRoutes} appPrefix={appPrefix} processedAppRoutes={processedAppRoutes} appT={appT} />

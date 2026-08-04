@@ -389,7 +389,14 @@ const MapWrap = styled.div`
 `
 
 const RefreshIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <path d="M21 12a9 9 0 1 1-3-6.7" />
     <path d="M21 3v6h-6" />
   </svg>
@@ -454,7 +461,7 @@ const TVDashboard = () => {
   const [searchParams] = useSearchParams()
 
   const paramGroup = searchParams.get('group') ?? 'all'
-  const paramSite  = searchParams.get('site')  ?? 'all'
+  const paramSite = searchParams.get('site') ?? 'all'
   const hasSite = paramSite !== 'all' && paramSite !== 'none'
 
   const [scale, setScale] = useState(1)
@@ -499,13 +506,19 @@ const TVDashboard = () => {
     try {
       const params = { groupId, siteId, buildingId: area.buildingId, floorId: area.floorId, areaId: area.areaId }
       const data = await mapApis.getMapViewFind(params)
-      let type = 'png', url = ''
+      let type = 'png',
+        url = ''
       if (data.mapServer?.navi?.svgDownloadUrl) {
-        type = 'svg'; url = data.mapServer.navi.svgDownloadUrl
+        type = 'svg'
+        url = data.mapServer.navi.svgDownloadUrl
       } else {
         url = data.mapServer?.navi?.pngDownloadUrl
       }
-      if (!url) { setMapData({}); setMapServer({}); return }
+      if (!url) {
+        setMapData({})
+        setMapServer({})
+        return
+      }
       setMapData({ type, url })
       setMapServer(data.mapServer)
     } catch (err) {
@@ -540,15 +553,23 @@ const TVDashboard = () => {
 
   // 사이트 계층(빌딩/층/영역) 조회
   useEffect(() => {
-    if (!hasSite) { setBuildings([]); return }
+    if (!hasSite) {
+      setBuildings([])
+      return
+    }
     siteApis
       .getSiteById(paramSite)
       .then((d) => setBuildings(d?.buildings ?? []))
-      .catch((err) => { console.error('TVDashboard getSiteById:', err); setBuildings([]) })
+      .catch((err) => {
+        console.error('TVDashboard getSiteById:', err)
+        setBuildings([])
+      })
   }, [hasSite, paramSite])
 
   // 영역 시퀀스가 바뀌면 인덱스 초기화
-  useEffect(() => { setCurrentAreaIdx(0) }, [seq.length])
+  useEffect(() => {
+    setCurrentAreaIdx(0)
+  }, [seq.length])
 
   // 1분마다 영역 순환 (마지막 → 처음)
   useEffect(() => {
@@ -613,17 +634,28 @@ const TVDashboard = () => {
 
     devices.forEach((d) => {
       switch (d.deviceState) {
-        case 'OPERATION': count.opr++; break
-        case 'LEARNING':  count.lrn++; break
-        case 'STANDBY':   count.sta++; break
-        case 'CHARGE':    count.chr++; break
-        case 'ERROR':     count.err++; break
-        case 'OFFLINE':   count.off++; break
+        case 'OPERATION':
+          count.opr++
+          break
+        case 'LEARNING':
+          count.lrn++
+          break
+        case 'STANDBY':
+          count.sta++
+          break
+        case 'CHARGE':
+          count.chr++
+          break
+        case 'ERROR':
+          count.err++
+          break
+        case 'OFFLINE':
+          count.off++
+          break
       }
 
       if (!hasSite) {
-        const siteId = d.provision?.isDefaultSite !== true && d.provision?.siteName
-          ? d.provision.siteId : null
+        const siteId = d.provision?.isDefaultSite !== true && d.provision?.siteName ? d.provision.siteId : null
         if (!siteId) return
         const site = sites.find((s) => s.siteId === siteId)
         if (!site?.siteLatitude || !site?.siteLongitude) return
@@ -636,20 +668,20 @@ const TVDashboard = () => {
 
     setDeviceCount(count)
     if (!hasSite) {
-      setMarkers(Array.from(siteMap.values()).map((m) => ({
-        title: `${m.name} - ${m.count}${t('unit')}`,
-        lat: m.lat,
-        lng: m.lng
-      })))
+      setMarkers(
+        Array.from(siteMap.values()).map((m) => ({
+          title: `${m.name} - ${m.count}${t('unit')}`,
+          lat: m.lat,
+          lng: m.lng
+        }))
+      )
     }
   }, [devices, sites, hasSite, t])
 
   // 현재 영역에 위치한 로봇 (sitePosition.areaId 기준)
   const areaRobotDatas = useMemo(() => {
     if (!areaMode || !currentArea) return []
-    return devices
-      .filter((d) => d.state?.sitePosition?.areaId === currentArea.areaId)
-      .map(parseRobotData)
+    return devices.filter((d) => d.state?.sitePosition?.areaId === currentArea.areaId).map(parseRobotData)
   }, [devices, areaMode, currentArea?.areaId])
 
   // 사이트 지도 모드(영역 정보 없음)일 때는 전체 로봇 표시
@@ -658,8 +690,7 @@ const TVDashboard = () => {
     [devices, hasSite, areaMode]
   )
 
-  const timeLabel =
-    `${t('collection.today')} ${t('collection.updated')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} UTC+9`
+  const timeLabel = `${t('collection.today')} ${t('collection.updated')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} UTC+9`
 
   const mapTitle = t('robotPlacementStatus', '로봇 배치 현황 및 위치 정보')
   const totalRobots =

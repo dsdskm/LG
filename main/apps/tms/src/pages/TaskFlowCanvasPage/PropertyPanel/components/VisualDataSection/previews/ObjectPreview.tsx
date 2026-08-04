@@ -22,7 +22,6 @@ export default function ObjectPreview({ node, nodeId }: PreviewProps) {
   return (
     <PreviewCard>
       <PreviewHeaderTitle title={data.label}>{data.label}</PreviewHeaderTitle>
-
       <MediaStage>
         <MediaFallbackText>{data.contentName}</MediaFallbackText>
       </MediaStage>

@@ -129,7 +129,7 @@ const appRoutes = [
     name: 'settings',
     prefix: 'settings',
     icon: 'settings',
-    accessLevel: [3],
+    accessLevel: [3, 4],
     depth: [
       {
         name: 'termManagement',

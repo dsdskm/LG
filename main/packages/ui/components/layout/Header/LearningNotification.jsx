@@ -313,7 +313,7 @@ const LearningNotification = () => {
   return (
     <Wrapper ref={wrapperRef}>
       <TriggerBtn type="button" onClick={toggle} title="학습 알림">
-        <GraduationCapIcon size={20} color="white" />
+        <GraduationCapIcon size={24} color="white" />
         {unread > 0 && <UnreadBadge>{unread > 9 ? '9+' : unread}</UnreadBadge>}
       </TriggerBtn>
 

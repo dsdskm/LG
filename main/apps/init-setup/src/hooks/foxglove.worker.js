@@ -15,7 +15,7 @@ self.onmessage = (event) => {
         } catch (err) {}
       }
 
-      ws = new WebSocket(url, ['foxglove.sdk.v1'])
+      ws = new WebSocket(url, ['foxglove.websocket.v1'])
       ws.binaryType = 'arraybuffer'
 
       ws.onopen = () => {

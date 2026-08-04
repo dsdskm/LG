@@ -234,6 +234,11 @@
   --t-table-border: rgba(140, 134, 120, 0.22);
 
   --t-tab-active: #4e422c;
+  --t-toggle-active-bg: #7d776a;
+  --t-play-btn-border: #7d776a;
+  --t-play-btn-bg: #f4f1ec;
+  --t-play-btn-text: #7d776a;
+  --t-play-btn-hover-bg: #e8e1d8;
   --t-select-accent: #b91c4c;
   --t-select-accent-hover: #cd7b94;
 
@@ -267,6 +272,11 @@
   --t-table-border: rgba(53, 64, 86, 0.1);
 
   --t-tab-active: var(--color-primary-70);
+  --t-toggle-active-bg: #3b82f6;
+  --t-play-btn-border: #6ee7b7;
+  --t-play-btn-bg: #f0fdf4;
+  --t-play-btn-text: #059669;
+  --t-play-btn-hover-bg: #dcfce7;
   --t-select-accent: var(--color-primary-70);
   --t-select-accent-hover: var(--color-primary-50);
 

@@ -25,9 +25,15 @@ const ModalInviteUser = ({ isOpen, t, onClose, onConfirm }) => {
     // 세션 사용자 역할 기준으로 초대 가능한 역할만 노출 (최대 SYSTEM_MANAGER 레벨까지)
     const sessionLevel = getUserLevelByuserRole(session?.userRole) ?? -1
     const maxLevel = Math.min(sessionLevel, 2)
+    const isSystemAdmin = session?.userRole === 'SYSTEM_ADMIN'
+
     return allRoles
-      .filter((r) => (r.userLevel ?? Infinity) <= maxLevel)
-      .sort((a, b) => a.userLevel - b.userLevel) // SITE_MANAGER → SYSTEM_MANAGER 순
+      .filter((r) => {
+        // TERM_MANAGER는 SYSTEM_ADMIN일 때만 노출
+        if (r.value === 'TERM_MANAGER') return isSystemAdmin
+        return (r.userLevel ?? Infinity) <= maxLevel
+      })
+      .sort((a, b) => a.userLevel - b.userLevel) // SITE_MANAGER → SYSTEM_MANAGER → TERM_MANAGER 순
       .map((r) => ({ value: r.value, name: t(r.roleName) }))
   }, [session?.userRole, t])
 
@@ -229,10 +235,7 @@ const ModalInviteUser = ({ isOpen, t, onClose, onConfirm }) => {
             <p className="typographyBody4" style={{ whiteSpace: 'pre-wrap', marginBottom: '1rem' }}>
               {t('inviteReason')}
             </p>
-            <Textarea
-              placeholder={t('inputInviteReason')}
-              onChange={(e) => setInviteReason(e.target.value)}
-            ></Textarea>
+            <Textarea placeholder={t('inputInviteReason')} onChange={(e) => setInviteReason(e.target.value)}></Textarea>
           </div>
         </div>
       </form>

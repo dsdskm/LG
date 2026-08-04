@@ -1,13 +1,21 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react'
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { Table, Modal, Button, ExpandableSection, SectionRobot as Section } from '@repo/ui'
 import { toYmdHmKST } from '@/utils/dateUtils'
-import { parseDeviceInfo, parseRobotData, getLocalizedName, getWifiStatus } from '@/utils/robotUtils'
+import {
+  parseDeviceInfo,
+  parseRobotData,
+  getLocalizedName,
+  getWifiStatus,
+  getTaskFlowControlState,
+  filterActiveTaskFlows
+} from '@/utils/robotUtils'
 import { EditButton, PlayButton, StopButton, LiveSpan, NoUnderlineExpandable } from '@/utils/style'
 import { SectionList } from '../styles'
 import { useModalState } from '@repo/hooks'
 import { deviceApis, mapApis } from '@/apis'
 import ModalEditRobot from '../modal/ModalEditRobot'
 import ModalMoveLocation from '../modal/ModalMoveLocation.jsx'
+import ModalSelectTaskFlow from '../modal/ModalSelectTaskFlow.jsx'
 import { useTranslation } from 'react-i18next'
 import { useUserStore } from '@repo/stores'
 // import SiteMap from '../../../common/SiteMap'
@@ -46,10 +54,12 @@ const AssetInfo = ({ t, deviceId }) => {
   const [mapData, setMapData] = useState({})
   const [robotDatas, setRobotDatas] = useState([])
   const [robotState, setRobotState] = useState({})
+  const [taskFlows, setTaskFlows] = useState([])
   const [showMap, setShowMap] = useState(false)
   const [mapServer, setMapServer] = useState({})
   const { t: tCommon, i18n } = useTranslation('common')
   const MoveLocationModal = useModalState()
+  const SelectTaskFlowModal = useModalState()
   const { session } = useUserStore()
   const [isLive, setIsLive] = useState(false)
   const liveIntervalRef = useRef(null)
@@ -58,6 +68,7 @@ const AssetInfo = ({ t, deviceId }) => {
     updatedAt: null,
     st: null, // state.stateUpdatedAt
     conn: null, // connection.connectionUpdatedAt
+    tms: null, // tms.tmsUpdatedAt (taskFlows 변경 감지)
     hwTs: null,
     senTs: null,
     swTs: null
@@ -117,6 +128,7 @@ const AssetInfo = ({ t, deviceId }) => {
       })
       setRobotDatas([parseRobotData(data)])
       setRobotState(data?.state)
+      setTaskFlows(filterActiveTaskFlows(data?.tms?.taskFlowState?.taskFlows))
 
       const provisionData = data.provision
       const sp = data.state?.sitePosition
@@ -337,6 +349,9 @@ const AssetInfo = ({ t, deviceId }) => {
 
   const isOnline = deviceInfo.state && deviceInfo.state != 'OFFLINE'
 
+  // taskFlows(운영 업무 목록)의 operationStatus에 따라 시작/정지/일시정지/재개 버튼 활성 조건 계산
+  const taskFlowControl = useMemo(() => getTaskFlowControlState(taskFlows), [taskFlows])
+
   // actions 배열을 로봇에 전송하는 공용 함수 (RF: 네이티브, 그 외: 서버)
   // 성공/실패 시 확인 모달 메시지를 표시한다.
   const sendActions = async (actions, successMessage) => {
@@ -363,15 +378,51 @@ const AssetInfo = ({ t, deviceId }) => {
       return
     }
 
+    // 업무 시작 — 업무(taskFlow) 선택 모달을 띄우고, 실제 명령 전송은 handleStartTaskFlow에서 처리
+    if (action === 'start') {
+      SelectTaskFlowModal.onOpen()
+      return
+    }
+
+    // 정지/일시정지/재개 — 대상 taskFlow(현재 RUNNING 또는 PAUSED인 업무)를 찾아 tms_id를 담아 전송
+    // statuses에 해당하는 taskFlow가 없으면(버튼이 비활성 상태여야 하는 경우) 아무 동작도 하지 않음
+    const taskFlowActionMap = {
+      stop: { actionType: 'stop', blockingType: 'HARD', labelKey: 'stop', statuses: ['RUNNING', 'PAUSED'] },
+      pause_task: { actionType: 'startPause', blockingType: 'HARD', labelKey: 'workTempStop', statuses: ['RUNNING'] },
+      resume_task: { actionType: 'stopPause', blockingType: 'HARD', labelKey: 'workReume', statuses: ['PAUSED'] }
+    }
+
+    const taskFlowAction = taskFlowActionMap[action]
+    if (taskFlowAction) {
+      const targetTaskFlow = taskFlows.find((tf) => taskFlowAction.statuses.includes(tf.operationStatus))
+      if (!targetTaskFlow) return
+
+      await sendActions(
+        [
+          {
+            actionType: taskFlowAction.actionType,
+            actionId: crypto.randomUUID(),
+            blockingType: taskFlowAction.blockingType,
+            actionParameters: [{ key: 'tms_id', value: targetTaskFlow.id }]
+          }
+        ],
+        `${targetTaskFlow.name} ${t('sendCommand')}`
+      )
+      return
+    }
+
     // actionType/blockingType만 다른 단순 명령 액션
     // messageKey가 있으면 해당 메시지를, 없으면 "라벨 + sendCommand"를 성공 메시지로 사용
     const commandActionMap = {
       reboot: { actionType: 'reboot', blockingType: 'HARD', labelKey: 'reboot' },
       listen: { actionType: 'searchByVoice', blockingType: 'NONE', labelKey: 'listen' },
       shutdown: { actionType: 'poweroff', blockingType: 'HARD', labelKey: 'powerEnd' },
-      pause_task: { actionType: 'startPause', blockingType: 'HARD', labelKey: 'workTempStop' },
-      resume_task: { actionType: 'stopPause', blockingType: 'NONE', labelKey: 'workReume' },
-      go_charging: { actionType: 'goCharging', blockingType: 'NONE', messageKey: 'chargingStationMoveSent' }
+      go_charging: { actionType: 'goCharging', blockingType: 'NONE', messageKey: 'chargingStationMoveSent' },
+      gkr: { actionType: 'gkr', blockingType: 'HARD', labelKey: 'gkr' },
+      freeRunOn: { actionType: 'tofuOn', blockingType: 'HARD', labelKey: 'freeRunModeOn' },
+      freeRunOff: { actionType: 'tofuOff', blockingType: 'HARD', labelKey: 'freeRunModeOff' },
+      zeroGainOn: { actionType: 'zeroGainOn', blockingType: 'HARD', labelKey: 'zeroGainModeOn' },
+      zeroGainOff: { actionType: 'zeroGainOff', blockingType: 'HARD', labelKey: 'zeroGainModeOff' }
     }
 
     const command = commandActionMap[action]
@@ -385,6 +436,21 @@ const AssetInfo = ({ t, deviceId }) => {
 
     console.log(`Robot action: ${action}`)
     alert(`${action} ` + t('sendCommand'))
+  }
+
+  // 업무 선택 모달에서 taskFlow를 확정 → tms_id를 담아 move 액션 전송
+  const handleStartTaskFlow = (taskFlow) => {
+    sendActions(
+      [
+        {
+          actionType: 'start',
+          actionId: crypto.randomUUID(),
+          blockingType: 'HARD',
+          actionParameters: [{ key: 'tms_id', value: taskFlow.id }]
+        }
+      ],
+      `${taskFlow.name} ${t('sendCommand')}`
+    )
   }
 
   // 모션 명령 — RobotControlPanel에서 { actionType, blockingType, actionParameters }와 표시명을 전달받아 전송
@@ -423,9 +489,10 @@ const AssetInfo = ({ t, deviceId }) => {
 
       const st = data.state?.stateUpdatedAt ?? null
       const conn = data.connection?.connectionUpdatedAt ?? null
+      const tms = data.tms?.tmsUpdatedAt ?? null
 
       // 최상위 변경 없음 → 아무것도 갱신하지 않음 (불필요 리렌더 차단)
-      if (data.updatedAt === c.updatedAt && st === c.st && conn === c.conn) return
+      if (data.updatedAt === c.updatedAt && st === c.st && conn === c.conn && tms === c.tms) return
 
       // 상단 정보(이름/배터리/상태/위치)는 변경 시 갱신
       setDeviceInfo({
@@ -433,6 +500,12 @@ const AssetInfo = ({ t, deviceId }) => {
         wifi: getWifiStatus(data.state)
       })
       setRobotDatas([parseRobotData(data)])
+
+      // 업무 제어 버튼(시작/정지/일시정지/재개) 활성 조건용 taskFlows는 tms 갱신 시에만 갱신
+      if (tms !== c.tms) {
+        setTaskFlows(filterActiveTaskFlows(data?.tms?.taskFlowState?.taskFlows))
+        c.tms = tms
+      }
 
       // PartsStatusPanel용 robotState는 hw/sen/sw 타임스탬프가 바뀐 경우에만 갱신
       const hwTs = data.state?.hwComponentsUpdatedAt ?? null
@@ -491,6 +564,8 @@ const AssetInfo = ({ t, deviceId }) => {
         const initialChannel = window.Android.getChannel()
         console.log('request current channel:', initialChannel) // "CLOUD" or "RF"
         setChannel(initialChannel)
+        // 모바일(Android WebView)에서 접근한 경우 진입 시점부터 실시간(Live) 갱신 시작
+        handleLivePlay()
       }
     }
 
@@ -747,6 +822,10 @@ const AssetInfo = ({ t, deviceId }) => {
               t={t}
               isOnline={isOnline}
               showMap={showMap}
+              canStart={taskFlowControl.canStart}
+              canStop={taskFlowControl.canStop}
+              canPause={taskFlowControl.canPause}
+              canResume={taskFlowControl.canResume}
               onAction={handleRobotAction}
               onRotate={handleRotate}
               onMotion={handleMotion}
@@ -818,6 +897,13 @@ const AssetInfo = ({ t, deviceId }) => {
         mapServer={mapServer}
         t={t}
         lang={i18n.language}
+      />
+      <ModalSelectTaskFlow
+        isOpen={SelectTaskFlowModal.isOpen}
+        onClose={SelectTaskFlowModal.onClose}
+        onConfirm={handleStartTaskFlow}
+        taskFlows={taskFlows}
+        t={t}
       />
     </>
   )

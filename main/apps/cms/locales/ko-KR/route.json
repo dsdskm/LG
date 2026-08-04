@@ -2,6 +2,7 @@
   "SideBar": {
     "gnb": {
       "content": "콘텐츠",
+      "ttsTool": "TTS 변환",
       "label": "라벨",
       "embedding": "음성대화",
       "embeddingDocs": "문서 등록",

@@ -11,7 +11,8 @@ import {
   PauseCircle,
   BatteryCharging,
   Navigation,
-  RotateCcw
+  RotateCcw,
+  Gkr
 } from '@/assets/icon'
 
 // 섹션 헤더 배경을 연한 색(파란색 아님)으로 통일하고, hover 밑줄 제거
@@ -196,11 +197,27 @@ const MOTIONS = [
  * @param {Function} props.t - i18n 번역 함수
  * @param {boolean} props.isOnline - 로봇 온라인 여부
  * @param {boolean} props.showMap - 지도 표시 여부(장소 이동 활성 조건)
+ * @param {boolean} props.canStart - taskFlows 중 RUNNING/PAUSED가 없을 때 true (시작 가능)
+ * @param {boolean} props.canStop - taskFlows 중 RUNNING/PAUSED가 있을 때 true (정지 가능)
+ * @param {boolean} props.canPause - taskFlows 중 RUNNING이 있을 때 true (일시정지 가능)
+ * @param {boolean} props.canResume - taskFlows 중 PAUSED가 있을 때 true (재개 가능)
  * @param {Function} props.onAction - 기존 handleRobotAction (action 문자열 전달)
  * @param {Function} props.onMotion - 모션 명령 전송 ({ actionType, blockingType, actionParameters }, 표시명)
  * @param {Function} props.onMoveLocation - 장소 이동 모달 오픈
  */
-const RobotControlPanel = ({ t, isOnline, showMap, onAction, onRotate, onMotion, onMoveLocation }) => {
+const RobotControlPanel = ({
+  t,
+  isOnline,
+  showMap,
+  canStart,
+  canStop,
+  canPause,
+  canResume,
+  onAction,
+  onRotate,
+  onMotion,
+  onMoveLocation
+}) => {
   const [rotateDir, setRotateDir] = useState('ccw') // cw: 시계, ccw: 반시계 (기본: 반시계방향)
 
   // 모션 버튼 클릭 → params(object)를 actionParameters(key/value 배열)로 변환해 전송
@@ -238,29 +255,61 @@ const RobotControlPanel = ({ t, isOnline, showMap, onAction, onRotate, onMotion,
             <RotateCcw className="w-[14px] h-[14px]" />
             {t('reboot')}
           </ControlBtn>
+          <ControlBtn onClick={() => onAction('gkr')} disabled={!isOnline}>
+            <Gkr className="w-[14px] h-[14px]" />
+            {t('gkr')}
+          </ControlBtn>
         </ControlDiv>
       </ExpandableSection>
 
       {/* 업무 — 기존 버튼 재사용 */}
       <ExpandableSection iconPosition="left" header={<span>{t('task')}</span>}>
         <ControlDiv style={{ marginBottom: 0 }}>
-          <ControlBtn onClick={() => onAction('start')} disabled={true}>
+          <ControlBtn onClick={() => onAction('start')} disabled={!canStart}>
             <PlayCircle className="w-[14px] h-[14px]" />
             {t('start')}
           </ControlBtn>
-          <ControlBtn onClick={() => onAction('stop')} disabled={true}>
+          <ControlBtn onClick={() => onAction('stop')} disabled={!canStop}>
             <StopCircle className="w-[14px] h-[14px]" />
             {t('stop')}
           </ControlBtn>
-          <ControlBtn onClick={() => onAction('pause_task')} disabled={!isOnline}>
+          <ControlBtn onClick={() => onAction('pause_task')} disabled={!isOnline || !canPause}>
             <PauseCircle className="w-[14px] h-[14px]" />
             {t('workTempStop')}
           </ControlBtn>
-          <ControlBtn onClick={() => onAction('resume_task')} disabled={!isOnline}>
+          <ControlBtn onClick={() => onAction('resume_task')} disabled={!isOnline || !canResume}>
             <PlayCircle className="w-[14px] h-[14px]" />
             {t('workReume')}
           </ControlBtn>
         </ControlDiv>
+      </ExpandableSection>
+
+      {/* 특수 모드 — 자유 구동 / 제로 게인 (현재 상태값을 알 수 없어 모션과 동일하게 상태 표시 없는 버튼으로 구성) */}
+      <ExpandableSection iconPosition="left" header={<span>{t('specialMode')}</span>}>
+        <MotionGrid>
+          <MotionRow>
+            <MotionTitle>{t('freeRunMode')}</MotionTitle>
+            <MotionButtonsWrap>
+              <MiniBtn $lg disabled={!isOnline} onClick={() => onAction('freeRunOn')}>
+                {t('turnOn')}
+              </MiniBtn>
+              <MiniBtn $lg disabled={!isOnline} onClick={() => onAction('freeRunOff')}>
+                {t('turnOff')}
+              </MiniBtn>
+            </MotionButtonsWrap>
+          </MotionRow>
+          <MotionRow>
+            <MotionTitle>{t('zeroGainMode')}</MotionTitle>
+            <MotionButtonsWrap>
+              <MiniBtn $lg disabled={!isOnline} onClick={() => onAction('zeroGainOn')}>
+                {t('turnOn')}
+              </MiniBtn>
+              <MiniBtn $lg disabled={!isOnline} onClick={() => onAction('zeroGainOff')}>
+                {t('turnOff')}
+              </MiniBtn>
+            </MotionButtonsWrap>
+          </MotionRow>
+        </MotionGrid>
       </ExpandableSection>
 
       {/* 회전 — 신규 스캐폴딩 */}

@@ -14,6 +14,7 @@ import {
 import { toast } from 'react-toastify'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { guardAction } from '@/utils/actionGuard'
 import { useOrganizationStore } from '@repo/stores'
 import { embeddingApis } from '@/apis'
 import { convertDateToString } from '@repo/utils'
@@ -130,8 +131,9 @@ const Embedding = () => {
                 <Button
                   variant="contained"
                   theme="delete"
-                  onClick={() => setIsDeleteModalOpen(true)}
-                  disabled={selectedRows.length === 0}
+                  onClick={guardAction(() => setIsDeleteModalOpen(true), [
+                    { when: selectedRows.length === 0, message: '삭제할 항목을 선택하세요.' }
+                  ])}
                 >
                   {t('deleteSelected', '선택 삭제')}
                   {selectedRows.length > 0 ? ` (${selectedRows.length})` : ''}
@@ -145,7 +147,12 @@ const Embedding = () => {
                 {tCommon('delete', '삭제')}
               </Button>
             )}
-            <Button variant="contained" onClick={handleCreate} disabled={isDeleteMode}>
+            <Button
+              variant="contained"
+              onClick={guardAction(handleCreate, [
+                { when: isDeleteMode, message: '삭제 모드에서는 생성할 수 없습니다.' }
+              ])}
+            >
               {tCommon('create', '생성')}
             </Button>
           </ButtonWrap>

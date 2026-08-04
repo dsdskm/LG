@@ -2,6 +2,7 @@
   "SideBar": {
     "gnb": {
       "content": "Content",
+      "ttsTool": "TTS",
       "label": "Label",
       "embedding": "Voice Chat",
       "embeddingDocs": "Documents",

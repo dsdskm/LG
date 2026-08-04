@@ -16,6 +16,7 @@ import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ButtonWrap } from './styles'
 import { useOrganizationStore } from '@repo/stores'
+import { guardAction } from '@/utils/actionGuard'
 import { contentTypeApis, categoryTreeApis } from '@/apis'
 import { convertDateToString } from '@repo/utils'
 
@@ -171,7 +172,12 @@ const ContentType = () => {
             />
           </SearchContainer>
           <ButtonWrap className="alignRight" style={{ marginBottom: '0' }}>
-            <Button variant="contained" onClick={handleCreate} disabled={actualOrgs.length !== 1}>
+            <Button
+              variant="contained"
+              onClick={guardAction(handleCreate, [
+                { when: actualOrgs.length !== 1, message: '그룹/사이트를 하나로 특정해 선택하세요.' }
+              ])}
+            >
               {t('create')}
             </Button>
           </ButtonWrap>

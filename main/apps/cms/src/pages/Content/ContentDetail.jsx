@@ -29,6 +29,7 @@ import { useOrganizationStore } from '@repo/stores'
 import { useS3Upload } from '@repo/hooks'
 import { buildLangCodeMap, buildCategorySelectorTree, pickLocalizedName } from '@/components/common/CategorySelector/categoryNodeAdapter'
 import { resolveOrgIds } from '@/utils/org'
+import { guardAction } from '@/utils/actionGuard'
 import { toast } from 'react-toastify'
 import { ButtonWrap, PageHeadWrap } from '@/components/common/styles'
 import { DropdownContainer, ContentTypeBadge, InfoCard, InfoField, InfoChip, Breadcrumb } from './styles'
@@ -46,6 +47,29 @@ const genUid = () =>
   typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
     : `row-${Math.random().toString(36).slice(2)}-${Date.now()}`
+
+// 수정 모드 변경 여부 판정용 정규화 직렬화 — 저장에 반영되는 유효 값만 비교(카테고리/타입/서비스는 편집 불가라 제외)
+const serializeForm = ({ displayName, memo, latestVersion, labels, subsByLang }) => {
+  const subs = Object.entries(subsByLang || {})
+    .map(([langId, d]) => {
+      const files = (d?.files || [])
+        .filter((f) => f.file || f.id)
+        .map((f) => ({ id: f.id ?? null, sig: f.file ? `${f.file.name}:${f.file.size}` : null, name: f.fileName ?? null }))
+      const texts = (d?.texts || [])
+        .filter((x) => x.id || (x.textScript || '').trim())
+        .map((x) => ({ id: x.id ?? null, s: x.textScript ?? '' }))
+      return { langId: Number(langId), files, texts }
+    })
+    .filter((s) => s.files.length || s.texts.length)
+    .sort((a, b) => a.langId - b.langId)
+  return JSON.stringify({
+    displayName: displayName || '',
+    memo: memo || '',
+    latestVersion: !!latestVersion,
+    labels: [...(labels || [])].sort(),
+    subs
+  })
+}
 
 const SUPPORTED_TYPE_LIST = {
   audio: ['audio/wav', 'audio/mp3', 'audio/ogg', 'audio/aac', 'audio/flac', 'audio/m4a', 'audio/webm', 'audio/opus'],
@@ -93,6 +117,7 @@ const ContentDetail = () => {
 
   const [loadedContent, setLoadedContent] = useState(null) // 수정 모드 원본
   const categoryPrefilledRef = useRef(false)
+  const baselineRef = useRef(null) // 수정 모드 로드 시점 폼 스냅샷(변경 여부 비교용)
   const isEdit = !!id
 
   // 파일 업로드: 범용 useS3Upload 훅 + file-content 어댑터 (청킹/멀티파트/진행률/중단 내장)
@@ -203,6 +228,14 @@ const ContentDetail = () => {
           }
         })
         setSubsByLang(next)
+        // 변경 여부 비교 기준(baseline) 저장 — 로드된 값 기준
+        baselineRef.current = serializeForm({
+          displayName: c.displayName || '',
+          memo: c.memo || '',
+          latestVersion: names.includes(LATEST_LABEL),
+          labels: names.filter((n) => n !== LATEST_LABEL),
+          subsByLang: next
+        })
         if (firstLang != null) setSelectedLanguageId(firstLang)
         setSelectedServiceId(c.externalServiceId) // 카테고리 로드 effect 트리거
         if (!c.externalServiceId) setCategoryReady(true) // 서비스 없으면 카테고리 fetch가 안 도므로 게이트 해제
@@ -324,6 +357,13 @@ const ContentDetail = () => {
     [subsByLang]
   )
 
+  // 수정 모드 변경 여부 — 현재 폼을 baseline 과 동일 방식으로 직렬화해 비교
+  const currentSerialized = useMemo(
+    () => serializeForm({ displayName, memo, latestVersion, labels, subsByLang }),
+    [displayName, memo, latestVersion, labels, subsByLang]
+  )
+  const noChanges = isEdit && baselineRef.current !== null && currentSerialized === baselineRef.current
+
   // 입력 길이 제한 (BE content 모델 displayName VARCHAR(100), memo VARCHAR(500)와 일치)
   const titleTooLong = displayName.length > MAX_TITLE_LENGTH
   const memoTooLong = memo.length > MAX_MEMO_LENGTH
@@ -364,13 +404,18 @@ const ContentDetail = () => {
     return result
   }
 
-  const handleSave = () => {
-    if (titleTooLong || memoTooLong) {
-      toast.error(titleTooLong ? t('titleTooLong') : t('memoTooLong'), { autoClose: 2000 })
-      return
-    }
-    setIsConfirmModalOpen(true)
-  }
+  const handleSave = () => setIsConfirmModalOpen(true)
+
+  // 저장/수정 불가 사유 (항상 활성 버튼 클릭 시 첫 번째 사유를 토스트로 안내)
+  const saveRules = [
+    { when: !displayName, message: t('enterTitle', '제목을 입력하세요.') },
+    { when: titleTooLong, message: t('titleTooLong') },
+    { when: memoTooLong, message: t('memoTooLong') },
+    { when: !selectedServiceId, message: t('selectService', '서비스를 선택하세요.') },
+    { when: !selectedContentTypeId, message: '카테고리/콘텐츠 타입을 선택하세요.' },
+    { when: !hasAnyContent, message: '콘텐츠(파일 또는 텍스트)를 입력하세요.' },
+    { when: noChanges, message: '변경된 내용이 없습니다.' }
+  ]
 
   const confirmSave = async () => {
     setIsConfirmModalOpen(false)
@@ -471,8 +516,8 @@ const ContentDetail = () => {
         <ButtonWrap className="alignRight">
           <Button
             variant="contained"
-            onClick={handleSave}
-            disabled={isLoading || saving || isUploading || isDisabled()}
+            onClick={guardAction(handleSave, saveRules)}
+            disabled={isLoading || saving || isUploading}
           >
             {t(isEdit ? 'modify' : 'save')}
           </Button>

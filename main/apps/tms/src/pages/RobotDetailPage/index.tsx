@@ -102,6 +102,8 @@ const RobotDetailPage = () => {
   }
 
   const activePath = robotData?.tms?.taskFlowState?.runningTaskFlowStatus?.activePath
+
+  console.log('**********', activePath)
   // ?? [
   //   {
   //     nodeId: 'start',

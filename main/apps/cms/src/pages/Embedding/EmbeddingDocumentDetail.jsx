@@ -6,6 +6,7 @@ import { useOrganizationStore } from '@repo/stores'
 import { toast } from 'react-toastify'
 import { embeddingApis } from '@/apis'
 import { resolveOrgIds } from '@/utils/org'
+import { guardAction } from '@/utils/actionGuard'
 import { ButtonWrap, PageHeadWrap } from '@/components/common/styles'
 
 const genUid = () =>
@@ -100,7 +101,11 @@ const EmbeddingDocumentDetail = () => {
       <PageHeadWrap>
         <div />
         <ButtonWrap className="alignRight">
-          <Button variant="contained" onClick={handleSave} disabled={isDisabled()}>
+          <Button
+            variant="contained"
+            onClick={guardAction(handleSave, [{ when: !displayName.trim(), message: '제목을 입력하세요.' }])}
+            disabled={saving}
+          >
             {t(isEdit ? 'modify' : 'create')}
           </Button>
           <Button variant="outline" onClick={handleCancel} disabled={saving}>

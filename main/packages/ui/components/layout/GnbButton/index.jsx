@@ -119,7 +119,7 @@ const GnbButton = ({ as = 'NavLink', name, icon, path, depthLevel = 0, prefix, o
 
   return (
     <Component {...props[finalAs]}>
-      {icon && !hideIcon && <Icon name={icon} size={depthLevel === 0 ? 32 : 24} />}
+      {icon && !hideIcon && <Icon name={icon} size={depthLevel === 0 ? 24 : 24} />}
       {(depthLevel === 0 && !compactSideBar) || depthLevel === 1 ? name : null}
     </Component>
   )

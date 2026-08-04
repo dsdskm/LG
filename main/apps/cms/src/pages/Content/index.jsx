@@ -8,7 +8,7 @@ import {
   HeaderTitleGroup,
   Dropdown,
   Button,
-  Table,
+  TableCard,
   OrganizationSelector,
   Icon,
   StyledTag,
@@ -21,6 +21,7 @@ import { ButtonWrap } from './styles'
 import { useOrganizationStore } from '@repo/stores'
 import { contentApis, categoryNodeApis, externalServiceApis, languageApis } from '@/apis'
 import { convertDateToString } from '@repo/utils'
+import { STORAGE_KEYS, getPref, setPref } from '@/utils/storage'
 import CategorySelector from '@/components/common/CategorySelector'
 import {
   buildLangCodeMap,
@@ -28,12 +29,27 @@ import {
   pickLocalizedName
 } from '@/components/common/CategorySelector/categoryNodeAdapter'
 import { resolveOrgIds, resolveOrgQuery, isRealCode } from '@/utils/org'
+import { guardAction } from '@/utils/actionGuard'
 import { CONTENT_TYPE_MAP } from './contentTypeMeta'
 
 // 버전 라벨(LATEST/PREV) → 해시태그 배지 색상 매핑
 const VERSION_LABEL_META = {
   LATEST: { color: 'var(--color-primary-80)', bgColor: 'var(--color-primary-10)' },
   PREV: { color: 'var(--color-neutral-70)', bgColor: 'var(--color-neutral-20)' }
+}
+
+// 페이지당 항목 개수 — 브라우저(localStorage)에 저장/복원
+const PER_PAGE_OPTIONS = [10, 30, 50, 100]
+
+// 서비스/카테고리 필터 — 브라우저(localStorage)에 저장/복원
+const readSavedService = () => {
+  const v = getPref(STORAGE_KEYS.CONTENT_FILTER_SERVICE, 'all')
+  // 서비스 id 는 숫자 → 필터/옵션 매칭용. 유효한 숫자면 그대로, 아니면 'all'
+  return typeof v === 'number' && Number.isFinite(v) ? v : 'all'
+}
+const readSavedCategories = () => {
+  const v = getPref(STORAGE_KEYS.CONTENT_FILTER_CATEGORIES)
+  return Array.isArray(v) && v.length === 2 ? v : [null, null]
 }
 
 const Content = () => {
@@ -49,10 +65,10 @@ const Content = () => {
     { value: 'motion', name: 'Motion' }
   ])
   const [serviceList, setServiceList] = useState([])
-  const [selectedServiceId, setSelectedServiceId] = useState('all')
+  const [selectedServiceId, setSelectedServiceId] = useState(readSavedService)
   const [serviceOptions, setServiceOptions] = useState([])
   const [categoryTree, setCategoryTree] = useState([])
-  const [selectedLevelCategories, setSelectedLevelCategories] = useState([null, null])
+  const [selectedLevelCategories, setSelectedLevelCategories] = useState(readSavedCategories)
 
   const [processedData, setProcessedData] = useState([])
   const [languages, setLanguages] = useState([])
@@ -85,6 +101,12 @@ const Content = () => {
 
     return matchesFileType && matchesSearch && matchesService && matchesCategory
   })
+
+  // 저장된 페이지당 항목 개수 (마운트 1회 복원, 이상값이면 기본 10)
+  const initialPerPage = useMemo(() => {
+    const v = getPref(STORAGE_KEYS.CONTENT_ITEMS_PER_PAGE)
+    return PER_PAGE_OPTIONS.includes(v) ? v : 10
+  }, [])
 
   // OrganizationSelector 선택 조합 → 서버 필터 쿼리 (전체/그룹/그룹직접/특정site)
   const orgQuery = useMemo(() => resolveOrgQuery(selectedOrgs, allOrgs), [selectedOrgs, allOrgs])
@@ -182,38 +204,76 @@ const Content = () => {
 
   const columns = [
     {
+      id: 'service',
       name: t('service') || 'Service',
       selector: (row) => row.externalService?.displayName || '-',
       sortable: 'true',
       grow: 0.2
     },
     {
+      id: 'group',
       name: t('group') || 'Group',
+      card: false, // 카드에서는 숨김(핵심만)
       selector: (row) => row.group?.displayName || '-',
       sortable: 'true',
       grow: 0.3
     },
     {
+      id: 'site',
       name: t('site') || 'Site',
+      card: false, // 카드에서는 숨김(핵심만)
       selector: (row) => row.site?.displayName || '-',
       sortable: 'true',
       grow: 0.3
     },
     {
+      id: 'contentName',
       name: t('contentName') || 'Content Name',
+      width: '260px',
+      cardTitle: true, // 카드 제목으로 표시
       selector: (row) => (
-        <Button as="NavLink" to={`/cms/content/detail/${row.id}`} theme="link">
+        <Button
+          as="NavLink"
+          to={`/cms/content/detail/${row.id}`}
+          theme="link"
+          title={row.displayName}
+          style={{
+            display: 'block',
+            maxWidth: '100%',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap'
+          }}
+        >
           {row.displayName}
         </Button>
       ),
       sortable: 'true'
     },
     {
+      id: 'memo',
       name: t('memo') || 'Memo',
+      width: '260px',
+      card: false, // 카드에서는 숨김(핵심만)
       selector: (row) => row.memo,
+      cell: (row) => (
+        <span
+          title={row.memo || ''}
+          style={{
+            display: 'block',
+            maxWidth: '100%',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          {row.memo}
+        </span>
+      ),
       sortable: 'true'
     },
     {
+      id: 'contentType',
       name: t('contentType') || 'Type',
       cell: (row) => {
         const meta = CONTENT_TYPE_MAP[row.contentType?.contentTypeCode || '']
@@ -242,18 +302,21 @@ const Content = () => {
     },
 
     {
+      id: 'category1',
       name: t('category1') || 'Category 1',
       selector: (row) => catName(row.category1),
       sortable: 'true',
       grow: 0.4
     },
     {
+      id: 'category2',
       name: t('category2') || 'Category 2',
       selector: (row) => catName(row.category2),
       sortable: 'true',
       grow: 0.4
     },
     {
+      id: 'label',
       name: t('label') || 'Label',
       cell: (row) => {
         const names = (row.labels || []).map((l) => l.displayName)
@@ -269,12 +332,25 @@ const Content = () => {
           </div>
         )
       },
+      // 카드 전용: 중앙 래퍼 없이 태그만 → .cardValue 우측 정렬 규칙을 그대로 받음
+      cardCell: (row) => {
+        const names = (row.labels || []).map((l) => l.displayName)
+        const key = names.includes('LATEST') ? 'LATEST' : names.includes('PREV') ? 'PREV' : null
+        const meta = key && VERSION_LABEL_META[key]
+        return meta ? (
+          <StyledTag color={meta.color} bgColor={meta.bgColor}>
+            {key}
+          </StyledTag>
+        ) : null
+      },
       center: true,
       width: '110px',
       sortable: 'false'
     },
     {
+      id: 'date',
       name: t('date') || 'Date',
+      card: false, // 카드에서는 숨김(핵심만)
       selector: (row) => convertDateToString(row.createdAt),
       sortable: 'true',
       grow: 0.4
@@ -327,6 +403,7 @@ const Content = () => {
 
   const handleServiceChange = useCallback((value) => {
     setSelectedServiceId(value)
+    setPref(STORAGE_KEYS.CONTENT_FILTER_SERVICE, value)
   }, [])
 
   const handleCategoryChange = (index, value) => {
@@ -337,6 +414,7 @@ const Content = () => {
     }
 
     setSelectedLevelCategories(nextLevels)
+    setPref(STORAGE_KEYS.CONTENT_FILTER_CATEGORIES, nextLevels)
   }
 
   return (
@@ -351,7 +429,7 @@ const Content = () => {
               label={t('service')}
               size="lg"
               minWidth="180px"
-              defaultValue={filterServiceId}
+              defaultValue={selectedServiceId}
               placeholder={t('selectService')}
               options={serviceOptions}
               onChange={handleServiceChange}
@@ -380,8 +458,9 @@ const Content = () => {
                 <Button
                   variant="contained"
                   theme="delete"
-                  onClick={() => setIsDeleteModalOpen(true)}
-                  disabled={selectedRows.length === 0}
+                  onClick={guardAction(() => setIsDeleteModalOpen(true), [
+                    { when: selectedRows.length === 0, message: '삭제할 항목을 선택하세요.' }
+                  ])}
                 >
                   {t('deleteSelected', '선택 삭제')}
                   {selectedRows.length > 0 ? ` (${selectedRows.length})` : ''}
@@ -397,11 +476,10 @@ const Content = () => {
             )}
             <Button
               variant="contained"
-              onClick={handleCreate}
-              disabled={isDeleteMode || !canCreate}
-              title={
-                !canCreate ? t('selectOrgToCreate', '그룹/사이트를 특정하거나 미지정(-)으로 선택하세요') : undefined
-              }
+              onClick={guardAction(handleCreate, [
+                { when: isDeleteMode, message: '삭제 모드에서는 생성할 수 없습니다.' },
+                { when: !canCreate, message: t('selectOrgToCreate', '그룹/사이트를 특정하거나 미지정(-)으로 선택하세요') }
+              ])}
             >
               {t('create')}
             </Button>
@@ -414,13 +492,16 @@ const Content = () => {
             <div style={{ margin: '16px 0', fontSize: '14px', fontWeight: 'bold' }}>
               {tCommon('count')} : {filteredData.length}
             </div>
-            <Table
+            <TableCard
+              tableId="content"
               data={filteredData}
               columns={columns}
               noData={tCommon('noData')}
               isLoading={isLoading}
               pagination
-              paginationRowsPerPageOptions={[10, 30, 50, 100]}
+              paginationRowsPerPageOptions={PER_PAGE_OPTIONS}
+              paginationPerPage={initialPerPage}
+              onChangeRowsPerPage={(n) => setPref(STORAGE_KEYS.CONTENT_ITEMS_PER_PAGE, n)}
               selectableRows={isDeleteMode}
               onSelectedRowsChange={handleRowSelected}
               clearSelectedRows={toggleCleared}

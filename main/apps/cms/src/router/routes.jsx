@@ -15,8 +15,13 @@ import ContentTypeDetail from '../pages/Settings/ContentType/ContentTypeDetail'
 import Category from '../pages/Settings/Category'
 import CategoryDetail from '../pages/Settings/Category/CategoryDetail'
 import ApiDoc from '../pages/Settings/ApiDoc'
+import Admin from '../pages/Admin'
+import TtsTool from '../pages/TtsTool'
 
-export const appRoutes = [
+// 조직별 기능 on/off: enabled(Set<featureKey>) 로 해당 메뉴 그룹의 hide 결정 (기본 OFF)
+export const getAppRoutes = (enabled) => {
+  const has = (key) => !!(enabled && typeof enabled.has === 'function' && enabled.has(key))
+  return [
   {
     name: 'content',
     path: '/cms/content',
@@ -34,6 +39,14 @@ export const appRoutes = [
         element: <ContentDetail />
       }
     ]
+  },
+  {
+    name: 'ttsTool',
+    path: '/cms/tts',
+    prefix: 'cms',
+    icon: 'music',
+    hide: !has('TTS_TOOL'),
+    element: <TtsTool />
   },
   {
     name: 'label',
@@ -58,6 +71,7 @@ export const appRoutes = [
     name: 'embedding',
     prefix: 'cms',
     icon: 'voice',
+    hide: !has('VOICE_CHAT'),
     depth: [
       {
         name: 'embeddingDocs',
@@ -113,6 +127,7 @@ export const appRoutes = [
     name: 'lab',
     prefix: 'cms',
     icon: 'robot',
+    hide: !has('LAB'),
     depth: [
       {
         name: 'agentChat',
@@ -172,8 +187,17 @@ export const appRoutes = [
         element: <ApiDoc />
       }
     ]
+  },
+  // 숨김 관리자 페이지 ? 메뉴 미노출, /cms/admin URL 로만 진입 (페이지 내부에서 level3 + 비밀번호 가드)
+  {
+    name: 'admin',
+    hide: true,
+    path: '/cms/admin',
+    prefix: 'cms',
+    element: <Admin />
   }
-]
+  ]
+}
 
 export const getAppPrefix = (pathname) => {
   return pathname.split('/').filter(Boolean)[0] || 'cms'

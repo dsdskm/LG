@@ -17,5 +17,6 @@ export const ENDPOINTS = {
   VECTOR_DB: `${API_CONFIG.PREFIX_CMS}/vector-db`,
   VOICE_QUERY: `${API_CONFIG.PREFIX_CMS}/voice-query`,
   ROBOT_ACTION: `${API_CONFIG.PREFIX_CMS}/robot-action`,
-  AGENT: `${API_CONFIG.PREFIX_CMS}/agent`
+  AGENT: `${API_CONFIG.PREFIX_CMS}/agent`,
+  FEATURE: `${API_CONFIG.PREFIX_CMS}/feature`
 }

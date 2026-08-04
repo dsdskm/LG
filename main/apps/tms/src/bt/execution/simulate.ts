@@ -47,6 +47,9 @@ export type ControlSpan = {
   status: SimStatus
   // ReactiveFallback(reactiveOr) 구간 여부. true 면 RUNNING 시 매 tick 첫 자식부터 재평가한다.
   reactive?: boolean
+  // Parallel 구간 여부. true 면 자식이 RUNNING 이어도 멈추지 않고 다음 자식으로 진행하고,
+  // 전체가 RUNNING 인 동안 매 tick 모든 자식을 재평가한다(BT.CPP ParallelNode).
+  parallel?: boolean
 }
 
 export type ResolveFn = (nodeId: string) => SimStatus
@@ -80,7 +83,7 @@ export function buildSimTrace(
       case reactiveAndNodeType:
         return wrapControl(node, () => runSequence(node.children), true)
       case parallelNodeType:
-        return wrapControl(node, () => runParallel(node.children, node.successCount))
+        return wrapControl(node, () => runParallel(node.children, node.successCount, node.failureCount), false, true)
       case repeatNodeType:
         return wrapControl(node, () => runRepeat(node.child, node.numCycles))
       case retryUntilSuccessfulNodeType:
@@ -105,12 +108,13 @@ export function buildSimTrace(
   function wrapControl(
     node: BtAstNode & { attrs?: Record<string, string> },
     run: () => SimStatus,
-    reactive = false
+    reactive = false,
+    parallel = false
   ): SimStatus {
     const nodeId = String(node.attrs?.node_id ?? '')
     const start = trace.length
     const status = run()
-    if (nodeId) spans.push({ nodeId, start, end: trace.length, status, reactive })
+    if (nodeId) spans.push({ nodeId, start, end: trace.length, status, reactive, parallel })
     return status
   }
 
@@ -149,16 +153,24 @@ export function buildSimTrace(
     return 'FAILURE'
   }
 
-  // Parallel: 모든 자식 실행(시뮬레이션은 순차 방문). successCount 이상 성공하면 SUCCESS.
-  function runParallel(children: BtAstNode[], successCount: number): SimStatus {
+  // Parallel(BT.CPP ParallelNode): 자식을 순서대로 tick 하되 RUNNING 자식에서 멈추지 않고 계속 tick.
+  // 각 자식 결과가 나올 때마다 임계값을 확인해, SUCCESS 수 ≥ successCount → SUCCESS,
+  // FAILURE 수 ≥ failureCount → FAILURE 가 되면 남은 자식은 tick 하지 않고 즉시 종료(halt).
+  // 그 외(일부 RUNNING) → RUNNING.
+  function runParallel(children: BtAstNode[], successCount: number, failureCount: number): SimStatus {
+    const needSuccess = successCount > 0 ? successCount : children.length
+    const needFailure = failureCount > 0 ? failureCount : 1
     let success = 0
+    let failure = 0
     for (const child of children) {
-      const r = exec(child)
-      if (r === 'RUNNING') return 'RUNNING'
+      const r = exec(child) // RUNNING 이어도 멈추지 않고 다음 자식으로 계속
       if (r === 'SUCCESS') success++
+      else if (r === 'FAILURE') failure++
+      // 각 자식 tick 직후 임계값 확인 → 충족되면 남은 자식은 실행하지 않고 종료
+      if (success >= needSuccess) return 'SUCCESS'
+      if (failure >= needFailure) return 'FAILURE'
     }
-    const need = successCount > 0 ? successCount : children.length
-    return success >= need ? 'SUCCESS' : 'FAILURE'
+    return 'RUNNING'
   }
 
   // Repeat: 자식을 numCycles 회 반복(무한/과대값은 안전하게 제한). 도중 비-SUCCESS 면 중단.

@@ -34,7 +34,19 @@
     "unprocessableEntity": "入力値が正しくありません。",
     "internalServerError": "サーバーエラーが発生しました。",
     "unexpected": "予期せぬエラーが発生しました。",
-    "fileUploadError": "ファイルアップロードエラー"
+    "fileUploadError": "ファイルアップロードエラー",
+    "code": {
+      "MISSING_PARAMETER": "必須項目が入力されていません。",
+      "INVALID_PARAM": "入力値が正しくありません。",
+      "DB_VALIDATION_ERROR": "入力値の検証に失敗しました。",
+      "DB_FK_CONSTRAINT_ERROR": "参照中のデータが存在するか、対象が存在しないため処理できません。",
+      "NOT_FOUND": "リクエストされた情報が見つかりませんでした。",
+      "DB_DUPLICATE_ENTRY": "既に存在する値です。",
+      "DATA_ALREADY_EXIST": "データは既に存在します。",
+      "DATA_NOT_EXIST": "該当するデータがありません。",
+      "DATABASE_ERROR": "データベースエラーが発生しました。",
+      "INTERNAL_ERROR": "サーバーエラーが発生しました。"
+    }
   },
   "close": "閉じる",
   "contentFile": "コンテンツファイル",

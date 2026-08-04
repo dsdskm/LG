@@ -87,6 +87,8 @@ const HtmlPoiIcon = styled.img`
   display: block;
   pointer-events: none;
   -webkit-user-drag: none;
+  position: relative;
+  z-index: 0;
 `
 
 // const HtmlPoiDot = styled.div`
@@ -111,6 +113,8 @@ const HtmlPoiLabel = styled.div`
   opacity: 0.8;
   padding: 4px 8px;
   border-radius: 4px;
+  position: relative;
+  z-index: 1;
 `
 
 // ─── 3D mesh data from SVG paths ──────────────────────────────────────────────
@@ -452,10 +456,81 @@ function RobotPin({ position, color, name, state, ringRadius, worldHeight, yaw =
 }
 
 // POI marker — identical visual to the 2D SiteMap
-function PoiPin({ position, isCharging, label, clickable, onClick }) {
+function PoiPin({ position, isCharging, label, clickable, onClick, poiData = {} }) {
+  const [isHovered, setIsHovered] = React.useState(false)
+
   return (
-    <Html position={position} zIndexRange={[100, 0]} style={{ pointerEvents: clickable ? 'auto' : 'none' }}>
-      <HtmlPoiMarker>
+    <Html position={position} zIndexRange={[100, 0]} style={{ pointerEvents: 'auto' }}>
+      <HtmlPoiMarker
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        style={{ pointerEvents: 'auto' }}
+      >
+        {isHovered && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '100%',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              background: 'rgba(0, 0, 0, 0.9)',
+              color: '#ffffff',
+              padding: '8px 12px',
+              borderRadius: '6px',
+              fontSize: '11px',
+              fontFamily: "'LG_Smart_UI', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+              zIndex: 10000,
+              marginBottom: '8px',
+              pointerEvents: 'none'
+            }}
+          >
+            <div
+              style={{
+                position: 'absolute',
+                top: '100%',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                borderLeft: '5px solid transparent',
+                borderRight: '5px solid transparent',
+                borderTop: '5px solid rgba(0, 0, 0, 0.9)',
+                width: 0,
+                height: 0
+              }}
+            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <span style={{ color: '#b0b0b0', minWidth: '60px' }}>Name:</span>
+                <span>{label}</span>
+              </div>
+              {poiData.x != null && poiData.y != null && (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <span style={{ color: '#b0b0b0', minWidth: '60px' }}>Position:</span>
+                  <span>
+                    X: {poiData.x.toFixed(2)}, Y: {poiData.y.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              {poiData.yawDeg != null && (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <span style={{ color: '#b0b0b0', minWidth: '60px' }}>Yaw:</span>
+                  <span>{poiData.yawDeg.toFixed(1)}°</span>
+                </div>
+              )}
+              {poiData.tolerance != null && (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <span style={{ color: '#b0b0b0', minWidth: '60px' }}>Tolerance:</span>
+                  <span>{poiData.tolerance.toFixed(2)}m</span>
+                </div>
+              )}
+              {poiData.properties?.description && (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <span style={{ color: '#b0b0b0', minWidth: '60px' }}>Description:</span>
+                  <span>{poiData.properties.description}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
         <HtmlPoiLabel
           onClick={clickable ? onClick : undefined}
           style={{
@@ -657,11 +732,11 @@ const ViewToggleButton = styled.button`
   font-size: 12px;
   font-weight: 600;
   color: ${({ $active }) => ($active ? '#ffffff' : '#374151')};
-  background: ${({ $active }) => ($active ? '#3b82f6' : 'transparent')};
+  background: ${({ $active }) => ($active ? 'var(--t-toggle-active-bg)' : 'transparent')};
   transition: background 0.15s;
 
   &:hover {
-    background: ${({ $active }) => ($active ? '#3b82f6' : 'rgba(0, 0, 0, 0.06)')};
+    background: ${({ $active }) => ($active ? 'var(--t-toggle-active-bg)' : 'rgba(0, 0, 0, 0.06)')};
   }
 `
 
@@ -1093,6 +1168,7 @@ const SiteMap3D = ({
                 label={getLocalizedName(poi.name, i18n.language)}
                 clickable={clickPoi && !fullscreen && poi.type !== 'CHARGING'}
                 onClick={() => setPoiToMove(poi)}
+                poiData={poi}
               />
             ))}
           </Canvas>

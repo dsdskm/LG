@@ -5,17 +5,28 @@ import { useTranslation } from 'react-i18next'
 
 const GlobalErrorModal = () => {
   const { error, clearError } = useErrorStore()
-  const { t } = useTranslation('common')
+  const { t, i18n } = useTranslation('common')
   const [isExpanded, setIsExpanded] = useState(false)
 
   if (!error) return null
 
   const response = error.response
   const status = response?.status
-  const errorCode = error.code || response?.data?.code
-  const message = t(error.message) || response?.data?.message || t('error.unexpected')
+  // BE 에러 코드(errConsts) 우선 — axios의 error.code('ERR_BAD_REQUEST' 등)는 뒤로
+  const errorCode = response?.data?.code || error.code
+  // errConsts code별 구체 메시지 → status별 일반 메시지 → BE 원문 → 알 수 없는 오류 (raw-key 노출 방지 위해 exists 확인)
+  const codeKey = errorCode ? `error.code.${errorCode}` : null
+  const message =
+    (codeKey && i18n.exists(`common:${codeKey}`) && t(codeKey)) ||
+    (error.message && i18n.exists(`common:${error.message}`) && t(error.message)) ||
+    response?.data?.message ||
+    t('error.unexpected')
   const errors = error.errors || response?.data?.errors
   const title = t('error.title')
+
+  // 상세 패널: 값이 없거나 undefined 면 항목 자체를 표시하지 않음
+  const hasVal = (v) => v !== undefined && v !== null && String(v).trim() !== ''
+  const detailStr = errors == null ? '' : typeof errors === 'object' ? JSON.stringify(errors, null, 2) : String(errors)
 
   return (
     <Modal
@@ -66,19 +77,26 @@ const GlobalErrorModal = () => {
             {isExpanded && (
               <Section>
                 <div style={{ textAlign: 'left', padding: '1rem', fontSize: '1.5rem', lineHeight: '1.5' }}>
-                  <div style={{ marginBottom: '0.5rem' }}>
-                    <strong>Status code:</strong> {status}
-                  </div>
-                  <div style={{ marginBottom: '0.5rem' }}>
-                    <strong>Error code:</strong> {errorCode}
-                  </div>
-                  <div style={{ marginBottom: '0.5rem' }}>
-                    <strong>Message:</strong> {message}
-                  </div>
-                  <div>
-                    <strong>Detail:</strong>{' '}
-                    {typeof errors === 'object' ? JSON.stringify(errors, null, 2) : String(errors)}
-                  </div>
+                  {hasVal(status) && (
+                    <div style={{ marginBottom: '0.5rem' }}>
+                      <strong>Status code:</strong> {status}
+                    </div>
+                  )}
+                  {hasVal(errorCode) && (
+                    <div style={{ marginBottom: '0.5rem' }}>
+                      <strong>Error code:</strong> {errorCode}
+                    </div>
+                  )}
+                  {hasVal(message) && (
+                    <div style={{ marginBottom: '0.5rem' }}>
+                      <strong>Message:</strong> {message}
+                    </div>
+                  )}
+                  {hasVal(detailStr) && (
+                    <div>
+                      <strong>Detail:</strong> {detailStr}
+                    </div>
+                  )}
                 </div>
               </Section>
             )}

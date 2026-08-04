@@ -36,6 +36,7 @@ import LocationSelector from '../../common/LocationSelector'
 import DataCollectionSection from './components/DataCollectionSection'
 import RobotStateCards from './components/RobotStateCards'
 import { Play, Stop } from '@/assets/icon'
+import { useUserStore } from '@repo/stores'
 
 // 층 순서: floorIndex 1 이상 오름차순 → 0 이하 내림차순
 const orderFloorsAsc = (floors = []) => {
@@ -63,6 +64,20 @@ const pickMaxRobotArea = (buildings = [], areaCounts = {}) => {
 }
 
 const Dashboard = () => {
+  const navigate = useNavigate()
+  const { session } = useUserStore()
+
+  // TERM_MANAGER는 대시보드 접근 불가 → 렌더/데이터 로딩 전에 즉시 리다이렉트
+  useEffect(() => {
+    if (session?.userRole === 'TERM_MANAGER') {
+      navigate('/robot/terms', { replace: true })
+    }
+  }, [session?.userRole, navigate])
+
+  if (session?.userRole === 'TERM_MANAGER') {
+    return null
+  }
+
   const { t } = useTranslation('robot')
   const [markers, setMarkers] = useState([])
   const [devices, setDevices] = useState([])
@@ -72,7 +87,6 @@ const Dashboard = () => {
   const [useImageMap, setUseImageMap] = useState(false)
   const [isLiveImageMap, setIsLiveImageMap] = useState(false)
   const [inspectionCollapsed, setInspectionCollapsed] = useState(false)
-  const navigate = useNavigate()
   const { setDeviceState } = robotStore.getState()
   const [mapData, setMapData] = useState({})
   const [mapServer, setMapServer] = useState({})
@@ -93,8 +107,9 @@ const Dashboard = () => {
     const siteMap = new Map()
 
     devices.forEach((device) => {
-      const siteId =
-        device.provision?.isDefaultSite != true && device.provision?.siteName ? device.provision.siteId : null
+      // const siteId =
+      //   device.provision?.isDefaultSite != true && device.provision?.siteName ? device.provision.siteId : null
+      const siteId = device.provision?.siteName ? device.provision.siteId : null
       if (!siteId) return
 
       const site = sites.find((s) => s.siteId === siteId)
@@ -102,13 +117,12 @@ const Dashboard = () => {
       if (!site.siteLatitude || !site.siteLongitude) return
 
       // 미배정 그룹 선택 시 표시할 사이트 마커 없음
-      if (orgFilter.values[0] === 'none') return
+      //if (orgFilter.values[0] === 'none') return
       if (orgFilter.values[0] !== 'all' && orgFilter.values[0] !== site.groupId) return
       // 미배정(none) 또는 isDefaultSite 사이트 선택 시 전체 사이트 마커 표시 → 권역별 지도
       if (
         orgFilter.values[1] !== 'all' &&
-        orgFilter.values[1] !== 'none' &&
-        !isDefaultSiteSelected &&
+        //orgFilter.values[1] !== 'none' &&
         orgFilter.values[1] !== site.siteId
       )
         return
@@ -119,6 +133,11 @@ const Dashboard = () => {
         charge: device.deviceState === 'CHARGE' ? 1 : 0,
         error: device.deviceState === 'ERROR' ? 1 : 0,
         offline: device.deviceState === 'OFFLINE' || device.deviceState === 'POWEROFF' ? 1 : 0
+      }
+
+      const isAllZero = Object.values(state).every((v) => v === 0)
+      if (isAllZero) {
+        return
       }
 
       if (!siteMap.has(siteId)) {
@@ -438,15 +457,11 @@ const Dashboard = () => {
           <DashboardButtonGroup>
             {useImageMap &&
               (!isLiveImageMap ? (
-                <PlayButton
-                  onClick={() => handleSiteMapPlay(true)}
-                >
+                <PlayButton onClick={() => handleSiteMapPlay(true)}>
                   <Play className="w-[14px] h-[14px]" /> {t('realtime')}
                 </PlayButton>
               ) : (
-                <StopButton
-                  onClick={() => handleSiteMapPlay(false)}
-                >
+                <StopButton onClick={() => handleSiteMapPlay(false)}>
                   <Stop className="w-[14px] h-[14px]" /> {t('stop')}
                 </StopButton>
               ))}
@@ -485,7 +500,7 @@ const Dashboard = () => {
                   }}
                 >
                   {t('totalRobots')}{' '}
-                  <strong style={{ color: '#4f46e5', fontWeight: 800 }}>
+                  <strong style={{ color: '#7D776A', fontWeight: 800 }}>
                     {deviceCount.opr +
                       deviceCount.lrn +
                       deviceCount.sta +
@@ -521,7 +536,13 @@ const Dashboard = () => {
                   {!hasSite ? (
                     <Location markers={markers} />
                   ) : useImageMap ? (
-                    <SiteMap3D mapData={mapData} mapServer={mapServer} robotDatas={robotDatas} clickRobot={true} viewModeKey={DASHBOARD_MAP_VIEW_KEY} />
+                    <SiteMap3D
+                      mapData={mapData}
+                      mapServer={mapServer}
+                      robotDatas={robotDatas}
+                      clickRobot={true}
+                      viewModeKey={DASHBOARD_MAP_VIEW_KEY}
+                    />
                   ) : (
                     <div
                       style={{

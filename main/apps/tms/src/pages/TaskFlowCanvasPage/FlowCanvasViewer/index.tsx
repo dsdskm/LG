@@ -167,7 +167,9 @@ function PropertyPanel({
       {!selectedNode ? (
         <EmptyPropertyPanel />
       ) : (
-        <div style={{ flex: 1, overflow: 'auto', padding: '0 4px' }}>
+        <div
+          style={{ flex: 1, overflow: 'auto', padding: '0 4px', display: 'flex', flexDirection: 'column', gap: 12 }}
+        >
           <NodeInfoSection
             viewMode="node"
             selectedData={selectedNode.data ?? {}}
@@ -181,46 +183,62 @@ function PropertyPanel({
   )
 }
 
-function ContentsPanel({ selectedNode }: { selectedNode: any | null }) {
-  const [contentNodeMap, setContentNodeMap] = useState<Map<string, any>>(new Map())
+// 콘텐츠 노드 하나를 타입에 맞는 프리뷰 컴포넌트로 렌더.
+// 점검(inspect) 프리뷰 패널.
+// 실행 중(RUNNING)인 콘텐츠 노드를 트리거로, 타입별 슬롯(face/motion/…)에 노드를 "누적"해 표시한다.
+//  - 완료돼도 슬롯에서 지우지 않음 → 마지막 화면이 계속 남는다.
+//  - 같은 타입 새 노드가 실행되면 그 슬롯만 교체(인스턴스 유지 → A→B 전환 매끄러움).
+//  - 서로 다른 타입은 동시에 표시(parallel frontier). 새 run 은 key={runId} remount 로 초기화됨.
+//  - 실행 중인 게 없으면(시작 전 등) 선택 노드를 폴백으로 미리보기.
+function ContentsPanel({ nodes, selectedNode }: { nodes: any[]; selectedNode: any | null }) {
+  const [byType, setByType] = useState<Map<string, any>>(new Map())
   const addContentTask = useContentTaskStore((state) => state.addContentTask)
   console.log('selectedNode info ', selectedNode)
 
-  useEffect(() => {
-    if (!selectedNode?.data?.contentTypeName) return
-    const typeName = selectedNode?.data?.contentTypeName
-    if (!typeName) return
+  const triggerNodes = useMemo(() => {
+    if (nodes.length > 0) return nodes
+    return selectedNode?.data?.contentTypeName ? [selectedNode] : []
+  }, [nodes, selectedNode])
 
-    setContentNodeMap((prev) => {
-      if (prev.get(typeName) === selectedNode) return prev
-      const next = new Map(prev)
-      next.set(typeName, selectedNode)
+  useEffect(() => {
+    if (triggerNodes.length === 0) return
+    setByType((prev) => {
+      let next = prev
+      for (const n of triggerNodes) {
+        const t = n?.data?.contentTypeName
+        if (t && next.get(t) !== n) {
+          if (next === prev) next = new Map(prev)
+          next.set(t, n)
+        }
+      }
       return next
     })
-    addContentTask({
-      nodeId: selectedNode.id,
-      playStatus: 'READY'
-    })
-  }, [selectedNode])
+    for (const n of triggerNodes) {
+	    if (n?.data?.contentTypeName) addContentTask({
+	      nodeId: n.id,
+	      playStatus: 'READY',
+	      current: 0,
+	      duration: 0
+	    })
+    }
+  }, [triggerNodes, addContentTask])
 
-  const poiContent = contentNodeMap.get(CONTENT_TYPE.POI)
-  const motionContent = contentNodeMap.get(CONTENT_TYPE.MOTION)
-  const faceContent = contentNodeMap.get(CONTENT_TYPE.FACE_VIDEO) ?? contentNodeMap.get(CONTENT_TYPE.FACE_IMAGE)
-  const soundContent = contentNodeMap.get(CONTENT_TYPE.BGM)
-  const ttsContent = contentNodeMap.get(CONTENT_TYPE.TTS)
-  const objectContent = contentNodeMap.get(CONTENT_TYPE.OBJECT)
+  const poiNode = byType.get(CONTENT_TYPE.POI)
+  const motionNode = byType.get(CONTENT_TYPE.MOTION)
+  const faceNode = byType.get(CONTENT_TYPE.FACE_VIDEO) ?? byType.get(CONTENT_TYPE.FACE_IMAGE)
+  const soundNode = byType.get(CONTENT_TYPE.BGM)
+  const ttsNode = byType.get(CONTENT_TYPE.TTS)
+  const objectNode = byType.get(CONTENT_TYPE.OBJECT)
 
   return (
-    <>
-      <div style={{ display: 'flex', flexDirection: 'column', overflow: 'auto', gap: 10, padding: '8px 4px 0px 0px' }}>
-        {faceContent && <FacePreview node={{ data: faceContent?.data ?? {} }} nodeId={faceContent?.id} />}
-        {motionContent && <MotionPreview node={{ data: motionContent?.data ?? {} }} nodeId={motionContent?.id} />}
-        {poiContent && <PoiPreview node={{ data: poiContent?.data ?? {} }} nodeId={poiContent?.id} />}
-        {soundContent && <SoundPreview node={{ data: soundContent?.data ?? {} }} nodeId={soundContent?.id} />}
-        {ttsContent && <SoundPreview node={{ data: ttsContent?.data ?? {} }} nodeId={ttsContent?.id} />}
-        {objectContent && <ObjectPreview node={{ data: objectContent?.data ?? {} }} nodeId={objectContent?.id} />}
-      </div>
-    </>
+    <div style={{ display: 'flex', flexDirection: 'column', overflow: 'auto', gap: 10, padding: '8px 4px 0px 0px' }}>
+      {faceNode && <FacePreview node={{ data: faceNode.data ?? {} }} nodeId={faceNode.id} />}
+      {motionNode && <MotionPreview node={{ data: motionNode.data ?? {} }} nodeId={motionNode.id} />}
+      {poiNode && <PoiPreview node={{ data: poiNode.data ?? {} }} nodeId={poiNode.id} />}
+      {soundNode && <SoundPreview node={{ data: soundNode.data ?? {} }} nodeId={soundNode.id} />}
+      {ttsNode && <SoundPreview node={{ data: ttsNode.data ?? {} }} nodeId={ttsNode.id} />}
+      {objectNode && <ObjectPreview node={{ data: objectNode.data ?? {} }} nodeId={objectNode.id} />}
+    </div>
   )
 }
 
@@ -228,6 +246,7 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
   const { t } = useTranslation('tms')
 
   const getPlayStatusById = useContentTaskStore((state) => state.getPlayStatusById)
+  const resetAllPlayStatus = useContentTaskStore((state) => state.resetAllPlayStatus)
 
   const wrapperRef = useRef<HTMLDivElement | null>(null)
   const rfRef = useRef<ReactFlowInstance<any, any> | null>(null)
@@ -249,6 +268,8 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
   const [snapshot, setSnapshot] = useState<ExecSnapshot>(EMPTY_SNAPSHOT)
   const [isPlaying, setIsPlaying] = useState(false)
   const [started, setStarted] = useState(false)
+  // run 마다 증가. ContentsPanel 을 remount(key)해 프리뷰를 처음부터 다시 재생시킨다.
+  const [runId, setRunId] = useState(0)
 
   // Start 시점에 "컴파일"(buildBehaviorTree)한 결과. 렌더 시점엔 빌드하지 않는다.
   const [compiledModel, setCompiledModel] = useState<BtAstNode | null>(null)
@@ -399,6 +420,12 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
   // 렌더링은 실행기 스냅샷만 본다(소스가 시뮬/로봇 무관).
   const currentNodeId = snapshot.currentNodeId
   const simStatusById = snapshot.statusById
+
+  // 점검 중 현재 RUNNING 인 콘텐츠 노드들(프리뷰를 동시에 표시하기 위한 목록).
+  const runningContentNodes = useMemo(() => {
+    if (mode !== 'inspect') return []
+    return rawNodes.filter((n: any) => typeof n?.data?.contentId === 'number' && simStatusById[n.id] === 'RUNNING')
+  }, [mode, rawNodes, simStatusById])
 
   const nodes = useMemo(() => {
     return rawNodes.map((node: any) => {
@@ -590,7 +617,9 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
     setStarted(false)
     setIsPlaying(false)
     setCompiledModel(null)
-  }, [executor])
+    // 정지/초기화 시 프리뷰 재생 상태도 되돌린다(다음 run 이 처음부터 재생/평가되도록)
+    resetAllPlayStatus()
+  }, [executor, resetAllPlayStatus])
 
   // 실행기에 한 tick 요청하고 결과 스냅샷을 반영(시뮬=즉시, 로봇=결과 대기)
   const applyStep = useCallback(async () => {
@@ -615,10 +644,13 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
     setCompiledModel(model)
     executor.reset()
     setSnapshot(EMPTY_SNAPSHOT)
+    // 프리뷰 상태 초기화 + 패널 remount(처음부터 재생)
+    resetAllPlayStatus()
+    setRunId((n) => n + 1)
     setStarted(true)
     setIsPlaying(true)
     setPanelOpen(true)
-  }, [compile, executor])
+  }, [compile, executor, resetAllPlayStatus])
 
   // 수동 모드 시작: 먼저 컴파일 → 실패 시 팝업, 성공 시 첫 tick 진행(이후 Next)
   const handleStartManual = useCallback(() => {
@@ -629,10 +661,13 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
     }
     setCompiledModel(model)
     executor.reset()
+    // 프리뷰 상태 초기화 + 패널 remount(처음부터 재생)
+    resetAllPlayStatus()
+    setRunId((n) => n + 1)
     setStarted(true)
     setPanelOpen(true)
     void applyStep()
-  }, [compile, executor, applyStep])
+  }, [compile, executor, applyStep, resetAllPlayStatus])
 
   const handlePause = useCallback(() => {
     setIsPlaying(false)
@@ -722,8 +757,8 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
     if (IS_LOCAL_ENV && showAst) {
       return <AstView model={compiledModel} statusById={simStatusById} startNodeId={startNodeId} error={compileError} />
     }
-    return <ContentsPanel selectedNode={selectedNode} />
-  }, [selectedNode])
+    return <ContentsPanel key={runId} nodes={runningContentNodes} selectedNode={selectedNode} />
+  }, [selectedNode, runId, runningContentNodes])
 
   // useEffect(() => {
   //   setPanelOpen(selectedNode)
@@ -834,7 +869,7 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
           <AstView model={compiledModel} statusById={simStatusById} startNodeId={startNodeId} error={compileError} />
         ) : (
           // inspect 모드 기본: 콘텐츠 프리뷰 패널
-          <ContentsPanel selectedNode={selectedNode} />
+          <ContentsPanel key={runId} nodes={runningContentNodes} selectedNode={selectedNode} />
         )}
       </CanvasRoot>
 
