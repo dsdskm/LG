@@ -16,8 +16,9 @@ MODE="start"
 usage() {
   echo "Usage:"
   echo "  ./scripts/local/run.sh                   # all apps, start mode"
-  echo "  ./scripts/local/run.sh <app>             # single app, start mode"
   echo "  ./scripts/local/run.sh dev               # all apps, dev mode"
+  echo "  ./scripts/local/run.sh <app>             # single app, dev mode (default)"
+  echo "  ./scripts/local/run.sh <app> start       # single app, start mode"
   echo "  ./scripts/local/run.sh <app> dev         # single app, dev mode"
 }
 
@@ -32,14 +33,15 @@ parse_args() {
         APP="all"
         MODE="dev"
       else
+        # 서비스명만 주면 기본 dev 모드(pnpm dev)
         APP="$1"
-        MODE="start"
+        MODE="dev"
       fi
       ;;
     2)
-      if [[ "$2" == "dev" ]]; then
+      if [[ "$2" == "dev" || "$2" == "start" ]]; then
         APP="$1"
-        MODE="dev"
+        MODE="$2"
       else
         echo "[dev-run] ERROR: invalid arguments"
         usage
@@ -139,7 +141,7 @@ fi
 
 # (2) DB 시작
 echo "[dev-run] starting DB..."
-./scripts/local/db.sh
+./scripts/db/db.sh
 
 # (3) 서비스 실행
 if [[ "$APP" == "all" ]]; then

@@ -2,7 +2,7 @@
 # QA 프로덕션 compose : EC2 인스턴스 1대에서 서비스별 컨테이너로 실행
 #   - 이미지: ECR 의 단일 unified-service (SERVICE_NAME 으로 실행 서비스 선택)
 #   - DB: 컨테이너 내 Postgres (서비스별 1개, llm_gateway 는 DB 불필요)
-#   - 포트: 호스트 3001/3002/3003/3004/3005/3008 → ALB Target Group 매핑
+#   - 포트: 호스트 3001/3002/3003/3004/3005/3007/3008 → ALB Target Group 매핑
 #
 # 사용:
 #   export IMAGE_REMOTE=398838060384.dkr.ecr.ap-northeast-2.amazonaws.com/rsp-qa-ai/unified-service:latest
@@ -151,7 +151,7 @@ services:
       GOOGLE_CLOUD_LOCATION: global
       GOOGLE_APPLICATION_CREDENTIALS: /app/apps/llm_gateway/src/key/ailogsystem-service-account.json
       AZURE_OPENAI_ENDPOINT: https://hs-prd-lab-robot-oai.openai.azure.com
-      AZURE_OPENAI_API_KEY: TBD
+      AZURE_OPENAI_API_KEY: 5sApBKcEN6hBBS38seWzTCNHlrVvq698A10KuQp7mkVRzty5zH0lJQQJ99CCACNns7RXJ3w3AAABACOGgTBS
       AZURE_OPENAI_API_VERSION: "2024-12-01-preview"
       AZURE_OPENAI_DEPLOYMENT: gpt-5
       AZURE_OPENAI_MODEL: gpt-5
@@ -318,10 +318,11 @@ services:
       GOOGLE_CLOUD_LOCATION: global
       GOOGLE_APPLICATION_CREDENTIALS: /app/apps/llm_gateway/src/key/ailogsystem-service-account.json
       AZURE_OPENAI_ENDPOINT: https://hs-prd-lab-robot-oai.openai.azure.com
-      AZURE_OPENAI_API_KEY: TBD
+      AZURE_OPENAI_API_KEY: 5sApBKcEN6hBBS38seWzTCNHlrVvq698A10KuQp7mkVRzty5zH0lJQQJ99CCACNns7RXJ3w3AAABACOGgTBS
       AZURE_OPENAI_API_VERSION: "2024-12-01-preview"
       AZURE_OPENAI_DEPLOYMENT: gpt-5
       AZURE_OPENAI_MODEL: gpt-5
+      AZURE_OPENAI_TIMEOUT_MS: "300000"
       AZURE_OPENAI_MAX_TOKENS: "16384"
       AZURE_ANSWER_PREVIEW_CHARS: "2000"
     logging:

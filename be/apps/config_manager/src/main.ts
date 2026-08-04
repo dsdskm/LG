@@ -38,7 +38,7 @@ async function bootstrap() {
     yamlDocumentUrl: "docs-yaml",
   });
 
-  app.enableCors();
+  app.enableCors({ origin: true, credentials: true });
 
   const port = Number(process.env.PORT_CONFIG_MANAGER ?? 3008);
   await app.listen(port, "0.0.0.0");

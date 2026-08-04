@@ -30,6 +30,7 @@ export class AzureLlmClient implements LlmClient {
       deployment: this.cfg.deployment,
       messages: req.messages,
       maxCompletionTokens: req.maxOutputTokens,
+      reasoningEffort: this.cfg.reasoningEffort,
       tools: req.tools,
       toolChoice: req.toolChoice,
     });

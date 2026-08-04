@@ -3,9 +3,12 @@
 # CloudWatch Logs 확인
 #
 # 사용법:
-#   ./scripts/aws/logs.sh            # 로그 그룹 목록 조회
-#   ./scripts/aws/logs.sh tail       # 실시간 tail (--follow)
-#   ./scripts/aws/logs.sh tail 30m   # 최근 30분부터 tail
+#   ./scripts/aws/logs.sh                     # 서비스(로그 스트림) 목록
+#   ./scripts/aws/logs.sh <service>           # 해당 서비스 실시간 로그 (--follow)
+#   ./scripts/aws/logs.sh <service> 30m       # 최근 30분부터 실시간 로그
+#
+# 예:
+#   ./scripts/aws/logs.sh event_analyzer
 #
 set -euo pipefail
 source "$(dirname "$0")/config.sh"
@@ -14,24 +17,24 @@ require_aws
 cmd="${1:-list}"
 
 case "$cmd" in
-  list)
-    log "로그 그룹 목록 (prefix=$LOG_GROUP_PREFIX)"
-    aws logs describe-log-groups \
-      --log-group-name-prefix "$LOG_GROUP_PREFIX" \
+  list|-l|--list)
+    log "서비스(로그 스트림) 목록 (group=$LOG_GROUP)"
+    aws logs describe-log-streams \
+      --log-group-name "$LOG_GROUP" \
       --region "$AWS_REGION" \
-      --query 'logGroups[].{LogGroup:logGroupName,Retention:retentionInDays,StoredMB:storedBytes}' \
+      --order-by LastEventTime \
+      --descending \
+      --query 'logStreams[].{Stream:logStreamName,LastEvent:lastEventTimestamp}' \
       --output table
     ;;
-  tail)
+  *)
+    service="$cmd"
     since="${2:-5m}"
-    log "실시간 로그: $LOG_GROUP_PREFIX (since $since)"
-    aws logs tail "$LOG_GROUP_PREFIX" \
+    log "실시간 로그: $LOG_GROUP / $service (since $since)"
+    aws logs tail "$LOG_GROUP" \
+      --log-stream-name-prefix "$service" \
       --since "$since" \
       --follow \
       --region "$AWS_REGION"
-    ;;
-  *)
-    err "사용법: $0 [list|tail [since]]"
-    exit 1
     ;;
 esac

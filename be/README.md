@@ -16,14 +16,14 @@ QA 데모로봇
 5/19, 5/22 : 버틀러 mcap 로그
 
 ## run
-./workspace/lge/ailog/be/scripts/local/run.sh event_generator dev
-./workspace/lge/ailog/be/scripts/local/run.sh event_receiver dev
-./workspace/lge/ailog/be/scripts/local/run.sh event_analyzer dev
-./workspace/lge/ailog/be/scripts/local/run.sh llm_gateway dev
-./workspace/lge/ailog/be/scripts/local/run.sh config_manager dev
-./workspace/lge/ailog/be/scripts/local/run.sh report_manager dev
-./workspace/lge/ailog/be/scripts/local/run.sh action_runner dev
-./workspace/lge/ailog/be/scripts/local/run.sh ai_chat_service dev
+./workspace/lge/ailog_github/be/scripts/local/run.sh event_generator
+./workspace/lge/ailog_github/be/scripts/local/run.sh event_receiver
+./workspace/lge/ailog_github/be/scripts/local/run.sh event_analyzer
+./workspace/lge/ailog_github/be/scripts/local/run.sh llm_gateway
+./workspace/lge/ailog_github/be/scripts/local/run.sh config_manager
+./workspace/lge/ailog_github/be/scripts/local/run.sh report_manager
+./workspace/lge/ailog_github/be/scripts/local/run.sh action_runner
+./workspace/lge/ailog_github/be/scripts/local/run.sh ai_chat_service
 
 # 작업
 main -> localhost 서버 연결
@@ -38,4 +38,4 @@ GRANT ALL ON SCHEMA public TO public;
 
 # DB 터널링
 (로컬PC)
-codespace-db-tunnel.sh
+scripts/db/db-tunnel-codespace.sh

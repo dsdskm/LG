@@ -39,7 +39,7 @@ async function bootstrap() {
   });
 
   logger.log(`db url ${process.env.DB_URL_EVENT_RECEIVER}`)
-  app.enableCors();
+  app.enableCors({ origin: true, credentials: true });
 
   // ✅ MCAP (application/octet-stream)을 Buffer로 받기
   app.use(

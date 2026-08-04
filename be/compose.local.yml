@@ -189,6 +189,15 @@ services:
       ai_chat_service_db:
         condition: service_healthy
     ports: ["3007:3007"]
+    # 컨테이너는 호스트 /etc/hosts 를 쓰지 않으므로 Azure 내부 엔드포인트를 여기에 매핑한다.
+    extra_hosts:
+      - "hs-prd-lab-robot-oai.openai.azure.com:10.167.2.11"
+      - "hs-prd-lab-robot-ai.cognitiveservices.azure.com:10.167.2.218"
+      - "hs-prd-lab-robot-ai.openai.azure.com:10.167.2.219"
+      - "hs-prd-lab-robot-ai.services.ai.azure.com:10.167.2.220"
+      - "eu-prd-task-dea-oai.openai.azure.com:10.182.184.151"
+      - "eu-prd-task-dea-ai.cognitiveservices.azure.com:10.182.184.253"
+      - "eu-prd-task-dea-ai.openai.azure.com:10.182.184.254"
 
 volumes:
   event_receiver_db_data:

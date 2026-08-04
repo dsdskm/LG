@@ -37,7 +37,7 @@ fi
 
 if [[ -z "$CODESPACE_NAME" ]]; then
   err "사용 가능한 Codespace를 찾지 못했습니다."
-  err "CODESPACE_NAME=<이름> ./scripts/local/codespace-ports-public.sh"
+  err "CODESPACE_NAME=<이름> ./scripts/codespaces/ports-public.sh"
   exit 1
 fi
 

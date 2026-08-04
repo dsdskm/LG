@@ -9,6 +9,9 @@ AWS_REGION="${AWS_REGION:-ap-northeast-2}"
 
 ECR_REPOSITORY="${ECR_REPOSITORY:-rsp-qa-ai/unified-service}"
 
+# CloudWatch Logs (compose.qa.yml 의 awslogs-group 과 동일, 스트림=서비스명)
+LOG_GROUP="${LOG_GROUP:-/aws/ec2/rsp-qa-ai}"
+
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 
 ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"

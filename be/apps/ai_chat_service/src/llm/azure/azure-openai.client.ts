@@ -44,6 +44,7 @@ export interface AzureOpenaiGenerateRequest {
   deployment: string;
   messages: Array<AzureChatMessage | { role: string; content: string }>;
   maxCompletionTokens: number;
+  reasoningEffort?: string;
   tools?: AzureTool[];
   toolChoice?: 'auto' | 'none' | 'required';
 }
@@ -130,6 +131,7 @@ export class AzureOpenaiClient {
       deployment,
       messages,
       maxCompletionTokens,
+      reasoningEffort,
       tools,
       toolChoice,
     } = req;
@@ -141,6 +143,7 @@ export class AzureOpenaiClient {
     const body = JSON.stringify({
       messages,
       max_completion_tokens: maxCompletionTokens,
+      ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
       ...(tools && tools.length ? { tools, tool_choice: toolChoice ?? 'auto' } : {}),
     });
     this.logger.log(`[generateContent] request messages=${JSON.stringify(messages)}`);
@@ -175,7 +178,7 @@ export class AzureOpenaiClient {
       }
 
       try {
-        logOpenAIUsage("gpt-5", response);
+        logOpenAIUsage("gpt-5", safeJsonParse(responseText));
       } catch (e: any) {
         this.logger.error(
           `[generateContent] logOpenAIUsage failed status=${response.status} elapsedMs=${elapsedMs} error=${e?.message}`,
@@ -247,8 +250,8 @@ export class AzureOpenaiClient {
       const text = choice?.message?.content ?? '';
       const toolCalls: AzureToolCall[] | undefined = choice?.message?.tool_calls;
 
-      this.logger.debug(
-        `[AzureOpenai] generateContent success elapsedMs=${elapsedMs} status=${response.status} finish=${choice?.finish_reason} toolCalls=${toolCalls?.length ?? 0} headers=${stringifyForLog(usefulHeaders)}`,
+      this.logger.log(
+        `[AzureOpenai] generateContent success elapsedMs=${elapsedMs} status=${response.status} finish=${choice?.finish_reason} textLen=${String(text ?? '').length} toolCalls=${toolCalls?.length ?? 0} usage=${stringifyForLog(jsonData?.usage)}`,
       );
 
       return {

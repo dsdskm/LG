@@ -6,40 +6,23 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
 import { AppModule } from "./app.module";
 
-function buildAllowedOrigins(...ports: number[]) {
-  const hosts = ['localhost', '127.0.0.1'];
-
-  const localOrigins = hosts.flatMap((host) =>
-    ports.map((port) => `http://${host}:${port}`),
-  );
-
-  const defaultOrigins = [
-    'https://dev.hcrsp.com',
-  ];
-
-  const envOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? '')
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-
-  return Array.from(
-    new Set([
-      ...localOrigins,
-      ...defaultOrigins,
-      ...envOrigins,
-    ]),
-  );
-}
-
 async function bootstrap() {
   const logger = new Logger('Main');
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    logger: (process.env.LOG_LEVELS?.split(',').map((s) => s.trim()) as any) ?? [
+      'log',
+      'error',
+      'warn',
+      'debug',
+      'verbose',
+    ],
+  });
 
   app.useStaticAssets(join(process.cwd(), 'apps/ai_chat_service/assets'), {
     prefix: '/assets/',
   });
 
-  app.enableCors();
+  app.enableCors({ origin: true, credentials: true });
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('ai_chat_service API')

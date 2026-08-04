@@ -38,7 +38,7 @@ async function bootstrap() {
   });
 
   const port = Number(process.env.PORT_ACTION_RUNNER ?? 3004);
-  app.enableCors();
+  app.enableCors({ origin: true, credentials: true });
   await app.listen(port, '0.0.0.0');
   logger.log(`action_runner listening on ${port}`);
 }

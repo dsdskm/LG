@@ -8,24 +8,24 @@
 # (AWS-StartPortForwardingSessionToRemoteHost)
 #
 # 사용법:
-#   ./db-tunnel.sh                       # 전체 DB 터널 일괄 (기본)
-#   ./db-tunnel.sh all                   # 동일
-#   ./db-tunnel.sh event_receiver        # 특정 서비스 하나만(포그라운드)
-#   ./db-tunnel.sh event_receiver 15433  # 로컬 포트 직접 지정
-#   INSTANCE_ID=i-0123... ./db-tunnel.sh # 인스턴스 직접 지정
+#   ./db-tunnel-aws.sh                       # 전체 DB 터널 일괄 (기본)
+#   ./db-tunnel-aws.sh all                   # 동일
+#   ./db-tunnel-aws.sh event_receiver        # 특정 서비스 하나만(포그라운드)
+#   ./db-tunnel-aws.sh event_receiver 15433  # 로컬 포트 직접 지정
+#   INSTANCE_ID=i-0123... ./db-tunnel-aws.sh # 인스턴스 직접 지정
 #
 # 접속(터널 뜬 뒤): Host=127.0.0.1, 아래 포트, User=root, Password=root, DB=<서비스>_db
 #
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/config.sh"
+source "$SCRIPT_DIR/../aws/config.sh"
 require_aws
 
 PROJECT_TAG="${PROJECT_TAG:-rsp-ai-analysis}"
 REMOTE_PORT="${REMOTE_PORT:-5432}"
 # 로컬 dev DB(dev-db.sh)와 포트가 겹치면 동시에 못 띄운다.
 # 마이그레이션처럼 양쪽을 동시에 열어야 할 때는 PORT_OFFSET 으로 비켜 띄운다.
-#   예) PORT_OFFSET=10000 ./db-tunnel.sh   → event_receiver 가 15433 로 열림
+#   예) PORT_OFFSET=10000 ./db-tunnel-aws.sh   → event_receiver 가 15433 로 열림
 PORT_OFFSET="${PORT_OFFSET:-0}"
 ALL_SERVICES="config_manager event_receiver event_analyzer action_runner report_manager ai_chat_service"
 
@@ -42,6 +42,17 @@ db_localport_for() {
     *) echo ""; return ;;
   esac
   echo $(( base + PORT_OFFSET ))
+}
+
+# 로컬 포트가 이미 사용 중인지 검사(사용 중이면 0=true).
+port_in_use() {  # $1=port
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
+  elif command -v nc >/dev/null 2>&1; then
+    nc -z 127.0.0.1 "$1" >/dev/null 2>&1
+  else
+    return 1  # 검사 도구 없음 → 점유 아님으로 간주
+  fi
 }
 
 # ── session-manager-plugin 확인 ─────────────────────────────
@@ -102,6 +113,11 @@ if [[ "$SERVICE" != "all" && "$SERVICE" != i-* ]]; then
     exit 1
   fi
   [[ "${2:-}" =~ ^[0-9]+$ ]] && lp="$2"
+  if port_in_use "$lp"; then
+    err "로컬 포트 $lp 가 이미 사용 중입니다. 기존 터널/프로세스를 종료하거나 다른 포트를 지정하세요."
+    err "  점유 확인: lsof -nP -iTCP:$lp -sTCP:LISTEN"
+    exit 1
+  fi
   log "컨테이너(${SERVICE}_db) IP 조회 중..."
   ip="$(container_ip "$SERVICE")"
   [[ -z "$ip" ]] && { err "컨테이너 IP 조회 실패 (${SERVICE}_db 가 떠 있는지 확인)"; exit 1; }
@@ -128,6 +144,20 @@ cleanup() {
   ok "모든 터널 종료 완료."
 }
 trap cleanup INT TERM EXIT
+
+# 시작 전에 점유 포트 먼저 걸러낸다(사용 중이면 SSM 세션이 조용히 죽어 오탐이 난다).
+busy=""
+for svc in $ALL_SERVICES; do
+  lp="$(db_localport_for "$svc")"
+  if port_in_use "$lp"; then
+    busy="$busy $svc(:$lp)"
+  fi
+done
+if [[ -n "$busy" ]]; then
+  err "이미 사용 중인 로컬 포트가 있습니다:$busy"
+  err "기존 터널/프로세스를 종료하거나 PORT_OFFSET 으로 비켜 띄우세요. (예: PORT_OFFSET=10000 $0)"
+  exit 1
+fi
 
 log "DB 터널 일괄 시작 (서비스 5개)"
 for svc in $ALL_SERVICES; do

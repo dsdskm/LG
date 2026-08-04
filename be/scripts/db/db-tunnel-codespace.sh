@@ -81,7 +81,7 @@ fi
 
 if [[ -z "$CODESPACE_NAME" ]]; then
   err "사용 가능한 Codespace를 찾지 못했습니다."
-  err "CODESPACE_NAME=<이름> ./scripts/local/codespace-db-tunnel.sh"
+  err "CODESPACE_NAME=<이름> ./scripts/db/db-tunnel-codespace.sh"
   exit 1
 fi
 
