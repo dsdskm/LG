@@ -196,7 +196,7 @@ const TaskFlowListDetailPage = () => {
     }
 
     return nextParams
-  }, [taskFlow])
+  }, [selectedOrgs])
 
   const { refetch: deviceRefetch } = useDeviceList(deviceRequest, false)
 

@@ -76,6 +76,28 @@ function resolveComposeUserMessage(
   return ''
 }
 
+function parseActionConnectMessage(message: string): { source: string; target: string } | null {
+  const cleaned = String(message ?? '')
+    .trim()
+    .replace(/["'`]/g, '')
+    .replace(/태스크\s*플로우|태스크플로우|taskflow|캔버스|canvas/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (!cleaned) return null
+
+  const match = cleaned.match(
+    /^(.+?)\s*와\s*(.+?)\s*(?:노드\s*)?(?:연결|이어)(?:해줘|해\s*줘|해주세요|해|줘)?\s*$/i,
+  )
+  if (!match) return null
+
+  const source = String(match[1] ?? '').trim()
+  const target = String(match[2] ?? '').trim()
+  if (!source || !target) return null
+
+  return { source, target }
+}
+
 export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefinition {
   return {
     declaration: {
@@ -179,6 +201,22 @@ export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefi
           },
           flowDefinition: startOnlyFlowDefinition,
           assistantText: '요청에 따라 모든 노드를 초기화했습니다.',
+        }
+      }
+
+      const connectRequest = parseActionConnectMessage(userMessage)
+      if (connectRequest) {
+        return {
+          canvasDraft: {
+            mode: 'edit',
+            connectByName: [
+              {
+                source: connectRequest.source,
+                target: connectRequest.target,
+              },
+            ],
+          },
+          assistantText: `${connectRequest.source}에서 ${connectRequest.target}로 연결을 시도합니다.`,
         }
       }
 

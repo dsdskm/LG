@@ -76,6 +76,10 @@ type AssistantDraft = {
   assistantMessageId?: string
   steps?: Array<string | AssistantStep>
   removeByName?: string[]
+  connectByName?: Array<{
+    source?: string
+    target?: string
+  }>
   insertAfter?: Array<{
     after?: string
     step?: string | AssistantStep
@@ -115,7 +119,8 @@ function extractAssistantDraft(value: unknown): AssistantDraft | null {
     .toLowerCase()
   const looksLikeEditDraft =
     (mode === 'edit' || mode === 'replace') &&
-    (Array.isArray(row.insertAfter) ||
+    (Array.isArray(row.connectByName) ||
+      Array.isArray(row.insertAfter) ||
       Array.isArray(row.removeByName) ||
       Array.isArray(row.steps) ||
       Array.isArray(row.nodes) ||
@@ -490,6 +495,12 @@ function toAssistantStepFromNode(node: RFNode): AssistantStep | null {
   }
 }
 
+function draftNeedsPalette(draft: AssistantDraft): boolean {
+  if (draft.mode !== 'edit') return true
+
+  return Boolean(Array.isArray(draft.insertAfter) || Array.isArray(draft.steps) || Array.isArray(draft.nodes))
+}
+
 function matchesStepName(step: AssistantStep, target: string): boolean {
   const needle = normalizeNameKey(target)
   if (!needle) return false
@@ -586,6 +597,18 @@ function applyEditDraftToFlowDefinition(
     return matches[0]
   }
 
+  const findActionNodesByName = (name: string): RFNode[] => {
+    const target = String(name ?? '').trim()
+    if (!target) return []
+
+    return nextNodes.filter((node) => {
+      if (String(node.id) === 'start') return false
+      const step = toAssistantStepFromNode(node)
+      if (!step || String(step.taskType ?? '').trim().toUpperCase() !== 'ACTION') return false
+      return matchesStepName(step, target)
+    })
+  }
+
   const removeNames = Array.isArray(draft.removeByName)
     ? draft.removeByName.map((value) => String(value ?? '').trim()).filter(Boolean)
     : []
@@ -619,6 +642,59 @@ function applyEditDraftToFlowDefinition(
       const idx = nextNodes.findIndex((node) => String(node.id) === targetId)
       if (idx >= 0) nextNodes.splice(idx, 1)
     }
+  }
+
+  const connects = Array.isArray(draft.connectByName) ? draft.connectByName : []
+  for (const connect of connects) {
+    const sourceName = String(connect?.source ?? '').trim()
+    const targetName = String(connect?.target ?? '').trim()
+    if (!sourceName || !targetName) continue
+
+    const sourceMatches = findActionNodesByName(sourceName)
+    if (sourceMatches.length !== 1) {
+      return {
+        next: null,
+        clarification:
+          sourceMatches.length === 0
+            ? `${sourceName} ACTION 노드를 현재 캔버스에서 찾지 못했습니다. 정확한 노드 이름으로 다시 요청해 주세요.`
+            : `${sourceName} 이름의 ACTION 노드가 여러 개 있습니다. 정확한 노드 이름으로 다시 요청해 주세요.`
+      }
+    }
+
+    const targetMatches = findActionNodesByName(targetName)
+    if (targetMatches.length !== 1) {
+      return {
+        next: null,
+        clarification:
+          targetMatches.length === 0
+            ? `${targetName} ACTION 노드를 현재 캔버스에서 찾지 못했습니다. 정확한 노드 이름으로 다시 요청해 주세요.`
+            : `${targetName} 이름의 ACTION 노드가 여러 개 있습니다. 정확한 노드 이름으로 다시 요청해 주세요.`
+      }
+    }
+
+    const sourceNode = sourceMatches[0]
+    const targetNode = targetMatches[0]
+    const sourceId = String(sourceNode.id)
+    const targetId = String(targetNode.id)
+
+    if (sourceId === targetId) {
+      return {
+        next: null,
+        clarification: '같은 ACTION 노드끼리는 연결할 수 없습니다. 서로 다른 두 노드 이름으로 다시 요청해 주세요.'
+      }
+    }
+
+    const alreadyConnected = nextEdges.some(
+      (edge) => String(edge.source) === sourceId && String(edge.target) === targetId
+    )
+    if (alreadyConnected) {
+      return {
+        next: null,
+        clarification: `${sourceName}에서 ${targetName}로는 이미 연결되어 있습니다.`
+      }
+    }
+
+    nextEdges.push(buildDraftEdge(sourceId, targetId, `${Date.now()}-connect-${sourceId}-${targetId}`))
   }
 
   const inserts = Array.isArray(draft.insertAfter) ? draft.insertAfter : []
@@ -931,8 +1007,8 @@ export default function TaskFlowCanvasPage() {
         removeCount: Array.isArray(draft.removeByName) ? draft.removeByName.length : 0
       })
 
-      const contentPaletteReady = palette.some((item) => item.kind === 'contentNode')
-      if (!contentPaletteReady) {
+      const paletteReady = !draftNeedsPalette(draft) || palette.length > 0
+      if (!paletteReady) {
         console.log('[AI_TASKFLOW][DRAFT_PENDING]', {
           reason: 'palette-not-ready',
           paletteSize: palette.length
@@ -984,8 +1060,8 @@ export default function TaskFlowCanvasPage() {
     const pending = pendingDraftRef.current
     if (!pending) return
 
-    const contentPaletteReady = palette.some((item) => item.kind === 'contentNode')
-    if (!contentPaletteReady) return
+    const paletteReady = !draftNeedsPalette(pending) || palette.length > 0
+    if (!paletteReady) return
 
     console.log('[AI_TASKFLOW][DRAFT_REPLAY]', {
       mode: String(pending.mode ?? ''),
@@ -1361,7 +1437,7 @@ export default function TaskFlowCanvasPage() {
         siteId: orgInfo.siteId
       })
 
-      console.log('[SAVE] flowDefinition:', payload.flowDefinition)
+      console.log('[SAVE] flowDefinition:', JSON.stringify(payload.flowDefinition))
 
       if (isNewFlow) {
         const created = await createTaskFlowAsync(payload)
