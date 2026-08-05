@@ -61,13 +61,25 @@ export const BaseNodeRoot = styled.div<{
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
+
+  transition:
+    box-shadow 120ms ease-out,
+    transform 120ms ease-out;
+
   ${({ $selected }) =>
     $selected
       ? css`
-          border-color: #64748b;
+          /* 노드 카드에는 실행 상태색이 인라인 borderColor 로 걸려 CSS border-color 가 밀린다.
+             그래서 선택 강조는 인라인 스타일과 겹치지 않는 outline + halo 로 표현한다.
+             색은 앱 테마의 활성 상태 색(클래식 블루=파랑 / 모던 뉴트럴=taupe)을 따른다. */
+          outline: 2px solid var(--t-toggle-active-bg);
+          outline-offset: 2px;
+
           box-shadow:
-            0 0 0 2px #e2e8f0,
-            0 1px 2px rgba(15, 23, 42, 0.08);
+            0 0 0 6px rgba(var(--t-toggle-active-bg-rgb), 0.2),
+            0 8px 18px rgba(15, 23, 42, 0.2);
+
+          transform: translateY(-1px);
         `
       : css`
           border-color: #e2e8f0;

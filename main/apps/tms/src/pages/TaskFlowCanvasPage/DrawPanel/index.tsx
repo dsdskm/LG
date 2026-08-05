@@ -24,9 +24,9 @@ import TaskEdge from './Edge/TaskEdge'
 import TaskNode from './Node/TaskNode'
 import StartNode from './Node/StartNode'
 import HelperLines from './HelperLines'
-import { CanvasWrapper, FlowFill, PanelRoot, AlignOverlay } from './styles'
+import { CanvasWrapper, FlowFill, PanelRoot, AlignOverlay, NodeActionOverlay } from './styles'
 import ConfirmModal from '@/pages/components/modal/ConfirmModal'
-import { useFlowEditorStore } from '@/store/taskflow.canvas.store'
+import { countEditableSelectedNodes, useFlowEditorStore } from '@/store/taskflow.canvas.store'
 import type { ConnectDenyReason, RFEdge } from '@/store/taskflow.canvas.store'
 import { PaletteItem } from '@/types/palette'
 
@@ -65,6 +65,12 @@ function InnerCanvas() {
 
   const openDeleteConfirm = useFlowEditorStore((s) => s.openDeleteConfirm)
   const openDeleteEdgeConfirm = useFlowEditorStore((s) => s.openDeleteEdgeConfirm)
+
+  const duplicateSelectedNodes = useFlowEditorStore((s) => s.duplicateSelectedNodes)
+
+  // 단일 선택 + 그룹 선택을 합친 편집 대상 개수 (START 제외)
+  const editableSelectedCount = useFlowEditorStore(countEditableSelectedNodes)
+  const hasEditableSelection = editableSelectedCount > 0
 
   const alignSelectedNodesAuto = useFlowEditorStore((s) => s.alignSelectedNodesAuto)
 
@@ -188,6 +194,24 @@ function InnerCanvas() {
     [reconnectEdge, notifyConnectDeny]
   )
 
+  const onDuplicateClick = useCallback(() => {
+    if (!hasEditableSelection) {
+      toast.warning(t('canvas.nodeActions.duplicateEmpty'))
+      return
+    }
+
+    duplicateSelectedNodes()
+  }, [duplicateSelectedNodes, hasEditableSelection, t])
+
+  const onDeleteClick = useCallback(() => {
+    if (!hasEditableSelection) {
+      toast.warning(t('canvas.nodeActions.deleteEmpty'))
+      return
+    }
+
+    openDeleteConfirm()
+  }, [hasEditableSelection, openDeleteConfirm, t])
+
   const onAlignClick = useCallback(() => {
     if (!canAlign) {
       setShowAlignGuideModal(true)
@@ -272,6 +296,14 @@ function InnerCanvas() {
         onDropCapture={(e) => e.preventDefault()}
         tabIndex={0}
         onKeyDownCapture={(e) => {
+          // Ctrl/Cmd + D: 선택 노드(그룹 포함) 복제
+          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+            e.preventDefault()
+            e.stopPropagation()
+            onDuplicateClick()
+            return
+          }
+
           if (selectedEdgeId && (e.key === 'Delete' || e.key === 'Backspace')) {
             e.preventDefault()
             e.stopPropagation()
@@ -279,7 +311,8 @@ function InnerCanvas() {
             return
           }
 
-          if (selectedNodeId && (e.key === 'Delete' || e.key === 'Backspace')) {
+          // 그룹 선택은 selectedNodeId 가 비어 있을 수 있으므로 편집 대상 개수로 판단한다.
+          if (hasEditableSelection && (e.key === 'Delete' || e.key === 'Backspace')) {
             e.preventDefault()
             e.stopPropagation()
             openDeleteConfirm()
@@ -300,8 +333,9 @@ function InnerCanvas() {
 
           <Button
             type="button"
-            theme={flowMode === 'default' ? 'primary' : 'light'}
+            theme="light"
             size="sm"
+            data-active={flowMode === 'default'}
             onClick={() => setFlowMode('default')}
             title={t('canvas.mode.switchToDefault')}
           >
@@ -310,14 +344,43 @@ function InnerCanvas() {
 
           <Button
             type="button"
-            theme={flowMode === 'tree' ? 'primary' : 'light'}
+            theme="light"
             size="sm"
+            data-active={flowMode === 'tree'}
             onClick={() => setFlowMode('tree')}
             title={t('canvas.mode.switchToTree')}
           >
             {t('canvas.mode.tree')}
           </Button>
         </AlignOverlay>
+
+        <NodeActionOverlay>
+          <Button
+            type="button"
+            theme="light"
+            size="sm"
+            onClick={onDuplicateClick}
+            aria-disabled={!hasEditableSelection}
+            title={hasEditableSelection ? t('canvas.nodeActions.duplicateTitle') : t('canvas.nodeActions.duplicateEmpty')}
+          >
+            {editableSelectedCount > 1
+              ? t('canvas.nodeActions.duplicateWithCount', { count: editableSelectedCount })
+              : t('canvas.nodeActions.duplicate')}
+          </Button>
+
+          <Button
+            type="button"
+            theme="delete"
+            size="sm"
+            onClick={onDeleteClick}
+            aria-disabled={!hasEditableSelection}
+            title={hasEditableSelection ? t('canvas.nodeActions.deleteTitle') : t('canvas.nodeActions.deleteEmpty')}
+          >
+            {editableSelectedCount > 1
+              ? t('canvas.nodeActions.deleteWithCount', { count: editableSelectedCount })
+              : t('actions.delete')}
+          </Button>
+        </NodeActionOverlay>
 
         <FlowFill>
           <ReactFlow

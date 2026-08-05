@@ -235,10 +235,18 @@
 
   --t-tab-active: #4e422c;
   --t-toggle-active-bg: #7d776a;
+  /* rgba() 로 반투명 강조(halo)를 만들 때 사용. --t-toggle-active-bg 와 값이 같아야 한다. */
+  --t-toggle-active-bg-rgb: 125, 119, 106;
   --t-play-btn-border: #7d776a;
   --t-play-btn-bg: #f4f1ec;
   --t-play-btn-text: #7d776a;
   --t-play-btn-hover-bg: #e8e1d8;
+
+  --t-major-action-btn-bg: #7d776a;
+  --t-major-action-btn-border: #7d776a;
+  --t-major-action-btn-text: #ffffff;
+  --t-major-action-btn-hover-bg: #6b655a;
+
   --t-select-accent: #b91c4c;
   --t-select-accent-hover: #cd7b94;
 
@@ -273,10 +281,17 @@
 
   --t-tab-active: var(--color-primary-70);
   --t-toggle-active-bg: #3b82f6;
+  --t-toggle-active-bg-rgb: 59, 130, 246;
   --t-play-btn-border: #6ee7b7;
   --t-play-btn-bg: #f0fdf4;
   --t-play-btn-text: #059669;
   --t-play-btn-hover-bg: #dcfce7;
+
+  --t-major-action-btn-bg: var(--color-primary-70);
+  --t-major-action-btn-border: var(--color-primary-70);
+  --t-major-action-btn-text: #ffffff;
+  --t-major-action-btn-hover-bg: var(--color-primary-60);
+
   --t-select-accent: var(--color-primary-70);
   --t-select-accent-hover: var(--color-primary-50);
 

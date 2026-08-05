@@ -30,7 +30,9 @@ import { repeatNodeType } from '../nodes/btRepeatNode'
 import { reactiveOrNodeType } from '../nodes/btReactiveOrNode'
 import { actionNodeType } from '../nodes/btActionNode'
 import { reactiveAndNodeType } from '../nodes/btReactiveAndNode'
+import { andNodeType } from '../nodes/btAndNode'
 import { retryUntilSuccessfulNodeType } from '../nodes/btRetryUntilSuccessfulNode'
+import { btPreconditionNodeType } from '../nodes/btPreconditionNode'
 
 export type SimStatus = 'SUCCESS' | 'FAILURE' | 'RUNNING'
 
@@ -80,6 +82,8 @@ export function buildSimTrace(
         return wrapControl(node, () => runFallback(node.children))
       case reactiveOrNodeType:
         return wrapControl(node, () => runFallback(node.children), true)
+      case andNodeType:
+        return wrapControl(node, () => runSequence(node.children))
       case reactiveAndNodeType:
         return wrapControl(node, () => runSequence(node.children), true)
       case parallelNodeType:
@@ -98,6 +102,10 @@ export function buildSimTrace(
           const r = exec(node.child)
           return r === 'RUNNING' ? 'RUNNING' : 'FAILURE'
         })
+      // Precondition: if 스크립트를 시뮬레이터가 평가할 수 없으므로 "조건 통과"로 보고
+      // 자식을 tick 해 그 결과를 그대로 반환한다(else 분기는 시뮬 안 함).
+      case btPreconditionNodeType:
+        return wrapControl(node, () => exec(node.child))
       default:
         return 'SUCCESS'
     }

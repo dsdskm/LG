@@ -370,7 +370,7 @@
     "groupServicePolicy": "サービス利用規約",
     "groupPrivacyPolicy": "個人情報の収集および利用",
     "groupMarketingReceipt": "マーケティング情報受信同意",
-    "groupThirdPartyCharging": "第三者情報提供同意",
+    "groupThirdPartySharging": "第三者情報提供同意",
     "groupLocationService": "位置情報サービス利用規約",
     "content": "規約内容",
     "contentPlaceholder": "規約内容を入力してください",
@@ -380,7 +380,10 @@
     "optional": "選択",
     "active": "有効化",
     "inactive": "無効化",
-    "viewButton": "表示"
+    "viewButton": "表示",
+    "viewTitle": "規約表示",
+    "viewLoading": "読み込み中...",
+    "viewFailMessage": "規約内容の読み込みに失敗しました。"
   },
   "map": {
     "guide2dMouse": "ドラッグ: 移動 · Ctrl + ホイール: 拡大/縮小",

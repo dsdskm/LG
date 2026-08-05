@@ -4,9 +4,12 @@ import jaCommon from './src/ja-JP/common.json'
 import koLayout from './src/ko-KR/layout.json'
 import enLayout from './src/en-US/layout.json'
 import jaLayout from './src/ja-JP/layout.json'
+import koLogin from './src/ko-KR/login.json'
+import enLogin from './src/en-US/login.json'
+import jaLogin from './src/ja-JP/login.json'
 
 export const translations = {
-  'ko-KR': { common: koCommon, layout: koLayout },
-  'en-US': { common: enCommon, layout: enLayout },
-  'ja-JP': { common: jaCommon, layout: jaLayout }
+  'ko-KR': { common: koCommon, layout: koLayout, login: koLogin },
+  'en-US': { common: enCommon, layout: enLayout, login: enLogin },
+  'ja-JP': { common: jaCommon, layout: jaLayout, login: jaLogin }
 }

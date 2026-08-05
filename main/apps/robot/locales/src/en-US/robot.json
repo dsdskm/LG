@@ -370,7 +370,7 @@
     "groupServicePolicy": "Terms of Service",
     "groupPrivacyPolicy": "Collection and Use of Personal Information",
     "groupMarketingReceipt": "Marketing Information Consent",
-    "groupThirdPartyCharging": "Third-Party Data Sharing Consent",
+    "groupThirdPartySharging": "Third-Party Data Sharing Consent",
     "groupLocationService": "Location-Based Service Terms",
     "content": "Term Content",
     "contentPlaceholder": "Please enter the term content",
@@ -380,7 +380,10 @@
     "optional": "Optional",
     "active": "Active",
     "inactive": "Inactive",
-    "viewButton": "View"
+    "viewButton": "View",
+    "viewTitle": "View Term",
+    "viewLoading": "Loading...",
+    "viewFailMessage": "Failed to load the term content."
   },
   "map": {
     "guide2dMouse": "Drag: Move · Ctrl + Wheel: Zoom",

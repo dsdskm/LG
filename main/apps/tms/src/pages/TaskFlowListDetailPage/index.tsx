@@ -9,7 +9,7 @@ import ConfirmModal from '@/pages/components/modal/ConfirmModal'
 import { getTaskFlowStatusLabel } from '@/utils/taskflowStatus'
 import { EXECUTION_CONDITION_KEY } from '@/common/constants'
 import TaskFlowReadonlyCanvas from '../TaskFlowCanvasPage/FlowCanvasViewer'
-import { Icon, Title, Button } from '@repo/ui'
+import { Icon, Title, Button, Tabs, Tab } from '@repo/ui'
 
 import {
   Container,
@@ -19,6 +19,7 @@ import {
   DropdownMenu,
   DropdownMenuItem,
   Section,
+  FlowTabsWrap,
   FlowArea,
   FlowCanvasWrap,
   PageMessage,
@@ -43,6 +44,14 @@ import {
   TableCellRight,
   TableCellLeft
 } from './styles'
+
+import {
+  FLOW_SOURCE_QUERY_KEY,
+  getFlowDefinitionBySource,
+  hasFinal,
+  hasSaved,
+  type FlowDefinitionSource
+} from '@/utils/flowDefinition'
 
 import {
   type PendingAction,
@@ -120,14 +129,25 @@ const TaskFlowListDetailPage = () => {
     return ((taskFlow as any)?.deployment as Deployment | undefined) ?? null
   }, [taskFlow])
 
-  // 실행 조건: flowDefinition.nodes 중 startNode 의 data.properties.execution_condition
+  // 보여줄 정의 선택: "저장 버전"(flowDefinitionDraft) / "최종 버전"(flowDefinition)
+  const [flowSource, setFlowSource] = useState<FlowDefinitionSource>('saved')
+
+  // 저장 버전이 없으면 최종 버전 탭을 기본으로 연다.
+  useEffect(() => {
+    if (!taskFlow) return
+    if (!hasSaved(taskFlow) && hasFinal(taskFlow)) setFlowSource('final')
+  }, [taskFlow])
+
+  const selectedFlowDefinition = useMemo(() => getFlowDefinitionBySource(taskFlow, flowSource), [taskFlow, flowSource])
+
+  // 실행 조건: 선택된 정의의 nodes 중 startNode 의 data.properties.execution_condition
   const executionCondition = useMemo(() => {
-    const nodes = (taskFlow as any)?.flowDefinition?.nodes
+    const nodes = (selectedFlowDefinition as any)?.nodes
     if (!Array.isArray(nodes)) return ''
     const startNode = nodes.find((node: any) => node?.type === 'startNode')
     const value = startNode?.data?.properties?.[EXECUTION_CONDITION_KEY]
     return value == null ? '' : String(value)
-  }, [taskFlow])
+  }, [selectedFlowDefinition])
 
   const [isMoreOpen, setIsMoreOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState<SubmitState>(null)
@@ -197,9 +217,10 @@ const TaskFlowListDetailPage = () => {
   const { responsiveMode } = useResponsiveStore()
   const isMobile = responsiveMode !== 'PC' ? true : false
 
+  // 어느 탭을 보고 있든 수정은 항상 저장 버전(flowDefinitionDraft)을 연다.
   const handleEdit = () => {
     if (!taskFlow?.id) return
-    navigate(`/tms/taskflows/${taskFlow.id}/canvas`)
+    navigate(`/tms/taskflows/${taskFlow.id}/canvas?${FLOW_SOURCE_QUERY_KEY}=saved`)
   }
 
   const handleDeployManage = () => {
@@ -534,11 +555,33 @@ const TaskFlowListDetailPage = () => {
 
       <CenteredContent>
         <Section>
-          <FlowArea>
-            <FlowCanvasWrap>
-              <TaskFlowReadonlyCanvas flowDefinition={taskFlow.flowDefinition} />
-            </FlowCanvasWrap>
-          </FlowArea>
+          <FlowTabsWrap>
+            <Tabs activeId={flowSource} onChange={(id: string) => setFlowSource(id as FlowDefinitionSource)}>
+              <Tab id="saved" label={t('detail.flowTab.saved')}>
+                <FlowArea>
+                  <FlowCanvasWrap>
+                    {hasSaved(taskFlow) ? (
+                      <TaskFlowReadonlyCanvas flowDefinition={selectedFlowDefinition} />
+                    ) : (
+                      <PageMessage>{t('detail.flowTab.savedEmpty')}</PageMessage>
+                    )}
+                  </FlowCanvasWrap>
+                </FlowArea>
+              </Tab>
+
+              <Tab id="final" label={t('detail.flowTab.final')}>
+                <FlowArea>
+                  <FlowCanvasWrap>
+                    {hasFinal(taskFlow) ? (
+                      <TaskFlowReadonlyCanvas flowDefinition={selectedFlowDefinition} />
+                    ) : (
+                      <PageMessage>{t('detail.flowTab.finalEmpty')}</PageMessage>
+                    )}
+                  </FlowCanvasWrap>
+                </FlowArea>
+              </Tab>
+            </Tabs>
+          </FlowTabsWrap>
         </Section>
       </CenteredContent>
 

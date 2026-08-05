@@ -9,8 +9,10 @@ import { fallbackOnFailureNodeType } from '../nodes/btFallbackOnFailureNode'
 import { forceFailureNodeType } from '../nodes/btForceFailureNode'
 import { forceSuccessNodeType } from '../nodes/btForceSuccessNode'
 import { ifThenElseNodeType } from '../nodes/btIfThenElseNode'
+import { andNodeType } from '../nodes/btAndNode'
 import { orNodeType } from '../nodes/btOrNode'
 import { parallelNodeType } from '../nodes/btParallelNode'
+import { btPreconditionNodeType } from '../nodes/btPreconditionNode'
 import { reactiveAndNodeType } from '../nodes/btReactiveAndNode'
 import { reactiveOrNodeType } from '../nodes/btReactiveOrNode'
 import { repeatNodeType } from '../nodes/btRepeatNode'
@@ -23,6 +25,7 @@ export function getBtChildren(node: BtAstNode): BtAstNode[] {
     case sequenceNodeType:
     case ifThenElseNodeType:
     case orNodeType:
+    case andNodeType:
     case reactiveOrNodeType:
     case reactiveAndNodeType:
     case fallbackOnFailureNodeType:
@@ -32,6 +35,7 @@ export function getBtChildren(node: BtAstNode): BtAstNode[] {
     case retryUntilSuccessfulNodeType:
     case forceSuccessNodeType:
     case forceFailureNodeType:
+    case btPreconditionNodeType:
       return node.child ? [node.child] : []
     default:
       return []

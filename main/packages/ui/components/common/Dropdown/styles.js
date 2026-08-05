@@ -70,6 +70,10 @@ export const StyledOptions = styled.ul`
   overflow: auto;
   z-index: 1000;
 
+  background: var(--color-neutral-10);
+  border: 1px solid var(--color-secondary-20);
+  border-radius: ${({ $size }) => ($size === 'sm' ? 'var(--radius-xs)' : 'var(--radius-sm)')};
+
   & > .searchItem {
     padding: 0.8rem 1.2rem;
   }

@@ -43,6 +43,10 @@ export function isOrControlNode(node: Node): boolean {
   return isControlNode(node) && getNodeTaskName(node) === 'or'
 }
 
+export function isAndControlNode(node: Node): boolean {
+  return isControlNode(node) && getNodeTaskName(node) === 'and'
+}
+
 export function isReactiveOrControlNode(node: Node): boolean {
   if (!isControlNode(node)) return false
 
@@ -84,6 +88,10 @@ export function isRetryUntilSuccessfulControlNode(node: Node): boolean {
   return isControlNode(node) && getNodeTaskName(node) === 'retryuntilsuccessful'
 }
 
+export function isPreconditionControlNode(node: Node): boolean {
+  return isControlNode(node) && getNodeTaskName(node) === 'precondition'
+}
+
 export function isAlwaysSuccessNode(node: Node): boolean {
   return isActionNode(node) && getNodeTaskName(node) === 'alwayssuccess'
 }
@@ -91,6 +99,7 @@ export function isAlwaysSuccessNode(node: Node): boolean {
 export function canUseLeftBranches(node: Node): boolean {
   return (
     isOrControlNode(node) ||
+    isAndControlNode(node) ||
     isReactiveOrControlNode(node) ||
     isReactiveAndControlNode(node) ||
     isParallelControlNode(node) ||
@@ -98,7 +107,8 @@ export function canUseLeftBranches(node: Node): boolean {
     isIfThenElseControlNode(node) ||
     isForceSuccessControlNode(node) ||
     isForceFailureControlNode(node) ||
-    isRetryUntilSuccessfulControlNode(node)
+    isRetryUntilSuccessfulControlNode(node) ||
+    isPreconditionControlNode(node)
   )
 }
 
@@ -124,6 +134,12 @@ export function hasOnlyLeftBranches(outgoing?: OutgoingInfo): boolean {
 
 export function isIfElseRuleMatch(node: Node, outgoing?: OutgoingInfo): boolean {
   return isOrControlNode(node) && hasLeftBranches(outgoing)
+}
+
+// And 는 컨트롤 노드이므로 leftBranch 유무와 무관하게 항상 And 규칙이 매칭돼야 한다.
+// (leftBranch 조건을 걸면 자식 없이 right 만 연결된 And 가 ifThen 규칙으로 넘어가 Action 으로 생성됨)
+export function isAndRuleMatch(node: Node, outgoing?: OutgoingInfo): boolean {
+  return isAndControlNode(node)
 }
 
 export function isReactiveOrRuleMatch(node: Node, outgoing?: OutgoingInfo): boolean {
@@ -152,6 +168,10 @@ export function isForceFailureRuleMatch(node: Node, outgoing?: OutgoingInfo): bo
 
 export function isRetryUntilSuccessfulRuleMatch(node: Node, outgoing?: OutgoingInfo): boolean {
   return isRetryUntilSuccessfulControlNode(node)
+}
+
+export function isPreconditionRuleMatch(node: Node, outgoing?: OutgoingInfo): boolean {
+  return isPreconditionControlNode(node)
 }
 
 export function isIfThenElseRuleMatch(node: Node, outgoing?: OutgoingInfo): boolean {
@@ -223,24 +243,16 @@ export function wrapAstListAsSequenceIfNeeded(astList: BtAstNode[], sequenceName
   } satisfies BtSequenceNode
 }
 
-export function getNodePropertyValue(node: any, ...keys: string[]): unknown {
-  const data = node?.data ?? {}
-  const properties = data?.properties ?? {}
-  const payload = data?.payload ?? {}
-  const payloadProperties = payload?.properties ?? {}
+export function getNodePropertyValue(node: any, key: string): unknown {
+  const properties = node?.data?.properties ?? {}
 
-  for (const key of keys) {
-    if (properties[key] !== undefined) return properties[key]
-    if (payloadProperties[key] !== undefined) return payloadProperties[key]
-    if (data[key] !== undefined) return data[key]
-    if (payload[key] !== undefined) return payload[key]
-  }
+  if (properties[key] !== undefined) return properties[key]
 
   return undefined
 }
 
-export function getNodeNumberPropertyValue(node: any, fallback: number, ...keys: string[]): number {
-  const value = getNodePropertyValue(node, ...keys)
+export function getNodeNumberPropertyValue(node: any, fallback: number, key: string): number {
+  const value = getNodePropertyValue(node, key)
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : fallback
 }

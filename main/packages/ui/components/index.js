@@ -51,3 +51,5 @@ export { default as SideBar } from './layout/SideBar'
 export { default as Title } from './layout/Title'
 export { default as ServiceMenuIcon } from './layout/ServiceMenuIcon'
 export { default as AiAssistantPanel } from './layout/AiAssistantPanel'
+// pages
+export { default as LoginPage } from './pages/LoginPage'

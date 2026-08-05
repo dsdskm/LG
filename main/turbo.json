@@ -5,17 +5,20 @@
     "build": {
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": ["apps-dist/**"]
+      "outputs": [],
+      "cache": false
     },
     "build:dev": {
       "dependsOn": ["^build:dev"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": ["apps-dist/**"]
+      "outputs": [],
+      "cache": false
     },
     "build:qa": {
       "dependsOn": ["^build:qa"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": ["apps-dist/**"]
+      "outputs": [],
+      "cache": false
     },
     "lint": {
       "dependsOn": ["^lint"]

@@ -12,7 +12,7 @@ export const DashboardControlsContainer = styled.div`
   display: flex;
   gap: 1.25rem;
   align-items: center;
-  margin-bottom: 2.4rem;
+  margin-bottom: 3.2rem;
 
   > * {
     margin: 0;
@@ -131,7 +131,7 @@ export const SpanStateUnit = styled.span`
 `
 
 export const DivMarginTop = styled.div`
-  margin-top: 2.4rem;
+  margin-top: 3.2rem;
 `
 
 export const ArticleMap = styled.article`

@@ -8,7 +8,14 @@ import {
   getRuleNodeName
 } from '../bt.util'
 import type { BtRule } from './types'
-import { BtParallelNode, parallelNodeName, parallelNodeType } from '../nodes/btParallelNode'
+import {
+  BtParallelNode,
+  parallelFailureCountProp,
+  parallelMainNodesProp,
+  parallelNodeName,
+  parallelNodeType,
+  parallelSuccessCountProp
+} from '../nodes/btParallelNode'
 import { forceSuccessNodeType } from '../nodes/btForceSuccessNode'
 
 export const rule_parallel: BtRule<typeof parallelNodeName> = {
@@ -106,7 +113,7 @@ function normalizeSingleBranchEntry(value: any): BranchEntry | null {
 // 미설정(배열 아님)이면 null(=전체 main)을 반환한다.
 // 배열이면 명시 선택으로 보고 교집합 Set 을 반환한다(빈 배열=0개 선택 → 빈 Set).
 function resolveMainTargetSet(node: any, entries: BranchEntry[]): Set<string> | null {
-  const raw = getNodePropertyValue(node, 'main_nodes', 'mainNodes')
+  const raw = getNodePropertyValue(node, parallelMainNodesProp)
 
   if (!Array.isArray(raw)) {
     return null
@@ -141,21 +148,21 @@ function sortBranchEntriesByCanvasPosition(entries: BranchEntry[], nodeById: Map
 }
 
 function resolveSuccessCount(node: any, childCount: number): number {
-  const value = getNodeNumberPropertyValue(node, -1, 'success_count', 'successCount', 'successThreshold')
+  const value = getNodeNumberPropertyValue(node, -1, parallelSuccessCountProp)
 
-  return validateParallelThreshold(value, childCount, 'success_count', node)
+  return validateParallelThreshold(value, childCount, parallelSuccessCountProp, node)
 }
 
 function resolveFailureCount(node: any, childCount: number): number {
-  const value = getNodeNumberPropertyValue(node, -1, 'failure_count', 'failureCount', 'failureThreshold')
+  const value = getNodeNumberPropertyValue(node, -1, parallelFailureCountProp)
 
-  return validateParallelThreshold(value, childCount, 'failure_count', node)
+  return validateParallelThreshold(value, childCount, parallelFailureCountProp, node)
 }
 
 function validateParallelThreshold(
   value: number,
   childCount: number,
-  fieldName: 'success_count' | 'failure_count',
+  fieldName: typeof parallelSuccessCountProp | typeof parallelFailureCountProp,
   node: any
 ): number {
   if (childCount <= 0) {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { StyledDropdown, StyledOptions, StyledSelectButton } from './styles'
 import Icon from '../Icon'
 import useToggle from '@repo/hooks/useToggle'
@@ -174,65 +175,67 @@ const Dropdown = ({
           <p>{getDisplayValue()}</p>
           <Icon name={isOpen ? 'arrow_up' : 'arrow_down'} size={16} />
         </StyledSelectButton>
-        {isOpen && (
-          <StyledOptions
-            className="optionList"
-            $width={dropdownRef.current.getBoundingClientRect().width}
-            $top={
-              windowHeight < dropdownRef.current.getBoundingClientRect().bottom + maxOptionsHeight + gap * 2
-                ? dropdownRef.current.getBoundingClientRect().top -
-                  (gap + optionsBorderY) -
-                  optionHeight *
-                    (displayedOptions.length > maxOptionsLength ? maxOptionsLength : displayedOptions.length)
-                : dropdownRef.current.getBoundingClientRect().bottom + gap
-            }
-            $left={dropdownRef.current.getBoundingClientRect().left}
-          >
-            {showSearch && (
-              <li className="searchItem">
-                <Search
-                  value={searchKeyword}
-                  onChange={(e) => setSearchKeyword(e.target.value)}
-                  onReset={() => setSearchKeyword('')}
-                  placeholder={searchPlaceholder}
-                />
-              </li>
-            )}
-            {!showSearch && searchBarComponent && <li className="searchItem">{searchBarComponent}</li>}
-            {displayedOptions.length > 0 ? (
-              displayedOptions.map((option) => (
-                <li
-                  key={option.value || option.id || option.name || option}
-                  className={`typographyBody5 optionItem ${useCheckBox && 'useCheckbox'} ${
-                    useCheckBox && selectedItems.includes(option) ? 'selected' : ''
-                  }`}
-                >
-                  {useCheckBox ? (
-                    <Checkbox
-                      label={typeof option === 'object' ? (option?.name ?? '') : option}
-                      checked={selectedItems.includes(option)}
-                      onChange={() => handleCheckboxChange(option)}
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      className={`optionsButton ${selectedItems === option ? 'selected' : ''}`}
-                      value={option}
-                      onClick={() => handleItemClick(option)}
-                    >
-                      {typeof option === 'object' ? (option?.name ?? '') : option}
-                      {useSelectedIcon && selectedItems === (option.value || option.name || option) && (
-                        <Icon name="check" size={20} />
-                      )}
-                    </button>
-                  )}
+        {isOpen &&
+          createPortal(
+            <StyledOptions
+              className="optionList"
+              $width={dropdownRef.current.getBoundingClientRect().width}
+              $top={
+                windowHeight < dropdownRef.current.getBoundingClientRect().bottom + maxOptionsHeight + gap * 2
+                  ? dropdownRef.current.getBoundingClientRect().top -
+                    (gap + optionsBorderY) -
+                    optionHeight *
+                      (displayedOptions.length > maxOptionsLength ? maxOptionsLength : displayedOptions.length)
+                  : dropdownRef.current.getBoundingClientRect().bottom + gap
+              }
+              $left={dropdownRef.current.getBoundingClientRect().left}
+            >
+              {showSearch && (
+                <li className="searchItem">
+                  <Search
+                    value={searchKeyword}
+                    onChange={(e) => setSearchKeyword(e.target.value)}
+                    onReset={() => setSearchKeyword('')}
+                    placeholder={searchPlaceholder}
+                  />
                 </li>
-              ))
-            ) : (
-              <li className="typographyBody5 option__nodata">검색 결과가 없습니다.</li>
-            )}
-          </StyledOptions>
-        )}
+              )}
+              {!showSearch && searchBarComponent && <li className="searchItem">{searchBarComponent}</li>}
+              {displayedOptions.length > 0 ? (
+                displayedOptions.map((option) => (
+                  <li
+                    key={option.value || option.id || option.name || option}
+                    className={`typographyBody5 optionItem ${useCheckBox && 'useCheckbox'} ${
+                      useCheckBox && selectedItems.includes(option) ? 'selected' : ''
+                    }`}
+                  >
+                    {useCheckBox ? (
+                      <Checkbox
+                        label={typeof option === 'object' ? (option?.name ?? '') : option}
+                        checked={selectedItems.includes(option)}
+                        onChange={() => handleCheckboxChange(option)}
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        className={`optionsButton ${selectedItems === option ? 'selected' : ''}`}
+                        value={option}
+                        onClick={() => handleItemClick(option)}
+                      >
+                        {typeof option === 'object' ? (option?.name ?? '') : option}
+                        {useSelectedIcon && selectedItems === (option.value || option.name || option) && (
+                          <Icon name="check" size={20} />
+                        )}
+                      </button>
+                    )}
+                  </li>
+                ))
+              ) : (
+                <li className="typographyBody5 option__nodata">검색 결과가 없습니다.</li>
+              )}
+            </StyledOptions>,
+            document.body
+          )}
       </div>
       {message && <TextFieldInfo message={message} isError={isError} />}
     </StyledDropdown>

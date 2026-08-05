@@ -6,6 +6,7 @@ import { termsApis } from '@/apis'
 import { toYmdHmKST } from '@/utils/dateUtils'
 import ModalCreateTerm from './modal/ModalCreateTerm'
 import ModalEditTerm from './modal/ModalEditTerm'
+import ModalViewTerm from './modal/ModalViewTerm'
 
 const TermManagement = () => {
   const { t } = useTranslation('robot')
@@ -13,10 +14,12 @@ const TermManagement = () => {
 
   const CreateTermModal = useModalState()
   const EditTermModal = useModalState()
+  const ViewTermModal = useModalState()
   const SuccessModal = useModalState()
 
   const [terms, setTerms] = useState([])
   const [editTarget, setEditTarget] = useState(null)
+  const [viewTarget, setViewTarget] = useState(null)
   const [successInfo, setSuccessInfo] = useState({ title: '', message: '' })
 
   // 약관 목록 조회
@@ -96,10 +99,10 @@ const TermManagement = () => {
     fetchTerms()
   }
 
-  // 상세보기: 추후 약관 전문 다운로드 후 표시 예정
+  // 상세보기: 약관 전문 조회 모달 열기
   const handleViewTerm = (row) => {
-    // TODO: objectKeyPrefix 기반으로 약관 전문 다운로드 후 표시
-    console.log('viewTerm:', row)
+    setViewTarget(row)
+    ViewTermModal.onOpen()
   }
 
   // 수정 모달 열기
@@ -146,6 +149,14 @@ const TermManagement = () => {
         onClose={EditTermModal.onClose}
         onConfirm={handleEditTerm}
         t={t}
+      />
+
+      <ModalViewTerm
+        isOpen={ViewTermModal.isOpen}
+        term={viewTarget}
+        onClose={ViewTermModal.onClose}
+        t={t}
+        tCommon={tCommon}
       />
 
       <Modal

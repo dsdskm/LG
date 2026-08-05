@@ -490,7 +490,7 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
    * 해당 컴포넌트들이 참조하는 useFlowEditorStore 값도 DB flowDefinition 기준으로 맞춰준다.
    *
    * 단, viewer는 편집 화면이 아니므로 flowKey를 null로 두어
-   * localStorage history에 viewer 상태가 저장되지 않게 한다.
+   * 편집 중인 flow 로 오인되지 않게 한다.
    */
   useLayoutEffect(() => {
     const prevState = useFlowEditorStore.getState()

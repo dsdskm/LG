@@ -370,7 +370,7 @@
     "groupServicePolicy": "서비스 이용약관",
     "groupPrivacyPolicy": "개인정보 수집 및 이용",
     "groupMarketingReceipt": "마케팅 정보 수신 동의",
-    "groupThirdPartyCharging": "제3자 정보 제공 동의",
+    "groupThirdPartySharging": "제3자 정보 제공 동의",
     "groupLocationService": "위치 기반 서비스 이용약관",
     "content": "약관 내용",
     "contentPlaceholder": "약관 내용을 입력하세요",
@@ -380,7 +380,10 @@
     "optional": "선택",
     "active": "활성화",
     "inactive": "비활성화",
-    "viewButton": "보기"
+    "viewButton": "보기",
+    "viewTitle": "약관 보기",
+    "viewLoading": "불러오는 중...",
+    "viewFailMessage": "약관 내용을 불러오지 못했습니다."
   },
   "map": {
     "guide2dMouse": "드래그: 이동 · Ctrl + 휠: 확대/축소",

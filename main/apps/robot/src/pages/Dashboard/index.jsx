@@ -518,7 +518,7 @@ const Dashboard = () => {
               <DivSectionTitleWrap>
                 <H3SectionTitle>{t('robotPlacementStatus', '로봇 배치 현황 및 위치 정보')}</H3SectionTitle>
                 {hasSite && (
-                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1.3rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1.3rem', marginLeft: '1rem' }}>
                     <LocationSelector
                       buildings={buildings}
                       value={locSel}

@@ -13,7 +13,7 @@
 //const API_BASE = `http://${window.location.hostname}:8081`
 //export default API_BASE
 
-const DEFAULT_API_PORT = import.meta.env.VITE_API_PORT || '8081'
+const DEFAULT_API_PORT = import.meta.env.VITE_BE_PORT
 const browserHost = window.location.hostname || 'localhost'
 const browserProtocol = window.location.protocol === 'https:' ? 'https:' : 'http:'
 
@@ -29,8 +29,7 @@ const envBaseIsLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(e
 //-------------------------------------------------------------------
 // nginx/captive portal 모드에서는 상대경로 /api 사용
 // 예: http://192.168.188.1/api/...
-const useRelativeApi =
-  import.meta.env.VITE_USE_RELATIVE_API === 'true' || window.location.port === '' || window.location.port === '80'
+const useRelativeApi = window.location.port === '' || window.location.port === '80'
 
 const API_BASE = useRelativeApi
   ? ''

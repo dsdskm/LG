@@ -1,5 +1,6 @@
+import type React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 
 import TaskFlowCanvasHeader from './Header'
@@ -10,25 +11,29 @@ import ConfirmModal from '@/pages/components/modal/ConfirmModal'
 
 import { TaskFlow } from '@/types/taskflow'
 import { ensureStartNode } from '@/utils/node.util'
+import {
+  FLOW_SOURCE_QUERY_KEY,
+  getFlowDefinitionBySource,
+  hasFinal,
+  normalizeFlowSource,
+  pickEditableFlowDefinition
+} from '@/utils/flowDefinition'
 
-import { useCreateTaskFlow, useUpdateTaskFlow } from '@/api/taskFlowApis'
+import { useCreateTaskFlow, useGetTaskFlow, useUpdateTaskFlow } from '@/api/taskFlowApis'
 import TaskFlowInfoDialog from '../components/dialog/TaskFlowInfoDialog'
 import PalettePanel from './PalettePanel'
 import { buildBehaviorTreeFromFlowDefinition } from '@/bt/build'
-import { buildTaskFlowPersistPayload } from '@/types/api/savePayload'
+import { buildTaskFlowPersistPayload, type SaveMode } from '@/types/api/savePayload'
 import { useOrganizationStore } from '@repo/stores'
-import { Main, PageRoot } from './styles'
+import { Checkbox } from '@repo/ui'
+import { Main, PageRoot, SaveHint } from './styles'
 import PanelLayout from './PanelLayout'
 import DrawPanel from './DrawPanel'
 import type { PaletteItem } from '@/types/palette'
 import { MarkerType } from '@xyflow/react'
 import { useFlowEditorStore as useFlowEditorStoreHook, type RFEdge, type RFNode } from '@/store/taskflow.canvas.store'
 
-type SaveMode = 'save' | 'temp'
-type SubmitState = 'save' | 'temp' | null
 type SaveOverride = { name: string; description: string }
-type BtModalMode = 'save-gate' | null
-type BtModalStatus = 'success' | 'error'
 type MoveToMapEntry = { nodeId: string; mapId: string }
 
 const AI_TASKFLOW_CANVAS_EVENT = 'ai-assistant:taskflow-canvas-draft'
@@ -816,6 +821,11 @@ export default function TaskFlowCanvasPage() {
   const { t } = useTranslation(['tms', 'common'])
   const navigate = useNavigate()
   const { taskFlowId } = useParams()
+  const [searchParams] = useSearchParams()
+
+  // 상세 화면에서 어느 쪽(저장 버전 / 최종 버전)을 불러올지 지정해서 들어온다.
+  // 저장은 항상 저장 버전을 기준으로 하고, 최종 버전은 체크했을 때만 함께 갱신한다.
+  const requestedSource = normalizeFlowSource(searchParams.get(FLOW_SOURCE_QUERY_KEY))
 
   const flows = useTaskFlowStore((s) => s.flows)
   const selectFlow = useTaskFlowStore((s) => s.selectFlow)
@@ -832,8 +842,10 @@ export default function TaskFlowCanvasPage() {
 
   const initFlowEditor = useFlowEditorStoreHook((s) => s.initFlowEditor)
   const resetFlowEditor = useFlowEditorStoreHook((s) => s.resetFlowEditor)
-  const clearPersistedHistory = useFlowEditorStoreHook((s) => s.clearPersistedHistory)
   const adoptFlowKey = useFlowEditorStoreHook((s) => s.adoptFlowKey)
+
+  const isDirty = useFlowEditorStoreHook((s) => s.isDirty)
+  const markSaved = useFlowEditorStoreHook((s) => s.markSaved)
 
   const undo = useFlowEditorStoreHook((s) => s.undo)
   const redo = useFlowEditorStoreHook((s) => s.redo)
@@ -863,7 +875,14 @@ export default function TaskFlowCanvasPage() {
     }
   }, [navigate, numericFlowId, selectFlow])
 
-  const selectedFlow = useMemo(() => flows.find((f) => f.id === numericFlowId) ?? null, [flows, numericFlowId])
+  // 캔버스는 목록 캐시가 아니라 서버 단건 조회를 기준으로 초기화한다.
+  // (목록은 App 진입/목록 페이지에서만 갱신돼 오래된 flowDefinitionDraft 로 열릴 수 있다)
+  const { data: fetchedFlow } = useGetTaskFlow(numericFlowId > 0 ? numericFlowId : -1)
+
+  const selectedFlow = useMemo<TaskFlow | null>(
+    () => (fetchedFlow as TaskFlow | null) ?? flows.find((f) => f.id === numericFlowId) ?? null,
+    [fetchedFlow, flows, numericFlowId]
+  )
   const pendingDraftRef = useRef<AssistantDraft | null>(null)
 
   const logAppliedAiNodes = useCallback(
@@ -1121,8 +1140,18 @@ export default function TaskFlowCanvasPage() {
   }, [isNewFlow, selectedFlow?.id, selectedFlow?.name, selectedFlow?.description])
 
   const prevKeyRef = useRef<string | null>(null)
+  // 신규 저장 직후 URL 만 /canvas/{id} 로 바뀌는 경우, 편집 상태를 지우지 않고 그대로 이어받기 위한 표시
+  const adoptedKeyRef = useRef<string | null>(null)
 
   useEffect(() => {
+    const key = String(numericFlowId)
+
+    if (adoptedKeyRef.current === key) {
+      adoptedKeyRef.current = null
+      prevKeyRef.current = key
+      return
+    }
+
     resetFlowEditor()
     prevKeyRef.current = null
   }, [numericFlowId, resetFlowEditor])
@@ -1132,8 +1161,6 @@ export default function TaskFlowCanvasPage() {
       const key = 'NEW'
       if (prevKeyRef.current === key) return
       prevKeyRef.current = key
-
-      clearPersistedHistory('new')
 
       initFlowEditor(
         'new',
@@ -1153,31 +1180,42 @@ export default function TaskFlowCanvasPage() {
     if (prevKeyRef.current === key) return
     prevKeyRef.current = key
 
-    initFlowEditor(String(selectedFlow.id), selectedFlow.flowDefinitionDraft as Record<string, unknown>)
-  }, [isNewFlow, selectedFlow, initFlowEditor, clearPersistedHistory])
+    initFlowEditor(
+      String(selectedFlow.id),
+      pickEditableFlowDefinition(selectedFlow, requestedSource) as Record<string, unknown>
+    )
+  }, [isNewFlow, selectedFlow, initFlowEditor, requestedSource])
 
   const [saveDoneOpen, setSaveDoneOpen] = useState(false)
   const [saveErrorOpen, setSaveErrorOpen] = useState(false)
   const [saveErrorMessage, setSaveErrorMessage] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const [saveMode, setSaveMode] = useState<SaveMode>('save')
-  const [submitState, setSubmitState] = useState<SubmitState>(null)
+  const [saveMode, setSaveMode] = useState<SaveMode>('saved')
   const [resetAllNodesConfirmOpen, setResetAllNodesConfirmOpen] = useState(false)
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false)
+
+  // 저장 확인 모달 안에서 매번 선택한다. (체크하면 flowDefinition = 최종 버전까지 함께 갱신)
+  const [saveConfirmOpen, setSaveConfirmOpen] = useState(false)
+  const [saveFinal, setSaveFinal] = useState(false)
+
+  const [finalResetConfirmOpen, setFinalResetConfirmOpen] = useState(false)
+
+  // BT 로 만들 수 없는 구성일 때 한 번 더 묻는다. (확인하면 저장 버전으로만 저장)
+  const [btWarningOpen, setBtWarningOpen] = useState(false)
+  const [btWarningReason, setBtWarningReason] = useState('')
+  const pendingOverrideRef = useRef<SaveOverride | undefined>(undefined)
 
   const [infoDialogOpen, setInfoDialogOpen] = useState(false)
-  const saveAfterInfoRef = useRef<SaveMode | null>(null)
+  const saveAfterInfoRef = useRef(false)
 
-  const [btModalOpen, setBtModalOpen] = useState(false)
-  const [btModalMode, setBtModalMode] = useState<BtModalMode>(null)
-  const [btModalStatus, setBtModalStatus] = useState<BtModalStatus>('success')
-  const [btModalTitle, setBtModalTitle] = useState('')
-  const [btModalMessage, setBtModalMessage] = useState('')
-  const [pendingBehaviorTree, setPendingBehaviorTree] = useState<string>('')
+  // 최종 버전을 만들지 못한 이유 (저장 완료 안내에 함께 보여준다)
+  const [savedOnlyReason, setSavedOnlyReason] = useState('')
 
   const syncAfterCreate = async (created: TaskFlow) => {
+    // URL 이 바뀌어도 방금 편집/저장한 상태를 그대로 유지한다. (저장소를 쓰지 않으므로 메모리로 이관)
+    adoptedKeyRef.current = String(created.id)
     adoptFlowKey(String(created.id))
-    clearPersistedHistory('new')
 
     navigate(`/tms/taskflows/${created.id}/canvas`, { replace: true })
 
@@ -1204,7 +1242,8 @@ export default function TaskFlowCanvasPage() {
     return { groupId, siteId }
   }, [selectedGroupId, selectedSiteId, selectedFlow?.groupId, selectedFlow?.siteId, t])
 
-  const validateMoveToMapId = useCallback(() => {
+  // moveTo 노드들의 mapId 가 어긋나면 BT 로 만들 수 없다. 문제가 없으면 null 을 반환한다.
+  const getMoveToMapIdError = useCallback(() => {
     const moveToEntries: MoveToMapEntry[] = nodes
       .filter((node: any) => {
         const data = node?.data ?? {}
@@ -1226,28 +1265,64 @@ export default function TaskFlowCanvasPage() {
 
     console.log('[SAVE][MoveTo] mapId list:', moveToEntries)
 
-    if (moveToEntries.length <= 1) return true
+    if (moveToEntries.length <= 1) return null
 
     if (moveToEntries.some((entry) => !entry.mapId)) {
-      setSaveErrorMessage(t('canvas.page.moveToMapIdMismatch'))
-      setSaveErrorOpen(true)
-      return false
+      return t('canvas.page.moveToMapIdMismatch')
     }
 
     const uniqueMapIds = new Set(moveToEntries.map((entry) => entry.mapId))
     if (uniqueMapIds.size > 1) {
-      setSaveErrorMessage(t('canvas.page.moveToMapIdMismatch'))
-      setSaveErrorOpen(true)
-      return false
+      return t('canvas.page.moveToMapIdMismatch')
     }
 
-    return true
+    return null
   }, [nodes, t])
+
+  /**
+   * 저장 대상 결정.
+   *  - "최종 버전 저장" 체크 → flowDefinitionDraft + flowDefinition 동시 갱신
+   *  - 체크 없음            → flowDefinitionDraft(저장 버전) 만 갱신
+   *
+   * 최종 버전은 BT 생성이 되어야 만들 수 있다. BT 를 만들 수 없으면 reason 을 돌려주고,
+   * 저장 버전으로만 저장할지 사용자에게 한 번 더 확인한다.
+   */
+  const resolveSaveTarget = useCallback(
+    (withFinal: boolean): { mode: SaveMode; behaviorTree?: string; reason?: string } => {
+      const mapIdError = getMoveToMapIdError()
+      if (mapIdError) return { mode: 'saved', reason: mapIdError }
+
+      try {
+        const result = buildBehaviorTreeFromFlowDefinition({
+          nodes,
+          edges,
+          flowMode
+        } as any)
+
+        console.log('[BT 변환] model:', result.model)
+        console.log('[BT 변환] xml:\n' + result.xml)
+
+        if (result.warnings?.length > 0) {
+          console.warn('[BT 변환] warnings:\n' + result.warnings.join('\n'))
+        }
+
+        const xml = result.xml?.trim()
+        if (!xml) return { mode: 'saved', reason: t('canvas.page.btNoResult') }
+
+        return { mode: withFinal ? 'both' : 'saved', behaviorTree: xml }
+      } catch (error: any) {
+        console.error('[BT 변환] failed:', error)
+
+        const message = error?.message || (typeof error === 'string' ? error : t('canvas.page.btUnknownError'))
+        return { mode: 'saved', reason: message }
+      }
+    },
+    [edges, flowMode, getMoveToMapIdError, nodes, t]
+  )
 
   const doSave = async (mode: SaveMode, behaviorTreeXml?: string, override?: SaveOverride) => {
     try {
       setSaving(true)
-      setSubmitState(mode)
 
       const trimmedName = (override?.name ?? flowName).trim()
       const trimmedDescription = (override?.description ?? flowDescription).trim()
@@ -1263,7 +1338,7 @@ export default function TaskFlowCanvasPage() {
         return
       }
 
-      if (mode === 'save' && !behaviorTreeXml?.trim()) {
+      if (mode === 'both' && !behaviorTreeXml?.trim()) {
         setSaveErrorMessage(t('canvas.page.btNoResult'))
         setSaveErrorOpen(true)
         return
@@ -1290,6 +1365,7 @@ export default function TaskFlowCanvasPage() {
 
       if (isNewFlow) {
         const created = await createTaskFlowAsync(payload)
+        markSaved()
         setSaveDoneOpen(true)
         await syncAfterCreate(created)
         return
@@ -1298,6 +1374,7 @@ export default function TaskFlowCanvasPage() {
       if (!idForUpdate) return
 
       await updateTaskFlowAsync({ id: idForUpdate, patch: payload })
+      markSaved()
 
       setSaveDoneOpen(true)
       await refreshSelectedFlow()
@@ -1310,53 +1387,16 @@ export default function TaskFlowCanvasPage() {
       setSaveErrorOpen(true)
     } finally {
       setSaving(false)
-      setSubmitState(null)
     }
   }
 
-  const runBtTransformForSave = async (mode: SaveMode, override?: SaveOverride) => {
-    try {
-      console.log('nodes info', nodes)
-      console.log('edges inof', edges)
-      console.log('flowMode info', flowMode)
-      const result = buildBehaviorTreeFromFlowDefinition({
-        nodes,
-        edges,
-        flowMode
-      } as any)
-
-      console.log('[BT 변환] model:', result.model)
-      console.log('[BT 변환] xml:\n' + result.xml)
-
-      if (result.warnings?.length > 0) {
-        console.warn('[BT 변환] warnings:\n' + result.warnings.join('\n'))
-      }
-
-      await doSave(mode, result.xml ?? '', override)
-
-      return true
-    } catch (error: any) {
-      console.error('[BT 변환] failed:', error)
-
-      const message = error?.message || (typeof error === 'string' ? error : t('canvas.page.btUnknownError'))
-
-      setPendingBehaviorTree('')
-      setBtModalMode('save-gate')
-      setBtModalStatus('error')
-      setBtModalTitle(t('canvas.page.btFailTitle'))
-      setBtModalMessage(message)
-      setBtModalOpen(true)
-
-      return false
-    }
-  }
-
-  const requestSave = async (mode: SaveMode, override?: SaveOverride) => {
+  // withFinal: "최종 버전 저장" 체크 여부. (AI 커맨드 등 확인 모달을 거치지 않는 저장은 저장 버전만 갱신)
+  const requestSave = async (override?: SaveOverride, withFinal = false) => {
     if (saving) return
 
     const trimmedName = (override?.name ?? flowName).trim()
     if (!trimmedName) {
-      saveAfterInfoRef.current = mode
+      saveAfterInfoRef.current = true
       setInfoDialogOpen(true)
       return
     }
@@ -1366,22 +1406,58 @@ export default function TaskFlowCanvasPage() {
       return
     }
 
-    setSaveMode(mode)
+    const target = resolveSaveTarget(withFinal)
 
-    if (mode === 'temp') {
-      await doSave('temp', undefined, override)
+    // BT 로 만들 수 없는 구성이면 저장 버전으로만 남는다는 점을 한 번 더 확인한다.
+    if (target.reason) {
+      pendingOverrideRef.current = override
+      setBtWarningReason(target.reason)
+      setBtWarningOpen(true)
       return
     }
 
-    if (!validateMoveToMapId()) {
-      return
-    }
+    setSaveMode(target.mode)
+    setSavedOnlyReason('')
 
-    runBtTransformForSave(mode, override)
+    await doSave(target.mode, target.behaviorTree, override)
   }
 
-  const onSave = () => requestSave('save')
-  const onTempSave = () => requestSave('temp')
+  const onSave = () => {
+    if (saving) return
+
+    // 최종 버전 저장 여부는 저장할 때마다 새로 판단한다.
+    setSaveFinal(false)
+    setSaveConfirmOpen(true)
+  }
+
+  const canResetToFinal = hasFinal(selectedFlow)
+
+  const applyFinalToCanvas = useCallback(() => {
+    if (!canResetToFinal) return
+
+    applyFlowDefinitionWithHistory(getFlowDefinitionBySource(selectedFlow, 'final') as Record<string, unknown>)
+  }, [applyFlowDefinitionWithHistory, canResetToFinal, selectedFlow])
+
+  const leaveCanvas = useCallback(() => {
+    if (Number.isFinite(numericFlowId) && numericFlowId > 0) {
+      navigate(`/tms/taskflows/${numericFlowId}/detail`)
+      return
+    }
+
+    navigate('/tms')
+  }, [navigate, numericFlowId])
+
+  // 저장하지 않은 편집 내용은 캔버스를 벗어나면 사라지므로, 나가기 전에 한 번 확인한다.
+  const handleBack = useCallback(() => {
+    if (saving) return
+
+    if (isDirty) {
+      setLeaveConfirmOpen(true)
+      return
+    }
+
+    leaveCanvas()
+  }, [isDirty, leaveCanvas, saving])
 
   useEffect(() => {
     const onTaskflowCanvasCommand = (event: Event) => {
@@ -1394,13 +1470,9 @@ export default function TaskFlowCanvasPage() {
         .toLowerCase()
       if (!type) return
 
-      if (type === 'save') {
-        void requestSave('save')
-        return
-      }
-
-      if (type === 'temp-save' || type === 'tempsave') {
-        void requestSave('temp')
+      // 저장 방식이 하나로 통합되어, 예전 temp-save 커맨드도 같은 저장으로 처리한다.
+      if (type === 'save' || type === 'temp-save' || type === 'tempsave') {
+        void requestSave()
         return
       }
 
@@ -1449,29 +1521,23 @@ export default function TaskFlowCanvasPage() {
   return (
     <PageRoot>
       <TaskFlowCanvasHeader
-        onBack={() => {
-          if (Number.isFinite(numericFlowId) && numericFlowId > 0) {
-            navigate(`/tms/taskflows/${numericFlowId}/detail`)
-            return
-          }
-          navigate('/tms')
-        }}
+        onBack={handleBack}
         description={flowDescription}
         title={isNewFlow ? flowName || t('canvas.page.newFlowTitle') : flowName || t('canvas.page.defaultTitle')}
         status={(selectedFlow as any)?.status}
         onEditInfo={() => {
-          saveAfterInfoRef.current = null
+          saveAfterInfoRef.current = false
           setInfoDialogOpen(true)
         }}
         onSave={onSave}
-        onTempSave={onTempSave}
+        onResetToFinal={() => setFinalResetConfirmOpen(true)}
+        canResetToFinal={canResetToFinal}
         onUndo={undo}
         onRedo={redo}
         onResetAllNodes={() => setResetAllNodesConfirmOpen(true)}
         canUndo={canUndo}
         canRedo={canRedo}
-        saving={saving && saveMode === 'save'}
-        tempSaving={saving && saveMode === 'temp'}
+        saving={saving}
       />
 
       <Main>
@@ -1492,7 +1558,7 @@ export default function TaskFlowCanvasPage() {
         initialDescription={flowDescription}
         onClose={() => {
           if (saving) return
-          saveAfterInfoRef.current = null
+          saveAfterInfoRef.current = false
           setInfoDialogOpen(false)
         }}
         onConfirm={({ name, description }: { name: string; description: string }) => {
@@ -1508,47 +1574,93 @@ export default function TaskFlowCanvasPage() {
           setFlowDescription(description)
           setInfoDialogOpen(false)
 
-          const pendingMode = saveAfterInfoRef.current
-          saveAfterInfoRef.current = null
-          if (pendingMode) {
-            void requestSave(pendingMode, { name, description })
+          const shouldSave = saveAfterInfoRef.current
+          saveAfterInfoRef.current = false
+          if (shouldSave) {
+            void requestSave({ name, description }, saveFinal)
           }
         }}
       />
 
       <ConfirmModal
-        open={btModalOpen}
-        title={btModalTitle}
-        description={btModalMessage}
-        confirmText={
-          btModalStatus === 'success' && btModalMode === 'save-gate'
-            ? saveMode === 'temp'
-              ? saving
-                ? t('canvas.page.btTempSaving')
-                : t('canvas.page.btTempSave')
-              : saving
-                ? t('canvas.page.btSaving')
-                : t('canvas.page.btSave')
-            : t('common:confirm')
-        }
-        showCancelButton={btModalStatus === 'success' && btModalMode === 'save-gate'}
+        open={leaveConfirmOpen}
+        title={t('canvas.leaveConfirm.title')}
+        description={t('canvas.leaveConfirm.description')}
+        confirmText={t('canvas.leaveConfirm.confirm')}
+        confirmVariant="danger"
+        closeOnOverlayClick
+        onCancel={() => setLeaveConfirmOpen(false)}
+        onConfirm={() => {
+          setLeaveConfirmOpen(false)
+          leaveCanvas()
+        }}
+      />
+
+      <ConfirmModal
+        open={saveConfirmOpen}
+        title={t('canvas.saveConfirm.title')}
+        description={t('canvas.saveConfirm.description')}
+        confirmText={saving ? t('canvas.header.saving') : t('canvas.header.save')}
         confirmDisabled={saving}
         onCancel={() => {
           if (saving) return
-          setBtModalOpen(false)
-          setBtModalMode(null)
+          setSaveConfirmOpen(false)
+        }}
+        onConfirm={async () => {
+          if (saving) return
+          setSaveConfirmOpen(false)
+          await requestSave(undefined, saveFinal)
+        }}
+      >
+        <Checkbox
+          label={t('canvas.saveConfirm.saveFinal')}
+          checked={saveFinal}
+          disabled={saving}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSaveFinal(e.target.checked)}
+        />
+        <SaveHint>{t('canvas.saveConfirm.saveFinalHint')}</SaveHint>
+      </ConfirmModal>
+
+      {/* BT 생성이 불가능한 구성 → 저장 버전으로만 저장할지 재확인 */}
+      <ConfirmModal
+        open={btWarningOpen}
+        title={t('canvas.btWarning.title')}
+        description={`${t('canvas.btWarning.description')}${btWarningReason ? `\n\n${btWarningReason}` : ''}`}
+        confirmText={saving ? t('canvas.header.saving') : t('canvas.btWarning.confirm')}
+        confirmDisabled={saving}
+        onCancel={() => {
+          if (saving) return
+          pendingOverrideRef.current = undefined
+          setBtWarningOpen(false)
         }}
         onConfirm={async () => {
           if (saving) return
 
-          if (btModalStatus === 'success' && btModalMode === 'save-gate') {
-            setBtModalOpen(false)
-            await doSave(saveMode, pendingBehaviorTree)
-            return
-          }
+          const override = pendingOverrideRef.current
+          pendingOverrideRef.current = undefined
+          setBtWarningOpen(false)
 
-          setBtModalOpen(false)
-          setBtModalMode(null)
+          setSaveMode('saved')
+          setSavedOnlyReason(btWarningReason)
+
+          await doSave('saved', undefined, override)
+        }}
+      />
+
+      <ConfirmModal
+        open={finalResetConfirmOpen}
+        title={t('canvas.finalReset.title')}
+        description={t('canvas.finalReset.description')}
+        confirmText={t('canvas.finalReset.confirm')}
+        closeOnOverlayClick={!saving}
+        onCancel={() => {
+          if (saving) return
+          setFinalResetConfirmOpen(false)
+        }}
+        onConfirm={() => {
+          if (saving) return
+          applyFinalToCanvas()
+          setFinalResetConfirmOpen(false)
         }}
       />
 
@@ -1572,8 +1684,19 @@ export default function TaskFlowCanvasPage() {
 
       <ConfirmModal
         open={saveDoneOpen}
-        title={saveMode === 'temp' ? t('canvas.page.tempSaveDoneTitle') : t('canvas.page.saveDoneTitle')}
-        description={saveMode === 'temp' ? t('canvas.page.tempSaveDoneDesc') : t('canvas.page.saveDoneDesc')}
+        title={saveMode === 'both' ? t('canvas.page.finalSaveDoneTitle') : t('canvas.page.saveDoneTitle')}
+        description={
+          saveMode === 'both'
+            ? t('canvas.page.finalSaveDoneDesc')
+            : `${t('canvas.page.saveDoneDesc')}${
+                savedOnlyReason
+                  ? `
+
+${t('canvas.page.finalSkipped')}
+${savedOnlyReason}`
+                  : ''
+              }`
+        }
         showCancelButton={false}
         closeOnOverlayClick={true}
         onCancel={() => setSaveDoneOpen(false)}
@@ -1582,7 +1705,7 @@ export default function TaskFlowCanvasPage() {
 
       <ConfirmModal
         open={saveErrorOpen}
-        title={submitState === 'temp' ? t('canvas.page.tempSaveFailTitle') : t('canvas.page.saveFailTitle')}
+        title={t('canvas.page.saveFailTitle')}
         description={saveErrorMessage}
         showCancelButton={false}
         closeOnOverlayClick={true}

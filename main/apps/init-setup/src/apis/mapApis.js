@@ -1,7 +1,8 @@
 import { client } from '@repo/apis'
 import { createCrud } from './crudFactory'
 
-const axiosMap = client(import.meta.env.VITE_API_BASE_URL)
+const host = window.location.hostname
+const axiosMap = client(`http://${host}:${import.meta.env.VITE_BE_PORT}`)
 
 // 맵 리소스 CRUD (init-setup-be: /api/v1/maps)
 export const { create, list, getById, update, remove } = createCrud('maps')

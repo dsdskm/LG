@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react'
+import styled from 'styled-components'
 import { Table, Modal, Button, ExpandableSection, SectionRobot as Section } from '@repo/ui'
 import { toYmdHmKST } from '@/utils/dateUtils'
 import {
@@ -24,6 +25,16 @@ import PartsStatusPanel from '../component/PartsStatusPanel'
 import RobotControlPanel from '../component/RobotControlPanel'
 import { Play, GamePad, Battery, Wifi, Clock, Upload, OperationStatus, StopCircle } from '@/assets/icon'
 
+const MajorActionButton = styled(Button)`
+  background: var(--t-major-action-btn-bg) !important;
+  border-color: var(--t-major-action-btn-border) !important;
+  color: var(--t-major-action-btn-text) !important;
+
+  &:hover:not(:disabled) {
+    background: var(--t-major-action-btn-hover-bg) !important;
+    border-color: var(--t-major-action-btn-hover-bg) !important;
+  }
+`
 // sitePosition(건물/층/영역) 식별 키 — 값이 바뀌면 해당 위치의 지도를 다시 로딩
 const sitePosKey = (sp) => (sp?.buildingId ? `${sp.buildingId}/${sp.floorId}/${sp.areaId}` : null)
 
@@ -723,18 +734,22 @@ const AssetInfo = ({ t, deviceId }) => {
             <div>
               <label className="typographyBody4" style={{ fontWeight: 'bold' }}>
                 {t('statusSummary')}
-              </label>
+              </label>{' '}
+              {isLive ? (
+                <StopButton style={{ maxHeight: '25px', marginLeft: '12px' }} onClick={handleLiveStop}>
+                  <StopCircle className="w-[14px] h-[14px]" />
+
+                  {t('stop')}
+                </StopButton>
+              ) : (
+                <PlayButton style={{ maxHeight: '25px', marginLeft: '12px' }} onClick={handleLivePlay}>
+                  <Play className="w-[14px] h-[14px]" />
+
+                  {t('realtime')}
+                </PlayButton>
+              )}
               {isLive && <LiveSpan>Live</LiveSpan>}
             </div>
-            {isLive ? (
-              <StopButton style={{ maxHeight: '25px' }} onClick={handleLiveStop}>
-                <StopCircle className="w-[14px] h-[14px]" /> {t('stop')}
-              </StopButton>
-            ) : (
-              <PlayButton style={{ maxHeight: '25px' }} onClick={handleLivePlay}>
-                <Play className="w-[14px] h-[14px]" /> {t('realtime')}
-              </PlayButton>
-            )}
           </div>
           <SectionList>
             {[
@@ -802,15 +817,15 @@ const AssetInfo = ({ t, deviceId }) => {
             {t('magorAction')}
           </label>
           <div className="mt-5 flex flex-wrap gap-2 sm:gap-2.5">
-            <Button theme={'primary'} onClick={handleLogPlayClick}>
+            <MajorActionButton onClick={handleLogPlayClick}>
               <Play className="w-[14px] h-[14px]" /> {t('drivingLogReplay')}
-            </Button>
-            <Button theme={'primary'} onClick={handleClick}>
+            </MajorActionButton>
+            <MajorActionButton onClick={handleLogPlayClick}>
               <GamePad className="w-[14px] h-[14px]" /> {t('manipulationLogReplay')}
-            </Button>
-            <Button theme={'primary'}>
+            </MajorActionButton>
+            <MajorActionButton>
               <Upload className="w-[14px] h-[14px]" /> {t('logUploadRequest')}
-            </Button>
+            </MajorActionButton>
           </div>
         </Section>
         <Section className="mt-8">

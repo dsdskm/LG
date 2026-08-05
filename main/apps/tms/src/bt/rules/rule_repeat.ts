@@ -1,5 +1,5 @@
 import type { BtAstNode } from '../types'
-import { repeatNodeType, BtRepeatNode, repeatNodeName } from '../nodes/btRepeatNode'
+import { repeatNodeType, BtRepeatNode, repeatNodeName, repeatNumCyclesProp } from '../nodes/btRepeatNode'
 import {
   isRepeatRuleMatch,
   sortOutgoingEdgeRefsByCanvasPosition,
@@ -54,7 +54,7 @@ export const rule_repeat: BtRule<typeof repeatNodeName> = {
 }
 
 function resolveNumCycles(node: any): number {
-  const value = getNodeNumberPropertyValue(node, 1, 'num_cycles', 'numCycles', 'repeat_count', 'repeatCount')
+  const value = getNodeNumberPropertyValue(node, 1, repeatNumCyclesProp)
 
   return value > 0 ? value : 1
 }

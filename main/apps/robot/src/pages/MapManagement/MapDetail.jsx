@@ -60,7 +60,10 @@ const emptyBox = (text) => (
 )
 
 const fileInfoColumns = [
-  { name: 'label', cell: (row) => <div style={{ fontSize: '14px', color: 'var(--color-neutral-60)' }}>{row.label}</div> },
+  {
+    name: 'label',
+    cell: (row) => <div style={{ fontSize: '14px', color: 'var(--color-neutral-60)' }}>{row.label}</div>
+  },
   { name: 'value', cell: (row) => <div style={{ fontSize: '14px', wordBreak: 'break-all' }}>{row.value}</div> }
 ]
 
@@ -92,10 +95,7 @@ const MapDetail = () => {
     }
     setLoading(true)
     try {
-      const [obj, viewData] = await Promise.all([
-        mapApis.getMap(mapId),
-        mapApis.getMapView(mapId).catch(() => null)
-      ])
+      const [obj, viewData] = await Promise.all([mapApis.getMap(mapId), mapApis.getMapView(mapId).catch(() => null)])
       setMapObject(obj)
       setView(viewData)
     } catch (e) {
@@ -125,16 +125,18 @@ const MapDetail = () => {
 
   useEffect(() => {
     let canceled = false
-    Promise.allSettled([groupApis.getGroups({}), siteApis.getSites({}), deviceApis.getDevices({})]).then(([g, s, d]) => {
-      if (canceled) return
-      const val = (r) => (r.status === 'fulfilled' ? r.value : null)
-      setNames((prev) => ({
-        ...prev,
-        group: buildNameMap(val(g), ['groupId', 'id', 'code'], ['groupName', 'name', 'displayName']),
-        site: buildNameMap(val(s), ['siteId', 'id', 'code'], ['siteName', 'name', 'displayName']),
-        device: buildNameMap(val(d), ['deviceId', 'id'], ['deviceName', 'name'])
-      }))
-    })
+    Promise.allSettled([groupApis.getGroups({}), siteApis.getSites({}), deviceApis.getDevices({})]).then(
+      ([g, s, d]) => {
+        if (canceled) return
+        const val = (r) => (r.status === 'fulfilled' ? r.value : null)
+        setNames((prev) => ({
+          ...prev,
+          group: buildNameMap(val(g), ['groupId', 'id', 'code'], ['groupName', 'name', 'displayName']),
+          site: buildNameMap(val(s), ['siteId', 'id', 'code'], ['siteName', 'name', 'displayName']),
+          device: buildNameMap(val(d), ['deviceId', 'id'], ['deviceName', 'name'])
+        }))
+      }
+    )
     return () => {
       canceled = true
     }
@@ -196,24 +198,27 @@ const MapDetail = () => {
       : [{ label: t('mapMgmt.status'), value: t('mapMgmt.newNoMap') }])
   ]
 
-  const handleDownload = useCallback(async (versionId, filename) => {
-    try {
-      const url = await mapApis.getVersionDownloadUrl(versionId)
-      if (!url) {
-        alert(t('mapMgmt.downloadUrlFail'))
-        return
+  const handleDownload = useCallback(
+    async (versionId, filename) => {
+      try {
+        const url = await mapApis.getVersionDownloadUrl(versionId)
+        if (!url) {
+          alert(t('mapMgmt.downloadUrlFail'))
+          return
+        }
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename || ''
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+      } catch (e) {
+        console.error('다운로드 실패:', e)
+        alert(t('mapMgmt.downloadFail'))
       }
-      const a = document.createElement('a')
-      a.href = url
-      a.download = filename || ''
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-    } catch (e) {
-      console.error('다운로드 실패:', e)
-      alert(t('mapMgmt.downloadFail'))
-    }
-  }, [t])
+    },
+    [t]
+  )
 
   const handleUpload = useCallback(
     async (mapType, file) => {
@@ -239,7 +244,8 @@ const MapDetail = () => {
         if (!putRes.ok) throw new Error(`S3 업로드 실패 (${putRes.status})`)
         await mapApis.completeUpload(up.mapId, up.versionId)
         alert(`${mapType.toUpperCase()} ${t('mapMgmt.uploadDone')}`)
-        if (up.mapId && up.mapId !== mapId) setMapId(up.mapId) // 신규 생성 → 해당 맵 로드
+        if (up.mapId && up.mapId !== mapId)
+          setMapId(up.mapId) // 신규 생성 → 해당 맵 로드
         else await load()
       } catch (e) {
         console.error('업로드 실패:', e)
@@ -268,7 +274,9 @@ const MapDetail = () => {
             <label className="typographyBody4" style={{ fontWeight: 'bold' }}>
               {t('mapMgmt.basicInfo')}
             </label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', columnGap: '2.4rem', marginTop: '1rem' }}>
+            <div
+              style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', columnGap: '2.4rem', marginTop: '1rem' }}
+            >
               {infoData.map((row) => (
                 <div
                   key={row.label}
@@ -312,10 +320,12 @@ const MapDetail = () => {
                       border: '1px solid var(--color-neutral-20)',
                       borderRadius: 'var(--radius-md)',
                       padding: '1.4rem',
-                      background: v ? 'var(--color-neutral-10)' : 'var(--color-secondary-10)'
+                      background: '#F8F8F8'
                     }}
                   >
-                    <div style={{ fontWeight: 700, fontSize: '1.4rem', marginBottom: '0.8rem' }}>{type.toUpperCase()}</div>
+                    <div style={{ fontWeight: 700, fontSize: '1.4rem', marginBottom: '0.8rem' }}>
+                      {type.toUpperCase()}
+                    </div>
                     {v ? (
                       <Table
                         className="no-table-head"
@@ -329,10 +339,20 @@ const MapDetail = () => {
                         ]}
                       />
                     ) : (
-                      <span style={{ fontSize: '1.3rem', color: 'var(--color-neutral-50)' }}>{t('mapMgmt.noFile')}</span>
+                      <span style={{ fontSize: '1.3rem', color: 'var(--color-neutral-50)' }}>
+                        {t('mapMgmt.noFile')}
+                      </span>
                     )}
 
-                    <div style={{ marginTop: '1rem', display: 'flex', alignItems: 'center', gap: '0.8rem', flexWrap: 'wrap' }}>
+                    <div
+                      style={{
+                        marginTop: '1rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.8rem',
+                        flexWrap: 'wrap'
+                      }}
+                    >
                       <Button
                         theme="tertiary"
                         size="sm"
@@ -352,7 +372,12 @@ const MapDetail = () => {
                         }}
                         style={{ display: 'none' }}
                       />
-                      <Button theme="tertiary" size="sm" disabled={busy} onClick={() => fileInputs.current[type]?.click()}>
+                      <Button
+                        theme="tertiary"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => fileInputs.current[type]?.click()}
+                      >
                         {busy ? t('mapMgmt.uploading') : t('mapMgmt.upload')}
                       </Button>
                     </div>

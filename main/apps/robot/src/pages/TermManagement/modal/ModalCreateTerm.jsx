@@ -9,9 +9,9 @@ const EMPTYVALUE = ''
 // (추후 termApis 연동 시 options 를 서버 목록으로 교체)
 const getTermGroupOptions = (t) => [
   { value: 'SERVICE_POLICY', name: t('termManagement.groupServicePolicy') },
-  { value: 'PRIVATEY_POLICY', name: t('termManagement.groupPrivacyPolicy') },
+  { value: 'PRIVACY_POLICY', name: t('termManagement.groupPrivacyPolicy') },
   { value: 'MARKETING_RECEIPT', name: t('termManagement.groupMarketingReceipt') },
-  { value: 'THIRD_PARTY_CHARING', name: t('termManagement.groupThirdPartyCharging') },
+  { value: 'THIRD_PARTY_SHARING', name: t('termManagement.groupThirdPartySharging') },
   { value: 'LOCATION_SERVICE', name: t('termManagement.groupLocationService') }
 ]
 

@@ -8,6 +8,8 @@ import { BtAstNode } from '../types'
 export const repeatNodeType = 'repeat' as const
 export const repeatNodeName = 'repeat' as const
 
+export const repeatNumCyclesProp = 'num_cycles' as const
+
 export type BtRepeatNode = {
   kind: typeof repeatNodeType
   name: string

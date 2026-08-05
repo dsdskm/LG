@@ -1,18 +1,20 @@
 import styled from 'styled-components'
 
-export const Card = styled.section`
+export const Card = styled.section<{ $selectable?: boolean; $selected?: boolean }>`
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   min-height: 74px;
   padding: 10px 20px;
-  border: 1px solid #d8dde6;
+  border: 1px solid ${({ $selected }) => ($selected ? 'var(--t-toggle-active-bg)' : '#d8dde6')};
   border-radius: 8px;
-  background: #ffffff;
+  background: ${({ $selected }) => ($selected ? 'rgba(var(--t-toggle-active-bg-rgb), 0.06)' : '#ffffff')};
   box-shadow:
     0 1px 2px rgba(15, 23, 42, 0.05),
     0 3px 8px rgba(15, 23, 42, 0.06);
+
+  ${({ $selectable }) => ($selectable ? 'cursor: pointer;' : '')}
 
   @media (max-width: 1200px) {
     flex-direction: column;
@@ -198,4 +200,12 @@ export const UpdatedAtText = styled.div`
   font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
+`
+
+// 선택 모드에서 카드 왼쪽에 표시되는 체크박스 영역
+export const SelectCheckWrap = styled.div`
+  display: inline-flex;
+  align-items: center;
+  padding-right: 16px;
+  flex-shrink: 0;
 `

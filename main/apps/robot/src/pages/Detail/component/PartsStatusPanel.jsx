@@ -199,7 +199,12 @@ function parseRobotState(robotState) {
 // ─── Utils ────────────────────────────────────────────────────────────────────
 
 // 한국어일 때만 labelKo, 그 외 언어는 labelEn 사용
-const pickLabel = (item, lang) => (String(lang || '').toLowerCase().startsWith('ko') ? item.labelKo : item.labelEn)
+const pickLabel = (item, lang) =>
+  String(lang || '')
+    .toLowerCase()
+    .startsWith('ko')
+    ? item.labelKo
+    : item.labelEn
 
 const CATEGORY_META = {
   HW_COMPONENTS: { labelKo: 'HW 컴포넌트', labelEn: 'HW Components' },
@@ -249,7 +254,8 @@ const CategoryHeader = styled.div`
   align-items: center;
   justify-content: space-between;
   padding: 14px 16px;
-  border-bottom: 1px solid #f3f4f6;
+  background: #eae8e2;
+  border-bottom: 1px solid #d8d4cc;
 `
 
 const CategoryTitle = styled.div`

@@ -10,7 +10,8 @@ import type { BtAstNode } from '../types'
 import {
   BtRetryUntilSuccessfulNode,
   retryUntilSuccessfulNodeType,
-  retryUntilSuccessfulNodeName
+  retryUntilSuccessfulNodeName,
+  retryUntilSuccessfulNumAttemptsProp
 } from '../nodes/btRetryUntilSuccessfulNode'
 import { sequenceNodeType } from '../nodes/btSequenceNode'
 import {
@@ -63,7 +64,7 @@ export const rule_retryUntilSuccessful: BtRule<typeof retryUntilSuccessfulNodeNa
 }
 
 function resolveNumAttempts(node: any): number {
-  const value = getNodeNumberPropertyValue(node, 1, 'num_attempts', 'numAttempts')
+  const value = getNodeNumberPropertyValue(node, 1, retryUntilSuccessfulNumAttemptsProp)
 
   return value > 0 ? value : 1
 }
