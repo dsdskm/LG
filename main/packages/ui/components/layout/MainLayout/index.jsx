@@ -79,7 +79,8 @@ const MainLayout = ({
       <SideBar routes={finalSideBarRoutes} t={t} />
 
       <ScrollArea ref={scrollAreaRef} onClick={handleContentClick}>
-        <MainContent>{children}</MainContent>
+        {/* 실제로 스크롤되는 건 이 요소 (#contents는 overflow:hidden이라 스크롤 이벤트가 안 발생) */}
+        <MainContent id="mainContent">{children}</MainContent>
         <Footer routes={footerRoutes} />
       </ScrollArea>
 

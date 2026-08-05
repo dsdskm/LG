@@ -30,6 +30,15 @@ const PanelWrapper = styled.div`
     text-decoration: none;
     background: #e8edf3;
   }
+
+  /* 기본 제어 / 업무 / 회전 / 모션 헤더만 텍스트 블랙 + 배경 F8F8F8 */
+  .ctrlHeaderPlain .selectButton {
+    background: #f8f8f8;
+    color: #000000;
+  }
+  .ctrlHeaderPlain .selectButton:hover:not(:disabled) {
+    background: #efefef;
+  }
 `
 
 // 회전 각도 / 모션 옵션 등 작은 토글 버튼
@@ -110,8 +119,20 @@ const ROTATE_DEGREES = [15, 30, 45, 60, 90, 120, 150, 180]
 // nameKey: 모션명 i18n 키 / actionType·blockingType: 모션 단위 고정값
 // opts: tKey(번역) 또는 label(리터럴, ▶·숫자·L/C/R 등) + params(actionParameters key/value)
 const MOTIONS = [
-  { no: 1, nameKey: 'motionAttention', actionType: 'motionPose', blockingType: 'HARD', opts: [{ v: 'play', label: '▶', params: { mode: 'standby' } }] },
-  { no: 2, nameKey: 'motionStandbyPose', actionType: 'motionPose', blockingType: 'HARD', opts: [{ v: 'play', label: '▶', params: { mode: 'prepare' } }] },
+  {
+    no: 1,
+    nameKey: 'motionAttention',
+    actionType: 'motionPose',
+    blockingType: 'HARD',
+    opts: [{ v: 'play', label: '▶', params: { mode: 'standby' } }]
+  },
+  {
+    no: 2,
+    nameKey: 'motionStandbyPose',
+    actionType: 'motionPose',
+    blockingType: 'HARD',
+    opts: [{ v: 'play', label: '▶', params: { mode: 'prepare' } }]
+  },
   {
     no: 3,
     nameKey: 'motionBreathing',
@@ -143,9 +164,27 @@ const MOTIONS = [
       { v: 'R', label: 'R', params: { type: 'two_hands', side: 'right' } }
     ]
   },
-  { no: 6, nameKey: 'motionOneHandGreeting', actionType: 'motionGreeting', blockingType: 'HARD', opts: [{ v: 'play', label: '▶', params: { type: 'one_hand' } }] },
-  { no: 7, nameKey: 'motionOneArmGreeting', actionType: 'motionGreeting', blockingType: 'HARD', opts: [{ v: 'play', label: '▶', params: { type: 'side' } }] },
-  { no: 8, nameKey: 'motionWelcomeGreeting', actionType: 'motionGreeting', blockingType: 'HARD', opts: [{ v: 'play', label: '▶', params: { type: 'welcome' } }] },
+  {
+    no: 6,
+    nameKey: 'motionOneHandGreeting',
+    actionType: 'motionGreeting',
+    blockingType: 'HARD',
+    opts: [{ v: 'play', label: '▶', params: { type: 'one_hand' } }]
+  },
+  {
+    no: 7,
+    nameKey: 'motionOneArmGreeting',
+    actionType: 'motionGreeting',
+    blockingType: 'HARD',
+    opts: [{ v: 'play', label: '▶', params: { type: 'side' } }]
+  },
+  {
+    no: 8,
+    nameKey: 'motionWelcomeGreeting',
+    actionType: 'motionGreeting',
+    blockingType: 'HARD',
+    opts: [{ v: 'play', label: '▶', params: { type: 'welcome' } }]
+  },
   {
     no: 9,
     nameKey: 'motionDirectionGuide',
@@ -156,11 +195,41 @@ const MOTIONS = [
       { v: 'R', label: 'R', params: { direction: 'right' } }
     ]
   },
-  { no: 10, nameKey: 'motionFistGreeting', actionType: 'motionInteraction', blockingType: 'HARD', opts: [{ v: 'play', label: '▶', params: { type: 'fist_bump' } }] },
-  { no: 11, nameKey: 'motionHandshake', actionType: 'motionInteraction', blockingType: 'HARD', opts: [{ v: 'play', label: '▶', params: { type: 'handshake' } }] },
-  { no: 12, nameKey: 'motionHighFive', actionType: 'motionInteraction', blockingType: 'HARD', opts: [{ v: 'play', label: '▶', params: { type: 'high_five' } }] },
-  { no: 13, nameKey: 'motionHeart', actionType: 'motionExpression', blockingType: 'HARD', opts: [{ v: 'play', label: '▶', params: { type: 'heart' } }] },
-  { no: 14, nameKey: 'motionThumbsUp', actionType: 'motionExpression', blockingType: 'HARD', opts: [{ v: 'play', label: '▶', params: { type: 'thumb_up' } }] },
+  {
+    no: 10,
+    nameKey: 'motionFistGreeting',
+    actionType: 'motionInteraction',
+    blockingType: 'HARD',
+    opts: [{ v: 'play', label: '▶', params: { type: 'fist_bump' } }]
+  },
+  {
+    no: 11,
+    nameKey: 'motionHandshake',
+    actionType: 'motionInteraction',
+    blockingType: 'HARD',
+    opts: [{ v: 'play', label: '▶', params: { type: 'handshake' } }]
+  },
+  {
+    no: 12,
+    nameKey: 'motionHighFive',
+    actionType: 'motionInteraction',
+    blockingType: 'HARD',
+    opts: [{ v: 'play', label: '▶', params: { type: 'high_five' } }]
+  },
+  {
+    no: 13,
+    nameKey: 'motionHeart',
+    actionType: 'motionExpression',
+    blockingType: 'HARD',
+    opts: [{ v: 'play', label: '▶', params: { type: 'heart' } }]
+  },
+  {
+    no: 14,
+    nameKey: 'motionThumbsUp',
+    actionType: 'motionExpression',
+    blockingType: 'HARD',
+    opts: [{ v: 'play', label: '▶', params: { type: 'thumb_up' } }]
+  },
   {
     no: 15,
     nameKey: 'motionSpeechGesture',
@@ -229,129 +298,139 @@ const RobotControlPanel = ({
   return (
     <PanelWrapper>
       {/* 기본 제어 — 기존 버튼 재사용 */}
-      <ExpandableSection iconPosition="left" header={<span>{t('basicControl')}</span>}>
-        <ControlDiv style={{ marginBottom: 0 }}>
-          <ControlBtn onClick={onMoveLocation} disabled={!showMap} $info>
-            <Navigation className="w-[14px] h-[14px]" />
-            {t('locationMove')}
-          </ControlBtn>
-          <ControlBtn onClick={() => onAction('go_charging')} disabled={!isOnline}>
-            <BatteryCharging className="w-[14px] h-[14px]" />
-            {t('chargeStationMove')}
-          </ControlBtn>
-          <ControlBtn onClick={() => onAction('listen')} disabled={!isOnline}>
-            <Play className="w-[14px] h-[14px]" />
-            {t('listen')}
-          </ControlBtn>
-          <ControlBtn onClick={() => onAction('emergency_stop')} disabled={true} $danger>
-            <AlertOctagon className="w-[14px] h-[14px]" />
-            {t('emergencyStop')}
-          </ControlBtn>
-          <ControlBtn onClick={() => onAction('shutdown')}>
-            <PowerOff className="w-[14px] h-[14px]" />
-            {t('powerEnd')}
-          </ControlBtn>
-          <ControlBtn onClick={() => onAction('reboot')}>
-            <RotateCcw className="w-[14px] h-[14px]" />
-            {t('reboot')}
-          </ControlBtn>
-          <ControlBtn onClick={() => onAction('gkr')} disabled={!isOnline}>
-            <Gkr className="w-[14px] h-[14px]" />
-            {t('gkr')}
-          </ControlBtn>
-        </ControlDiv>
-      </ExpandableSection>
+      <div className="ctrlHeaderPlain">
+        <ExpandableSection iconPosition="left" header={<span>{t('basicControl')}</span>}>
+          <ControlDiv style={{ marginBottom: 0 }}>
+            <ControlBtn onClick={onMoveLocation} disabled={!showMap} $info>
+              <Navigation className="w-[14px] h-[14px]" />
+              {t('locationMove')}
+            </ControlBtn>
+            <ControlBtn onClick={() => onAction('go_charging')} disabled={!isOnline}>
+              <BatteryCharging className="w-[14px] h-[14px]" />
+              {t('chargeStationMove')}
+            </ControlBtn>
+            <ControlBtn onClick={() => onAction('listen')} disabled={!isOnline}>
+              <Play className="w-[14px] h-[14px]" />
+              {t('listen')}
+            </ControlBtn>
+            <ControlBtn onClick={() => onAction('emergency_stop')} disabled={true} $danger>
+              <AlertOctagon className="w-[14px] h-[14px]" />
+              {t('emergencyStop')}
+            </ControlBtn>
+            <ControlBtn onClick={() => onAction('shutdown')}>
+              <PowerOff className="w-[14px] h-[14px]" />
+              {t('powerEnd')}
+            </ControlBtn>
+            <ControlBtn onClick={() => onAction('reboot')}>
+              <RotateCcw className="w-[14px] h-[14px]" />
+              {t('reboot')}
+            </ControlBtn>
+            <ControlBtn onClick={() => onAction('gkr')} disabled={!isOnline}>
+              <Gkr className="w-[14px] h-[14px]" />
+              {t('gkr')}
+            </ControlBtn>
+          </ControlDiv>
+        </ExpandableSection>
+      </div>
 
       {/* 업무 — 기존 버튼 재사용 */}
-      <ExpandableSection iconPosition="left" header={<span>{t('task')}</span>}>
-        <ControlDiv style={{ marginBottom: 0 }}>
-          <ControlBtn onClick={() => onAction('start')} disabled={!canStart}>
-            <PlayCircle className="w-[14px] h-[14px]" />
-            {t('start')}
-          </ControlBtn>
-          <ControlBtn onClick={() => onAction('stop')} disabled={!canStop}>
-            <StopCircle className="w-[14px] h-[14px]" />
-            {t('stop')}
-          </ControlBtn>
-          <ControlBtn onClick={() => onAction('pause_task')} disabled={!isOnline || !canPause}>
-            <PauseCircle className="w-[14px] h-[14px]" />
-            {t('workTempStop')}
-          </ControlBtn>
-          <ControlBtn onClick={() => onAction('resume_task')} disabled={!isOnline || !canResume}>
-            <PlayCircle className="w-[14px] h-[14px]" />
-            {t('workReume')}
-          </ControlBtn>
-        </ControlDiv>
-      </ExpandableSection>
+      <div className="ctrlHeaderPlain">
+        <ExpandableSection iconPosition="left" header={<span>{t('task')}</span>}>
+          <ControlDiv style={{ marginBottom: 0 }}>
+            <ControlBtn onClick={() => onAction('start')} disabled={!canStart}>
+              <PlayCircle className="w-[14px] h-[14px]" />
+              {t('start')}
+            </ControlBtn>
+            <ControlBtn onClick={() => onAction('stop')} disabled={!canStop}>
+              <StopCircle className="w-[14px] h-[14px]" />
+              {t('stop')}
+            </ControlBtn>
+            <ControlBtn onClick={() => onAction('pause_task')} disabled={!isOnline || !canPause}>
+              <PauseCircle className="w-[14px] h-[14px]" />
+              {t('workTempStop')}
+            </ControlBtn>
+            <ControlBtn onClick={() => onAction('resume_task')} disabled={!isOnline || !canResume}>
+              <PlayCircle className="w-[14px] h-[14px]" />
+              {t('workReume')}
+            </ControlBtn>
+          </ControlDiv>
+        </ExpandableSection>
+      </div>
 
       {/* 특수 모드 — 자유 구동 / 제로 게인 (현재 상태값을 알 수 없어 모션과 동일하게 상태 표시 없는 버튼으로 구성) */}
-      <ExpandableSection iconPosition="left" header={<span>{t('specialMode')}</span>}>
-        <MotionGrid>
-          <MotionRow>
-            <MotionTitle>{t('freeRunMode')}</MotionTitle>
-            <MotionButtonsWrap>
-              <MiniBtn $lg disabled={!isOnline} onClick={() => onAction('freeRunOn')}>
-                {t('turnOn')}
-              </MiniBtn>
-              <MiniBtn $lg disabled={!isOnline} onClick={() => onAction('freeRunOff')}>
-                {t('turnOff')}
-              </MiniBtn>
-            </MotionButtonsWrap>
-          </MotionRow>
-          <MotionRow>
-            <MotionTitle>{t('zeroGainMode')}</MotionTitle>
-            <MotionButtonsWrap>
-              <MiniBtn $lg disabled={!isOnline} onClick={() => onAction('zeroGainOn')}>
-                {t('turnOn')}
-              </MiniBtn>
-              <MiniBtn $lg disabled={!isOnline} onClick={() => onAction('zeroGainOff')}>
-                {t('turnOff')}
-              </MiniBtn>
-            </MotionButtonsWrap>
-          </MotionRow>
-        </MotionGrid>
-      </ExpandableSection>
-
-      {/* 회전 — 신규 스캐폴딩 */}
-      <ExpandableSection iconPosition="left" header={<span>{t('rotation')}</span>}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <RowWrap>
-            <MiniBtn $lg $active={rotateDir === 'ccw'} onClick={() => setRotateDir('ccw')}>
-              {t('rotateCcw')}
-            </MiniBtn>
-            <MiniBtn $lg $active={rotateDir === 'cw'} onClick={() => setRotateDir('cw')}>
-              {t('rotateCw')}
-            </MiniBtn>
-          </RowWrap>
-          <RowWrap>
-            {ROTATE_DEGREES.map((deg) => (
-              <MiniBtn key={deg} $lg disabled={!isOnline} onClick={() => onRotate(rotateDir, deg)}>
-                {deg}°
-              </MiniBtn>
-            ))}
-          </RowWrap>
-        </div>
-      </ExpandableSection>
-
-      {/* 모션 — 신규 스캐폴딩 */}
-      <ExpandableSection iconPosition="left" header={<span>{t('motion')}</span>}>
-        <MotionGrid>
-          {MOTIONS.map((m) => (
-            <MotionRow key={m.no}>
-              <MotionTitle>
-                {m.no}. {t(m.nameKey)}
-              </MotionTitle>
+      <div className="ctrlHeaderPlain">
+        <ExpandableSection iconPosition="left" header={<span>{t('specialMode')}</span>}>
+          <MotionGrid>
+            <MotionRow>
+              <MotionTitle>{t('freeRunMode')}</MotionTitle>
               <MotionButtonsWrap>
-                {m.opts.map((o) => (
-                  <MiniBtn key={o.v} $lg disabled={!isOnline} onClick={() => handleMotionClick(m, o)}>
-                    {o.tKey ? t(o.tKey) : o.label}
-                  </MiniBtn>
-                ))}
+                <MiniBtn $lg disabled={!isOnline} onClick={() => onAction('freeRunOn')}>
+                  {t('turnOn')}
+                </MiniBtn>
+                <MiniBtn $lg disabled={!isOnline} onClick={() => onAction('freeRunOff')}>
+                  {t('turnOff')}
+                </MiniBtn>
               </MotionButtonsWrap>
             </MotionRow>
-          ))}
-        </MotionGrid>
-      </ExpandableSection>
+            <MotionRow>
+              <MotionTitle>{t('zeroGainMode')}</MotionTitle>
+              <MotionButtonsWrap>
+                <MiniBtn $lg disabled={!isOnline} onClick={() => onAction('zeroGainOn')}>
+                  {t('turnOn')}
+                </MiniBtn>
+                <MiniBtn $lg disabled={!isOnline} onClick={() => onAction('zeroGainOff')}>
+                  {t('turnOff')}
+                </MiniBtn>
+              </MotionButtonsWrap>
+            </MotionRow>
+          </MotionGrid>
+        </ExpandableSection>
+      </div>
+
+      {/* 회전 — 신규 스캐폴딩 */}
+      <div className="ctrlHeaderPlain">
+        <ExpandableSection iconPosition="left" header={<span>{t('rotation')}</span>}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <RowWrap>
+              <MiniBtn $lg $active={rotateDir === 'ccw'} onClick={() => setRotateDir('ccw')}>
+                {t('rotateCcw')}
+              </MiniBtn>
+              <MiniBtn $lg $active={rotateDir === 'cw'} onClick={() => setRotateDir('cw')}>
+                {t('rotateCw')}
+              </MiniBtn>
+            </RowWrap>
+            <RowWrap>
+              {ROTATE_DEGREES.map((deg) => (
+                <MiniBtn key={deg} $lg disabled={!isOnline} onClick={() => onRotate(rotateDir, deg)}>
+                  {deg}°
+                </MiniBtn>
+              ))}
+            </RowWrap>
+          </div>
+        </ExpandableSection>
+      </div>
+
+      {/* 모션 — 신규 스캐폴딩 */}
+      <div className="ctrlHeaderPlain">
+        <ExpandableSection iconPosition="left" header={<span>{t('motion')}</span>}>
+          <MotionGrid>
+            {MOTIONS.map((m) => (
+              <MotionRow key={m.no}>
+                <MotionTitle>
+                  {m.no}. {t(m.nameKey)}
+                </MotionTitle>
+                <MotionButtonsWrap>
+                  {m.opts.map((o) => (
+                    <MiniBtn key={o.v} $lg disabled={!isOnline} onClick={() => handleMotionClick(m, o)}>
+                      {o.tKey ? t(o.tKey) : o.label}
+                    </MiniBtn>
+                  ))}
+                </MotionButtonsWrap>
+              </MotionRow>
+            ))}
+          </MotionGrid>
+        </ExpandableSection>
+      </div>
     </PanelWrapper>
   )
 }

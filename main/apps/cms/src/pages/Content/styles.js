@@ -22,9 +22,6 @@ export const PageHeadWrap = styled.div`
   ${ButtonWrap} {
     margin: 0;
   }
-  @media all and (min-width: 1580px) {
-    width: 90%;
-  }
 `
 
 export const DropdownContainer = styled.div`

@@ -223,7 +223,7 @@
   --t-sidebar-fg: var(--color-neutral-90);
   --t-sidebar-hover-bg: rgba(255, 255, 255, 0.5);
   --t-sidebar-press-bg: rgba(255, 255, 255, 0.75);
-  --t-sidebar-pad: 0.8rem;
+  --t-sidebar-pad: 1.6rem;
   --t-sidebar-item-gap: 0.4rem;
   --t-gnb-radius: var(--radius-md);
 
@@ -246,6 +246,11 @@
   --t-major-action-btn-border: #7d776a;
   --t-major-action-btn-text: #ffffff;
   --t-major-action-btn-hover-bg: #6b655a;
+
+  --t-primary-btn-bg: #7d776a;
+  --t-primary-btn-text: var(--color-neutral-10);
+  --t-primary-btn-hover-bg: #6b655a;
+  --t-primary-btn-active-bg: #59544b;
 
   --t-select-accent: #b91c4c;
   --t-select-accent-hover: #cd7b94;
@@ -291,6 +296,11 @@
   --t-major-action-btn-border: var(--color-primary-70);
   --t-major-action-btn-text: #ffffff;
   --t-major-action-btn-hover-bg: var(--color-primary-60);
+
+  --t-primary-btn-bg: var(--color-primary-70);
+  --t-primary-btn-text: var(--color-neutral-10);
+  --t-primary-btn-hover-bg: var(--color-primary-80);
+  --t-primary-btn-active-bg: var(--color-primary-90);
 
   --t-select-accent: var(--color-primary-70);
   --t-select-accent-hover: var(--color-primary-50);

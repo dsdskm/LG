@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useCallback } from 'react'
+import { SPATIAL_TOPICS, subscribedTopicOf } from '@/constants/topics'
 
 // OccupancyGrid의 장애물 확률(0~100)에 따른 밝기(0~255) 값을 미리 계산한 캐시 배열
 const BRIGHTNESS_CACHE = new Uint8Array(101)
@@ -9,8 +10,9 @@ for (let i = 0; i <= 100; i++) {
 /**
  * MapCanvas
  *
- * /map (OccupancyGrid) + /scan (LaserScan) + /odom (로봇 위치)를
+ * OccupancyGrid(지도) + PointCloud2/LaserScan(라이다) + Odometry(로봇 위치)를
  * HTML Canvas 2D API로 렌더링하는 컴포넌트.
+ * 토픽 이름은 로봇 구성에 따라 다르므로(@/constants/topics) 역할로 판단한다.
  *
  * 렌더링 레이어 순서 (아래에서 위로):
  *   1. OccupancyGrid 격자 지도  (회색/흰색/검정)
@@ -211,7 +213,7 @@ function MapCanvas({
     }
 
     // ── Layer 2: LaserScan 또는 PointCloud2 렌더링 ────────────────────────────────────────
-    if (subscribedTopics.includes('/lidar_points') && scanData && odomData) {
+    if (subscribedTopicOf(subscribedTopics, 'scan') && scanData && odomData) {
       const pos = odomData.pose?.pose?.position ?? { x: 0, y: 0 }
       const quat = odomData.pose?.pose?.orientation ?? { x: 0, y: 0, z: 0, w: 1 }
       const yaw = Math.atan2(2 * (quat.w * quat.z + quat.x * quat.y), 1 - 2 * (quat.y * quat.y + quat.z * quat.z))
@@ -267,7 +269,7 @@ function MapCanvas({
     }
 
     // ── Layer 3: 로봇 위치 마커 렌더링 ──────────────────────────────────
-    if (subscribedTopics.includes('/odom') && odomData) {
+    if (subscribedTopicOf(subscribedTopics, 'odom') && odomData) {
       const pos = odomData.pose?.pose?.position ?? { x: 0, y: 0 }
       const quat = odomData.pose?.pose?.orientation ?? { x: 0, y: 0, z: 0, w: 1 }
       const yaw = Math.atan2(2 * (quat.w * quat.z + quat.x * quat.y), 1 - 2 * (quat.y * quat.y + quat.z * quat.z))
@@ -331,6 +333,24 @@ function MapCanvas({
           ctx.lineTo(pt.px, pt.py)
         }
         ctx.strokeStyle = '#e67e22'
+        ctx.lineWidth = 2
+        ctx.stroke()
+      }
+    }
+
+    // 2-1) /lio/path (LIO 주행 궤적 — nav_msgs/Path)
+    if (subscribedTopics.includes('/lio/path')) {
+      const pathData = customTopicsData['/lio/path']
+      const pts = getPointsList(pathData)
+      if (pts.length > 1) {
+        ctx.beginPath()
+        const start = worldToCanvas(pts[0].x, pts[0].y)
+        ctx.moveTo(start.px, start.py)
+        for (let i = 1; i < pts.length; i++) {
+          const pt = worldToCanvas(pts[i].x, pts[i].y)
+          ctx.lineTo(pt.px, pt.py)
+        }
+        ctx.strokeStyle = '#8e44ad'
         ctx.lineWidth = 2
         ctx.stroke()
       }
@@ -476,23 +496,7 @@ function MapCanvas({
     return () => window.removeEventListener('resize', handleResize)
   }, [render])
 
-  const hasSpatialSubscription = subscribedTopics.some((t) =>
-    [
-      '/map',
-      '/odom',
-      '/lidar_points',
-      '/tf',
-      '/tf_static',
-      '/scan_matched_points2',
-      '/trajectory_node_list',
-      '/constraint_list',
-      '/landmark_poses_list',
-      '/map_updates',
-      '/initialpose',
-      '/goal_pose',
-      '/clicked_point'
-    ].includes(t)
-  )
+  const hasSpatialSubscription = subscribedTopics.some((t) => SPATIAL_TOPICS.includes(t))
 
   if (!hasSpatialSubscription) {
     return (
@@ -502,10 +506,11 @@ function MapCanvas({
     )
   }
 
-  if (subscribedTopics.includes('/map') && !mapData) {
+  const mapTopic = subscribedTopicOf(subscribedTopics, 'map')
+  if (mapTopic && !mapData) {
     return (
       <div style={styles.placeholder}>
-        <span style={styles.placeholderText}>/map 토픽 수신 대기 중...</span>
+        <span style={styles.placeholderText}>{mapTopic} 토픽 수신 대기 중...</span>
       </div>
     )
   }
@@ -555,6 +560,7 @@ const MemoizedMapCanvas = React.memo(MapCanvas, (prevProps, nextProps) => {
   // Check spatial keys in customTopicsData
   const spatialKeys = [
     '/scan_matched_points2',
+    '/lio/path',
     '/trajectory_node_list',
     '/landmark_poses_list',
     '/goal_pose',

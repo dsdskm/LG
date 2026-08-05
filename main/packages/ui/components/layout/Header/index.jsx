@@ -12,7 +12,7 @@ import Button from '../../common/Button'
 import LanguageSelect from '../LanguageSelect'
 import IconButton from '../../common/IconButton'
 import Logo from '../Logo'
-import SvgMenu from '../../../assets/svgs/menu.svg'
+import SvgMenu from '../../../assets/svgs/gnb_header_menu.svg'
 import SvgNotification from '../../../assets/svgs/notification.svg'
 import { useAiAssistantStore, useResponsiveStore, useSideBarStore, useUserStore, useThemeStore } from '@repo/stores'
 import ServiceMenuIcon from '../ServiceMenuIcon'
@@ -53,20 +53,37 @@ const Header = () => {
     <StyledHeader className="header">
       <div className="containerHeader">
         <div className="content left">
-          <StyledHeaderButton type="button" onClick={toggleSideBar} aria-label="Open Sidebar" className="hideOnMobile">
-            <i className="icon">
-              <SvgMenu />
-            </i>
-          </StyledHeaderButton>
+          {/* 사이드바 폭(--sidebar-width)에 맞춰 로봇관리 등 탭이 사이드바 우측 경계 뒤에서 시작하도록 정렬.
+              헤더 자체 좌측 패딩(containerHeader의 2.4rem)은 사이드바에는 없으므로 그만큼 빼서 보정 */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '1.4rem',
+              minWidth: 'calc(var(--sidebar-width) - 2.4rem)',
+              flexShrink: 0
+            }}
+          >
+            <StyledHeaderButton
+              type="button"
+              onClick={toggleSideBar}
+              aria-label="Open Sidebar"
+              className="hideOnMobile"
+            >
+              <i className="icon">
+                <SvgMenu />
+              </i>
+            </StyledHeaderButton>
 
-          <Logo />
+            <Logo />
+          </div>
 
           {currentAppPrefix !== '/ebme' && <ServiceMenuIcon t={t} />}
         </div>
 
         <div className="content right">
           <StyledThemeToggle type="button" onClick={toggleTheme} title={t('ThemeToggle.title')}>
-            🎨 {theme === 'new' ? t('ThemeToggle.classicBlue') : t('ThemeToggle.modernNeutral')}
+            {theme === 'new' ? t('ThemeToggle.classicBlue') : t('ThemeToggle.modernNeutral')}
           </StyledThemeToggle>
 
           <LanguageSelect />

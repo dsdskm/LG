@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import styled from 'styled-components'
-import { startMapping, createMapping, resetMapping, cancelMapping, healthCheck } from '@/apis/mapApis'
+import { startMapping, createMapping, resetMapping, cancelMapping } from '@/apis/mapApis'
 import { toast } from 'react-toastify'
 
 const StyledSlider = styled.input`
@@ -84,23 +84,42 @@ export default function ConnectionBar({ url, onUrlChange, status, onConnect, onD
   }
   const { label, color } = STATUS_CONFIG[status] || STATUS_CONFIG.disconnected
 
+  // init-setup-be → robot-hub gRPC 경유라 로봇이 거부하면 4xx/5xx 로 돌아온다.
+  // 실패 시 isMapping 을 되돌려야 버튼 상태가 실제 로봇 상태와 어긋나지 않는다.
+  const runMappingAction = async (action, { onSuccess, onError, successMessage } = {}) => {
+    try {
+      const response = await action()
+      onSuccess?.()
+      toast.success(response?.data?.message || successMessage, { autoClose: 1500 })
+    } catch (error) {
+      onError?.()
+      // init-setup-be 에러 응답 봉투: { success: false, error: { message } }
+      const message = error?.response?.data?.error?.message || error?.message || 'Request failed'
+      toast.error(message, { autoClose: 3000 })
+    }
+  }
+
   const handleStart = async () => {
-    setIsMapping(true)
-    // await startMapping()
-    const response = await healthCheck()
-    if (response.status === 'ok') toast.success('Healthy', { autoClose: 1000 })
-    else toast.error('Not Healthy', { autoClose: 1000 })
+    await runMappingAction(startMapping, {
+      onSuccess: () => setIsMapping(true),
+      onError: () => setIsMapping(false),
+      successMessage: 'Mapping started'
+    })
   }
   const handleSave = async () => {
-    await createMapping()
-    setIsMapping(false)
+    await runMappingAction(createMapping, {
+      onSuccess: () => setIsMapping(false),
+      successMessage: 'Map saved'
+    })
   }
   const handleReset = async () => {
-    await resetMapping()
+    await runMappingAction(resetMapping, { successMessage: 'Mapping reset' })
   }
   const handleCancel = async () => {
-    await cancelMapping()
-    setIsMapping(false)
+    await runMappingAction(cancelMapping, {
+      onSuccess: () => setIsMapping(false),
+      successMessage: 'Mapping canceled'
+    })
   }
 
   return (

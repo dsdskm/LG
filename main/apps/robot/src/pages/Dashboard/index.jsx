@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { SectionRobot, Title, OrganizationSelector, Button, NoData } from '@repo/ui'
+import { SectionRobot, Title, OrganizationSelector, NoData } from '@repo/ui'
 import {
   DashboardWrapper,
   DashboardControlsContainer,
@@ -30,7 +30,6 @@ import { parseRobotData, buildDeviceMerger } from '@/utils/robotUtils'
 
 import Location from './KakaoMap'
 import TableAlarm from './AlarmTable'
-// import SiteMap from '../../common/SiteMap'
 import SiteMap3D, { DASHBOARD_MAP_VIEW_KEY } from '../../common/SiteMap3D'
 import LocationSelector from '../../common/LocationSelector'
 import DataCollectionSection from './components/DataCollectionSection'
@@ -100,7 +99,7 @@ const Dashboard = () => {
   // 선택된 사이트가 isDefaultSite=true인 경우 → 권역별 지도 표시
   const isDefaultSiteSelected =
     orgFilter.values[1] !== 'all' &&
-    orgFilter.values[1] !== 'none' &&
+    //orgFilter.values[1] !== 'none' &&
     sites.find((s) => s.siteId === orgFilter.values[1])?.isDefaultSite === true
 
   function makeMarker() {
@@ -214,7 +213,7 @@ const Dashboard = () => {
   function matchOrgSite(_device) {
     return orgFilter.values[1] === 'all'
       ? true
-      : orgFilter.values[1] === 'none' || isDefaultSiteSelected
+      : isDefaultSiteSelected
         ? _device.provision?.isDefaultSite
         : !_device.provision.isDefaultSite && _device.provision?.siteId === orgFilter.values[1]
   }
@@ -253,7 +252,7 @@ const Dashboard = () => {
 
     setRobotDatas(_robotDatas)
 
-    if (orgFilter.values[1] !== 'all' && orgFilter.values[1] !== 'none' && !isDefaultSiteSelected) {
+    if (orgFilter.values[1] !== 'all' && !isDefaultSiteSelected) {
       //setRobotDatas(_robotDatas)
     } else {
       //setRobotDatas([])
@@ -276,44 +275,54 @@ const Dashboard = () => {
   // 사이트 선택 시 건물/층/영역 계층 조회 (단건 조회가 buildings→floors→areas를 모두 포함)
   useEffect(() => {
     const siteId = orgFilter.values[1]
-    setLocSel({ buildingId: '', floorId: '', areaId: '' })
-    if (siteId && siteId !== 'all' && siteId !== 'none' && !isDefaultSiteSelected) {
+    //setLocSel({ buildingId: '', floorId: '', areaId: '' })
+    if (siteId && siteId !== 'all' && !isDefaultSiteSelected) {
       siteApis
         .getSiteById(siteId)
-        .then((data) => setBuildings(data?.buildings ?? []))
+        .then((data) => {
+          // 그 사이 사이트가 바뀌었으면 이 응답은 무시
+          setBuildings(data?.buildings ?? [])
+        })
+
         .catch((err) => {
           console.error('Error getSiteById:', err)
           setBuildings([])
+          setLocSel({ buildingId: '', floorId: '', areaId: '' })
         })
     } else {
       setBuildings([])
+      setLocSel({ buildingId: '', floorId: '', areaId: '' })
     }
-  }, [orgFilter.values[1], isDefaultSiteSelected])
+  }, [orgFilter.values[1]])
 
   // 영역별 로봇 수 (state.sitePosition.areaId 기준)
   const areaCounts = useMemo(() => {
     const m = {}
     devices.forEach((d) => {
+      if (d.provision?.siteId !== orgFilter.values[1]) return
       const aid = d.state?.sitePosition?.areaId
       if (aid) m[aid] = (m[aid] ?? 0) + 1
     })
     return m
-  }, [devices])
+  }, [devices, orgFilter.values[1]])
+
+  const areaRobotDatas = useMemo(() => {
+    if (!locSel.areaId) return robotDatas
+    return robotDatas.filter((r) => r.areaId === locSel.areaId)
+  }, [robotDatas, locSel.areaId])
 
   // 최초 로딩 시 로봇이 가장 많은 영역을 자동 선택 (지도 초기 표시).
-  // 사용자가 영역을 선택하기 전(locSel.areaId 비어있음)에만 동작.
   useEffect(() => {
-    if (!buildings.length || locSel.areaId) return
+    if (!buildings.length) return
     const best = pickMaxRobotArea(buildings, areaCounts)
     if (best) setLocSel(best)
-  }, [buildings, areaCounts, locSel.areaId])
+  }, [buildings])
 
   // 맵은 device/area 단위로만 존재 (site/building/floor 단독 조회 불가).
   // area로 조회할 때는 상위 buildingId/floorId를 반드시 함께 전달해야 함.
   useEffect(() => {
     if (
       orgFilter.values[1] !== 'all' &&
-      orgFilter.values[1] !== 'none' &&
       !isDefaultSiteSelected &&
       locSel.buildingId &&
       locSel.floorId &&
@@ -327,10 +336,10 @@ const Dashboard = () => {
     } else {
       setUseImageMap(false)
     }
-  }, [orgFilter, locSel.buildingId, locSel.floorId, locSel.areaId, isDefaultSiteSelected])
+  }, [locSel.buildingId, locSel.floorId, locSel.areaId])
 
   useEffect(() => {
-    if (orgFilter.values[1] === 'all' || orgFilter.values[1] === 'none' || isDefaultSiteSelected) {
+    if (orgFilter.values[1] === 'all' || isDefaultSiteSelected) {
       makeMarker()
     }
   }, [devices, sites, orgFilter, isDefaultSiteSelected])
@@ -385,7 +394,7 @@ const Dashboard = () => {
 
   const pollDevices = useCallback(async () => {
     try {
-      const siteId = orgFilter.values[1] !== 'all' && orgFilter.values[1] !== 'none' ? orgFilter.values[1] : undefined
+      const siteId = orgFilter.values[1] !== 'all' ? orgFilter.values[1] : undefined
       const newDevices = (await deviceApis.getDevices(siteId ? { siteId } : {})).content
       const { hasChange, merger } = buildDeviceMerger(newDevices, deviceTsRef.current)
       if (hasChange) setDevices(merger)
@@ -441,7 +450,7 @@ const Dashboard = () => {
   }, [isLiveImageMap, pollDevices])
 
   // 사이트가 선택되면(전체/없음 제외) 사이트 지도 영역을 노출 (시험용)
-  const hasSite = orgFilter.values[1] !== 'all' && orgFilter.values[1] !== 'none' && !isDefaultSiteSelected
+  const hasSite = orgFilter.values[1] !== 'all' && !isDefaultSiteSelected
 
   return (
     <>
@@ -452,7 +461,6 @@ const Dashboard = () => {
             onChange={handleSelectOrg}
             // supportAlls={[true, true]}
             supportNone={[false, false]}
-            disableCenter
           />
           <DashboardButtonGroup>
             {useImageMap &&
@@ -468,7 +476,7 @@ const Dashboard = () => {
             <PlayButton
               onClick={() => {
                 let groupId = orgFilter.values[0]
-                if (groupId === 'all' && orgFilter.values[1] !== 'all' && orgFilter.values[1] !== 'none') {
+                if (groupId === 'all' && orgFilter.values[1] !== 'all') {
                   const matched = orgFilter.actualOrgs?.find((org) => String(org.code) === String(orgFilter.values[1]))
                   groupId = matched?.parentCode ?? groupId
                 }
@@ -518,7 +526,16 @@ const Dashboard = () => {
               <DivSectionTitleWrap>
                 <H3SectionTitle>{t('robotPlacementStatus', '로봇 배치 현황 및 위치 정보')}</H3SectionTitle>
                 {hasSite && (
-                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1.3rem', marginLeft: '1rem' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      marginBottom: '1.3rem',
+                      marginLeft: '1rem',
+                      position: 'relative',
+                      zIndex: 20000 // 아래 지도(SiteMap3D 로봇 마커 툴팁 zIndex:10000)보다 위에 옵션 목록이 뜨도록
+                    }}
+                  >
                     <LocationSelector
                       buildings={buildings}
                       value={locSel}
@@ -539,7 +556,7 @@ const Dashboard = () => {
                     <SiteMap3D
                       mapData={mapData}
                       mapServer={mapServer}
-                      robotDatas={robotDatas}
+                      robotDatas={areaRobotDatas}
                       clickRobot={true}
                       viewModeKey={DASHBOARD_MAP_VIEW_KEY}
                     />

@@ -38,9 +38,7 @@ const LanguageSelect = () => {
     <StyledLanguageSelect ref={languageRef} className="languageSelect">
       <StyledHeaderButton type="button" className="language" onClick={toggleLanguage}>
         {responsiveMode === 'PC' && (
-          <span className="typographyButton3" style={{ color: 'var(--color-neutral-10)' }}>
-            {t('LanguageSelect.button')}
-          </span>
+          <span className="typographyButton3" style={{ color: 'var(--color-neutral-10)' }}></span>
         )}
         <i className="icon">
           <SvgLanguage />

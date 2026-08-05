@@ -21,6 +21,7 @@
   "maxDistance": "최대 거리",
   "angleRange": "각도 범위",
   "lidarInfo": "라이다 정보",
+  "mappingStatus": "매핑 상태",
   "legend": "범례",
   "unknown": "미탐색 영역",
   "freeSpace": "빈 공간 (통행 가능)",

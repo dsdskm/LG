@@ -25,7 +25,7 @@ function App() {
   const { selectedOrgs } = useOrganizationStore()
   useEffect(() => {
     refreshFlows(selectedOrgs[0], selectedOrgs[1])
-  }, [refreshFlows, selectedOrgs])
+  }, [refreshFlows])
 
   const processedAppRoutes = useMemo(() => {
     const processRoutes = (routes: any) => {

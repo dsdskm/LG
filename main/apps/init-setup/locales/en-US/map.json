@@ -21,6 +21,7 @@
   "maxDistance": "Max Distance",
   "angleRange": "Angle Range",
   "lidarInfo": "Lidar Info",
+  "mappingStatus": "Mapping Status",
   "legend": "Legend",
   "unknown": "Unknown",
   "freeSpace": "Free Space (Passable)",

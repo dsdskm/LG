@@ -10,7 +10,6 @@ const OrganizationSelector = ({
   supportAlls = [],
   supportNone = [],
   disabled,
-  disableCenter = false,
   showLabel = false,
   allToTop = true
 }) => {
@@ -204,7 +203,7 @@ const OrganizationSelector = ({
   }
 
   return (
-    <DropdownContainer $disableCenter={disableCenter}>
+    <DropdownContainer>
       {levelInfos?.map((info, index) => (
         <Dropdown
           key={index}

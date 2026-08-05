@@ -21,6 +21,7 @@
   "maxDistance": "最大距離",
   "angleRange": "角度範囲",
   "lidarInfo": "ライダー情報",
+  "mappingStatus": "マッピング状態",
   "legend": "凡例",
   "unknown": "未探査領域",
   "freeSpace": "空き空間（通行可能）",

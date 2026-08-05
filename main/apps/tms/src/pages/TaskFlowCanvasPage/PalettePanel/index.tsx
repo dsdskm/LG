@@ -32,6 +32,11 @@ function makePaletteLabel(kind: PaletteItem['kind'], task: TaskApiPayload, conte
   return content?.name ?? task.name
 }
 
+// 태스크 패널의 모든 목록(컨트롤/액션/컨텐츠)은 name 오름차순으로 보여준다.
+function sortByNameAsc<T extends { name?: string | null }>(items: T[]): T[] {
+  return [...items].sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? '')))
+}
+
 export default function PalettePanel({ groupId, siteId }: { groupId: string | null; siteId: string | null }) {
   const loading = useFlowEditorStore((s) => s.loadingTasks)
   const tasks = useFlowEditorStore((s) => s.tasks)
@@ -58,7 +63,7 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
     loadTasks(groupId, siteId)
   }, [loadTasks, groupId, siteId])
 
-  const controlTasks = useMemo(() => tasks.filter((t) => t.taskType === TASK_TYPE_CONTROL), [tasks])
+  const controlTasks = useMemo(() => sortByNameAsc(tasks.filter((t) => t.taskType === TASK_TYPE_CONTROL)), [tasks])
 
   const otherTasks = useMemo(() => tasks.filter((t) => t.taskType !== TASK_TYPE_CONTROL), [tasks])
 
@@ -68,15 +73,16 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
   // propertySchema.properties 중 type === 'content_reference' 가 없으면 Default,
   // 하나라도 있으면 펼침(content 단위)으로 보여준다.
   const directActionTasks = useMemo(
-    () => otherTasks.filter((t) => t.taskType === TaskType.ACTION && !hasContentReference(t)),
+    () => sortByNameAsc(otherTasks.filter((t) => t.taskType === TaskType.ACTION && !hasContentReference(t))),
     [otherTasks]
   )
 
   const expandableTasks = useMemo(
     () =>
-      otherTasks.filter(
-        (t) =>
-          t.taskType !== TaskType.ROOT && hasContentReference(t) && t.name !== 'PickUp' && t.name !== 'PutDown'
+      sortByNameAsc(
+        otherTasks.filter(
+          (t) => t.taskType !== TaskType.ROOT && hasContentReference(t) && t.name !== 'PickUp' && t.name !== 'PutDown'
+        )
       ),
     [otherTasks]
   )
@@ -164,7 +170,7 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
               ) : null}
 
               {expandableTasks.map((task) => {
-                const contents = task.contents ?? []
+                const contents = sortByNameAsc(task.contents ?? [])
                 const open = openMap[task.id] ?? false
 
                 return (

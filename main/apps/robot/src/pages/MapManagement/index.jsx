@@ -291,7 +291,7 @@ const MapManagement = () => {
 
       {/* 필터 — 사이트 필터 옆에 빌딩/층 필터 배치 (카드 없이) */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '2rem', flexWrap: 'wrap' }}>
-        <OrganizationSelector onChange={handleOrgChange} supportNone={[false, false]} disableCenter />
+        <OrganizationSelector onChange={handleOrgChange} supportNone={[false, false]} />
         {hasScope && showBuildingFilter && (
           <Dropdown
             size="lg"

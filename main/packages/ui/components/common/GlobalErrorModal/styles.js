@@ -3,11 +3,6 @@ export const DropdownContainer = styled.div`
   display: flex;
   gap: 2rem;
   margin-bottom: 2rem;
-
-  @media all and (min-width: 1580px) {
-    width: 90%;
-    margin: 0 auto 2rem auto;
-  }
 `
 
 export const ButtonWrap = styled.div`
@@ -43,8 +38,5 @@ export const PageHeadWrap = styled.div`
 
   ${ButtonWrap} {
     margin: 0;
-  }
-  @media all and (min-width: 1580px) {
-    width: 90%;
   }
 `

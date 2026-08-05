@@ -65,24 +65,26 @@ const MOCK_NOTIFICATIONS = [
 ]
 
 const TYPE_CONFIG = {
-  model_complete:      { label: '학습 완료',   color: '#16a34a', bg: '#dcfce7', symbol: '✓' },
-  data_ready:          { label: '데이터 완료', color: '#2563eb', bg: '#dbeafe', symbol: '◉' },
-  review_required:     { label: '검토 요청',   color: '#d97706', bg: '#fef3c7', symbol: '!' },
-  deploy_complete:     { label: '배포 완료',   color: '#7c3aed', bg: '#ede9fe', symbol: '▲' },
-  training_failed:     { label: '학습 실패',   color: '#dc2626', bg: '#fee2e2', symbol: '✕' },
-  simulation_complete: { label: '시뮬레이션',  color: '#0891b2', bg: '#cffafe', symbol: '◎' }
+  model_complete: { label: '학습 완료', color: '#16a34a', bg: '#dcfce7', symbol: '✓' },
+  data_ready: { label: '데이터 완료', color: '#2563eb', bg: '#dbeafe', symbol: '◉' },
+  review_required: { label: '검토 요청', color: '#d97706', bg: '#fef3c7', symbol: '!' },
+  deploy_complete: { label: '배포 완료', color: '#7c3aed', bg: '#ede9fe', symbol: '▲' },
+  training_failed: { label: '학습 실패', color: '#dc2626', bg: '#fee2e2', symbol: '✕' },
+  simulation_complete: { label: '시뮬레이션', color: '#0891b2', bg: '#cffafe', symbol: '◎' }
 }
 
 const SOURCE_STYLE = {
   learn: { bg: '#eef2ff', color: '#4338ca' },
-  ota:   { bg: '#fff7ed', color: '#c2410c' }
+  ota: { bg: '#fff7ed', color: '#c2410c' }
 }
 
 // ── SVG 아이콘: 학사모 (학습 상징) ───────────────────────────────────────────
 const GraduationCapIcon = ({ size = 20, color = 'currentColor' }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill={color} xmlns="http://www.w3.org/2000/svg">
-    <path d="M12 3L1 9l11 6 9-4.91V17h2V9L12 3z" />
-    <path d="M5 13.18v4L12 21l7-3.82v-4L12 17l-7-3.82z" />
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      d="M11.8848 3.41105C11.9989 3.38872 12.1184 3.39959 12.2275 3.44425L23.2275 7.94425C23.4529 8.03654 23.5996 8.25638 23.5996 8.49992C23.5996 8.74347 23.4529 8.96328 23.2275 9.05558L22.8115 9.2255C22.8118 9.2336 22.8144 9.24174 22.8145 9.24992V14.9042C22.8142 15.2354 22.5451 15.5038 22.2139 15.5038C21.8828 15.5036 21.6145 15.2352 21.6143 14.9042V9.71476L18.8799 10.8339L18.2002 16.7714L18.1992 16.7812C18.1068 17.4868 17.6507 18.1059 16.9639 18.3876C15.8847 18.83 13.7684 19.5995 12 19.5995C10.2316 19.5995 8.11527 18.83 7.03613 18.3876C6.34935 18.1059 5.89318 17.4868 5.80078 16.7812L5.7998 16.7714L5.11914 10.8339L0.772461 9.05558C0.54709 8.96328 0.400393 8.74347 0.400391 8.49992C0.400424 8.25638 0.5471 8.03654 0.772461 7.94425L11.7725 3.44425L11.8848 3.41105ZM12.2275 13.5556C12.0819 13.6151 11.9181 13.6151 11.7725 13.5556L6.38672 11.3525L6.99219 16.6347C7.03278 16.9202 7.21587 17.1642 7.49121 17.2773C8.56811 17.7187 10.4903 18.4003 12 18.4003C13.5097 18.4003 15.4319 17.7187 16.5088 17.2773C16.7841 17.1642 16.9672 16.9202 17.0078 16.6347L17.6123 11.3525L12.2275 13.5556ZM2.58496 8.49992L12 12.3505L21.4141 8.49992L12 4.64836L2.58496 8.49992Z"
+      fill="white"
+    />
   </svg>
 )
 
@@ -136,7 +138,9 @@ const Panel = styled.div`
   width: 360px;
   background: #fff;
   border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.06);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.14),
+    0 2px 8px rgba(0, 0, 0, 0.06);
   border: 1px solid rgba(0, 0, 0, 0.07);
   z-index: 1000;
   overflow: hidden;

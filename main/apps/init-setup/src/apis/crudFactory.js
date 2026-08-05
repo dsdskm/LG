@@ -1,17 +1,17 @@
 import { client } from '@repo/apis'
+import API_BASE from './index'
 
 // init-setup-be 백엔드 공용 클라이언트.
-// - baseURL 은 이미 `/api/v1` 를 포함한다 (.env 의 VITE_API_BASE_URL).
-//   예) 개발: http://localhost:8081/api/v1, 배포: /api/v1 (nginx 프록시)
+// - baseURL 은 apis/index.js 가 계산한 API_BASE(현재 페이지 hostname + VITE_BE_PORT,
+//   captive portal 모드에서는 상대경로)에 `/api/v1` 을 붙인 값이다.
+//   예) 개발: http://localhost:3100/api/v1, 배포: /api/v1 (nginx 프록시)
 //   따라서 각 API 는 리소스 경로(`/sites` 등)만 붙인다.
 // - 백엔드 응답 봉투는 { success, data, total? } 이며, client 의 응답 인터셉터가
 //   response.data(봉투 전체)를 반환한다.
-export const axiosApi = client(import.meta.env.VITE_API_BASE_URL)
-
-// 운영 환경에서 /api/v1 전 경로는 X-API-Key 인증이 필요하다.
-// VITE_API_KEY 가 설정된 경우에만 헤더를 실어 보낸다(미설정 시 백엔드가 인증 생략).
-const apiKey = import.meta.env.VITE_API_KEY
-export const authConfig = apiKey ? { headers: { 'X-API-Key': apiKey } } : {}
+// - 인증 헤더는 붙이지 않는다. init-setup-be 는 API 키 인증을 제거하고 노출 최소화로 대체했다
+//   (host 네트워크 + nginx loopback 전용 listen → 외부 직접 호출 차단, FE 가 유일한 진입점).
+//   인증을 재도입한다면 BE 의 CORS allowedHeaders 에 해당 헤더를 함께 추가해야 preflight 가 통과한다.
+export const axiosApi = client(`${API_BASE}/api/v1`)
 
 /**
  * 표준 CRUD 팩토리. init-setup-be 의 리소스 라우트는 모두 동일한 형태다.
@@ -24,14 +24,50 @@ export const authConfig = apiKey ? { headers: { 'X-API-Key': apiKey } } : {}
  */
 export const createCrud = (resource, { bulk = false } = {}) => {
   const crud = {
-    create: (data) => axiosApi.post(`/${resource}`, data, authConfig),
-    list: (params) => axiosApi.get(`/${resource}`, { params, ...authConfig }),
-    getById: (id, params) => axiosApi.get(`/${resource}/${id}`, { params, ...authConfig }),
-    update: (id, data) => axiosApi.put(`/${resource}/${id}`, data, authConfig),
-    remove: (id) => axiosApi.delete(`/${resource}/${id}`, authConfig)
+    /**
+     * 리소스 1건 생성.
+     * @param {object} data 생성할 필드 (백엔드 스키마에 따름)
+     * @returns {Promise<{success: boolean, data: object}>}
+     */
+    create: (data) => axiosApi.post(`/${resource}`, data),
+
+    /**
+     * 리소스 목록 조회.
+     * @param {object} [params] 쿼리스트링 (페이징/필터 등, 예: { page, rows })
+     * @returns {Promise<{success: boolean, data: object[], total?: number}>}
+     */
+    list: (params) => axiosApi.get(`/${resource}`, { params }),
+
+    /**
+     * 리소스 1건 단건 조회.
+     * @param {string|number} id 리소스 식별자
+     * @param {object} [params] 추가 쿼리스트링 (하위 리소스 포함 여부 등)
+     * @returns {Promise<{success: boolean, data: object}>}
+     */
+    getById: (id, params) => axiosApi.get(`/${resource}/${id}`, { params }),
+
+    /**
+     * 리소스 1건 전체 수정(PUT).
+     * @param {string|number} id 리소스 식별자
+     * @param {object} data 수정할 필드
+     * @returns {Promise<{success: boolean, data: object}>}
+     */
+    update: (id, data) => axiosApi.put(`/${resource}/${id}`, data),
+
+    /**
+     * 리소스 1건 삭제.
+     * @param {string|number} id 리소스 식별자
+     * @returns {Promise<{success: boolean}>}
+     */
+    remove: (id) => axiosApi.delete(`/${resource}/${id}`)
   }
   if (bulk) {
-    crud.bulkCreate = (data) => axiosApi.post(`/${resource}/bulk`, data, authConfig)
+    /**
+     * 리소스 여러 건 일괄 생성 (POST /{resource}/bulk).
+     * @param {object|object[]} data 백엔드 bulk 라우트가 받는 배열 또는 래핑 객체
+     * @returns {Promise<{success: boolean, data: object[]}>}
+     */
+    crud.bulkCreate = (data) => axiosApi.post(`/${resource}/bulk`, data)
   }
   return crud
 }

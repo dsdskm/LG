@@ -21,10 +21,6 @@ export const ButtonWrap = styled.div`
   &.alignCenter {
     justify-content: center;
   }
-  @media all and (min-width: 1580px) {
-    width: 80%;
-    margin: 0 auto 2rem auto;
-  }
 `
 
 export const PageHeadWrap = styled.div`
@@ -42,9 +38,6 @@ export const PageHeadWrap = styled.div`
 
   ${ButtonWrap} {
     margin: 0;
-  }
-  @media all and (min-width: 1580px) {
-    width: 90%;
   }
 `
 

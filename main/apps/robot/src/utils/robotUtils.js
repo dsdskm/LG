@@ -131,7 +131,8 @@ export function parseRobotData(deviceinfo) {
     // heading (rad). Backend may expose it as theta/yaw; undefined → faces +X.
     theta: pos?.theta ?? pos?.yaw ?? deviceinfo.state?.pose?.yaw,
     robotState: deviceinfo.deviceState,
-    siteName: !deviceinfo.provision.isDefaultSite ? deviceinfo.provision?.siteName : '-'
+    siteName: !deviceinfo.provision.isDefaultSite ? deviceinfo.provision?.siteName : '-',
+    areaId: deviceinfo.state?.sitePosition?.areaId
   }
   return returnJson
 }

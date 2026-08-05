@@ -22,13 +22,4 @@ export const StyledSection = styled.section`
       flex-direction: column;
     }
   }
-  @media all and (min-width: 1580px) {
-    width: 90%;
-    margin: 0 auto;
-
-    section & {
-      width: 100%;
-      margin: 0;
-    }
-  }
 `

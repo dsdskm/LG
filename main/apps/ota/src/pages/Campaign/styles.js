@@ -13,10 +13,4 @@ export const StateStatusList = styled.div`
   flex-wrap: wrap;
   width: 100%;
   margin: 0 0 2.4rem;
-
-  /* 아래 Section과 좌우 범위 정렬 */
-  @media all and (min-width: 1580px) {
-    width: 90%;
-    margin: 0 auto 2.4rem;
-  }
 `

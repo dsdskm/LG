@@ -28,12 +28,18 @@ import AiEventSummaryPanel from './pages/Dashboard/components/AiEventSummaryPane
 import TVDashboard from './pages/TVDashboard'
 import TermManagement from './pages/TermManagement'
 
+import SvgGnbDashboard from '@repo/ui/assets/svgs/gnb_dashboard.svg'
+import SvgGnbRobotList from '@repo/ui/assets/svgs/gnb_robot_list.svg'
+import SvgGnbGroup from '@repo/ui/assets/svgs/gnb_group.svg'
+import SvgGnbSupport from '@repo/ui/assets/svgs/gnb_support.svg'
+import SvgGnbUser from '@repo/ui/assets/svgs/gnb_user.svg'
+
 const appRoutes = [
   {
     name: 'dashboard',
     path: '/robot/dashboard',
     prefix: 'robot',
-    icon: 'dashboard',
+    icon: SvgGnbDashboard,
     element: <Dashboard />,
     accessLevel: [0, 1, 2, 3]
   },
@@ -41,7 +47,7 @@ const appRoutes = [
     name: 'robotList',
     path: '/robot/management',
     prefix: 'robot',
-    icon: 'category',
+    icon: SvgGnbRobotList,
     element: <Management />,
     accessLevel: [0, 1, 2, 3],
     depth: [
@@ -86,7 +92,7 @@ const appRoutes = [
     name: 'aiLogManagement',
     path: '/robot/ailog',
     prefix: 'robot',
-    icon: 'support',
+    icon: SvgGnbSupport,
     element: <AiLogManagement />,
     accessLevel: [1, 2, 3],
     depth: [
@@ -103,7 +109,7 @@ const appRoutes = [
     name: 'groupManagement',
     path: '/robot/groups',
     prefix: 'robot',
-    icon: 'group',
+    icon: SvgGnbGroup,
     element: <GroupManagement />,
     accessLevel: [1, 2, 3],
     depth: [
@@ -121,7 +127,7 @@ const appRoutes = [
     name: 'userManagement',
     path: '/robot/users',
     prefix: 'robot',
-    icon: 'user',
+    icon: SvgGnbUser,
     element: <UserManagement />,
     accessLevel: [2, 3]
   },

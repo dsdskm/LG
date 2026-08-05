@@ -63,6 +63,12 @@ export function parseCDR(buffer, schemaName) {
     const readQuaternion = () => ({ x: readF64(), y: readF64(), z: readF64(), w: readF64() })
     const readPose = () => ({ position: readPoint(), orientation: readQuaternion() })
 
+    // ── std_msgs/msg/String ─────────────────────────────────────────
+    // /lio_node/status (mapping / saving_map / relocalizing_gkr / ready / failed ...)
+    if (schemaName === 'std_msgs/msg/String') {
+      return { data: readString() }
+    }
+
     // ── nav_msgs/msg/OccupancyGrid ──────────────────────────────────
     if (schemaName === 'nav_msgs/msg/OccupancyGrid') {
       const header = readHeader()
@@ -77,6 +83,19 @@ export function parseCDR(buffer, schemaName) {
       const data = new Int8Array(buffer, offset, dataLen)
       offset += dataLen
       return { header, info: { map_load_time, resolution, width, height, origin }, data }
+    }
+
+    // ── nav_msgs/msg/Path ───────────────────────────────────────────
+    // /lio/path (매핑 중 주행 궤적)
+    if (schemaName === 'nav_msgs/msg/Path') {
+      const header = readHeader()
+      const posesLen = readU32()
+      const poses = []
+      for (let i = 0; i < posesLen; i++) {
+        const poseHeader = readHeader()
+        poses.push({ header: poseHeader, pose: readPose() })
+      }
+      return { header, poses }
     }
 
     // ── nav_msgs/msg/Odometry ───────────────────────────────────────

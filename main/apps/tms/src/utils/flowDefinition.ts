@@ -29,6 +29,36 @@ export function hasFinal(flow?: Partial<TaskFlow> | null): boolean {
   return !isEmptyFlowDefinition(flow?.flowDefinition)
 }
 
+/** key 순서 차이로 다르게 판정되지 않도록, 객체 key 를 정렬해서 직렬화한다. */
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value) ?? 'null'
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(',')}]`
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, item]) => item !== undefined)
+    .sort(([a], [b]) => a.localeCompare(b))
+
+  return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`).join(',')}}`
+}
+
+/**
+ * 두 정의가 같은 내용인지. (둘 다 비어 있으면 같은 것으로 본다)
+ * 최종 버전 저장은 두 필드를 같은 스냅샷으로 맞추므로, 이 경우 정확히 일치한다.
+ */
+export function isSameFlowDefinition(a: unknown, b: unknown): boolean {
+  const aEmpty = isEmptyFlowDefinition(a)
+  const bEmpty = isEmptyFlowDefinition(b)
+
+  if (aEmpty || bEmpty) return aEmpty && bEmpty
+
+  return stableStringify(a) === stableStringify(b)
+}
+
 /** 지정한 쪽의 정의를 가져온다. (비어 있으면 {}) */
 export function getFlowDefinitionBySource(
   flow: Partial<TaskFlow> | null | undefined,
