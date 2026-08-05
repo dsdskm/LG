@@ -50,7 +50,6 @@ import {
   getFlowDefinitionBySource,
   hasFinal,
   hasSaved,
-  isSameFlowDefinition,
   type FlowDefinitionSource
 } from '@/utils/flowDefinition'
 
@@ -133,21 +132,11 @@ const TaskFlowListDetailPage = () => {
   // 보여줄 정의 선택: "저장 버전"(flowDefinitionDraft) / "최종 버전"(flowDefinition)
   const [flowSource, setFlowSource] = useState<FlowDefinitionSource>('saved')
 
-  // 저장 버전과 최종 버전이 같으면 같은 흐름을 두 번 보여줄 필요가 없어 최종 버전 탭만 노출한다.
-  const showSavedTab = useMemo(
-    () => !isSameFlowDefinition(taskFlow?.flowDefinitionDraft, taskFlow?.flowDefinition),
-    [taskFlow]
-  )
-
-  // 저장 버전 탭이 없거나 저장 버전이 비어 있으면 최종 버전 탭을 기본으로 연다.
+  // 저장 버전이 없으면 최종 버전 탭을 기본으로 연다.
   useEffect(() => {
     if (!taskFlow) return
-    if (!showSavedTab) {
-      setFlowSource('final')
-      return
-    }
     if (!hasSaved(taskFlow) && hasFinal(taskFlow)) setFlowSource('final')
-  }, [taskFlow, showSavedTab])
+  }, [taskFlow])
 
   const selectedFlowDefinition = useMemo(() => getFlowDefinitionBySource(taskFlow, flowSource), [taskFlow, flowSource])
 
@@ -207,7 +196,7 @@ const TaskFlowListDetailPage = () => {
     }
 
     return nextParams
-  }, [taskFlow])
+  }, [selectedOrgs])
 
   const { refetch: deviceRefetch } = useDeviceList(deviceRequest, false)
 
@@ -568,19 +557,17 @@ const TaskFlowListDetailPage = () => {
         <Section>
           <FlowTabsWrap>
             <Tabs activeId={flowSource} onChange={(id: string) => setFlowSource(id as FlowDefinitionSource)}>
-              {showSavedTab && (
-                <Tab id="saved" label={t('detail.flowTab.saved')}>
-                  <FlowArea>
-                    <FlowCanvasWrap>
-                      {hasSaved(taskFlow) ? (
-                        <TaskFlowReadonlyCanvas flowDefinition={selectedFlowDefinition} />
-                      ) : (
-                        <PageMessage>{t('detail.flowTab.savedEmpty')}</PageMessage>
-                      )}
-                    </FlowCanvasWrap>
-                  </FlowArea>
-                </Tab>
-              )}
+              <Tab id="saved" label={t('detail.flowTab.saved')}>
+                <FlowArea>
+                  <FlowCanvasWrap>
+                    {hasSaved(taskFlow) ? (
+                      <TaskFlowReadonlyCanvas flowDefinition={selectedFlowDefinition} />
+                    ) : (
+                      <PageMessage>{t('detail.flowTab.savedEmpty')}</PageMessage>
+                    )}
+                  </FlowCanvasWrap>
+                </FlowArea>
+              </Tab>
 
               <Tab id="final" label={t('detail.flowTab.final')}>
                 <FlowArea>
