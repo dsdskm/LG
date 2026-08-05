@@ -35,8 +35,9 @@ type TaskFlowState = {
  *
  * ⚠️ 만약 "DRAFT로 되돌리기"도 원치 않으면 이 함수 + 호출부 제거하면 됨.
  */
-// "이름 복제1" 처럼 뒤에 붙은 복제 표기를 떼어낸 원본 이름
-const NAME_COPY_SUFFIX = /\s*복제(\d+)\s*$/
+// "이름 (복사본1)" 처럼 뒤에 붙은 복사본 표기를 떼어낸 원본 이름
+// (괄호 없는 예전 표기 "복사본N"/"복제N" 도 같은 기준 이름으로 묶어, 복사본이 중첩되지 않게 한다)
+const NAME_COPY_SUFFIX = /\s*\(?(?:복사본|복제)(\d+)\)?\s*$/
 
 function getNameBase(name: string): string {
   return String(name ?? '')
@@ -46,8 +47,8 @@ function getNameBase(name: string): string {
 }
 
 /**
- * 복사본 이름을 "원본이름 복제1", 이미 있으면 복제2, 복제3 ... 으로 만든다.
- * 원본이 이미 "이름 복제1" 이라면 같은 기준 이름의 다음 번호를 이어서 쓴다.
+ * 복사본 이름을 "원본이름 (복사본1)", 이미 있으면 (복사본2), (복사본3) ... 으로 만든다.
+ * 원본이 이미 "이름 (복사본1)" 이라면 같은 기준 이름의 다음 번호를 이어서 쓴다.
  */
 function buildCopyName(sourceName: string, existingNames: string[]): string {
   const base = getNameBase(sourceName)
@@ -65,7 +66,7 @@ function buildCopyName(sourceName: string, existingNames: string[]): string {
     if (Number.isFinite(copyNo) && copyNo > maxCopyNo) maxCopyNo = copyNo
   }
 
-  return `${base} 복제${maxCopyNo + 1}`
+  return `${base} (복사본${maxCopyNo + 1})`
 }
 
 function withDraftStatusIfEdited(current: TaskFlow | undefined, patch: Partial<TaskFlow>): Partial<TaskFlow> {
@@ -168,7 +169,8 @@ export const useTaskFlowStore = create<TaskFlowState>()((set, get) => ({
     const source = await getTaskFlow(id)
     if (!source) throw new Error('원본 Task Flow 를 불러오지 못했습니다.')
 
-    // id 는 신규 발급(0), 생성/수정 시각은 서버가 채운다. status/version 등 나머지는 원본과 동일하게 보낸다.
+    // id 는 신규 발급(0), 생성/수정 시각은 서버가 채운다. version 은 새 흐름이므로 0 으로 초기화하고,
+    // status 등 나머지는 원본과 동일하게 보낸다.
     //
     // 배포 이력은 taskFlowId 기준으로 따로 관리되므로 새 id 를 받은 복사본은 자연히 "미배포" 상태다.
     // 다만 조회 응답에 배포/스냅샷 정보가 함께 실려 올 수 있어, 복사 payload 에서는 명시적으로 제외한다.
@@ -183,13 +185,13 @@ export const useTaskFlowStore = create<TaskFlowState>()((set, get) => ({
       ...rest
     } = source as TaskFlow & Record<string, unknown>
 
-    // 목록에 같은 이름이 겹치지 않게 "원본이름 v2, v3 ..." 로 붙인다.
+    // 목록에 같은 이름이 겹치지 않게 "원본이름 (복사본1), (복사본2) ..." 로 붙인다.
     const name = buildCopyName(
       source.name,
       get().flows.map((flow) => flow.name)
     )
 
-    const created = await createTaskFlow({ ...(rest as TaskFlow), id: 0, name })
+    const created = await createTaskFlow({ ...(rest as TaskFlow), id: 0, name, version: 0 })
 
     if (!created || typeof created.id !== 'number') {
       throw new Error('복사된 Task Flow 응답이 올바르지 않습니다.')
