@@ -777,7 +777,7 @@ const AssetInfo = ({ t, deviceId }) => {
               {
                 icon: Clock,
                 label: t('finalUpdate'),
-                value: deviceInfo.updateDate ? toYmdHmKST(deviceInfo.updateDate) : '-',
+                value: deviceInfo.deviceStateUpdatedAt ? toYmdHmKST(deviceInfo.deviceStateUpdatedAt) : '-',
                 warn: false
               }
             ].map((item, index) => (

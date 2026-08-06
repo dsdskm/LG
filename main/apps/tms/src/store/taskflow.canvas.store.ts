@@ -351,21 +351,12 @@ function buildNodeDataFromPaletteItem(item: PaletteItem): NodeData {
   }
 }
 
-function hasContentReference(task: TaskApiPayload): boolean {
-  return Object.values(task.propertySchema?.properties ?? {}).some((prop) => prop?.type === 'content_reference')
-}
-
 function buildPaletteAndCatalog(tasks: TaskApiPayload[]) {
   const palette: PaletteItem[] = []
   const contentsList: ContentApiPayload[] = []
 
   for (const task of tasks) {
     if (task.taskType === TASK_TYPE_CONTROL) {
-      palette.push({ kind: 'controlTaskNode', task, label: task.name })
-      continue
-    }
-
-    if (task.taskType !== TASK_TYPE_ROOT && !hasContentReference(task)) {
       palette.push({ kind: 'controlTaskNode', task, label: task.name })
       continue
     }
@@ -751,6 +742,10 @@ type FlowEditorState = {
   selectEdge: (id: string | null) => void
   selectPalette: (item: PaletteItem | null) => void
 
+  // Ctrl(⌘) + 클릭으로 그룹 선택에서 노드/엣지 하나만 빼낸다.
+  removeNodeFromSelection: (id: string) => void
+  removeEdgeFromSelection: (id: string) => void
+
   updateSelectedNodeProps: (patch: Record<string, any>) => void
 
   setNodes: (nodes: RFNode[]) => void
@@ -971,6 +966,52 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
       selectedEdgeId: null,
       selectedPalette: item ? buildNodeDataFromPaletteItem(item) : null
     }),
+
+  // 그룹 선택에서 노드 하나만 제외한다. (나머지 그룹은 그대로 유지)
+  // - 그룹 상태(node.selected) 해제는 React Flow 기본 동작이 이미 처리하지만,
+  //   단일 선택(selectedNodeId) 으로 남아 있으면 삭제/복제 대상에 계속 포함되므로 함께 정리한다.
+  // - 엣지는 박스 드래그와 같은 기준("그룹 노드에 하나라도 붙어 있으면 그룹")으로 다시 맞춘다.
+  //   즉 빠진 노드에 붙은 엣지 중, 반대쪽 끝도 그룹 밖인 엣지만 그룹에서 뺀다.
+  removeNodeFromSelection: (id) => {
+    const targetId = String(id)
+
+    set((state) => {
+      const nodes = state.nodes.map((node) =>
+        String(node.id) === targetId && node.selected ? { ...node, selected: false } : node
+      )
+
+      const selectedNodeIds = new Set(nodes.filter((node) => node.selected).map((node) => String(node.id)))
+
+      const edges = state.edges.map((edge) => {
+        if (!edge.selected) return edge
+
+        const source = String(edge.source)
+        const target = String(edge.target)
+        if (source !== targetId && target !== targetId) return edge
+        if (selectedNodeIds.has(source) || selectedNodeIds.has(target)) return edge
+
+        return { ...edge, selected: false }
+      })
+
+      return {
+        nodes,
+        edges,
+        selectedNodeId: state.selectedNodeId === targetId ? null : state.selectedNodeId
+      }
+    })
+  },
+
+  // 그룹 선택에서 엣지 하나만 제외한다.
+  removeEdgeFromSelection: (id) => {
+    const targetId = String(id)
+
+    set((state) => ({
+      edges: state.edges.map((edge) =>
+        String(edge.id) === targetId && edge.selected ? { ...edge, selected: false } : edge
+      ),
+      selectedEdgeId: state.selectedEdgeId === targetId ? null : state.selectedEdgeId
+    }))
+  },
 
   updateSelectedNodeProps: (patch) => {
     const { selectedNodeId, nodes, edges, viewport } = get()

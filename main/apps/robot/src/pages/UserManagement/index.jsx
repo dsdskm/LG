@@ -18,7 +18,7 @@ const UserManagement = () => {
         <Tab id="tabAuth" label={t('roleApprove')}>
           <PermissionApproval />
         </Tab>
-        <Tab id="tabInvitation" label={t('사용자 초대')}>
+        <Tab id="tabInvitation" label={t('invNew')}>
           <UserInvitation />
         </Tab>
       </Tabs>

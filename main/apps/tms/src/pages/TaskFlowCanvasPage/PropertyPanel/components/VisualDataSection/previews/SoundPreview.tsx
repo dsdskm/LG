@@ -17,13 +17,15 @@ export default function SoundPreview({ node, nodeId }: PreviewProps) {
 
   const { url: mediaUrl, isSuccess } = usePreviewContentUrl(node)
 
+  // nodeId 가 바뀌면 <audio> 가 remount(key)되어 ref 도 새 엘리먼트를 가리키므로,
+  // 같은 콘텐츠라도 재생을 다시 시작시켜야 한다.
   useEffect(() => {
     if (mediaUrl && audioRef.current) {
       audioRef.current.play().catch((err) => {
         console.warn('autoplay blocked', err)
       })
     }
-  }, [mediaUrl])
+  }, [mediaUrl, nodeId])
 
   if (!node || !node.data) {
     return <></>
@@ -79,7 +81,8 @@ export default function SoundPreview({ node, nodeId }: PreviewProps) {
         </AudioControlGroup>
 
         <audio
-          key={mediaUrl}
+          // FacePreview 와 동일한 이유로 nodeId 를 key 에 섞는다(같은 콘텐츠 연속 재생).
+          key={`${mediaUrl}-${nodeId}`}
           ref={audioRef}
           src={mediaUrl || undefined}
           preload="auto"

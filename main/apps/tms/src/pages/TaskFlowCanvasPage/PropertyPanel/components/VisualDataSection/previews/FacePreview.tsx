@@ -23,7 +23,10 @@ export default function FacePreview({ node, nodeId }: PreviewProps) {
         <MediaStage>
           {mediaUrl ? (
             <video
-              key={mediaUrl}
+              // nodeId 를 key 에 섞는다: 같은 콘텐츠를 쓰는 태스크가 연속되면 mediaUrl 이 동일해
+              // 이미 ended 인 <video> 를 재사용하게 되고(autoPlay 는 엘리먼트 생성 시에만 동작),
+              // 재생도 안 되고 playStatus 가 READY 에 머물러 실행이 그 노드에서 멈춘다.
+              key={`${mediaUrl}-${nodeId}`}
               autoPlay
               muted
               playsInline

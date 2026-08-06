@@ -51,6 +51,7 @@
   "close": "Close",
   "contentFile": "Content File",
   "enterContent": "Enter content",
+  "enterSearchKeyword": "Enter search keyword",
   "copied": "Copied",
   "loadingApiDoc": "Loading API documentation...",
   "loadingFail": "Failed to load API documentation.",

@@ -39,5 +39,11 @@
   "save": "저장",
   "reset": "재시작",
   "cancel": "취소",
-  "topicInfo": "토픽 정보"
+  "topicInfo": "토픽 정보",
+  "building": "건물",
+  "floor": "층",
+  "area": "구역",
+  "selectBuilding": "건물 선택",
+  "selectFloor": "층 선택",
+  "selectArea": "구역 선택"
 }

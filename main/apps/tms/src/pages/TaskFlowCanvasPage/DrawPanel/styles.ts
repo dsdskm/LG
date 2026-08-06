@@ -32,6 +32,12 @@ export const CanvasWrapper = styled.div`
     background: rgba(var(--t-toggle-active-bg-rgb), 0.08);
     border: 1px dashed var(--t-toggle-active-bg);
   }
+
+  /* 위 사각형은 그룹 영역 전체를 덮으며 클릭을 받아(그룹 통째로 드래그) 안쪽 노드/엣지 클릭을 막는다.
+     Ctrl(⌘) 을 누르고 있는 동안에는 통과시켜, 그룹 안 노드/엣지를 개별로 선택 해제할 수 있게 한다 */
+  &[data-multiselect='true'] .react-flow__nodesselection-rect {
+    pointer-events: none;
+  }
 `
 
 export const FlowFill = styled.div`

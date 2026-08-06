@@ -76,6 +76,10 @@ export const StyledHeaderButton = styled.button`
     }
   }
 
+  &.menuToggle {
+    color: var(--color-neutral-10);
+  }
+
   &.hideOnMobile {
     @media all and (max-width: 767px) {
       display: inline-flex;
@@ -91,16 +95,6 @@ export const StyledHeaderButton = styled.button`
     align-items: center;
     gap: 0.2rem;
     color: var(--color-neutral-10);
-
-    /* 언어 지구본 아이콘은 테마 공통으로 항상 흰색 라인아트 */
-    & .icon svg circle,
-    & .icon svg path {
-      stroke: var(--color-neutral-10);
-    }
-
-    & .icon svg circle {
-      fill: none;
-    }
 
     @media all and (max-width: 767px) {
       background: rgba(0, 0, 0, 0.3);

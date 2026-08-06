@@ -43,6 +43,8 @@ function InnerCanvas() {
 
   const [selectedNodeCount, setSelectedNodeCount] = useState(0)
   const [showAlignGuideModal, setShowAlignGuideModal] = useState(false)
+  // Ctrl(⌘) 을 누르고 있는지 여부. 누르고 있는 동안에는 그룹 선택 사각형이 클릭을 통과시킨다.
+  const [multiSelectKeyDown, setMultiSelectKeyDown] = useState(false)
 
   const nodes = useFlowEditorStore((s) => s.nodes)
   const edges = useFlowEditorStore((s) => s.edges)
@@ -57,6 +59,9 @@ function InnerCanvas() {
 
   const selectNode = useFlowEditorStore((s) => s.selectNode)
   const selectEdge = useFlowEditorStore((s) => s.selectEdge)
+
+  const removeNodeFromSelection = useFlowEditorStore((s) => s.removeNodeFromSelection)
+  const removeEdgeFromSelection = useFlowEditorStore((s) => s.removeEdgeFromSelection)
 
   const applyNodesChange = useFlowEditorStore((s) => s.applyNodesChange)
   const applyEdgesChange = useFlowEditorStore((s) => s.applyEdgesChange)
@@ -112,6 +117,24 @@ function InnerCanvas() {
     if (flowMode !== 'tree') return
     useFlowEditorStore.getState().nodes.forEach((n) => updateNodeInternals(n.id))
   }, [edges, flowMode, updateNodeInternals])
+
+  // 그룹 선택이 확정되면 그룹 전체를 덮는 사각형(.react-flow__nodesselection-rect)이 생겨
+  // 그룹 안의 노드/엣지를 클릭해도 이벤트가 닿지 않는다.
+  // Ctrl(⌘) 을 누르고 있는 동안만 그 사각형을 클릭 통과 상태로 만들어 개별 선택 해제가 되게 한다.
+  useEffect(() => {
+    const syncFromEvent = (e: KeyboardEvent) => setMultiSelectKeyDown(e.ctrlKey || e.metaKey)
+    const clear = () => setMultiSelectKeyDown(false)
+
+    window.addEventListener('keydown', syncFromEvent)
+    window.addEventListener('keyup', syncFromEvent)
+    window.addEventListener('blur', clear)
+
+    return () => {
+      window.removeEventListener('keydown', syncFromEvent)
+      window.removeEventListener('keyup', syncFromEvent)
+      window.removeEventListener('blur', clear)
+    }
+  }, [])
 
   const onInit: OnInit<any, any> = useCallback(
     (instance) => {
@@ -232,7 +255,8 @@ function InnerCanvas() {
 
   const renderedEdges = useMemo(() => {
     return edges.map((e) => {
-      const isSelected = e.id === selectedEdgeId
+      // 단일 선택(selectedEdgeId) 과 박스 드래그·Ctrl 클릭으로 만든 그룹 선택(e.selected) 을 같은 강조로 표시한다.
+      const isSelected = e.selected === true || e.id === selectedEdgeId
 
       const baseStyle = {
         ...(e.style ?? {}),
@@ -290,6 +314,7 @@ function InnerCanvas() {
     <>
       <CanvasWrapper
         ref={wrapperRef}
+        data-multiselect={multiSelectKeyDown}
         onDragOver={onDragOver}
         onDrop={onDrop}
         onDragOverCapture={(e) => e.preventDefault()}
@@ -386,6 +411,8 @@ function InnerCanvas() {
           <ReactFlow
             selectionMode={SelectionMode.Partial}
             selectionOnDrag
+            // Ctrl(윈도우) / ⌘(맥) 둘 다 그룹 선택 추가·제외 키로 쓴다 (기본값은 OS 별로 하나만 잡힌다)
+            multiSelectionKeyCode={['Control', 'Meta']}
             // 드래그: 좌클릭 드래그는 박스 선택(그루핑), 휠(가운데) 버튼 드래그는 배경 이동(패닝)
             // ※ Ctrl+드래그 패닝은 React Flow(d3-zoom)가 ctrlKey 를 줌 전용으로 예약해 불가능
             panOnDrag={[1]}
@@ -419,10 +446,37 @@ function InnerCanvas() {
             }}
             onNodeClick={(evt, node) => {
               evt.stopPropagation()
+
+              // Ctrl(⌘) + 클릭 = 그룹 선택 토글. node.selected 토글은 React Flow 가 이미 처리했으므로
+              // 여기서는 "그룹에서 빠진" 경우만 잔여 단일 선택/연결 엣지를 정리한다.
+              if (evt.ctrlKey || evt.metaKey) {
+                const stillSelected = useFlowEditorStore
+                  .getState()
+                  .nodes.some((n) => String(n.id) === String(node.id) && n.selected)
+
+                if (!stillSelected) {
+                  removeNodeFromSelection(node.id)
+                  return
+                }
+              }
+
               selectNode(node.id)
             }}
             onEdgeClick={(evt, edge) => {
               evt.stopPropagation()
+
+              // 노드와 동일하게 Ctrl(⌘) + 클릭으로 그룹에서 엣지 하나만 빼낼 수 있다.
+              if (evt.ctrlKey || evt.metaKey) {
+                const stillSelected = useFlowEditorStore
+                  .getState()
+                  .edges.some((e) => String(e.id) === String(edge.id) && e.selected)
+
+                if (!stillSelected) {
+                  removeEdgeFromSelection(edge.id)
+                  return
+                }
+              }
+
               selectEdge(edge.id)
             }}
             onPaneClick={() => {

@@ -1,9 +1,14 @@
 // Javascript 모듈 import를 위한 type선언
 
 declare module '@repo/stores' {
-  export function useOrganizationStore(): any
-  export function useUserStore(): any
-  export function useResponsiveStore(): any
+  // zustand 스토어 훅: 인자 없이 호출하면 상태 전체, selector 를 넘기면 선택한 값만 반환한다.
+  type StoreHook = (selector?: (state: any) => any) => any
+
+  export const useOrganizationStore: StoreHook
+  export const useUserStore: StoreHook
+  export const useResponsiveStore: StoreHook
+  export const useRouteStore: StoreHook
+  export const useThemeStore: StoreHook
 }
 
 declare module '@repo/apis'

@@ -68,7 +68,7 @@ const Header = () => {
               type="button"
               onClick={toggleSideBar}
               aria-label="Open Sidebar"
-              className="hideOnMobile"
+              className="hideOnMobile menuToggle"
             >
               <i className="icon">
                 <SvgMenu />

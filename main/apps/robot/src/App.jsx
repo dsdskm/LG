@@ -33,6 +33,8 @@ import SvgGnbRobotList from '@repo/ui/assets/svgs/gnb_robot_list.svg'
 import SvgGnbGroup from '@repo/ui/assets/svgs/gnb_group.svg'
 import SvgGnbSupport from '@repo/ui/assets/svgs/gnb_support.svg'
 import SvgGnbUser from '@repo/ui/assets/svgs/gnb_user.svg'
+import SvgGnbMap from '@repo/ui/assets/svgs/gnb_map.svg'
+import SvgGnbSettings from '@repo/ui/assets/svgs/gnb_settings.svg'
 
 const appRoutes = [
   {
@@ -65,7 +67,7 @@ const appRoutes = [
     name: 'mapManagement',
     path: '/robot/maps',
     prefix: 'robot',
-    icon: 'map',
+    icon: SvgGnbMap,
     element: <MapManagement />,
     accessLevel: [0, 1, 2, 3],
     depth: [
@@ -134,7 +136,7 @@ const appRoutes = [
   {
     name: 'settings',
     prefix: 'settings',
-    icon: 'settings',
+    icon: SvgGnbSettings,
     accessLevel: [3, 4],
     depth: [
       {

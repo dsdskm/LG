@@ -198,13 +198,15 @@ export default function PoiPreview({ node, nodeId }: PreviewProps) {
   const data = node?.data
 
   //fixme: temporary logic
+  // dep 에 nodeId 가 있어야 한다: 이 컴포넌트는 슬롯이 다음 POI 태스크로 바뀔 때 remount 되지 않고
+  // nodeId prop 만 갈리므로, [] 로 두면 두 번째 이후 노드는 COMPLETED 를 못 받고 실행이 멈춘다.
   useEffect(() => {
     updatePlayStatus(nodeId, 'PLAYING')
     const timer = setTimeout(() => {
       updatePlayStatus(nodeId, 'COMPLETED')
     }, 1000)
     return () => clearTimeout(timer)
-  }, [])
+  }, [nodeId])
 
   const contentValue = useMemo<ContentValue | null>(() => {
     const raw = data?.contentValue

@@ -167,9 +167,7 @@ function PropertyPanel({
       {!selectedNode ? (
         <EmptyPropertyPanel />
       ) : (
-        <div
-          style={{ flex: 1, overflow: 'auto', padding: '0 4px', display: 'flex', flexDirection: 'column', gap: 12 }}
-        >
+        <div style={{ flex: 1, overflow: 'auto', padding: '0 4px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <NodeInfoSection
             viewMode="node"
             selectedData={selectedNode.data ?? {}}
@@ -193,7 +191,6 @@ function PropertyPanel({
 function ContentsPanel({ nodes, selectedNode }: { nodes: any[]; selectedNode: any | null }) {
   const [byType, setByType] = useState<Map<string, any>>(new Map())
   const addContentTask = useContentTaskStore((state) => state.addContentTask)
-  console.log('selectedNode info ', selectedNode)
 
   const triggerNodes = useMemo(() => {
     if (nodes.length > 0) return nodes
@@ -214,12 +211,14 @@ function ContentsPanel({ nodes, selectedNode }: { nodes: any[]; selectedNode: an
       return next
     })
     for (const n of triggerNodes) {
-	    if (n?.data?.contentTypeName) addContentTask({
-	      nodeId: n.id,
-	      playStatus: 'READY',
-	      current: 0,
-	      duration: 0
-	    })
+      if (n?.data?.contentTypeName) {
+        addContentTask({
+          nodeId: n.id,
+          playStatus: 'READY',
+          current: 0,
+          duration: 0
+        })
+      }
     }
   }, [triggerNodes, addContentTask])
 
@@ -247,6 +246,7 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
 
   const getPlayStatusById = useContentTaskStore((state) => state.getPlayStatusById)
   const resetAllPlayStatus = useContentTaskStore((state) => state.resetAllPlayStatus)
+  const resetContentTasks = useContentTaskStore((state) => state.reset)
 
   const wrapperRef = useRef<HTMLDivElement | null>(null)
   const rfRef = useRef<ReactFlowInstance<any, any> | null>(null)
@@ -372,7 +372,6 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
 
   const checkViaContentsStatus = (nodeId: string, defaultValue: ExecStatus) => {
     const contentStatus = getPlayStatusById(nodeId)
-    console.log('play status', contentStatus)
     let result = defaultValue
     switch (contentStatus) {
       case 'PLAYING':
@@ -617,9 +616,10 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
     setStarted(false)
     setIsPlaying(false)
     setCompiledModel(null)
-    // 정지/초기화 시 프리뷰 재생 상태도 되돌린다(다음 run 이 처음부터 재생/평가되도록)
-    resetAllPlayStatus()
-  }, [executor, resetAllPlayStatus])
+    // 정지/초기화 시 콘텐츠 task 등록 목록까지 비운다.
+    // playStatus 만 되돌리면 duration/current 와 낡은 nodeId 가 남아 다음 run 에 섞인다.
+    resetContentTasks()
+  }, [executor, resetContentTasks])
 
   // 실행기에 한 tick 요청하고 결과 스냅샷을 반영(시뮬=즉시, 로봇=결과 대기)
   const applyStep = useCallback(async () => {
@@ -739,7 +739,16 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
   useEffect(() => {
     setNodeConfigs({})
     setConfigNodeId(null)
-  }, [safeFlow])
+    // 이전 flow 의 nodeId 가 남으면 addContentTask 가 무시돼 낡은 duration 을 그대로 쓴다.
+    resetContentTasks()
+  }, [safeFlow, resetContentTasks])
+
+  // 캔버스 진입/이탈 시 콘텐츠 task 를 비운다.
+  // 전역 store 라서 정리하지 않으면 재진입 시 이전 화면의 상태를 물려받는다.
+  useEffect(() => {
+    resetContentTasks()
+    return () => resetContentTasks()
+  }, [resetContentTasks])
 
   const configNode = useMemo(() => {
     if (!configNodeId) return null
@@ -750,15 +759,21 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
   const isMobile = responsiveMode !== 'PC' ? true : false
   const [isPanelOpen, setPanelOpen] = useState(false)
 
-  const mobileSheetContent = useMemo(() => {
+  // PC 사이드 패널과 모바일 바텀시트가 같은 내용을 렌더하므로 한 곳에서 만든다.
+  // useMemo 를 쓰지 않는다: tick 마다 selectedNode/runningContentNodes 참조가 새로 생겨
+  // 어차피 매번 무효화되고, dep 누락으로 showAst/compileError 가 반영되지 않는 문제만 남는다.
+  const renderPanelContent = () => {
     if (mode === 'view') {
       return <PropertyPanel selectedNode={selectedNode} tab={propertyTab} onChangeTab={setPropertyTab} />
     }
+    // inspect 모드 + 로컬 환경 + AST 토글 ON: AST(BT) 뷰
     if (IS_LOCAL_ENV && showAst) {
       return <AstView model={compiledModel} statusById={simStatusById} startNodeId={startNodeId} error={compileError} />
     }
+    // inspect 모드 기본: 콘텐츠 프리뷰 패널
+    // key={runId} 는 run 마다 remount 해 프리뷰를 처음부터 재생시키는 장치이므로 유지해야 한다.
     return <ContentsPanel key={runId} nodes={runningContentNodes} selectedNode={selectedNode} />
-  }, [selectedNode, runId, runningContentNodes])
+  }
 
   // useEffect(() => {
   //   setPanelOpen(selectedNode)
@@ -862,15 +877,10 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
           </CanvasFlowWrap>
         </CanvasMain>
 
-        {mode === 'view' ? (
-          <PropertyPanel selectedNode={selectedNode} tab={propertyTab} onChangeTab={setPropertyTab} />
-        ) : IS_LOCAL_ENV && showAst ? (
-          // inspect 모드 + 로컬 환경 + AST 토글 ON: AST(BT) 뷰
-          <AstView model={compiledModel} statusById={simStatusById} startNodeId={startNodeId} error={compileError} />
-        ) : (
-          // inspect 모드 기본: 콘텐츠 프리뷰 패널
-          <ContentsPanel key={runId} nodes={runningContentNodes} selectedNode={selectedNode} />
-        )}
+        {/* 모바일에서는 아래 바텀시트가 같은 내용을 렌더한다.
+            CanvasRoot 가 폭만 0px 로 줄이는 방식이라 여기서 막지 않으면 패널이 두 개 마운트되고,
+            프리뷰 재생 시계·상태 보고가 이중으로 돌아 진행바가 튄다. */}
+        {!isMobile && renderPanelContent()}
       </CanvasRoot>
 
       {mode === 'inspect' && (
@@ -987,7 +997,7 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
             setPanelOpen(false)
           }}
         >
-          {mobileSheetContent}
+          {renderPanelContent()}
         </MobilePropertySheet>
       )}
 

@@ -2,7 +2,6 @@ import React, { useEffect, useState, useMemo, useRef } from 'react'
 import styled from 'styled-components'
 import { getImageNaturalSize, getSvgSize, parseMultigrid, worldToSvgPixel } from '@/utils/mapUtils'
 import { getLocalizedName } from '@/utils/robotUtils'
-import { RobotImange } from '@/assets/image'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 
@@ -57,7 +56,7 @@ const getRobotIcon = (robotState) => {
     case 'ERROR':
       return robotErrorSvg
     default:
-      return RobotImange
+      return robotStandbySvg // ← RobotImange 대신 회색 구체(sphere)로 변경
   }
 }
 
@@ -208,7 +207,12 @@ const PoiLabel = styled.div`
   color: #484848;
   white-space: nowrap;
   font-weight: 600;
-  font-family: 'LG_Smart_UI', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family:
+    'LG_Smart_UI',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
   pointer-events: none;
   background: rgba(255, 255, 255, 0.8);
   padding: 4px 8px;
@@ -228,7 +232,12 @@ const PoiTooltip = styled.div`
   padding: 8px 12px;
   border-radius: 6px;
   font-size: 12px;
-  font-family: 'LG_Smart_UI', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family:
+    'LG_Smart_UI',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
   z-index: 10000;
   pointer-events: none;
   margin-bottom: 8px;
@@ -780,9 +789,9 @@ const SiteMap = ({
                   setHoveredPoiId(poi.poiId)
                   const rect = e.currentTarget.getBoundingClientRect()
                   setPoiRect({
-                    left: rect.left + rect.width / 2,  // POI 마커 중앙
-                    top: rect.top,  // POI 마커 상단
-                    height: rect.height  // POI 마커 높이
+                    left: rect.left + rect.width / 2, // POI 마커 중앙
+                    top: rect.top, // POI 마커 상단
+                    height: rect.height // POI 마커 높이
                   })
                 }}
                 onMouseLeave={() => {
@@ -802,60 +811,64 @@ const SiteMap = ({
       )}
 
       {/* POI Tooltip Layer - Right side of POI marker */}
-      {hoveredPoiId && poiRect && poiMarkers.map((poi) => {
-        if (poi.poiId !== hoveredPoiId) return null
+      {hoveredPoiId &&
+        poiRect &&
+        poiMarkers.map((poi) => {
+          if (poi.poiId !== hoveredPoiId) return null
 
-        return (
-          <div
-            key={`tooltip-${poi.poiId}`}
-            style={{
-              position: 'fixed',
-              left: `${poiRect.left + 10}px`,
-              top: `${poiRect.top + 5}px`,
-              background: 'rgba(0, 0, 0, 0.9)',
-              color: '#ffffff',
-              padding: '8px 12px',
-              borderRadius: '6px',
-              fontSize: '12px',
-              fontFamily: "'LG_Smart_UI', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-              zIndex: 10000,
-              pointerEvents: 'none',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Name:</span>
-                <span>{getLocalizedName(poi.name, i18n.language)}</span>
+          return (
+            <div
+              key={`tooltip-${poi.poiId}`}
+              style={{
+                position: 'fixed',
+                left: `${poiRect.left + 10}px`,
+                top: `${poiRect.top + 5}px`,
+                background: 'rgba(0, 0, 0, 0.9)',
+                color: '#ffffff',
+                padding: '8px 12px',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontFamily: "'LG_Smart_UI', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+                zIndex: 10000,
+                pointerEvents: 'none',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Name:</span>
+                  <span>{getLocalizedName(poi.name, i18n.language)}</span>
+                </div>
+                {poi.x != null && poi.y != null && (
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Position:</span>
+                    <span>
+                      X: {poi.x.toFixed(2)}, Y: {poi.y.toFixed(2)}
+                    </span>
+                  </div>
+                )}
+                {poi.yawDeg != null && (
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Yaw:</span>
+                    <span>{poi.yawDeg.toFixed(1)}°</span>
+                  </div>
+                )}
+                {poi.tolerance != null && (
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Tolerance:</span>
+                    <span>{poi.tolerance.toFixed(2)}m</span>
+                  </div>
+                )}
+                {poi.properties?.description && (
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Description:</span>
+                    <span>{poi.properties.description}</span>
+                  </div>
+                )}
               </div>
-              {poi.x != null && poi.y != null && (
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Position:</span>
-                  <span>X: {poi.x.toFixed(2)}, Y: {poi.y.toFixed(2)}</span>
-                </div>
-              )}
-              {poi.yawDeg != null && (
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Yaw:</span>
-                  <span>{poi.yawDeg.toFixed(1)}°</span>
-                </div>
-              )}
-              {poi.tolerance != null && (
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Tolerance:</span>
-                  <span>{poi.tolerance.toFixed(2)}m</span>
-                </div>
-              )}
-              {poi.properties?.description && (
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Description:</span>
-                  <span>{poi.properties.description}</span>
-                </div>
-              )}
             </div>
-          </div>
-        )
-      })}
+          )
+        })}
     </Viewport>
   )
 }

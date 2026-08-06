@@ -53,6 +53,7 @@
   "close": "닫기",
   "contentFile": "콘텐츠 파일",
   "enterContent": "콘텐츠를 입력해 주세요.",
+  "enterSearchKeyword": "검색어를 입력해 주세요.",
   "copied": "복사되었습니다",
   "loadingApiDoc": "API 문서를 불러오는 중입니다...",
   "loadingFail": "API 문서를 불러오지 못했습니다.",

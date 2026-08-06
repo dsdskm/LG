@@ -1033,7 +1033,6 @@ export default function TaskFlowCanvasPage() {
             kind: item.kind,
             taskId: item.task.id,
             taskName: item.task.name,
-            taskType: item.task.taskType,
             label: item.label,
             contentId: item.content.id,
             contentName: item.content.name
@@ -1044,7 +1043,6 @@ export default function TaskFlowCanvasPage() {
           kind: item.kind,
           taskId: item.task.id,
           taskName: item.task.name,
-          taskType: item.task.taskType,
           label: item.label
         }
       })
@@ -1059,15 +1057,13 @@ export default function TaskFlowCanvasPage() {
         kind: String(item?.kind ?? '').trim(),
         taskId: Number(item?.taskId),
         taskName: String(item?.taskName ?? '').trim(),
-        taskType: String(item?.taskType ?? '').trim(),
         label: String(item?.label ?? '').trim(),
         contentId: Number.isFinite(Number(item?.contentId)) ? Number(item?.contentId) : undefined,
         contentName: String(item?.contentName ?? '').trim() || undefined
       }))
       .filter((item) => Number.isFinite(item.taskId) && item.taskId > 0 && item.label)
-      .filter((item) => String(item.taskType ?? '').trim().toUpperCase() === 'ACTION')
 
-    const taskListMap = new Map<string, { taskId: number; label: string; taskName?: string; kind?: string; taskType?: string }>()
+    const taskListMap = new Map<string, { taskId: number; label: string; taskName?: string }>()
     for (const item of addableNodes) {
       const taskId = Number(item?.taskId)
       const taskName = String(item?.taskName ?? '').trim()
@@ -1078,9 +1074,7 @@ export default function TaskFlowCanvasPage() {
       taskListMap.set(key, {
         taskId,
         label,
-        taskName: taskName || undefined,
-        kind: String(item?.kind ?? '').trim(),
-        taskType: String(item?.taskType ?? '').trim(),
+        taskName: taskName || undefined
       })
     }
 

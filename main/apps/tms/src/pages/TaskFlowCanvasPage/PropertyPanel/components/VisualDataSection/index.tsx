@@ -5,11 +5,14 @@ import ObjectPreview from './previews/ObjectPreview'
 import PoiPreview from './previews/PoiPreview'
 import SoundPreview from './previews/SoundPreview'
 import { VisualDataSectionProps } from './types'
+import { useContentTaskStore } from '@/pages/TaskFlowCanvasPage/store/useContentTaskStore'
 
 export default function VisualDataSection({ selectedData }: VisualDataSectionProps) {
   if (!selectedData) {
     return <></>
   }
+
+  const addContentTask = useContentTaskStore((state) => state.addContentTask)
 
   console.log(`VisualDataSection selectedData`, selectedData)
   const contentTypeName = selectedData.contentTypeName ?? ''
@@ -22,6 +25,13 @@ export default function VisualDataSection({ selectedData }: VisualDataSectionPro
     }
 
     if (contentTypeName === CONTENT_TYPE.MOTION) {
+      addContentTask({
+        nodeId: String(selectedData.contentId ?? ''),
+        playStatus: 'READY',
+        duration: 0,
+        current: 0
+      })
+
       return <MotionPreview node={previewNode} />
     }
 

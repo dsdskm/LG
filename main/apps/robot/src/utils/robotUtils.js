@@ -78,6 +78,7 @@ export function parseDeviceInfo(deviceinfo) {
   returnJson.version = deviceinfo.deviceFirmwareVersion
   returnJson.updateDate = deviceinfo.updatedAt
   returnJson.registerDate = deviceinfo.registeredAt
+  returnJson.deviceStateUpdatedAt = deviceinfo.deviceStateUpdatedAt
 
   returnJson.batterySoc = deviceinfo.state?.batteryState?.batteryCharge
   returnJson.batterySoh = deviceinfo.state?.batteryState?.batteryHealth

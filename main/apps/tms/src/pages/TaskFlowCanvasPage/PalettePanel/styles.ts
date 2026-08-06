@@ -59,7 +59,7 @@ export const SectionBodyPadded = styled(SectionBody)`
 
 export const ControlGrid = styled.div`
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr)); /* grid-cols-2 */
+  grid-template-columns: repeat(3, minmax(0, 1fr)); /* grid-cols-2 */
   gap: 8px; /* gap-2 */
 `
 
@@ -115,7 +115,7 @@ export const ContentBlock = styled.div`
 
 export const ContentGrid = styled.div`
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 
   border-radius: 8px; /* rounded-lg */

@@ -53,3 +53,4 @@ export { default as ServiceMenuIcon } from './layout/ServiceMenuIcon'
 export { default as AiAssistantPanel } from './layout/AiAssistantPanel'
 // pages
 export { default as LoginPage } from './pages/LoginPage'
+export { default as SemanticPage } from './pages/Semantic'

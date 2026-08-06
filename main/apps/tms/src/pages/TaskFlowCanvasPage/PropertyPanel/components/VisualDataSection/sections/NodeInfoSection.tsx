@@ -64,7 +64,8 @@ export default function NodeInfoSection({
       {infoTab === 'content' ? (
         <ContentInfoSection selectedData={selectedData} />
       ) : (
-        <TaskInfoSection selectedData={selectedData} readOnly={readOnly} />
+        /* 팔레트 미리보기는 아직 캔버스에 놓이지 않은 노드라 수정 대상이 없다(저장할 곳이 없음) */
+        <TaskInfoSection selectedData={selectedData} readOnly={readOnly || viewMode === 'palette'} />
       )}
     </>
   )

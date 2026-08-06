@@ -51,6 +51,7 @@
   "close": "閉じる",
   "contentFile": "コンテンツファイル",
   "enterContent": "コンテンツを入力してください。",
+  "enterSearchKeyword": "検索キーワードを入力してください。",
   "copied": "コピー",
   "loadingApiDoc": "APIドキュメントを読み込んでいます...",
   "loadingFail": "APIドキュメントを読み込めませんでした。",

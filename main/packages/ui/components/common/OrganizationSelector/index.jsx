@@ -216,6 +216,7 @@ const OrganizationSelector = ({
           showSearch={true}
           onChange={(val) => handleValueChange(index, val)}
           disabled={isDisabled(info, index)}
+          searchPlaceholder={t('enterSearchKeyword')}
         />
       ))}
     </DropdownContainer>
