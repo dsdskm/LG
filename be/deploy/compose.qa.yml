@@ -35,7 +35,7 @@ x-app-common: &app-common
   environment: &svc-urls
     NODE_ENV: production
     AWS_DEFAULT_REGION: ap-northeast-2
-    CORS_ALLOWED_ORIGINS: "https://dev.hcrsp.com,https://qa.hcrsp.com"
+    CORS_ALLOWED_ORIGINS: "https://dev.hcrsp.com,https://qa.hcrsp.com,http://localhost:5173,http://127.0.0.1:5173"
     # 관리용 DB import 토큰(ADMIN_SEED_TOKEN)은 시크릿이라 .env 로 주입한다.
     # (environment 블록은 .env 보다 우선하므로 여기 두지 않는다.)
     URL_CONFIG_MANAGER: http://config_manager:3008

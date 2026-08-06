@@ -22,6 +22,10 @@ function buildAllowedOrigins(...ports: number[]) {
   return Array.from(new Set([...localOrigins, ...envOrigins]));
 }
 
+function isLocalDevOrigin(origin: string) {
+  return /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+}
+
 async function bootstrap() {
   const logger = new Logger("Main");
   const app = await NestFactory.create(AppModule);
@@ -38,7 +42,27 @@ async function bootstrap() {
     yamlDocumentUrl: "docs-yaml",
   });
 
-  app.enableCors({ origin: true, credentials: true });
+  const allowedOrigins = buildAllowedOrigins(5173, 4173, 8080);
+  app.enableCors({
+    origin: (origin, callback) => {
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+
+      if (allowedOrigins.includes(origin) || isLocalDevOrigin(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      logger.warn(`Blocked CORS origin: ${origin}`);
+      callback(null, false);
+    },
+    credentials: true,
+    methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+    optionsSuccessStatus: 204,
+  });
 
   const port = Number(process.env.PORT_EVENT_ANALYZER ?? 3002);
   await app.listen(port, '0.0.0.0');
