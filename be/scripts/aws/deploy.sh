@@ -132,13 +132,38 @@ log "이미지 교체 배포"
 
 REMOTE_CMD="set -e;
 cd ${APP_DIR};
-aws ecr get-login-password --region ${AWS_REGION} | sudo docker login --username AWS --password-stdin ${ECR_REGISTRY};
-sudo docker pull ${IMAGE_REMOTE};
-cid=\$(sudo docker create ${IMAGE_REMOTE});
-sudo docker cp \$cid:/opt/app/compose.qa.yml ${COMPOSE_FILE};
-sudo docker rm \$cid;
-sudo docker compose -p ${COMPOSE_PROJECT_NAME} --env-file ${ENV_FILE} -f ${COMPOSE_FILE} up -d;
-sudo docker image prune -f;"
+SUDO='';
+if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+    SUDO='sudo';
+fi;
+if [ -n \"\$SUDO\" ]; then
+    DOCKER='sudo docker';
+else
+    DOCKER='docker';
+fi;
+if ! \$DOCKER info >/dev/null 2>&1; then
+    echo '[ERROR] Docker daemon 접근 실패. (sudo 권한/daemon 상태 확인 필요)';
+    exit 1;
+fi;
+if \$DOCKER compose version >/dev/null 2>&1; then
+    COMPOSE=\"\$DOCKER compose\";
+elif command -v docker-compose >/dev/null 2>&1; then
+    if [ -n \"\$SUDO\" ]; then
+        COMPOSE='sudo docker-compose';
+    else
+        COMPOSE='docker-compose';
+    fi;
+else
+    echo '[ERROR] docker compose / docker-compose 를 찾지 못했습니다.';
+    exit 1;
+fi;
+aws ecr get-login-password --region ${AWS_REGION} | \$DOCKER login --username AWS --password-stdin ${ECR_REGISTRY};
+\$DOCKER pull ${IMAGE_REMOTE};
+cid=\$(\$DOCKER create ${IMAGE_REMOTE});
+\$DOCKER cp \$cid:/opt/app/compose.qa.yml ${COMPOSE_FILE};
+\$DOCKER rm \$cid;
+\$COMPOSE -p ${COMPOSE_PROJECT_NAME} --env-file ${ENV_FILE} -f ${COMPOSE_FILE} up -d;
+\$DOCKER image prune -f;"
 
 CMD_ID=$(aws ssm send-command \
     --instance-ids "$INSTANCE_ID" \

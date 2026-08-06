@@ -114,15 +114,46 @@ fi
 
 cd "\$APP_DIR"
 
+SUDO=""
+if command -v sudo >/dev/null 2>&1; then
+    if sudo -n true >/dev/null 2>&1; then
+        SUDO="sudo"
+    fi
+fi
+
+if [[ -n "\$SUDO" ]]; then
+    DOCKER_CMD=(sudo docker)
+else
+    DOCKER_CMD=(docker)
+fi
+
+if ! "\${DOCKER_CMD[@]}" info >/dev/null 2>&1; then
+    echo "[ERROR] Docker daemon 접근 실패. (sudo 권한/daemon 상태 확인 필요)"
+    exit 1
+fi
+
+if "\${DOCKER_CMD[@]}" compose version >/dev/null 2>&1; then
+    COMPOSE_CMD=("\${DOCKER_CMD[@]}" compose)
+elif command -v docker-compose >/dev/null 2>&1; then
+    if [[ -n "\$SUDO" ]]; then
+        COMPOSE_CMD=(sudo docker-compose)
+    else
+        COMPOSE_CMD=(docker-compose)
+    fi
+else
+    echo "[ERROR] docker compose / docker-compose 를 찾지 못했습니다."
+    exit 1
+fi
+
 echo "--- docker compose ps ---"
-sudo docker compose -p "\$COMPOSE_PROJECT_NAME" -f "\$COMPOSE_FILE" ps || true
+"\${COMPOSE_CMD[@]}" -p "\$COMPOSE_PROJECT_NAME" -f "\$COMPOSE_FILE" ps || true
 echo
 
 echo "--- container health/status ---"
 
 fail=0
 
-containers=\$(sudo docker ps -a \
+containers=\$("\${DOCKER_CMD[@]}" ps -a \
     --filter "label=com.docker.compose.project=\$COMPOSE_PROJECT_NAME" \
     --format '{{.Names}}')
 
@@ -130,21 +161,21 @@ if [[ -z "\$containers" ]]; then
     echo "[ERROR] compose project container not found: \$COMPOSE_PROJECT_NAME"
     echo
     echo "--- all containers ---"
-    sudo docker ps -a
+    "\${DOCKER_CMD[@]}" ps -a
     exit 1
 fi
 
 for c in \$containers; do
-    running=\$(sudo docker inspect --format='{{.State.Running}}' "\$c")
-    status=\$(sudo docker inspect --format='{{.State.Status}}' "\$c")
-    health=\$(sudo docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "\$c")
+    running=\$("\${DOCKER_CMD[@]}" inspect --format='{{.State.Running}}' "\$c")
+    status=\$("\${DOCKER_CMD[@]}" inspect --format='{{.State.Status}}' "\$c")
+    health=\$("\${DOCKER_CMD[@]}" inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "\$c")
 
     if [[ "\$running" == "true" ]] && { [[ "\$health" == "healthy" ]] || [[ "\$health" == "no-healthcheck" ]]; }; then
         printf '[ OK ] %-45s status=%s health=%s\n' "\$c" "\$status" "\$health"
     else
         printf '[FAIL] %-45s status=%s health=%s\n' "\$c" "\$status" "\$health"
         echo "----- recent logs: \$c -----"
-        sudo docker logs --tail 50 "\$c" 2>&1 || true
+        "\${DOCKER_CMD[@]}" logs --tail 50 "\$c" 2>&1 || true
         echo "--------------------------------"
         fail=1
     fi
