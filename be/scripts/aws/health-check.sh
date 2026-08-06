@@ -39,20 +39,50 @@ fi
 # 대상 EC2 조회
 # =========================================================
 
-log "ASG($ASG_NAME) 의 InService 인스턴스 조회 중..."
+log "ASG($ASG_NAME) 의 InService+Healthy 인스턴스 조회 중..."
 
-INSTANCE_ID=$(aws autoscaling describe-auto-scaling-groups \
+read -r -a CANDIDATE_INSTANCE_IDS <<<"$(aws autoscaling describe-auto-scaling-groups \
     --auto-scaling-group-names "$ASG_NAME" \
     --region "$AWS_REGION" \
-    --query "AutoScalingGroups[0].Instances[?LifecycleState=='InService'].InstanceId | [0]" \
-    --output text)
+    --query "AutoScalingGroups[0].Instances[?LifecycleState=='InService' && HealthStatus=='Healthy'].InstanceId" \
+    --output text)"
 
-if [[ -z "$INSTANCE_ID" || "$INSTANCE_ID" == "None" ]]; then
-    err "InService 인스턴스를 찾지 못했습니다."
+if [[ ${#CANDIDATE_INSTANCE_IDS[@]} -eq 0 || "${CANDIDATE_INSTANCE_IDS[0]}" == "None" ]]; then
+    err "InService + Healthy 인스턴스를 찾지 못했습니다."
     exit 1
 fi
 
-ok "대상 인스턴스: $INSTANCE_ID"
+VALID_INSTANCE_IDS=()
+for candidate in "${CANDIDATE_INSTANCE_IDS[@]}"; do
+    [[ -z "$candidate" || "$candidate" == "None" ]] && continue
+
+    INSTANCE_STATE=$(aws ec2 describe-instances \
+        --instance-ids "$candidate" \
+        --region "$AWS_REGION" \
+        --query "Reservations[0].Instances[0].State.Name" \
+        --output text 2>/dev/null || true)
+
+    SSM_PING_STATUS=$(aws ssm describe-instance-information \
+        --region "$AWS_REGION" \
+        --filters "Key=InstanceIds,Values=$candidate" \
+        --query "InstanceInformationList[0].PingStatus" \
+        --output text 2>/dev/null || true)
+
+    if [[ "$INSTANCE_STATE" == "running" && "$SSM_PING_STATUS" == "Online" ]]; then
+        VALID_INSTANCE_IDS+=("$candidate")
+        continue
+    fi
+
+    warn "후보 제외: $candidate (state=${INSTANCE_STATE:-unknown}, ssm=${SSM_PING_STATUS:-unknown})"
+done
+
+if [[ ${#VALID_INSTANCE_IDS[@]} -eq 0 ]]; then
+    err "헬스체크 가능한 인스턴스를 찾지 못했습니다. (조건: state=running, ssm=Online)"
+    exit 1
+fi
+
+ok "VM 점검 대상 인스턴스 수: ${#VALID_INSTANCE_IDS[@]}"
+ok "VM 점검 대상: ${VALID_INSTANCE_IDS[*]}"
 
 # =========================================================
 # 1. VM 내부 Docker 컨테이너 체크
@@ -124,69 +154,70 @@ EOF
 REMOTE_SCRIPT_B64=$(printf "%s" "$REMOTE_SCRIPT" | base64 | tr -d '\n')
 REMOTE_CMD="echo '$REMOTE_SCRIPT_B64' | base64 -d | bash"
 
-PARAM_FILE=$(mktemp)
-cat > "$PARAM_FILE" <<EOF
-{
-  "commands": [
-    "$REMOTE_CMD"
-  ]
-}
-EOF
-
 CMD_ID=$(aws ssm send-command \
-    --instance-ids "$INSTANCE_ID" \
+    --instance-ids "${VALID_INSTANCE_IDS[@]}" \
     --document-name "AWS-RunShellScript" \
-    --parameters "file://$PARAM_FILE" \
+        --parameters "commands=$REMOTE_CMD" \
     --region "$AWS_REGION" \
     --query "Command.CommandId" \
     --output text)
 
-rm -f "$PARAM_FILE"
-
 log "SSM CommandId=$CMD_ID"
 
-aws ssm wait command-executed \
-    --command-id "$CMD_ID" \
-    --instance-id "$INSTANCE_ID" \
-    --region "$AWS_REGION" \
-    2>/dev/null || true
+VM_FAIL=0
+for target in "${VALID_INSTANCE_IDS[@]}"; do
+    aws ssm wait command-executed \
+        --command-id "$CMD_ID" \
+        --instance-id "$target" \
+        --region "$AWS_REGION" \
+        2>/dev/null || true
 
-DOCKER_STATUS=$(aws ssm get-command-invocation \
-    --command-id "$CMD_ID" \
-    --instance-id "$INSTANCE_ID" \
-    --region "$AWS_REGION" \
-    --query "Status" \
-    --output text)
+    DOCKER_STATUS=$(aws ssm get-command-invocation \
+        --command-id "$CMD_ID" \
+        --instance-id "$target" \
+        --region "$AWS_REGION" \
+        --query "Status" \
+        --output text)
 
-DOCKER_STDOUT=$(aws ssm get-command-invocation \
-    --command-id "$CMD_ID" \
-    --instance-id "$INSTANCE_ID" \
-    --region "$AWS_REGION" \
-    --query "StandardOutputContent" \
-    --output text)
+    DOCKER_STDOUT=$(aws ssm get-command-invocation \
+        --command-id "$CMD_ID" \
+        --instance-id "$target" \
+        --region "$AWS_REGION" \
+        --query "StandardOutputContent" \
+        --output text)
 
-DOCKER_STDERR=$(aws ssm get-command-invocation \
-    --command-id "$CMD_ID" \
-    --instance-id "$INSTANCE_ID" \
-    --region "$AWS_REGION" \
-    --query "StandardErrorContent" \
-    --output text)
+    DOCKER_STDERR=$(aws ssm get-command-invocation \
+        --command-id "$CMD_ID" \
+        --instance-id "$target" \
+        --region "$AWS_REGION" \
+        --query "StandardErrorContent" \
+        --output text)
 
-echo "$DOCKER_STDOUT"
-
-if [[ -n "$DOCKER_STDERR" && "$DOCKER_STDERR" != "None" ]]; then
     echo
-    echo "─── STDERR ───────────────────────────────"
-    echo "$DOCKER_STDERR"
-fi
+    echo "--- INSTANCE: $target ---"
+    echo "$DOCKER_STDOUT"
 
-if [[ "$DOCKER_STATUS" != "Success" ]]; then
+    if [[ -n "$DOCKER_STDERR" && "$DOCKER_STDERR" != "None" ]]; then
+        echo
+        echo "─── STDERR ($target) ─────────────────────"
+        echo "$DOCKER_STDERR"
+    fi
+
+    if [[ "$DOCKER_STATUS" != "Success" ]]; then
+        VM_FAIL=1
+        err "VM 내부 Docker 컨테이너 체크 실패: $target (Status=$DOCKER_STATUS)"
+    else
+        ok "VM 내부 Docker 컨테이너 정상: $target"
+    fi
+done
+
+if [[ "$VM_FAIL" != "0" ]]; then
     echo
-    err "VM 내부 Docker 컨테이너 체크 실패. 외부 헬스체크는 수행하지 않습니다."
+    err "VM 내부 Docker 컨테이너 체크 실패 인스턴스가 있어 외부 헬스체크를 수행하지 않습니다."
     exit 1
 fi
 
-ok "VM 내부 Docker 컨테이너 정상"
+ok "VM 내부 Docker 컨테이너 정상 (${#VALID_INSTANCE_IDS[@]}대)"
 
 # =========================================================
 # 2. 외부 ALB Health Check

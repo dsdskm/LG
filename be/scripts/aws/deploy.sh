@@ -47,21 +47,56 @@ docker push "$IMAGE_REMOTE"
 ok "푸시 완료"
 
 # --------------------------------------------------------
-# 현재 인스턴스 조회
+# 현재 인스턴스 조회 (SSM 실행 가능한 인스턴스 선택)
 # --------------------------------------------------------
 
-INSTANCE_ID=$(aws autoscaling describe-auto-scaling-groups \
-    --auto-scaling-group-names "$ASG_NAME" \
-    --region "$AWS_REGION" \
-    --query "AutoScalingGroups[0].Instances[?LifecycleState=='InService'].InstanceId | [0]" \
-    --output text)
+read -r -a CANDIDATE_INSTANCE_IDS <<<"$(
+    aws autoscaling describe-auto-scaling-groups \
+        --auto-scaling-group-names "$ASG_NAME" \
+        --region "$AWS_REGION" \
+        --query "AutoScalingGroups[0].Instances[?LifecycleState=='InService' && HealthStatus=='Healthy'].InstanceId" \
+        --output text
+)"
 
-if [[ -z "$INSTANCE_ID" || "$INSTANCE_ID" == "None" ]]; then
-    err "InService 인스턴스를 찾지 못했습니다."
+if [[ ${#CANDIDATE_INSTANCE_IDS[@]} -eq 0 || "${CANDIDATE_INSTANCE_IDS[0]}" == "None" ]]; then
+    err "InService + Healthy 인스턴스를 찾지 못했습니다."
     exit 1
 fi
 
-ok "대상 인스턴스: $INSTANCE_ID"
+VALID_INSTANCE_IDS=()
+for candidate in "${CANDIDATE_INSTANCE_IDS[@]}"; do
+    [[ -z "$candidate" || "$candidate" == "None" ]] && continue
+
+    INSTANCE_STATE=$(aws ec2 describe-instances \
+        --instance-ids "$candidate" \
+        --region "$AWS_REGION" \
+        --query "Reservations[0].Instances[0].State.Name" \
+        --output text 2>/dev/null || true)
+
+    SSM_PING_STATUS=$(aws ssm describe-instance-information \
+        --region "$AWS_REGION" \
+        --filters "Key=InstanceIds,Values=$candidate" \
+        --query "InstanceInformationList[0].PingStatus" \
+        --output text 2>/dev/null || true)
+
+    if [[ "$INSTANCE_STATE" == "running" && "$SSM_PING_STATUS" == "Online" ]]; then
+        VALID_INSTANCE_IDS+=("$candidate")
+        continue
+    fi
+
+    warn "후보 제외: $candidate (state=${INSTANCE_STATE:-unknown}, ssm=${SSM_PING_STATUS:-unknown})"
+done
+
+if [[ ${#VALID_INSTANCE_IDS[@]} -eq 0 ]]; then
+    err "SSM 실행 가능한 인스턴스를 찾지 못했습니다. (조건: state=running, ssm=Online)"
+    err "ASG=${ASG_NAME} 의 인스턴스 상태/SSM 에이전트를 확인하세요."
+    exit 1
+fi
+
+INSTANCE_ID="${VALID_INSTANCE_IDS[0]}"
+
+ok "배포 대상 인스턴스 수: ${#VALID_INSTANCE_IDS[@]}"
+ok "배포 대상: ${VALID_INSTANCE_IDS[*]}"
 
 # --------------------------------------------------------
 # instance 모드
@@ -99,7 +134,7 @@ sudo docker compose -p ${COMPOSE_PROJECT_NAME} --env-file ${ENV_FILE} -f ${COMPO
 sudo docker image prune -f;"
 
 CMD_ID=$(aws ssm send-command \
-    --instance-ids "$INSTANCE_ID" \
+    --instance-ids "${VALID_INSTANCE_IDS[@]}" \
     --document-name "AWS-RunShellScript" \
     --parameters "commands=[\"$REMOTE_CMD\"]" \
     --region "$AWS_REGION" \
@@ -108,22 +143,32 @@ CMD_ID=$(aws ssm send-command \
 
 log "SSM CommandId=$CMD_ID"
 
-aws ssm wait command-executed \
-    --command-id "$CMD_ID" \
-    --instance-id "$INSTANCE_ID" \
-    --region "$AWS_REGION" \
-    2>/dev/null || true
+FAILED_INSTANCES=()
+for target in "${VALID_INSTANCE_IDS[@]}"; do
+    aws ssm wait command-executed \
+        --command-id "$CMD_ID" \
+        --instance-id "$target" \
+        --region "$AWS_REGION" \
+        2>/dev/null || true
 
-STATUS=$(aws ssm get-command-invocation \
-    --command-id "$CMD_ID" \
-    --instance-id "$INSTANCE_ID" \
-    --region "$AWS_REGION" \
-    --query 'Status' \
-    --output text)
+    STATUS=$(aws ssm get-command-invocation \
+        --command-id "$CMD_ID" \
+        --instance-id "$target" \
+        --region "$AWS_REGION" \
+        --query 'Status' \
+        --output text)
 
-if [[ "$STATUS" == "Success" ]]; then
-    ok "이미지 교체 완료"
-else
-    err "배포 실패 (Status=$STATUS)"
+    if [[ "$STATUS" == "Success" ]]; then
+        ok "배포 성공: $target"
+    else
+        err "배포 실패: $target (Status=$STATUS)"
+        FAILED_INSTANCES+=("$target:$STATUS")
+    fi
+done
+
+if [[ ${#FAILED_INSTANCES[@]} -gt 0 ]]; then
+    err "일부 인스턴스 배포 실패: ${FAILED_INSTANCES[*]}"
     exit 1
 fi
+
+ok "이미지 교체 완료 (${#VALID_INSTANCE_IDS[@]}대)"
