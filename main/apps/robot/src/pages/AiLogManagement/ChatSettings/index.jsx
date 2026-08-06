@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   createCommonChatScreenTool,
   createChatGuidance,
+  getChatHistory,
   createChatPrompt,
   createChatRagDoc,
   createChatScreenTool,
@@ -135,6 +136,7 @@ const ChatSettings = () => {
   const [draftProvider, setDraftProvider] = useState('')
 
   const [management, setManagement] = useState(EMPTY_MANAGEMENT)
+  const [settingDrafts, setSettingDrafts] = useState({})
   const [commonPromptDraft, setCommonPromptDraft] = useState({
     label: '공통 프롬프트',
     content: '',
@@ -143,6 +145,11 @@ const ChatSettings = () => {
   const [commonIntentPromptDraft, setCommonIntentPromptDraft] = useState({
     label: '공통 분기 프롬프트',
     content: INTENT_HINT_PROMPT_TEMPLATE,
+    enabled: true,
+  })
+  const [commonInputHintPromptDraft, setCommonInputHintPromptDraft] = useState({
+    label: '공통 입력 힌트',
+    content: '현재 화면에 대해 질문해 보세요.',
     enabled: true,
   })
   const [newCommonInfoRagDraft, setNewCommonInfoRagDraft] = useState({
@@ -168,12 +175,23 @@ const ChatSettings = () => {
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyPagination, setHistoryPagination] = useState({
+    page: 1,
+    pageSize: 20,
+    total: 0,
+    totalPages: 1,
+    hasNext: false,
+    hasPrev: false,
+  })
 
   const [saving, setSaving] = useState(false)
+  const [savingSettingScope, setSavingSettingScope] = useState('')
   const [savingPromptKey, setSavingPromptKey] = useState('')
   const [creatingPromptRouteKey, setCreatingPromptRouteKey] = useState('')
   const [savingCommonPrompt, setSavingCommonPrompt] = useState(false)
   const [savingCommonIntentPrompt, setSavingCommonIntentPrompt] = useState(false)
+  const [savingCommonInputHintPrompt, setSavingCommonInputHintPrompt] = useState(false)
   const [savingGuidanceKey, setSavingGuidanceKey] = useState('')
   const [creatingGuidanceRouteKey, setCreatingGuidanceRouteKey] = useState('')
   const [savingRagKey, setSavingRagKey] = useState('')
@@ -189,6 +207,63 @@ const ChatSettings = () => {
   const [savedOpen, setSavedOpen] = useState(false)
   const [savedMessage, setSavedMessage] = useState('')
 
+  const loadHistoryPage = useCallback(async (page = 1, pageSize = 20) => {
+    setHistoryLoading(true)
+    try {
+      const res = await getChatHistory({ page, pageSize })
+      const data = res?.data ?? {}
+      const items = Array.isArray(data?.items) ? data.items : []
+      const pagination = data?.pagination && typeof data.pagination === 'object' ? data.pagination : {}
+      const itemIds = items
+        .map((item) => Number(item?.id ?? 0))
+        .filter((id) => Number.isFinite(id) && id > 0)
+
+      console.info('[chat-settings][history:list]', {
+        request: { page, pageSize },
+        response: {
+          page: Number(pagination.page ?? page) || 1,
+          pageSize: Number(pagination.pageSize ?? pageSize) || pageSize,
+          total: Number(pagination.total ?? 0) || 0,
+          totalPages: Math.max(1, Number(pagination.totalPages ?? 1) || 1),
+          hasNext: Boolean(pagination.hasNext),
+          hasPrev: Boolean(pagination.hasPrev),
+          returned: items.length,
+        },
+        ids: itemIds,
+        items,
+      })
+
+      setManagement((prev) => ({
+        ...prev,
+        history: items,
+      }))
+      setHistoryPagination({
+        page: Number(pagination.page ?? page) || 1,
+        pageSize: Number(pagination.pageSize ?? pageSize) || pageSize,
+        total: Number(pagination.total ?? 0) || 0,
+        totalPages: Math.max(1, Number(pagination.totalPages ?? 1) || 1),
+        hasNext: Boolean(pagination.hasNext),
+        hasPrev: Boolean(pagination.hasPrev),
+      })
+    } catch (error) {
+      console.warn('[chat-settings][history:list] failed', {
+        request: { page, pageSize },
+        error,
+      })
+      setManagement((prev) => ({
+        ...prev,
+        history: [],
+      }))
+      setHistoryPagination((prev) => ({
+        ...prev,
+        page,
+        pageSize,
+      }))
+    } finally {
+      setHistoryLoading(false)
+    }
+  }, [])
+
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
@@ -199,6 +274,7 @@ const ChatSettings = () => {
 
       setSchema(Array.isArray(data.schema) ? data.schema : [])
       setValues(data.values ?? {})
+      setSettingDrafts({})
       setDraftProvider(String(data.values?.llmProvider ?? 'azure'))
 
       const nextManagement = data.management ?? EMPTY_MANAGEMENT
@@ -240,6 +316,15 @@ const ChatSettings = () => {
         label: String(nextCommonIntentPrompt?.label ?? '공통 분기 프롬프트'),
         content: String(nextCommonIntentPrompt?.content ?? '') || INTENT_HINT_PROMPT_TEMPLATE,
         enabled: nextCommonIntentPrompt?.enabled !== false,
+      })
+
+      const nextCommonInputHintPrompt = normalizedManagement.prompts.find(
+        (item) => String(item?.key ?? '') === 'common' && String(item?.promptType ?? item?.category ?? '').toLowerCase() === 'input-hint'
+      )
+      setCommonInputHintPromptDraft({
+        label: String(nextCommonInputHintPrompt?.label ?? '공통 입력 힌트'),
+        content: String(nextCommonInputHintPrompt?.content ?? '') || '현재 화면에 대해 질문해 보세요.',
+        enabled: nextCommonInputHintPrompt?.enabled !== false,
       })
 
       setPromptDrafts(
@@ -320,6 +405,11 @@ const ChatSettings = () => {
     load()
   }, [load])
 
+  useEffect(() => {
+    if (activeAppTab !== APP_TAB.HISTORY) return
+    loadHistoryPage(historyPagination.page, historyPagination.pageSize)
+  }, [activeAppTab, loadHistoryPage, historyPagination.page, historyPagination.pageSize])
+
   const providerItem = useMemo(() => schema.find((s) => s.key === 'llmProvider'), [schema])
 
   const commonPromptItem = useMemo(
@@ -338,6 +428,16 @@ const ChatSettings = () => {
         (item) =>
           String(item?.key ?? '') === 'common' &&
           String(item?.promptType ?? item?.category ?? '').toLowerCase() === 'intent-hint'
+      ) ?? null,
+    [management.prompts]
+  )
+
+  const commonInputHintPromptItem = useMemo(
+    () =>
+      management.prompts.find(
+        (item) =>
+          String(item?.key ?? '') === 'common' &&
+          String(item?.promptType ?? item?.category ?? '').toLowerCase() === 'input-hint'
       ) ?? null,
     [management.prompts]
   )
@@ -458,6 +558,40 @@ const ChatSettings = () => {
     }))
   }, [])
 
+  const handleCommonInputHintPromptChange = useCallback((field, nextValue) => {
+    setCommonInputHintPromptDraft((prev) => ({
+      ...prev,
+      [field]: nextValue,
+    }))
+  }, [])
+
+  const handleSettingDraftChange = useCallback((key, nextValue) => {
+    setSettingDrafts((prev) => ({
+      ...prev,
+      [key]: nextValue,
+    }))
+  }, [])
+
+  const handleSaveSettingGroup = useCallback(async (scopeKey, settings, successMessage) => {
+    setSavingSettingScope(String(scopeKey ?? ''))
+    setError('')
+
+    try {
+      const res = await updateChatSettings({ settings })
+      const next = res?.data?.values ?? {}
+      setValues(next)
+      setSavedMessage(String(successMessage ?? '설정이 저장되었습니다.'))
+      setSavedOpen(true)
+      await load()
+      return true
+    } catch (e) {
+      setError(e?.message || '설정 저장에 실패했습니다.')
+      return false
+    } finally {
+      setSavingSettingScope('')
+    }
+  }, [load])
+
   const handleSaveCommonIntentPrompt = useCallback(async () => {
     setSavingCommonIntentPrompt(true)
     setError('')
@@ -498,6 +632,47 @@ const ChatSettings = () => {
       setSavingCommonIntentPrompt(false)
     }
   }, [commonIntentPromptDraft, commonIntentPromptItem, load])
+
+  const handleSaveCommonInputHintPrompt = useCallback(async () => {
+    setSavingCommonInputHintPrompt(true)
+    setError('')
+
+    try {
+      if (commonInputHintPromptItem?.id) {
+        const res = await updateChatPrompt(commonInputHintPromptItem.id, {
+          label: String(commonInputHintPromptDraft.label ?? ''),
+          content: String(commonInputHintPromptDraft.content ?? ''),
+          enabled: Boolean(commonInputHintPromptDraft.enabled),
+        })
+        const next = res?.data ?? {}
+        setSavedMessage(`${String(next.label ?? '공통 입력 힌트')}가 저장되었습니다.`)
+      } else {
+        const res = await createChatPrompt({
+          appKey: 'common',
+          key: 'common',
+          routeKey: 'common',
+          promptType: 'input-hint',
+          label: String(commonInputHintPromptDraft.label ?? '공통 입력 힌트'),
+          content: String(commonInputHintPromptDraft.content ?? ''),
+          enabled: Boolean(commonInputHintPromptDraft.enabled),
+        })
+
+        if (Number(res?.code ?? 0) !== 200) {
+          throw new Error(String(res?.message ?? '공통 입력 힌트 생성 응답이 올바르지 않습니다.'))
+        }
+
+        const next = res?.data ?? {}
+        setSavedMessage(`${String(next.label ?? '공통 입력 힌트')}가 생성되었습니다.`)
+      }
+
+      setSavedOpen(true)
+      await load()
+    } catch (e) {
+      setError(e?.message || '공통 입력 힌트 저장에 실패했습니다.')
+    } finally {
+      setSavingCommonInputHintPrompt(false)
+    }
+  }, [commonInputHintPromptDraft, commonInputHintPromptItem, load])
 
   const handlePromptChange = useCallback((key, field, nextValue) => {
     setPromptDrafts((prev) => ({
@@ -1154,11 +1329,15 @@ const ChatSettings = () => {
             <CommonSettingsTab
               providerItem={providerItem}
               values={values}
+              settingDrafts={settingDrafts}
               draftProvider={draftProvider}
               setDraftProvider={setDraftProvider}
               isDirty={isDirty}
               saving={saving}
+              savingSettingScope={savingSettingScope}
               onSaveProvider={handleSaveProvider}
+              onSettingDraftChange={handleSettingDraftChange}
+              onSaveSettingGroup={handleSaveSettingGroup}
               commonPromptItem={commonPromptItem}
               commonPromptDraft={commonPromptDraft}
               savingCommonPrompt={savingCommonPrompt}
@@ -1169,6 +1348,11 @@ const ChatSettings = () => {
               savingCommonIntentPrompt={savingCommonIntentPrompt}
               onCommonIntentPromptChange={handleCommonIntentPromptChange}
               onSaveCommonIntentPrompt={handleSaveCommonIntentPrompt}
+              commonInputHintPromptItem={commonInputHintPromptItem}
+              commonInputHintPromptDraft={commonInputHintPromptDraft}
+              savingCommonInputHintPrompt={savingCommonInputHintPrompt}
+              onCommonInputHintPromptChange={handleCommonInputHintPromptChange}
+              onSaveCommonInputHintPrompt={handleSaveCommonInputHintPrompt}
               commonRagDocs={commonRagDocs}
               ragDrafts={ragDrafts}
               savingRagKey={savingRagKey}
@@ -1199,8 +1383,11 @@ const ChatSettings = () => {
             <HistoryTab
               history={management.history}
               ragDocs={management.ragDocs}
-              onRefresh={load}
-              refreshing={loading}
+              onRefresh={() => loadHistoryPage(historyPagination.page, historyPagination.pageSize)}
+              refreshing={historyLoading}
+              pagination={historyPagination}
+              onChangePage={(nextPage) => loadHistoryPage(nextPage, historyPagination.pageSize)}
+              onChangePageSize={(nextPageSize) => loadHistoryPage(1, nextPageSize)}
             />
           ) : null}
 
@@ -1218,6 +1405,9 @@ const ChatSettings = () => {
               <AppScreenSettingsTab
                 appKey={activeAppTab}
                 activeRouteKey={activeRouteKey}
+                values={values}
+                settingDrafts={settingDrafts}
+                savingSettingScope={savingSettingScope}
                 screenGroups={screenGroups}
                 commonRagDocs={commonRagDocs}
                 commonTools={commonTools}
@@ -1226,6 +1416,8 @@ const ChatSettings = () => {
                 commonPromptDraft={commonPromptDraft}
                 commonIntentPromptItem={commonIntentPromptItem}
                 commonIntentPromptDraft={commonIntentPromptDraft}
+                commonInputHintPromptItem={commonInputHintPromptItem}
+                commonInputHintPromptDraft={commonInputHintPromptDraft}
                 allPrompts={management.prompts}
                 actionTypes={screenActionTypes}
                 promptDrafts={promptDrafts}
@@ -1241,6 +1433,8 @@ const ChatSettings = () => {
                 savingCreateRag={savingCreateScreenRag}
                 savingCreateTool={savingCreateScreenTool}
                 savingToolKey={savingToolKey}
+                onSettingDraftChange={handleSettingDraftChange}
+                onSaveSettingGroup={handleSaveSettingGroup}
                 onPromptChange={handlePromptChange}
                 onSavePrompt={handleSavePrompt}
                 onCreatePrompt={handleCreatePrompt}

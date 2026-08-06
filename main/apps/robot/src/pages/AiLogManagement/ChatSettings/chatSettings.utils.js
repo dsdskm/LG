@@ -5,7 +5,19 @@ export const formatDateTime = (value) => {
 
     if (Number.isNaN(date.getTime())) return String(value)
 
-    return date.toLocaleString('ko-KR')
+    try {
+        return date.toLocaleString('ko-KR', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false,
+        })
+    } catch {
+        return date.toLocaleString('ko-KR')
+    }
 }
 
 export const getPromptDraft = (drafts, item) => {

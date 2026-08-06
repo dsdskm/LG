@@ -23,6 +23,24 @@ export type ChatLogListQuery = {
   conversationId?: string
 }
 
+export type ChatLogPageQuery = {
+  page?: number
+  pageSize?: number
+  currentApp?: string
+  author?: string
+  conversationId?: string
+}
+
+export type ChatLogPageResult = {
+  items: ChatLogEntity[]
+  page: number
+  pageSize: number
+  total: number
+  totalPages: number
+  hasNext: boolean
+  hasPrev: boolean
+}
+
 @Injectable()
 export class ChatLogService {
   private readonly logger = new Logger(ChatLogService.name)
@@ -56,9 +74,22 @@ export class ChatLogService {
 
   async list(query: ChatLogListQuery = {}): Promise<ChatLogEntity[]> {
     const limit = Number.isFinite(query.limit) ? Math.max(1, Math.min(200, Number(query.limit))) : 50
+    const pageResult = await this.listPage({
+      page: 1,
+      pageSize: limit,
+      currentApp: query.currentApp,
+      author: query.author,
+      conversationId: query.conversationId,
+    })
+    return pageResult.items
+  }
+
+  async listPage(query: ChatLogPageQuery = {}): Promise<ChatLogPageResult> {
+    const page = Number.isFinite(query.page) ? Math.max(1, Number(query.page)) : 1
+    const pageSize = Number.isFinite(query.pageSize) ? Math.max(1, Math.min(200, Number(query.pageSize))) : 20
+
     const qb = this.repo
-      .createQueryBuilder()
-      .from('chat_log', 'log')
+      .createQueryBuilder('log')
       .select([
         'log.id AS id',
         'log.current_app AS "currentApp"',
@@ -74,25 +105,48 @@ export class ChatLogService {
     qb.addSelect('log.author', 'author')
 
     const currentApp = String(query.currentApp ?? '').trim()
+    const author = String(query.author ?? '').trim()
+    const conversationId = String(query.conversationId ?? '').trim()
+
     if (currentApp) {
       qb.where('log.current_app = :currentApp', { currentApp })
     }
 
-    const author = String(query.author ?? '').trim()
     if (author) {
       if (currentApp) qb.andWhere('log.author = :author', { author })
       else qb.where('log.author = :author', { author })
     }
 
-    const conversationId = String(query.conversationId ?? '').trim()
     if (conversationId) {
       if (currentApp || author) qb.andWhere('log.conversation_id = :conversationId', { conversationId })
       else qb.where('log.conversation_id = :conversationId', { conversationId })
     }
 
-    const rows = await qb.orderBy('log.created_at', 'DESC').limit(limit).getRawMany()
+    const countQb = qb.clone().select('COUNT(*)', 'count')
+    const countRow = await countQb.getRawOne<{ count?: string | number }>()
+    const totalRaw = Number(countRow?.count ?? 0)
+    const total = Number.isFinite(totalRaw) ? Math.max(0, totalRaw) : 0
+    const totalPages = Math.max(1, Math.ceil(total / pageSize))
+    const safePage = Math.min(page, totalPages)
+    const safeOffset = (safePage - 1) * pageSize
 
-    return rows.map((row: any) => ({
+    const rows = await qb
+      .orderBy('log.created_at', 'DESC')
+      .addOrderBy('log.id', 'DESC')
+      .offset(safeOffset)
+      .limit(pageSize)
+      .getRawMany()
+
+    const rawIds = rows
+      .map((row: any) => Number(row?.id ?? 0))
+      .filter((id: number) => Number.isFinite(id) && id > 0)
+    const firstId = rawIds[0]
+    const lastId = rawIds.length > 0 ? rawIds[rawIds.length - 1] : undefined
+    this.logger.log(
+      `[history:listPage] page=${safePage}/${totalPages} pageSize=${pageSize} total=${total} returned=${rows.length} ids(first..last)=${firstId ?? '-'}..${lastId ?? '-'} currentApp=${currentApp || '-'} author=${author || '-'} conversationId=${conversationId || '-'}`,
+    )
+
+    const items = rows.map((row: any) => ({
       id: Number(row.id),
       author: String(row.author ?? '').trim() || undefined,
       conversationId: String(row.conversationId ?? '').trim() || undefined,
@@ -106,6 +160,16 @@ export class ChatLogService {
         : undefined,
       createdAt: row.createdAt instanceof Date ? row.createdAt : new Date(row.createdAt),
     }))
+
+    return {
+      items,
+      page: safePage,
+      pageSize,
+      total,
+      totalPages,
+      hasNext: safePage < totalPages,
+      hasPrev: safePage > 1,
+    }
   }
 
   async buildHistoryContext(query: {
@@ -125,8 +189,7 @@ export class ChatLogService {
     const since = new Date(Date.now() - hoursBack * 60 * 60 * 1000)
 
     const qb = this.repo
-      .createQueryBuilder()
-      .from('chat_log', 'log')
+      .createQueryBuilder('log')
       .select([
         'log.user_message AS "userMessage"',
         'log.assistant_text AS "assistantText"',
@@ -151,6 +214,7 @@ export class ChatLogService {
 
     const rows = await qb
       .orderBy('log.created_at', 'ASC')
+      .addOrderBy('log.id', 'ASC')
       .limit(Math.ceil(maxTurns / 2) + 50)
       .getRawMany()
 

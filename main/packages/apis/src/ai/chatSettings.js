@@ -28,6 +28,31 @@ export async function getChatSettings() {
 }
 
 /**
+ * 채팅 내역 페이지 조회
+ * @param {Object} params
+ * @param {number} [params.page]
+ * @param {number} [params.pageSize]
+ * @param {string} [params.currentApp]
+ * @param {string} [params.author]
+ * @param {string} [params.conversationId]
+ * @returns {Promise<{ code:number, data:{ items:Array, pagination:Object } }>} 
+ */
+export async function getChatHistory({ page = 1, pageSize = 20, currentApp, author, conversationId } = {}) {
+  const query = new URLSearchParams()
+  query.set('page', String(page))
+  query.set('pageSize', String(pageSize))
+  if (currentApp) query.set('currentApp', String(currentApp))
+  if (author) query.set('author', String(author))
+  if (conversationId) query.set('conversationId', String(conversationId))
+
+  const response = await fetch(`${BASE_URL}/chat/settings/history?${query.toString()}`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  return response.json()
+}
+
+/**
  * 채팅 설정 부분 갱신
  * @param {Object} payload
  * @param {string} [payload.llmProvider] - 'azure' | 'vertex'

@@ -18,6 +18,13 @@ import type { LlmClient } from '../llm/llm.types'
 import type { ToolContext, ToolDefinition } from './tool.type'
 import { IntentClassifier } from './intent.classifier'
 import { RagService } from './rag/rag.service'
+import {
+  includesConfiguredPhrase,
+  loadTaskflowClassifierRules,
+  loadTaskflowOrchestratorRules,
+  type TaskflowClassifierRules,
+  type TaskflowOrchestratorRules,
+} from './taskflow-language-rules'
 import { ToolAgent, type ExecutedCall } from './agent/tool-agent'
 import { getScreenConfig, type ScreenConfig } from './screen-registry'
 import type { ChatIntent, ChatReply, ChatTurn } from './pipeline.types'
@@ -67,6 +74,7 @@ const DEFAULT_FALLBACK_ACTION_KEYWORDS = [
 ]
 
 const DEFAULT_FALLBACK_ACTION_SCREEN_TASKS: ScreenTask[] = ['create', 'update', 'delete', 'run_action', 'recommend_action']
+const TASKFLOW_RULE_FIRST_INTENT_CONFIDENCE = 0.97
 
 export class ChatOrchestrator {
   /**
@@ -244,45 +252,55 @@ export class ChatOrchestrator {
     return ''
   }
 
-  private isTaskflowNodeClarificationPrompt(text: string): boolean {
-    const value = String(text ?? '').trim()
-    if (!value) return false
-    return /어떤\s*노드.*추가하시겠어요|노드\s*이름.*알려주|추가할\s*노드\s*이름|노드\s*이름\s*말씀해/i.test(value)
+  private hasOrchestratorPhrase(text: string, phrases: string[]): boolean {
+    return includesConfiguredPhrase(text, Array.isArray(phrases) ? phrases : [])
   }
 
-  private looksLikeNodeNameOnlyAnswer(text: string): boolean {
+  private isTaskflowNodeClarificationPrompt(text: string, rules: TaskflowOrchestratorRules): boolean {
     const value = String(text ?? '').trim()
     if (!value) return false
-    if (value.length > 40) return false
+    return this.hasOrchestratorPhrase(value, rules.nodeClarificationPhrases)
+  }
+
+  private looksLikeNodeNameOnlyAnswer(text: string, rules: TaskflowOrchestratorRules): boolean {
+    const value = String(text ?? '').trim()
+    if (!value) return false
+    if (value.length > Number(rules.nodeNameOnlyMaxLength ?? 40)) return false
     if (/[?？]/.test(value)) return false
-    if (/(추가|삭제|지워|제거|수정|바꿔|저장|정렬|가로|세로|예시|어떻게|도움|가이드|설명)/i.test(value)) {
+    if (this.hasOrchestratorPhrase(value, rules.nodeNameBlockedPhrases)) {
       return false
     }
     return /[\p{L}\p{N}]/u.test(value)
   }
 
-  private isTaskflowDeleteClarificationPrompt(text: string): boolean {
+  private isTaskflowDeleteClarificationPrompt(text: string, rules: TaskflowOrchestratorRules): boolean {
     const value = String(text ?? '').trim()
     if (!value) return false
-    return /어떤\s*노드.*(삭제|지워|제거)/i.test(value)
+    return this.hasOrchestratorPhrase(value, rules.nodeDeleteClarificationPhrases)
   }
 
-  private isTaskflowModeClarificationPrompt(text: string): boolean {
+  private isTaskflowModeClarificationPrompt(text: string, rules: TaskflowOrchestratorRules): boolean {
     const value = String(text ?? '').trim()
     if (!value) return false
-    return /(가로|세로).*(모드|방향)|모드.*(가로|세로)/i.test(value)
+    return this.hasOrchestratorPhrase(value, rules.modeClarificationPhrases)
   }
 
-  private isTaskflowSaveClarificationPrompt(text: string): boolean {
+  private isTaskflowSaveClarificationPrompt(text: string, rules: TaskflowOrchestratorRules): boolean {
     const value = String(text ?? '').trim()
     if (!value) return false
-    return /(저장|임시\s*저장).*(어떤|원하시|할까요)|어떤\s*저장/i.test(value)
+    return this.hasOrchestratorPhrase(value, rules.saveClarificationPhrases)
+  }
+
+  private hasClassifierPhrase(text: string, phrases: string[]): boolean {
+    return includesConfiguredPhrase(text, Array.isArray(phrases) ? phrases : [])
   }
 
   private buildContinuationMessage(
     message: string,
     history: ChatTurn[],
     screen: ScreenConfig,
+    taskflowClassifierRules: TaskflowClassifierRules,
+    taskflowOrchestratorRules: TaskflowOrchestratorRules,
     currentPath?: string,
     lastAssistantMessage?: string,
     reqId = '-',
@@ -302,27 +320,30 @@ export class ChatOrchestrator {
     if (!hasComposeTaskflowTool) return raw
 
     const latestAssistant = String(lastAssistantMessage ?? '').trim() || this.findLatestAssistantTurn(history)
-    if (this.looksLikeTaskflowEditMessage(raw)) return raw
+    if (this.looksLikeTaskflowEditMessage(raw, taskflowClassifierRules)) return raw
 
     let merged = ''
-    if (this.isTaskflowNodeClarificationPrompt(latestAssistant)) {
+    if (this.isTaskflowNodeClarificationPrompt(latestAssistant, taskflowOrchestratorRules)) {
       merged = /노드/i.test(raw)
-        ? `${raw} 추가해줘`
-        : `${raw} 노드 추가해줘`
-    } else if (this.isTaskflowDeleteClarificationPrompt(latestAssistant)) {
+        ? `${raw} ${taskflowOrchestratorRules.nodeAppendSuffix}`.trim()
+        : `${raw} ${taskflowOrchestratorRules.nodeAppendWithNodeSuffix}`.trim()
+    } else if (this.isTaskflowDeleteClarificationPrompt(latestAssistant, taskflowOrchestratorRules)) {
       merged = /노드/i.test(raw)
-        ? `${raw} 지워줘`
-        : `${raw} 노드 지워줘`
-    } else if (this.isTaskflowModeClarificationPrompt(latestAssistant)) {
-      merged = `${raw} 모드로 바꿔줘`
-    } else if (this.isTaskflowSaveClarificationPrompt(latestAssistant)) {
+        ? `${raw} ${taskflowOrchestratorRules.deleteAppendSuffix}`.trim()
+        : `${raw} ${taskflowOrchestratorRules.deleteAppendWithNodeSuffix}`.trim()
+    } else if (this.isTaskflowModeClarificationPrompt(latestAssistant, taskflowOrchestratorRules)) {
+      merged = `${raw} ${taskflowOrchestratorRules.modeAppendSuffix}`.trim()
+    } else if (this.isTaskflowSaveClarificationPrompt(latestAssistant, taskflowOrchestratorRules)) {
       merged = /임시\s*저장/i.test(raw)
-        ? '태스크 플로우 임시 저장해줘'
-        : '태스크 플로우 저장해줘'
-    } else if (this.looksLikeNodeNameOnlyAnswer(raw) && this.isTaskflowNodeClarificationPrompt(latestAssistant)) {
+        ? taskflowOrchestratorRules.saveTempMessage
+        : taskflowOrchestratorRules.saveFinalMessage
+    } else if (
+      this.looksLikeNodeNameOnlyAnswer(raw, taskflowOrchestratorRules)
+      && this.isTaskflowNodeClarificationPrompt(latestAssistant, taskflowOrchestratorRules)
+    ) {
       merged = /노드/i.test(raw)
-        ? `${raw} 추가해줘`
-        : `${raw} 노드 추가해줘`
+        ? `${raw} ${taskflowOrchestratorRules.nodeAppendSuffix}`.trim()
+        : `${raw} ${taskflowOrchestratorRules.nodeAppendWithNodeSuffix}`.trim()
     }
 
     if (!merged) return raw
@@ -349,22 +370,22 @@ export class ChatOrchestrator {
     return result
   }
 
-  private isGuideLikeInfoQuery(message: string): boolean {
+  private isGuideLikeInfoQuery(message: string, rules: TaskflowOrchestratorRules): boolean {
     const text = String(message ?? '').trim().toLowerCase()
     if (!text) return false
 
-    const hasInfoCue = /(방법|설명|가이드|소개|구성|프로세스|플로우|원리|어떻게|무엇|뭐야|이유|왜|알려줘|알려주)/i.test(text)
+    const hasInfoCue = this.hasOrchestratorPhrase(text, rules.guideInfoCuePhrases)
     if (!hasInfoCue) return false
 
-    const hasActionCue = /(실행|수행|조치해|처리해|추가해|생성해|수정해|삭제해|변경해|이동해|저장해|적용해|필터해)/i.test(text)
+    const hasActionCue = this.hasOrchestratorPhrase(text, rules.guideActionCuePhrases)
     return !hasActionCue
   }
 
-  private looksLikeNodeUsageGuideQuery(message: string): boolean {
+  private looksLikeNodeUsageGuideQuery(message: string, rules: TaskflowOrchestratorRules): boolean {
     const text = String(message ?? '').trim()
     if (!text) return false
-    if (!/(노드|node|and|or|ifthenelse|ifthen|repeat|parallel)/i.test(text)) return false
-    return /(사용법|어떻게\s*써|설명|가이드|알려줘|알려\s*줘|what\s*is|how\s*to\s*use)/i.test(text)
+    if (!this.hasOrchestratorPhrase(text, rules.nodeGuideSubjectPhrases)) return false
+    return this.hasOrchestratorPhrase(text, rules.nodeGuideRequestPhrases)
   }
 
   private resolveNodeGuideFallbackChunkKeys(): string[] {
@@ -404,12 +425,19 @@ export class ChatOrchestrator {
       `================= [2단계:화면설정_확정_추적] [reqId=${reqId}] route=${routeKey} screenKey=${screen.key} appKey=${screen.appKey} dataTools=${screen.dataTools.length} actionTools=${screen.actionTools.length} ragCollection=${screen.ragCollection}`,
     )
 
+    const [taskflowClassifierRules, taskflowOrchestratorRules] = await Promise.all([
+      loadTaskflowClassifierRules(screen.key),
+      loadTaskflowOrchestratorRules(screen.key),
+    ])
+
     const history = normalizeHistory(body?.history)
     const latestAssistantMessage = String(body?.lastAssistantMessage ?? '').trim() || undefined
     const effectiveMessage = this.buildContinuationMessage(
       message,
       history,
       screen,
+      taskflowClassifierRules,
+      taskflowOrchestratorRules,
       String(body?.currentPath ?? '').trim() || undefined,
       latestAssistantMessage,
       reqId,
@@ -422,12 +450,28 @@ export class ChatOrchestrator {
         ? (body.previousFilters as Record<string, unknown>)
         : undefined
     this.stageLog('2-2단계:이전필터_입력', reqId, `status=checked reason=previousFilters=${Boolean(previousFilters)}`)
-    const pipelineIntentResult = await this.classifier.classify(
+    const ruleFirstIntentResult = this.resolveRuleFirstIntent(
+      screen,
+      effectiveMessage,
+      screenTask,
+      taskflowClassifierRules,
+      taskflowOrchestratorRules,
+    )
+
+    const pipelineIntentResult = ruleFirstIntentResult ?? await this.classifier.classify(
       effectiveMessage,
       screen.screenName,
       screen.intentHints,
       history,
     )
+
+    if (ruleFirstIntentResult) {
+      this.stageLog(
+        '2-3단계:의도분류_룰우선',
+        reqId,
+        `status=matched reason=intent=${ruleFirstIntentResult.intent}, confidence=${ruleFirstIntentResult.confidence}`,
+      )
+    }
     this.stageLog(
       '2-3단계:의도분류_원결과',
       reqId,
@@ -468,7 +512,7 @@ export class ChatOrchestrator {
       (tool) => tool?.declaration?.name === 'compose_linear_taskflow',
     )
     const shouldForceTaskflowAction =
-      hasComposeTaskflowTool && this.looksLikeTaskflowEditMessage(effectiveMessage)
+      hasComposeTaskflowTool && this.looksLikeTaskflowEditMessage(effectiveMessage, taskflowClassifierRules)
 
     if (shouldForceTaskflowAction && pipelineIntent !== 'action') {
       pipelineIntent = 'action'
@@ -488,7 +532,7 @@ export class ChatOrchestrator {
       )
     }
 
-    const shouldForceInfoIntent = screenTask === 'guide' || this.isGuideLikeInfoQuery(effectiveMessage)
+    const shouldForceInfoIntent = screenTask === 'guide' || this.isGuideLikeInfoQuery(effectiveMessage, taskflowOrchestratorRules)
     if (shouldForceInfoIntent && pipelineIntent !== 'info') {
       pipelineIntent = 'info'
       this.stageLog(
@@ -522,6 +566,7 @@ export class ChatOrchestrator {
           screen,
           effectiveMessage,
           toolCtx,
+          taskflowClassifierRules,
           pipelineIntentResult,
           history,
           screenTask,
@@ -536,6 +581,7 @@ export class ChatOrchestrator {
         output = await this.handleInfo(
           screen,
           effectiveMessage,
+          taskflowOrchestratorRules,
           pipelineIntentResult,
           history,
           screenTask,
@@ -660,28 +706,100 @@ export class ChatOrchestrator {
     }
   }
 
-  private looksLikeTaskflowEditMessage(message: string): boolean {
+  private looksLikeTaskflowEditMessage(message: string, rules: TaskflowClassifierRules): boolean {
     const text = String(message ?? '').trim()
     if (!text) return false
 
-    if (/(어떻게\s*써|어떻게\s*사용|사용법|뜻|의미|설명|알려줘|알려주|뭐야|무엇|왜\s*|무슨|예시\s*있|어떤\s*경우)/i.test(text)) {
+    if (this.hasClassifierPhrase(text, rules.explanationBlockKeywords)) {
       return false
     }
 
-    const taskflowSubject = /(태스크\s*플로우|태스크\s*플로|태스크플로우|태스크플로|taskflow|노드|이동|parallel|병렬|ifthenelse|ifthen|repeat|or\s*노드|컨트롤|control)/i.test(text)
-    if (!taskflowSubject) return false
+    const hasArrowSequence = /[^\s]+\s*(?:->|→)\s*[^\s]+/.test(text)
+    if (rules.arrowSequenceEnabled && hasArrowSequence) return true
 
-    return /(구성해|구성|만들어|만들|생성해|생성|추가해|추가|삭제해|삭제|지워|제거해|제거|수정해|수정|바꿔|바꿔줘|저장해|저장|정렬|연결해|이어|붙여|넣어|이동해|가\s*는|가\s*줘|이동\s*태스크)/i.test(text)
+    if (!this.hasClassifierPhrase(text, rules.editSubjectKeywords)) return false
+
+    return this.hasClassifierPhrase(text, rules.editVerbKeywords)
+  }
+
+  private resolveRuleFirstIntent(
+    screen: ScreenConfig,
+    message: string,
+    screenTask: ScreenTask,
+    classifierRules: TaskflowClassifierRules,
+    orchestratorRules: TaskflowOrchestratorRules,
+  ): { intent: ChatIntent; confidence: number; reason: string } | null {
+    const text = String(message ?? '').trim()
+    if (!text) return null
+
+    const hasComposeTaskflowTool = screen.actionTools.some(
+      (tool) => tool?.declaration?.name === 'compose_linear_taskflow',
+    )
+    if (!hasComposeTaskflowTool) return null
+
+    if (screenTask === 'guide' || this.isGuideLikeInfoQuery(text, orchestratorRules)) {
+      return {
+        intent: 'info',
+        confidence: TASKFLOW_RULE_FIRST_INTENT_CONFIDENCE,
+        reason: 'rule-first: guide/info cue matched',
+      }
+    }
+
+    if (this.looksLikeTaskflowEditMessage(text, classifierRules)) {
+      return {
+        intent: 'action',
+        confidence: TASKFLOW_RULE_FIRST_INTENT_CONFIDENCE,
+        reason: 'rule-first: taskflow edit pattern matched',
+      }
+    }
+
+    return null
+  }
+
+  private buildTaskflowRetrySuggestion(message: string): string {
+    const text = String(message ?? '').trim().toLowerCase()
+
+    if (/(삭제|지워|제거|없애)/.test(text)) {
+      return '"검사" 노드 삭제해줘'
+    }
+
+    if (/(연결|이어|->|→)/.test(text)) {
+      return '입고 -> 검사 -> 적재 연결해줘'
+    }
+
+    if (/(추가|생성|만들|구성|수정|변경|편집)/.test(text)) {
+      return 'Start -> PickUp(창고) -> MoveTo(검사장) -> PutDown 구성해줘'
+    }
+
+    return '입고 -> 검사 -> 적재 구성해줘'
+  }
+
+  private buildActionRetrySuggestion(screen: ScreenConfig, message: string): string | undefined {
+    const hasComposeTaskflowTool = screen.actionTools.some(
+      (tool) => tool?.declaration?.name === 'compose_linear_taskflow',
+    )
+
+    if (hasComposeTaskflowTool) {
+      return this.buildTaskflowRetrySuggestion(message)
+    }
+
+    const hasRunActionTool = screen.actionTools.some((tool) => tool?.declaration?.name === 'run_action')
+    if (hasRunActionTool) {
+      return '대상과 작업을 함께 적어주세요. 예: "로봇 A를 점검 실행해줘"'
+    }
+
+    return undefined
   }
 
   private async tryDeterministicTaskflowDraft(
     screen: ScreenConfig,
     message: string,
     toolCtx: ToolContext,
+    rules: TaskflowClassifierRules,
   ): Promise<Record<string, unknown> | undefined> {
     const composeTool = screen.actionTools.find((tool) => tool?.declaration?.name === 'compose_linear_taskflow')
     if (!composeTool) return undefined
-    if (!this.looksLikeTaskflowEditMessage(message)) return undefined
+    if (!this.looksLikeTaskflowEditMessage(message, rules)) return undefined
 
     try {
       const result = await composeTool.execute({}, toolCtx)
@@ -721,6 +839,7 @@ export class ChatOrchestrator {
   private async handleInfo(
     screen: ScreenConfig,
     message: string,
+    taskflowOrchestratorRules: TaskflowOrchestratorRules,
     pipelineIntentResult: unknown,
     history: ChatTurn[],
     screenTask: ScreenTask,
@@ -751,7 +870,7 @@ export class ChatOrchestrator {
     let ragScores = primary.ragScores
 
     const shouldTryNodeGuideFallback =
-      this.looksLikeNodeUsageGuideQuery(message) &&
+      this.looksLikeNodeUsageGuideQuery(message, taskflowOrchestratorRules) &&
       (usedChunks.length === 0 || !String(text ?? '').trim())
 
     if (shouldTryNodeGuideFallback) {
@@ -844,6 +963,7 @@ export class ChatOrchestrator {
     screen: ScreenConfig,
     message: string,
     toolCtx: ToolContext,
+    taskflowClassifierRules: TaskflowClassifierRules,
     pipelineIntentResult: unknown,
     history: ChatTurn[],
     screenTask: ScreenTask,
@@ -908,7 +1028,12 @@ export class ChatOrchestrator {
     )
     const evaluateExecution = async (executionText: string, executionCalls: ExecutedCall[], source: 'screen' | 'common') => {
       const noExecution = executionCalls.length === 0 || executionCalls.every((call) => Boolean(call.error))
-      const deterministicTaskflowParam = await this.tryDeterministicTaskflowDraft(screen, message, toolCtx)
+      const deterministicTaskflowParam = await this.tryDeterministicTaskflowDraft(
+        screen,
+        message,
+        toolCtx,
+        taskflowClassifierRules,
+      )
       const deterministicApplied = Boolean(deterministicTaskflowParam)
       const deterministicClarification = this.extractActionClarification(deterministicTaskflowParam)
 
@@ -945,7 +1070,12 @@ export class ChatOrchestrator {
 
       const resolvedFilters = pickResolvedFilters(executionCalls)
       const fallbackReason = this.resolveExecutionFallbackReason(executionCalls)
-      const fallbackText = this.buildExecutionFallbackText(String(screen.fallbackText ?? ''), fallbackReason)
+      const fallbackText = this.buildExecutionFallbackText(
+        screen,
+        message,
+        String(screen.fallbackText ?? ''),
+        fallbackReason,
+      )
 
       if (noExecution && !navigation) {
         this.stageLog('3-2단계:ACTION_폴백텍스트', reqId, `status=fallback reason=${fallbackReason} source=${source}`)
@@ -1074,6 +1204,8 @@ export class ChatOrchestrator {
   }
 
   private buildExecutionFallbackText(
+    screen: ScreenConfig,
+    message: string,
     baseFallbackText: string,
     reason: 'tool-not-selected' | 'missing-params' | 'permission-denied' | 'tool-execution-failed',
   ): string {
@@ -1085,7 +1217,12 @@ export class ChatOrchestrator {
     }
 
     const base = String(baseFallbackText ?? '').trim() || '요청을 처리할 수 있는 도구를 찾지 못했습니다.'
-    return `${base} ${guidanceByReason[reason]}`.trim()
+    const suggestion = this.buildActionRetrySuggestion(screen, message)
+    const suggestionText = suggestion
+      ? ` 가장 유사한 실행 문장 예시: ${suggestion}`
+      : ''
+
+    return `${base} ${guidanceByReason[reason]}${suggestionText}`.trim()
   }
 
   private resolveExecutionTools(screen: ScreenConfig): ToolDefinition[] {

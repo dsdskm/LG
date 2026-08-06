@@ -30,6 +30,9 @@ import {
 } from '../styles'
 
 import { filterScreenGroupsByRoute, formatDateTime, getPromptDraft, getScreenTitle } from '../chatSettings.utils'
+import { TaskflowRuleEditorSection } from './TaskflowRuleEditorSection'
+import { EventRuleDbEditorSection } from './EventRuleDbEditorSection'
+import { isTaskflowCanvasRoute } from '../taskflowRuleConfigs'
 
 const LARGE_MODAL_STYLE = {
     width: 'min(760px, 100%)',
@@ -354,6 +357,9 @@ const KeywordListEditor = ({ keywords, onChange, hint }) => {
 
 export const AppScreenSettingsTab = ({
     activeRouteKey,
+    values,
+    settingDrafts,
+    savingSettingScope,
     screenGroups,
     commonRagDocs,
     commonTools,
@@ -361,6 +367,8 @@ export const AppScreenSettingsTab = ({
     commonPromptDraft,
     commonIntentPromptItem,
     commonIntentPromptDraft,
+    commonInputHintPromptItem,
+    commonInputHintPromptDraft,
     allPrompts,
     actionTypes,
     promptDrafts,
@@ -376,6 +384,8 @@ export const AppScreenSettingsTab = ({
     savingCreateRag,
     savingCreateTool,
     savingToolKey,
+    onSettingDraftChange,
+    onSaveSettingGroup,
     onPromptChange,
     onSavePrompt,
     onCreatePrompt,
@@ -412,6 +422,9 @@ export const AppScreenSettingsTab = ({
                     <ScreenSettingGroup
                         key={group.routeKey}
                         group={group}
+                        values={values}
+                        settingDrafts={settingDrafts}
+                        savingSettingScope={savingSettingScope}
                         commonRagDocs={commonRagDocs}
                         commonTools={commonTools}
                         onGoToCommonTab={onGoToCommonTab}
@@ -419,6 +432,8 @@ export const AppScreenSettingsTab = ({
                         commonPromptDraft={commonPromptDraft}
                         commonIntentPromptItem={commonIntentPromptItem}
                         commonIntentPromptDraft={commonIntentPromptDraft}
+                        commonInputHintPromptItem={commonInputHintPromptItem}
+                        commonInputHintPromptDraft={commonInputHintPromptDraft}
                         allPrompts={allPrompts}
                         actionTypes={actionTypes}
                         promptDrafts={promptDrafts}
@@ -434,6 +449,8 @@ export const AppScreenSettingsTab = ({
                         savingCreateRag={savingCreateRag}
                         savingCreateTool={savingCreateTool}
                         savingToolKey={savingToolKey}
+                        onSettingDraftChange={onSettingDraftChange}
+                        onSaveSettingGroup={onSaveSettingGroup}
                         onPromptChange={onPromptChange}
                         onSavePrompt={onSavePrompt}
                         onCreatePrompt={onCreatePrompt}
@@ -469,6 +486,9 @@ export const AppScreenSettingsTab = ({
 
 const ScreenSettingGroup = ({
     group,
+    values,
+    settingDrafts,
+    savingSettingScope,
     commonRagDocs,
     commonTools,
     onGoToCommonTab,
@@ -476,6 +496,8 @@ const ScreenSettingGroup = ({
     commonPromptDraft,
     commonIntentPromptItem,
     commonIntentPromptDraft,
+    commonInputHintPromptItem,
+    commonInputHintPromptDraft,
     allPrompts,
     actionTypes,
     promptDrafts,
@@ -491,6 +513,8 @@ const ScreenSettingGroup = ({
     savingCreateRag,
     savingCreateTool,
     savingToolKey,
+    onSettingDraftChange,
+    onSaveSettingGroup,
     onPromptChange,
     onSavePrompt,
     onCreatePrompt,
@@ -513,12 +537,13 @@ const ScreenSettingGroup = ({
         (acc, item) => {
             const promptType = String(item?.promptType ?? item?.category ?? '').toLowerCase()
             if (promptType === 'intent-hint') acc.intent += 1
+            else if (promptType === 'input-hint') acc.hint += 1
             else if (promptType === 'data-system') acc.data += 1
             else if (promptType === 'action-system') acc.action += 1
             else acc.other += 1
             return acc
         },
-        { intent: 0, data: 0, action: 0, other: 0 }
+        { intent: 0, hint: 0, data: 0, action: 0, other: 0 }
     )
     const ragSummary = group.ragDocs.reduce(
         (acc, item) => {
@@ -569,8 +594,32 @@ const ScreenSettingGroup = ({
 
             <PageDescription>routeKey: {group.routeKey}</PageDescription>
 
+            {isTaskflowCanvasRoute(group.routeKey) ? (
+                <TaskflowRuleEditorSection
+                    scope={String(group.routeKey ?? '').trim()}
+                    scopeLabel="화면별"
+                    values={values}
+                    settingDrafts={settingDrafts}
+                    savingSettingScope={savingSettingScope}
+                    onSettingDraftChange={onSettingDraftChange}
+                    onSaveSettingGroup={onSaveSettingGroup}
+                />
+            ) : null}
+
+            <EventRuleDbEditorSection
+                scopeKey={String(group.routeKey ?? '').trim() || 'common'}
+                title="Front Rule Engine (화면별)"
+                description="이 화면의 모든 메시지를 앞단 룰로 분기합니다. info는 chunk 키로 답변하고, action은 tool을 직접 실행합니다."
+                values={values}
+                settingDrafts={settingDrafts}
+                savingSettingScope={savingSettingScope}
+                onSettingDraftChange={onSettingDraftChange}
+                onSaveSettingGroup={onSaveSettingGroup}
+            />
+
             <ChatFlowMap
                 intentPromptCount={promptSummary.intent}
+                inputHintCount={promptSummary.hint}
                 actionPromptCount={promptSummary.action}
                 guidanceCount={group.guidance.length}
                 routeKey={group.routeKey}
@@ -580,6 +629,7 @@ const ScreenSettingGroup = ({
                 commonActionRagCount={commonRagSummary.action + commonRagSummary.both}
                 actionToolCount={actionToolCount}
                 commonActionToolCount={commonActionToolCount}
+                isFrontRuleEnabled
                 onSelectStage={setActiveStage}
             />
 
@@ -609,8 +659,47 @@ const ScreenSettingGroup = ({
                                 />
                             ) : null}
 
+                            {activeStage === 'hint' ? (
+                                <ScreenPromptSection
+                                    appKey={String(group.routeKey ?? '').split('/')[0] || ''}
+                                    routeKey={group.routeKey}
+                                    routeParentKey={group.routeParentKey}
+                                    prompts={group.prompts}
+                                    allPrompts={allPrompts}
+                                    commonIntentPromptItem={commonIntentPromptItem}
+                                    commonIntentPromptDraft={commonIntentPromptDraft}
+                                    promptDrafts={promptDrafts}
+                                    savingPromptKey={savingPromptKey}
+                                    creatingPromptRouteKey={creatingPromptRouteKey}
+                                    onPromptChange={onPromptChange}
+                                    onSavePrompt={onSavePrompt}
+                                    onCreatePrompt={onCreatePrompt}
+                                    promptType="input-hint"
+                                    title="입력 힌트"
+                                    description="AI Assistant 입력창 placeholder입니다. 줄바꿈으로 여러 문구를 입력하면 랜덤으로 노출됩니다. 화면별 힌트가 없으면 공통 입력 힌트를 사용합니다."
+                                    createLabel="입력 힌트 추가"
+                                    emptyText="등록된 화면 입력 힌트가 없습니다. 공통 입력 힌트가 fallback으로 적용됩니다."
+                                    expandedView
+                                    singleOnly
+                                    commonFallbackHint={String(commonInputHintPromptDraft?.content ?? commonInputHintPromptItem?.content ?? '').trim()}
+                                />
+                            ) : null}
+
                             {activeStage === 'screen-route' ? (
                                 <ScreenRouteSummary routeKey={group.routeKey} routeParentKey={group.routeParentKey} />
+                            ) : null}
+
+                            {activeStage === 'event-rule-first' ? (
+                                <EventRuleDbEditorSection
+                                    scopeKey={String(group.routeKey ?? '').trim() || 'common'}
+                                    showHeader={false}
+                                    description="실행 순서: route 확정 다음에 front-rule이 먼저 동작합니다. 매칭 시 LLM 인텐트 분류 없이 바로 info/action 실행으로 처리합니다."
+                                    values={values}
+                                    settingDrafts={settingDrafts}
+                                    savingSettingScope={savingSettingScope}
+                                    onSettingDraftChange={onSettingDraftChange}
+                                    onSaveSettingGroup={onSaveSettingGroup}
+                                />
                             ) : null}
 
                             {activeStage === 'intent-prompt' ? (
@@ -629,10 +718,10 @@ const ScreenSettingGroup = ({
                                     onSavePrompt={onSavePrompt}
                                     onCreatePrompt={onCreatePrompt}
                                     promptType="intent-hint"
-                                    title="분기 프롬프트"
-                                    description="공통 분기 프롬프트 위에 이 화면에서만 필요한 추가 분기 규칙을 입력합니다."
-                                    createLabel="분기 프롬프트 추가"
-                                    emptyText="등록된 분기 프롬프트가 없습니다."
+                                    title="인텐트 분기 룰"
+                                    description="LLM이 info/action 인텐트를 분기할 때 참고하는 화면 전용 룰입니다."
+                                    createLabel="인텐트 분기 룰 추가"
+                                    emptyText="등록된 인텐트 분기 룰이 없습니다."
                                     expandedView
                                     allowCreate={false}
                                     singleOnly
@@ -841,11 +930,13 @@ const ScreenSettingGroup = ({
 
 const getStageTitle = (stageKey) => {
     const map = {
+        hint: '0) 힌트',
         guidance: '1) 메세지',
         'screen-route': '2) 화면별 분기',
-        'intent-prompt': '3) 분기 프롬프트',
-        'info-prompt': 'info 경로: 공통+화면 정보 프롬프트',
-        'action-prompt': 'action 경로: 공통+화면 액션 프롬프트',
+        'event-rule-first': '3) Front Rule Engine',
+        'intent-prompt': '4) 인텐트 분기 룰',
+        'info-prompt': 'info 인텐트 룰',
+        'action-prompt': 'action 인텐트 룰',
         'info-rag': 'info 경로: 화면 정보 RAG',
         'info-common-rag': '공통 정보 RAG',
         'info-llm-fallback': 'info 경로: RAG 미충족시 LLM 호출',
@@ -859,11 +950,13 @@ const getStageTitle = (stageKey) => {
 
 const getStageDescription = (stageKey) => {
     const map = {
+        hint: '채팅 입력창 placeholder를 관리합니다. 화면별 힌트가 없으면 공통 입력 힌트를 사용합니다.',
         guidance: '추천 카드 선택 또는 직접 입력으로 들어온 사용자 메세지 단계입니다.',
         'screen-route': '현재 화면(routeKey)에 맞는 ScreenConfig를 먼저 확정합니다.',
-        'intent-prompt': 'LLM 분류가 참고하는 분기용 프롬프트입니다.',
-        'info-prompt': 'info 경로에서 RAG 미충족 시 기본 LLM 호출 직전에 공통+화면 정보 프롬프트를 병합해 사용합니다.',
-        'action-prompt': 'action 경로에서 툴 선택/파라미터 추론을 위해 공통+화면 액션 프롬프트를 병합해 사용합니다.',
+        'event-rule-first': '화면별 front-rule을 먼저 평가합니다. 매칭되면 LLM 인텐트 분류를 건너뛰고 info/action을 직접 수행합니다.',
+        'intent-prompt': 'LLM intent 분기(info/action) 판단에 사용하는 화면 전용 룰입니다.',
+        'info-prompt': 'info 인텐트에서 답변 정책/톤/우선순위를 제어하는 룰입니다. 공통+화면 룰을 병합해 사용합니다.',
+        'action-prompt': 'action 인텐트에서 툴 선택/파라미터 추론을 제어하는 룰입니다. 공통+화면 룰을 병합해 사용합니다.',
         'info-rag': '공통 정보 RAG를 먼저 조회하고, 부족하면 화면 정보 RAG를 다시 확인합니다.',
         'info-common-rag': '공통 탭에 등록된 공통 정보 RAG를 조회합니다. 이 화면에서는 읽기 전용입니다.',
         'info-llm-fallback': '화면 RAG와 공통 RAG를 모두 확인했는데도 부족하면 기본 LLM 응답으로 전환합니다.',
@@ -993,8 +1086,12 @@ const ActionPromptPreview = ({ flowType = 'action', commonPromptItem, commonProm
     )
 }
 
-const ChatFlowMap = ({ intentPromptCount, actionPromptCount, guidanceCount, routeKey, infoRagCount, actionRagCount, commonInfoRagCount, commonActionRagCount, actionToolCount, commonActionToolCount, onSelectStage }) => {
+const ChatFlowMap = ({ intentPromptCount, inputHintCount, actionPromptCount, guidanceCount, routeKey, infoRagCount, actionRagCount, commonInfoRagCount, commonActionRagCount, actionToolCount, commonActionToolCount, isFrontRuleEnabled = true, onSelectStage }) => {
     const defaultFlowItems = [
+        {
+            key: 'hint',
+            node: <FlowNode title="힌트" desc={`입력 힌트 (${inputHintCount}개)`} tone="hint" onClick={() => onSelectStage('hint')} />,
+        },
         {
             key: 'guidance',
             node: <FlowNode title="메세지" desc={`추천 카드(${guidanceCount}개) 또는 직접 입력`} tone="guide" onClick={() => onSelectStage('guidance')} />,
@@ -1003,9 +1100,15 @@ const ChatFlowMap = ({ intentPromptCount, actionPromptCount, guidanceCount, rout
             key: 'screen-route',
             node: <FlowNode title="화면별 분기" desc={`${routeKey || '-'}`} tone="route" onClick={() => onSelectStage('screen-route')} />,
         },
+        ...(isFrontRuleEnabled
+            ? [{
+                key: 'event-rule-first',
+                node: <FlowNode title="Front Rule Engine" desc="모든 메시지 룰 우선 분기" tone="actionCommonTool" onClick={() => onSelectStage('event-rule-first')} />,
+            }]
+            : []),
         {
             key: 'intent-prompt',
-            node: <FlowNode title="분기 프롬프트" desc={`intent-hint (${intentPromptCount}개)`} tone="prompt" onClick={() => onSelectStage('intent-prompt')} />,
+            node: <FlowNode title="인텐트 분기 룰" desc={`intent-hint (${intentPromptCount}개)`} tone="prompt" onClick={() => onSelectStage('intent-prompt')} />,
         },
     ]
 
@@ -1021,7 +1124,7 @@ const ChatFlowMap = ({ intentPromptCount, actionPromptCount, guidanceCount, rout
         },
         {
             key: 'info-prompt',
-            node: <FlowNode title="공통+화면 정보 프롬프트" desc={`system/action (${actionPromptCount}개)`} tone="prompt" dashed onClick={() => onSelectStage('info-prompt')} />,
+            node: <FlowNode title="info 인텐트 룰" desc={`공통+화면 룰 (${actionPromptCount}개)`} tone="prompt" dashed onClick={() => onSelectStage('info-prompt')} />,
         },
         {
             key: 'info-llm-fallback',
@@ -1044,7 +1147,7 @@ const ChatFlowMap = ({ intentPromptCount, actionPromptCount, guidanceCount, rout
         },
         {
             key: 'action-prompt',
-            node: <FlowNode title="공통+화면 액션 프롬프트" desc={`공통+화면 액션 프롬프트 병합 (${actionPromptCount}개)`} tone="prompt" dashed onClick={() => onSelectStage('action-prompt')} />,
+            node: <FlowNode title="action 인텐트 룰" desc={`공통+화면 룰 병합 (${actionPromptCount}개)`} tone="prompt" dashed onClick={() => onSelectStage('action-prompt')} />,
         },
         {
             key: 'action-tool',
@@ -1137,6 +1240,7 @@ const FlowSequenceArrow = () => {
 }
 
 const FLOW_NODE_TONE = {
+    hint: { border: '#c4b5fd', bg: '#f5f3ff', title: '#5b21b6' },
     prompt: { border: '#bfdbfe', bg: '#eff6ff', title: '#1d4ed8' },
     rag: { border: '#99f6e4', bg: '#f0fdfa', title: '#0f766e' },
     guide: { border: '#c7d2fe', bg: '#eef2ff', title: '#3730a3' },
@@ -1300,7 +1404,7 @@ const ActionUnifiedPromptSection = ({
     )
 }
 
-const ScreenPromptSection = ({ appKey, routeKey, routeParentKey, prompts, allPrompts, commonIntentPromptItem, commonIntentPromptDraft, promptDrafts, savingPromptKey, creatingPromptRouteKey, onPromptChange, onSavePrompt, onCreatePrompt, promptType, title, description, createLabel, emptyText, expandedView = false, allowCreate = true, singleOnly = false }) => {
+const ScreenPromptSection = ({ appKey, routeKey, routeParentKey, prompts, allPrompts, commonIntentPromptItem, commonIntentPromptDraft, promptDrafts, savingPromptKey, creatingPromptRouteKey, onPromptChange, onSavePrompt, onCreatePrompt, promptType, title, description, createLabel, emptyText, expandedView = false, allowCreate = true, singleOnly = false, commonFallbackHint = '' }) => {
     const getInitialCreateDraft = () => ({
         label: title,
         content: promptType === 'intent-hint' ? INTENT_HINT_PROMPT_TEMPLATE : '',
@@ -1454,6 +1558,19 @@ const ScreenPromptSection = ({ appKey, routeKey, routeParentKey, prompts, allPro
                 </PromptCard>
             ) : null}
 
+            {singleOnly && promptType === 'input-hint' ? (
+                <PromptCard>
+                    <PromptMeta>
+                        <span>공통 입력 힌트 fallback</span>
+                    </PromptMeta>
+                    <PromptTextarea
+                        value={commonFallbackHint || '공통 입력 힌트가 비어 있습니다. 공통 탭에서 먼저 등록하세요.'}
+                        readOnly
+                        style={{ minHeight: '90px', background: '#f8fafc', color: '#334155' }}
+                    />
+                </PromptCard>
+            ) : null}
+
             {singleOnly ? (
                 <PromptCard>
                     <PromptMeta>
@@ -1470,7 +1587,11 @@ const ScreenPromptSection = ({ appKey, routeKey, routeParentKey, prompts, allPro
                         style={{ minHeight: expandedView ? '320px' : '160px' }}
                     />
 
-                    <FieldHint>분기 판단에 사용할 대표 문구를 한 번만 관리합니다.</FieldHint>
+                    <FieldHint>
+                        {promptType === 'input-hint'
+                            ? '줄바꿈으로 여러 문구를 입력하면 랜덤 노출됩니다.'
+                            : '분기 판단에 사용할 대표 문구를 한 번만 관리합니다.'}
+                    </FieldHint>
 
                     <PromptFooter>
                         <ToggleButton

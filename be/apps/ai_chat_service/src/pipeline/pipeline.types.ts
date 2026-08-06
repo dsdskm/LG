@@ -40,6 +40,14 @@ export type RagScoreEntry = {
   relaxed: boolean
 }
 
+export type MatchedRuleInfo = {
+  source: 'front-rule' | 'event-rule-first' | 'orchestrator' | 'guidance'
+  ruleKey?: string
+  ruleType?: string
+  reason?: string
+  confidence?: number
+}
+
 export type ChatReply = {
   chat_action: string
   chat_action_param?: Record<string, unknown>
@@ -50,6 +58,7 @@ export type ChatReply = {
   primaryChunkKey?: string
   usedChunks?: string[]
   ragScores?: RagScoreEntry[]
+  matchedRule?: MatchedRuleInfo
   images?: ChatReplyImage[]
 }
 

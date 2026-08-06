@@ -13,13 +13,15 @@ export {
   normalizeMessageKey,
   normalizeNameKey,
   normalizeNameToken,
+  pickTaskByStep,
+  pickTaskCandidateByStep,
   pickRagTaskflowTemplate,
   pickTaskContentByStep,
   resolveControlTaskContentCandidate,
   resolveFlowContextSummary,
   toFlowContextSummary,
   toLinearTaskflowStep,
-} from './core'
+} from './core/index'
 
 export {
   buildDocentFlowDraftFromMessage,

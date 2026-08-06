@@ -392,6 +392,111 @@ export const HistoryMeta = styled.div`
   font-size: 12px;
 `
 
+export const DebugSummaryBar = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #bfdbfe;
+  background: linear-gradient(180deg, #f8fbff 0%, #eff6ff 100%);
+`
+
+export const DebugChip = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid ${({ $tone = 'slate' }) => {
+    if ($tone === 'blue') return '#bfdbfe'
+    if ($tone === 'green') return '#bbf7d0'
+    if ($tone === 'amber') return '#fed7aa'
+    if ($tone === 'rose') return '#fecdd3'
+    return '#dbe3ef'
+  }};
+  background: ${({ $tone = 'slate' }) => {
+    if ($tone === 'blue') return '#eff6ff'
+    if ($tone === 'green') return '#f0fdf4'
+    if ($tone === 'amber') return '#fff7ed'
+    if ($tone === 'rose') return '#fff1f2'
+    return '#f8fafc'
+  }};
+  color: ${({ $tone = 'slate' }) => {
+    if ($tone === 'blue') return '#1d4ed8'
+    if ($tone === 'green') return '#047857'
+    if ($tone === 'amber') return '#c2410c'
+    if ($tone === 'rose') return '#be123c'
+    return '#475569'
+  }};
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+`
+
+export const DebugGrid = styled.div`
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+`
+
+export const DebugMetricCard = styled.div`
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #dbe3ef;
+  background: #ffffff;
+`
+
+export const DebugMetricLabel = styled.div`
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+`
+
+export const DebugMetricValue = styled.div`
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.5;
+  word-break: break-word;
+`
+
+export const DebugDetailPanel = styled.div`
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid #dbe3ef;
+  background: #f8fafc;
+`
+
+export const DebugDetailTitle = styled.div`
+  font-size: 12px;
+  font-weight: 800;
+  color: #1e3a8a;
+`
+
+export const DebugMonoBlock = styled.pre`
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #dbe3ef;
+  background: #ffffff;
+  color: #334155;
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+`
+
 export const HistoryMessage = styled.pre`
   margin: 0;
   padding: 12px;

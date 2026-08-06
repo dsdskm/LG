@@ -25,6 +25,7 @@ import {
   StyledAiAssistantImageTitle,
   StyledAiAssistantMessageList,
   StyledAiAssistantMessageMeta,
+  StyledAiAssistantPipelineTrace,
   StyledAiAssistantTextarea,
   StyledAiBotAvatar,
   StyledAiComposerBox,
@@ -115,6 +116,7 @@ const buildSendingStagePlan = (message) => {
 
 const TYPEWRITER_INTERVAL_MS = 110
 const ASSISTANT_TYPEWRITER_INTERVAL_MS = 24
+const DEFAULT_CHAT_INPUT_PLACEHOLDER = '현재 화면에 대해 질문해 보세요.'
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -125,6 +127,34 @@ const pickRandomItems = (items, count) => {
     ;[list[i], list[j]] = [list[j], list[i]]
   }
   return list.slice(0, count)
+}
+
+const pickRandomItem = (items) => {
+  const list = Array.isArray(items) ? items.filter(Boolean) : []
+  if (list.length <= 0) return ''
+  const index = Math.floor(Math.random() * list.length)
+  return String(list[index] ?? '').trim()
+}
+
+const parseInputHintCandidates = (value) => {
+  const raw = String(value ?? '').trim()
+  if (!raw) return []
+
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) {
+      return parsed
+        .map((item) => String(item ?? '').trim())
+        .filter(Boolean)
+    }
+  } catch {
+    // JSON 배열이 아니면 일반 텍스트로 처리
+  }
+
+  return raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
 }
 
 const normalizeRouteKey = (value) => String(value ?? '').trim().replace(/^\/+/, '')
@@ -193,6 +223,40 @@ const findGuidanceExamplesForPath = (guidanceItems, pathname) => {
   }
 
   return []
+}
+
+const findInputHintForPath = (promptItems, pathname) => {
+  const normalizedPath = normalizeRouteKey(pathname)
+  const list = Array.isArray(promptItems) ? promptItems : []
+
+  const hintRows = list
+    .filter((item) => {
+      const type = String(item?.promptType ?? item?.category ?? '').trim().toLowerCase()
+      return type === 'input-hint' && item?.enabled !== false
+    })
+    .map((item) => {
+      const key = normalizeRouteKey(item?.key ?? item?.routeKey)
+      const content = String(item?.content ?? '').trim()
+      return { key, content }
+    })
+    .filter((item) => item.content)
+
+  const scopedCandidates = hintRows
+    .filter((item) => item.key && item.key !== 'common' && routeTemplateMatches(item.key, normalizedPath))
+    .sort((left, right) => right.key.length - left.key.length)
+
+  if (scopedCandidates[0]?.content) {
+    const picks = parseInputHintCandidates(scopedCandidates[0].content)
+    return pickRandomItem(picks) || scopedCandidates[0].content
+  }
+
+  const commonHint = hintRows.find((item) => item.key === 'common')
+  if (commonHint?.content) {
+    const picks = parseInputHintCandidates(commonHint.content)
+    return pickRandomItem(picks) || commonHint.content
+  }
+
+  return DEFAULT_CHAT_INPUT_PLACEHOLDER
 }
 
 const buildMessageId = () => {
@@ -560,6 +624,36 @@ const extractRagMatchInfo = (result) => {
   }
 }
 
+const extractMatchedRuleInfo = (result) => {
+  const payload = result?.data ?? result ?? null
+  if (!payload || typeof payload !== 'object') {
+    return {
+      source: '',
+      ruleKey: '',
+      ruleType: '',
+      reason: '',
+      confidence: undefined,
+    }
+  }
+
+  const direct = payload?.matchedRule && typeof payload.matchedRule === 'object'
+    ? payload.matchedRule
+    : undefined
+  const nested = payload?.chat_action_param?.matchedRule && typeof payload.chat_action_param.matchedRule === 'object'
+    ? payload.chat_action_param.matchedRule
+    : undefined
+  const row = direct ?? nested ?? {}
+
+  const confidence = Number(row?.confidence)
+  return {
+    source: String(row?.source ?? '').trim(),
+    ruleKey: String(row?.ruleKey ?? '').trim() || String(payload?.chat_action_param?.matchedRuleKey ?? '').trim(),
+    ruleType: String(row?.ruleType ?? '').trim(),
+    reason: String(row?.reason ?? '').trim(),
+    confidence: Number.isFinite(confidence) ? confidence : undefined,
+  }
+}
+
 const resolveAssistantAssetUrl = (src) => {
   const value = String(src ?? '').trim()
   if (!value) return ''
@@ -778,6 +872,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
   const [pageContextOn, setPageContextOn] = useState(true)
   const [pendingNavigation, setPendingNavigation] = useState(null)
   const [screenSuggestions, setScreenSuggestions] = useState([])
+  const [chatInputPlaceholder, setChatInputPlaceholder] = useState(DEFAULT_CHAT_INPUT_PLACEHOLDER)
   const [isAssistantTyping, setIsAssistantTyping] = useState(false)
 
   const messageListRef = useRef(null)
@@ -792,6 +887,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
   const stageAdvanceTimerRef = useRef(null)
   const stageTypingIndexRef = useRef(0)
   const stageHoldUntilRef = useRef(0)
+  const submitInFlightRef = useRef(false)
   // 멀티턴: 직전에 이벤트 표에 적용된 필터. 후속 발화("심각도 높음만") 병합 기준.
   const lastFiltersRef = useRef(null)
 
@@ -1020,10 +1116,16 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
         if (cancelled) return
 
         const guidanceItems = response?.data?.management?.guidance ?? []
+        const promptItems = response?.data?.management?.prompts ?? []
         const examples = findGuidanceExamplesForPath(guidanceItems, routeContext.pathname)
+        const inputHint = findInputHintForPath(promptItems, routeContext.pathname)
         setScreenSuggestions(examples)
+        setChatInputPlaceholder(inputHint || DEFAULT_CHAT_INPUT_PLACEHOLDER)
       } catch {
-        if (!cancelled) setScreenSuggestions([])
+        if (!cancelled) {
+          setScreenSuggestions([])
+          setChatInputPlaceholder(DEFAULT_CHAT_INPUT_PLACEHOLDER)
+        }
       }
     }
 
@@ -1213,7 +1315,8 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
 
   const handleSubmit = async (text) => {
     const content = (text ?? draft).trim()
-    if (!content || isSending) return
+    if (!content || isSending || submitInFlightRef.current) return
+    submitInFlightRef.current = true
 
     const latestAssistantMessage = [...(Array.isArray(messages) ? messages : [])]
       .reverse()
@@ -1242,6 +1345,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
           createdAt: new Date().toISOString(),
           context,
         })
+        submitInFlightRef.current = false
         return
       }
 
@@ -1255,6 +1359,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
           createdAt: new Date().toISOString(),
           context,
         })
+        submitInFlightRef.current = false
         return
       }
 
@@ -1273,6 +1378,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
       const isCrossApp = getAppPrefix(resolvedPath) !== getAppPrefix(location.pathname)
       if (isCrossApp) window.location.href = '/' + resolvedPath
       else navigate(resolvedPath)
+      submitInFlightRef.current = false
       return
     }
 
@@ -1365,6 +1471,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
       const pipelineTrace = extractPipelineTrace(result)
       const pipelineConfidence = extractPipelineConfidence(result)
       const ragMatchInfo = extractRagMatchInfo(result)
+      const matchedRuleInfo = extractMatchedRuleInfo(result)
       if (pipelineConfidence !== undefined) {
         console.log(`[AI_CHAT][PIPELINE_CONFIDENCE] ${pipelineConfidence.toFixed(2)}`)
       }
@@ -1376,6 +1483,9 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
         , usedChunkKeys: ragMatchInfo.usedChunkKeys,
       })
       console.log('[AI_CHAT][RAG_SCORES]', ragMatchInfo.ragScores)
+      if (matchedRuleInfo.ruleKey || matchedRuleInfo.reason) {
+        console.log('[AI_CHAT][MATCHED_RULE]', matchedRuleInfo)
+      }
       const navigationPath = String(chat_action_param?.path ?? '').trim().replace(/^\/+/, '')
       const hasNavigationParams = chat_action === 'navigation' && extractPathParams(navigationPath).length > 0
       const suggestedActions = chat_action === 'ailog/event/filter' ? [] : extractSuggestedActions(result)
@@ -1390,6 +1500,9 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
           id: assistantMessageId,
           role: 'assistant',
           content: extractAssistantText(result),
+          pipelineTrace,
+          pipelineConfidence,
+          matchedRule: matchedRuleInfo,
           images,
           suggestedActions,
           createdAt: new Date().toISOString(),
@@ -1437,6 +1550,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
       stageQueueRef.current = []
       displayedStageRef.current = SENDING_STAGE.IDLE
       sendingStartedAtRef.current = null
+      submitInFlightRef.current = false
       textareaRef.current?.focus()
     }
   }
@@ -1587,6 +1701,14 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
                       : m.content}
                   </StyledAiAssistantMessageBubble>
 
+                  {m.role === 'assistant' && (m?.matchedRule?.ruleKey || m?.matchedRule?.reason || m?.pipelineTrace) ? (
+                    <StyledAiAssistantPipelineTrace>
+                      {m?.matchedRule?.ruleKey || m?.matchedRule?.reason
+                        ? `매칭 룰: ${String(m?.matchedRule?.ruleKey || '-')} ${String(m?.matchedRule?.ruleType || '').trim() ? `(${String(m.matchedRule.ruleType).trim()})` : ''}${Number.isFinite(Number(m?.matchedRule?.confidence)) ? ` · ${Number(m.matchedRule.confidence).toFixed(2)}` : ''}`
+                        : `흐름: ${String(m?.pipelineTrace ?? '').trim() || '-'}`}
+                    </StyledAiAssistantPipelineTrace>
+                  ) : null}
+
                   {m.role === 'assistant' && Array.isArray(m.images) && m.images[0] ? (
                     <StyledAiAssistantImageList>
                       <StyledAiAssistantImageCard key={m.images[0].id || m.images[0].src}>
@@ -1664,7 +1786,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="현재 화면에 대해 질문해 보세요."
+                placeholder={chatInputPlaceholder}
                 readOnly={isSending}
                 rows={3}
               />

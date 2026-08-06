@@ -6,6 +6,18 @@ import {
   CHAT_SETTING_KEYS,
   ChatSettingService,
 } from '../db/chat-setting.service'
+import {
+  buildLegacyEventRuleSettingKey,
+  listAllEventRuleRowsByScope,
+  parseLegacyEventRuleSettingKey,
+  replaceEventRulesByScope,
+} from '../db/event-rule-admin.repo'
+import {
+  buildLegacyEventAliasSettingKey,
+  listAllEventFilterAliasesByScope,
+  parseLegacyEventAliasSettingKey,
+  replaceEventFilterAliases,
+} from '../db/event-filter-alias.repo'
 import { PromptStoreService } from '../db/prompt-store.service'
 
 /**
@@ -159,6 +171,8 @@ export class ChatSettingController {
     const values = await this.settings.getAll()
     const schema = await this.settings.getSchema()
     const llmProvider = await this.settings.getLlmProvider()
+    const eventRulesByScope = await listAllEventRuleRowsByScope()
+    const eventAliasesByScope = await listAllEventFilterAliasesByScope()
     const [screens, prompts, guidance, ragDocs, screenTools, actionTypes, history] = await Promise.all([
       this.promptStore.listScreens(),
       this.promptStore.listPrompts(),
@@ -173,10 +187,60 @@ export class ChatSettingController {
       `[chat_settings] getAll screens=${screens.length} prompts=${prompts.length} guidance=${guidance.length} ragDocs=${ragDocs.length} screenTools=${screenTools.length} actionTypes=${actionTypes.length}`,
     )
 
+    const bridgedValues: Record<string, unknown> = { ...values, llmProvider }
+    for (const [scopeKey, rows] of Object.entries(eventRulesByScope)) {
+      bridgedValues[buildLegacyEventRuleSettingKey(scopeKey)] = rows
+    }
+    for (const [scopeKey, aliases] of Object.entries(eventAliasesByScope)) {
+      bridgedValues[buildLegacyEventAliasSettingKey(scopeKey, 'period')] = aliases.period
+      bridgedValues[buildLegacyEventAliasSettingKey(scopeKey, 'severity')] = aliases.severity
+      bridgedValues[buildLegacyEventAliasSettingKey(scopeKey, 'status')] = aliases.status
+    }
+
     return ok({
       schema,
-      values: { ...values, llmProvider },
+      values: bridgedValues,
       management: { screens, prompts, guidance, ragDocs, screenTools, actionTypes, history },
+    })
+  }
+
+  @Get('history')
+  @ApiOperation({ summary: '채팅 내역 페이지 조회' })
+  @ApiOkResponse({ description: '페이지네이션된 채팅 내역 반환' })
+  async getHistory(
+    @Query('page') pageRaw?: string,
+    @Query('pageSize') pageSizeRaw?: string,
+    @Query('currentApp') currentApp?: string,
+    @Query('author') author?: string,
+    @Query('conversationId') conversationId?: string,
+  ) {
+    const page = Number(pageRaw)
+    const pageSize = Number(pageSizeRaw)
+    this.logger.log(
+      `[chat_settings] history request page=${Number.isFinite(page) ? page : 1} pageSize=${Number.isFinite(pageSize) ? pageSize : 20} currentApp=${String(currentApp ?? '').trim() || '-'} author=${String(author ?? '').trim() || '-'} conversationId=${String(conversationId ?? '').trim() || '-'}`,
+    )
+    const paged = await this.chatLog.listPage({
+      page: Number.isFinite(page) ? page : 1,
+      pageSize: Number.isFinite(pageSize) ? pageSize : 20,
+      currentApp,
+      author,
+      conversationId,
+    })
+
+    this.logger.log(
+      `[chat_settings] history response page=${paged.page}/${paged.totalPages} pageSize=${paged.pageSize} total=${paged.total} returned=${paged.items.length}`,
+    )
+
+    return ok({
+      items: paged.items,
+      pagination: {
+        page: paged.page,
+        pageSize: paged.pageSize,
+        total: paged.total,
+        totalPages: paged.totalPages,
+        hasNext: paged.hasNext,
+        hasPrev: paged.hasPrev,
+      },
     })
   }
 
@@ -195,6 +259,19 @@ export class ChatSettingController {
     // 일반 key/value 배열
     for (const item of body?.settings ?? []) {
       if (!item?.key) continue
+
+      const eventRuleScope = parseLegacyEventRuleSettingKey(item.key)
+      if (eventRuleScope) {
+        await replaceEventRulesByScope(eventRuleScope.scopeKey, item.value)
+        continue
+      }
+
+      const eventAliasScope = parseLegacyEventAliasSettingKey(item.key)
+      if (eventAliasScope) {
+        await replaceEventFilterAliases(eventAliasScope.scopeKey, eventAliasScope.aliasType, item.value)
+        continue
+      }
+
       const value =
         item.key === CHAT_SETTING_KEYS.llmProvider
           ? this.settings.normalizeProvider(item.value)
@@ -204,7 +281,20 @@ export class ChatSettingController {
 
     const values = await this.settings.getAll()
     const llmProvider = await this.settings.getLlmProvider()
-    return ok({ values: { ...values, llmProvider } })
+    const eventRulesByScope = await listAllEventRuleRowsByScope()
+    const eventAliasesByScope = await listAllEventFilterAliasesByScope()
+
+    const bridgedValues: Record<string, unknown> = { ...values, llmProvider }
+    for (const [scopeKey, rows] of Object.entries(eventRulesByScope)) {
+      bridgedValues[buildLegacyEventRuleSettingKey(scopeKey)] = rows
+    }
+    for (const [scopeKey, aliases] of Object.entries(eventAliasesByScope)) {
+      bridgedValues[buildLegacyEventAliasSettingKey(scopeKey, 'period')] = aliases.period
+      bridgedValues[buildLegacyEventAliasSettingKey(scopeKey, 'severity')] = aliases.severity
+      bridgedValues[buildLegacyEventAliasSettingKey(scopeKey, 'status')] = aliases.status
+    }
+
+    return ok({ values: bridgedValues })
   }
 
   @Put('prompts/:id')
@@ -416,21 +506,4 @@ export class ChatSettingController {
     return ok(out)
   }
 
-  @Get('history')
-  @ApiOperation({ summary: '최근 채팅 기록 조회' })
-  @ApiOkResponse({ description: '최근 채팅 기록 반환' })
-  async getHistory(
-    @Query('limit') limit?: string,
-    @Query('currentApp') currentApp?: string,
-    @Query('author') author?: string,
-    @Query('conversationId') conversationId?: string,
-  ) {
-    const rows = await this.chatLog.list({
-      limit: Number(limit),
-      currentApp: currentApp || undefined,
-      author: author || undefined,
-      conversationId: conversationId || undefined,
-    })
-    return ok({ items: rows })
-  }
 }

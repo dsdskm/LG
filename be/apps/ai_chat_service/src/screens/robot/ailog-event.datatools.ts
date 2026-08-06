@@ -8,6 +8,7 @@
 import type { ToolContext, ToolDefinition } from '../../pipeline/tool.type'
 import { fetchQueryLogs, fetchFuncs, type FuncCatalogItem } from '../../integrations/robot-api.client'
 import { buildEventSummary } from '../../integrations/event-summary.util'
+import { listEventFilterAliases, type EventFilterAliasRow } from '../../db/event-filter-alias.repo'
 import {
   buildEventQueryCacheKey,
   getEventQueryCache,
@@ -35,6 +36,7 @@ async function resolveFuncFilter(
 ): Promise<{ func?: string; keyword?: string }> {
   const func = funcArg ? String(funcArg).trim() : undefined
   let keyword = keywordArg ? String(keywordArg) : undefined
+  const sourceText = String(sourceTextArg ?? '').trim()
   const catalog = await fetchFuncs(ctx).catch((): FuncCatalogItem[] => [])
   const catalogNames = Array.from(
     new Set(
@@ -50,10 +52,41 @@ async function resolveFuncFilter(
     return catalogNames.find((name) => normKey(name) === target)
   }
 
+  const aliasEntries = catalog.map((item) => {
+    const canonicalFunc = String(item?.func ?? '').trim()
+    const aliases = [canonicalFunc, ...(Array.isArray(item?.tags) ? item.tags : [])]
+      .map((alias) => String(alias ?? '').trim())
+      .filter(Boolean)
+    return { canonicalFunc, aliases }
+  })
+
+  const matchByAliasInText = (text?: string) => {
+    const compactText = compactForMatch(text)
+    if (!compactText) return undefined
+
+    for (const row of aliasEntries) {
+      if (!row.canonicalFunc) continue
+      for (const alias of row.aliases) {
+        const compactAlias = compactForMatch(alias)
+        if (compactAlias.length < 2) continue
+        if (compactText === compactAlias || compactText.includes(compactAlias)) {
+          return row.canonicalFunc
+        }
+      }
+    }
+
+    return undefined
+  }
+
   if (!func) {
     const matchedByKeyword = matchByExactName(keyword)
     if (matchedByKeyword) {
       return { func: matchedByKeyword, keyword: undefined }
+    }
+
+    const matchedByAlias = matchByAliasInText(keyword) || matchByAliasInText(sourceText)
+    if (matchedByAlias) {
+      return { func: matchedByAlias, keyword: undefined }
     }
 
     return { func: undefined, keyword }
@@ -63,8 +96,19 @@ async function resolveFuncFilter(
 
   if (matched) return { func: matched, keyword }
 
+  const matchedByFuncAlias = matchByAliasInText(func)
+  if (matchedByFuncAlias) {
+    return { func: matchedByFuncAlias, keyword: undefined }
+  }
+
   // 드롭다운에 없는 기능명은 전부 키워드 검색으로 폴백.
   if (!keyword) keyword = func
+
+  const matchedByFallbackAlias = matchByAliasInText(keyword) || matchByAliasInText(sourceText)
+  if (matchedByFallbackAlias) {
+    return { func: matchedByFallbackAlias, keyword: undefined }
+  }
+
   return { func: undefined, keyword }
 }
 
@@ -299,60 +343,6 @@ function getContextEventDateRange(ctx: ToolContext): { start?: string; end?: str
   return { start, end }
 }
 
-function normalizeSeverity(severityArg?: string, sourceTextArg?: string): string | undefined {
-  const severity = String(severityArg ?? '').trim().toLowerCase()
-  if (['critical', 'high', 'medium', 'low'].includes(severity)) return severity
-
-  const source = String(sourceTextArg ?? '').toLowerCase()
-  if (!source) return undefined
-  if (/\bcritical\b/.test(source)) return 'critical'
-  if (/\bhigh\b/.test(source)) return 'high'
-  if (/\bmedium\b/.test(source)) return 'medium'
-  if (/\blow\b/.test(source)) return 'low'
-  return undefined
-}
-
-const STATUS_DROPDOWN_VALUES = [
-  'received',
-  'prepared',
-  'prepare_failed',
-  'analyzing',
-  'analyzed',
-  'analyze_failed',
-  'completed',
-  'failed',
-]
-
-const STATUS_DROPDOWN_LABELS: Record<string, string> = {
-  '로그획득': 'received',
-  '분석준비완료': 'prepared',
-  '분석준비실패': 'prepare_failed',
-  '분석중': 'analyzing',
-  '분석완료': 'analyzed',
-  '분석실패': 'analyze_failed',
-  '조치완료': 'completed',
-  '오류발생': 'failed',
-}
-
-function normalizeStatusByDropdown(statusArg?: string): string | undefined {
-  const status = String(statusArg ?? '').trim().toLowerCase()
-  if (!status) return undefined
-
-  if (STATUS_DROPDOWN_VALUES.includes(status)) return status
-
-  const compact = compactForMatch(status)
-  return STATUS_DROPDOWN_LABELS[compact]
-}
-
-function normalizeStatus(statusArg?: string, sourceTextArg?: string): string | undefined {
-  const normalizedArg = normalizeStatusByDropdown(statusArg)
-  if (normalizedArg) return normalizedArg
-
-  const source = String(sourceTextArg ?? '').toLowerCase()
-  if (!source) return undefined
-  return normalizeStatusByDropdown(source)
-}
-
 function mergeKeyword(...values: Array<string | undefined>): string | undefined {
   const tokens = values
     .map((value) => String(value ?? '').trim())
@@ -360,6 +350,45 @@ function mergeKeyword(...values: Array<string | undefined>): string | undefined 
 
   if (tokens.length === 0) return undefined
   return Array.from(new Set(tokens)).join(' ')
+}
+
+function extractIssueQuerySlots(value?: string): { period?: string; keyword?: string } {
+  const raw = String(value ?? '').trim()
+  if (!raw) return {}
+
+  const normalized = raw.replace(/\s+/g, ' ')
+  const requestSuffix = '(?:보여줘|알려줘|찾아봐|찾아줘|검색해봐|검색해줘|검색|뭐있어|뭐야|말해줘|말해줄래|알려줄래)?'
+  const periodToken = [
+    '오늘',
+    '어제',
+    '최근(?:\\s*\\d+\\s*일)?',
+    '한달간',
+    '한달',
+    '1개월',
+    '일주일(?:간)?',
+    '주간',
+    '이번주',
+    '지난주',
+    '이번달',
+    '지난달',
+    '\\d+\\s*(?:달|개월)\\s*(?:전|동안)?',
+    '\\d{1,2}\\s*일\\s*전',
+    '\\d{4}[./-]\\d{1,2}[./-]\\d{1,2}',
+    '\\d{1,2}\\s*월\\s*\\d{1,2}\\s*일',
+  ].join('|')
+
+  const pattern = new RegExp(
+    `^(?:(${periodToken})(?:\\s*(?:간|동안|전|부터|까지))?\\s+)?(?:.*\\s)?([^\\s,]+)\\s*(?:이슈|이벤트)\\s*(?:중|중에|에서)?\\s*${requestSuffix}$`,
+    'i',
+  )
+
+  const matched = normalized.match(pattern)
+  if (!matched) return {}
+
+  return {
+    period: String(matched[1] ?? '').trim() || undefined,
+    keyword: String(matched[2] ?? '').trim() || undefined,
+  }
 }
 
 /** LLM이 넘긴 상대 기간 키워드를 start/end로 정규화. */
@@ -400,6 +429,23 @@ function resolvePeriod(period?: string, start?: string, end?: string, sourceText
     return { start: daysAgo(89), end: today() }
   }
 
+  const relativeMonthMatch = source.match(/(\d+)\s*(?:달|개월)\s*(?:전|동안)?/)
+  if (relativeMonthMatch) {
+    const months = Number(relativeMonthMatch[1])
+    if (Number.isFinite(months) && months > 0) {
+      const spanDays = Math.max(1, months * 30 - 1)
+      return { start: daysAgo(spanDays), end: today() }
+    }
+  }
+
+  const relativeDayMatch = source.match(/(\d+)\s*일\s*전/)
+  if (relativeDayMatch) {
+    const days = Number(relativeDayMatch[1])
+    if (Number.isFinite(days) && days > 0) {
+      return { start: daysAgo(days), end: daysAgo(days) }
+    }
+  }
+
   switch (normalizedPeriod) {
     case 'today':
     case '오늘':
@@ -422,6 +468,52 @@ function resolvePeriod(period?: string, start?: string, end?: string, sourceText
       }
       return { start: today(), end: today() }
   }
+}
+
+function matchesAlias(mode: 'exact' | 'contains' | 'regex', sourcePattern: string, target: string): boolean {
+  if (!sourcePattern || !target) return false
+
+  if (mode === 'exact') {
+    return compactForMatch(target) === compactForMatch(sourcePattern)
+  }
+
+  if (mode === 'regex') {
+    try {
+      return new RegExp(sourcePattern, 'i').test(target)
+    } catch {
+      return false
+    }
+  }
+
+  return compactForMatch(target).includes(compactForMatch(sourcePattern))
+}
+
+function findAliasValue(aliases: EventFilterAliasRow[], valueA?: string, valueB?: string): string | undefined {
+  const candidates = [String(valueA ?? '').trim(), String(valueB ?? '').trim()].filter(Boolean)
+  if (candidates.length === 0) return undefined
+
+  for (const alias of aliases) {
+    if (!alias?.enabled) continue
+    for (const candidate of candidates) {
+      if (matchesAlias(alias.matchMode, alias.sourcePattern, candidate)) {
+        return String(alias.normalizedValue ?? '').trim() || undefined
+      }
+    }
+  }
+
+  return undefined
+}
+
+function normalizeSeverityByAliases(aliases: EventFilterAliasRow[], severityArg?: string, sourceTextArg?: string): string | undefined {
+  return findAliasValue(aliases, severityArg, sourceTextArg)
+}
+
+function normalizeStatusByAliases(aliases: EventFilterAliasRow[], statusArg?: string, sourceTextArg?: string): string | undefined {
+  return findAliasValue(aliases, statusArg, sourceTextArg)
+}
+
+function normalizePeriodByAliases(aliases: EventFilterAliasRow[], periodArg?: string, sourceTextArg?: string): string | undefined {
+  return findAliasValue(aliases, periodArg, sourceTextArg)
 }
 
 export const queryEvents: ToolDefinition = {
@@ -464,6 +556,12 @@ export const queryEvents: ToolDefinition = {
     },
   },
   async execute(args, ctx: ToolContext) {
+        const [periodAliases, severityAliases, statusAliases] = await Promise.all([
+          listEventFilterAliases('robot/ailog/event', 'period'),
+          listEventFilterAliases('robot/ailog/event', 'severity'),
+          listEventFilterAliases('robot/ailog/event', 'status'),
+        ])
+
     const rawMessage = String((ctx.context as Record<string, unknown> | undefined)?.__userMessage ?? '').trim()
 
     const phraseMatch = rawMessage
@@ -506,9 +604,27 @@ export const queryEvents: ToolDefinition = {
       return s || undefined
     }
 
-    const explicitPeriodArg = asOptionalString(mergedArgs.period)
-    const explicitStartArg = asOptionalString(mergedArgs.start)
-    const explicitEndArg = asOptionalString(mergedArgs.end)
+    const issueSlots = extractIssueQuerySlots(rawMessage)
+
+    const normalizedMergedArgs: Record<string, unknown> = {
+      ...mergedArgs,
+      period: asOptionalString(mergedArgs.period) ?? issueSlots.period,
+      keyword: (() => {
+        const existingKeyword = asOptionalString(mergedArgs.keyword)
+        const hasStructuredFilter = Boolean(
+          asOptionalString(mergedArgs.func) ||
+          asOptionalString(mergedArgs.severity) ||
+          asOptionalString(mergedArgs.status)
+        )
+
+        if (hasStructuredFilter) return existingKeyword
+        return issueSlots.keyword ?? existingKeyword
+      })(),
+    }
+
+    const explicitPeriodArg = asOptionalString(normalizedMergedArgs.period)
+    const explicitStartArg = asOptionalString(normalizedMergedArgs.start)
+    const explicitEndArg = asOptionalString(normalizedMergedArgs.end)
     const hasExplicitArgPeriod = Boolean(explicitPeriodArg || explicitStartArg || explicitEndArg)
     const hasExplicitTextPeriod = hasExplicitPeriodOrDateInText(sourceTextWithMappedArgs || sourceText)
     const contextDateRange = getContextEventDateRange(ctx)
@@ -526,22 +642,28 @@ export const queryEvents: ToolDefinition = {
       )
     }
 
-    const { start, end } = resolvePeriod(
+    const normalizedPeriodFromAlias = normalizePeriodByAliases(
+      periodAliases,
       explicitPeriodArg,
+      sourceTextWithMappedArgs || sourceText,
+    )
+
+    const { start, end } = resolvePeriod(
+      normalizedPeriodFromAlias ?? explicitPeriodArg,
       effectiveStartArg,
       effectiveEndArg,
       sourceTextWithMappedArgs || sourceText,
     )
-    const rawSeverity = asOptionalString(mergedArgs.severity)
-    const rawStatus = asOptionalString(mergedArgs.status)
-    const rawFunc = asOptionalString(mergedArgs.func)
+    const rawSeverity = asOptionalString(normalizedMergedArgs.severity)
+    const rawStatus = asOptionalString(normalizedMergedArgs.status)
+    const rawFunc = asOptionalString(normalizedMergedArgs.func)
 
-    const severity = normalizeSeverity(rawSeverity, sourceTextWithMappedArgs || sourceText)
-    const status = normalizeStatus(rawStatus, sourceTextWithMappedArgs || sourceText)
+    const severity = normalizeSeverityByAliases(severityAliases, rawSeverity, sourceTextWithMappedArgs || sourceText)
+    const status = normalizeStatusByAliases(statusAliases, rawStatus, sourceTextWithMappedArgs || sourceText)
     const { func, keyword: resolvedKeyword } = await resolveFuncFilter(
       ctx,
       rawFunc,
-      asOptionalString(mergedArgs.keyword),
+      asOptionalString(normalizedMergedArgs.keyword),
       sourceTextWithMappedArgs || sourceText,
     )
 

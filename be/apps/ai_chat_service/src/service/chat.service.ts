@@ -20,9 +20,18 @@ import { findPhraseMapMatch } from '../db/query-phrase-map.repo'
 import { ChatOrchestrator } from '../pipeline/chat.orchestrator'
 import { loadChatPipelineConfig } from '../pipeline/pipeline.config'
 import type { ChatReply, ChatReplyImage, ChatTurn, SuggestedAction } from '../pipeline/pipeline.types'
+import {
+  includesConfiguredPhrase,
+  loadTaskflowClassifierRules,
+  type TaskflowClassifierRules,
+} from '../pipeline/taskflow-language-rules'
 import { getScreenConfig } from '../pipeline/screen-registry'
+import type { ToolDefinition } from '../pipeline/tool.type'
 import { buildToolContextFromBody } from '../pipeline/tool-context.util'
 import { queryEvents } from '../screens/robot/ailog-event.datatools'
+import { matchAiLogEventRule } from '../domains/ai-log-event/event-rule-first'
+import { matchFrontRule, type FrontRuleMatch } from '../domains/front-rule/front-rule-engine'
+import type { MatchedRuleInfo } from '../pipeline/pipeline.types'
 
 type RuntimeEntry = {
   llm: LlmRuntime
@@ -42,6 +51,7 @@ type ChatContext = {
   currentPath: string
   key: string
   history: ChatTurn[]
+  taskflowClassifierRules: TaskflowClassifierRules
 }
 
 type ChatLogDebugMeta = {
@@ -64,7 +74,8 @@ type ChatLogDebugMeta = {
     userEmail?: string
     accountId?: string
   }
-  source?: 'orchestrator' | 'rule-first' | 'guidance'
+  source?: 'orchestrator' | 'rule-first' | 'guidance' | 'front-rule'
+  matchedRule?: MatchedRuleInfo
 }
 
 type ScreenSummary = {
@@ -87,17 +98,6 @@ type ScreenTask =
   | 'create'
   | 'update'
   | 'delete'
-
-const TASKFLOW_EXPLANATION_KEYWORDS = [
-  /설명/, /구성/, /구조/, /예시/, /사용법/, /어떻게/, /뭐야/, /무엇/, /알려/, /차이/, /노드/,
-]
-
-const TASKFLOW_COMPOSE_REQUEST_KEYWORDS = [
-  /만들어\s*줘/i, /구성해\s*줘/i, /생성해\s*줘/i, /추가해\s*줘/i, /캔버스/i, /반영해\s*줘/i,
-]
-
-const TASKFLOW_EXPLANATION_IMAGE_MIN_SCORE = 5
-const TASKFLOW_EXPLANATION_IMAGE_MIN_SCORE_ALWAYS = 1
 
 @Injectable()
 export class ChatService {
@@ -333,14 +333,29 @@ export class ChatService {
     this.stageLog('2단계:컨텍스트구성', 'built', `routeKey=${ctx.key} 기준 대화 컨텍스트 구성 완료`, reqId)
     // this.logger.log(`[handleChat] ctx ${JSON.stringify(ctx)}`)
 
+    const frontRuleReply = await this.tryFrontRuleEngine(ctx)
+    if (frontRuleReply) {
+      this.stageLog('3단계:룰우선처리', 'served', '화면별 front-rule 처리로 응답 완료', reqId)
+      return this.ensureUserFacingReply(this.withSuggestedActions(
+        this.withTaskflowExplanationImages(
+          this.attachPipelineTrace(
+            frontRuleReply,
+            'rule(front-rule)=>direct(info|action)=>응답조립',
+          ),
+          ctx,
+        ),
+        ctx,
+      ))
+    }
+
     const ruleFirstReply = await this.tryRuleFirstEventQuery(ctx)
     if (ruleFirstReply) {
-      this.stageLog('3단계:룰우선처리', 'served', 'phrase-map/휴리스틱 우선 처리로 응답 완료', reqId)
+      this.stageLog('3단계:룰우선처리', 'served', 'event 전용 룰우선 처리로 응답 완료', reqId)
       return this.ensureUserFacingReply(this.withSuggestedActions(
         this.withTaskflowExplanationImages(
           this.attachPipelineTrace(
             ruleFirstReply,
-            'rule(phrase-map|heuristic)=>tool(query_events)=>응답조립',
+            'rule(event-rule-first)=>tool(query_events)=>응답조립',
           ),
           ctx,
         ),
@@ -539,7 +554,7 @@ export class ChatService {
   private withSuggestedActions(reply: ChatReply, ctx: ChatContext): ChatReply {
     if (
       this.isTmsCanvasRoute(ctx.key) &&
-      this.looksLikeTaskflowComposeMessage(ctx.message) &&
+      this.looksLikeTaskflowComposeMessage(ctx.message, ctx.taskflowClassifierRules) &&
       !this.hasCanvasDraftParam(reply)
     ) {
       // 구성 요청인데 draft 없는 응답을 suggested_actions로 덮어 실패를 감추지 않도록 한다.
@@ -561,14 +576,18 @@ export class ChatService {
     return /^tms\/taskflows\/[^/]+\/canvas(?:\/|$)/.test(normalized)
   }
 
-  private looksLikeTaskflowComposeMessage(message: string): boolean {
+  private hasClassifierPhrase(text: string, phrases: string[]): boolean {
+    return includesConfiguredPhrase(text, Array.isArray(phrases) ? phrases : [])
+  }
+
+  private looksLikeTaskflowComposeMessage(message: string, rules: TaskflowClassifierRules): boolean {
     const text = this.normalize(message)
     if (!text) return false
 
-    const asksCompose = /(구성해줘|구성해\s*줘|만들어줘|만들어\s*줘|태스크\s*플로우|태스크플로우|taskflow)/i.test(text)
+    const asksCompose = this.hasClassifierPhrase(text, rules.composeRequestKeywords)
     if (!asksCompose) return false
 
-    return /(이동|move|->|→|거쳐|들러|갔다가|에서\s*.+\s*로)/i.test(text)
+    return this.hasClassifierPhrase(text, rules.composeMoveHintKeywords)
   }
 
   private hasCanvasDraftParam(reply: ChatReply | null | undefined): boolean {
@@ -585,14 +604,18 @@ export class ChatService {
     return Boolean(toolResult?.canvasDraft && typeof toolResult.canvasDraft === 'object')
   }
 
-  private looksLikeTaskflowExplanationMessage(message: string, reply: ChatReply): boolean {
+  private looksLikeTaskflowExplanationMessage(
+    message: string,
+    reply: ChatReply,
+    rules: TaskflowClassifierRules,
+  ): boolean {
     const sourceText = `${this.normalize(message)} ${this.normalize(reply?.text)}`
     if (!sourceText) return false
 
-    const hasExplanationKeyword = TASKFLOW_EXPLANATION_KEYWORDS.some((pattern) => pattern.test(sourceText))
+    const hasExplanationKeyword = this.hasClassifierPhrase(sourceText, rules.explanationKeywords)
     if (!hasExplanationKeyword) return false
 
-    const looksLikeComposeRequest = TASKFLOW_COMPOSE_REQUEST_KEYWORDS.some((pattern) => pattern.test(this.normalize(message)))
+    const looksLikeComposeRequest = this.hasClassifierPhrase(this.normalize(message), rules.composeRequestKeywords)
     return !looksLikeComposeRequest
   }
 
@@ -624,7 +647,12 @@ export class ChatService {
     return score
   }
 
-  private resolveTaskflowExplanationChunk(routeKey: string, message: string, reply: ChatReply): RagChunkData | null {
+  private resolveTaskflowExplanationChunk(
+    routeKey: string,
+    message: string,
+    reply: ChatReply,
+    rules: TaskflowClassifierRules,
+  ): RagChunkData | null {
     const store = getPromptStore()
     const normalizedRouteKey = this.findNearestRegisteredRouteKey(routeKey) ?? this.normalizeRouteLike(routeKey)
     const collection = store?.getCollection(normalizedRouteKey)
@@ -643,8 +671,8 @@ export class ChatService {
       .map((chunk) => ({ chunk, score: this.scoreTaskflowExplanationChunk(query, chunk) }))
       .filter((item) => {
         const mode = String(item.chunk.imageAttachMode ?? 'auto').toLowerCase()
-        if (mode === 'always') return item.score >= TASKFLOW_EXPLANATION_IMAGE_MIN_SCORE_ALWAYS
-        return item.score >= TASKFLOW_EXPLANATION_IMAGE_MIN_SCORE
+        if (mode === 'always') return item.score >= Number(rules.explanationImageMinScoreAlways ?? 1)
+        return item.score >= Number(rules.explanationImageMinScore ?? 5)
       })
       .sort((left, right) => {
         const leftMode = String(left.chunk.imageAttachMode ?? 'auto').toLowerCase()
@@ -664,8 +692,13 @@ export class ChatService {
     return scored[0]?.chunk ?? null
   }
 
-  private resolveTaskflowExplanationImages(routeKey: string, message: string, reply: ChatReply): ChatReplyImage[] {
-    const matched = this.resolveTaskflowExplanationChunk(routeKey, message, reply)
+  private resolveTaskflowExplanationImages(
+    routeKey: string,
+    message: string,
+    reply: ChatReply,
+    rules: TaskflowClassifierRules,
+  ): ChatReplyImage[] {
+    const matched = this.resolveTaskflowExplanationChunk(routeKey, message, reply, rules)
     if (!matched) return []
 
     const src = String(matched.imageUrl ?? '').trim()
@@ -683,9 +716,14 @@ export class ChatService {
   private withTaskflowExplanationImages(reply: ChatReply, ctx: ChatContext): ChatReply {
     if (!this.isTmsCanvasRoute(ctx.key)) return reply
     if (this.hasCanvasDraftParam(reply)) return reply
-    if (!this.looksLikeTaskflowExplanationMessage(ctx.message, reply)) return reply
+    if (!this.looksLikeTaskflowExplanationMessage(ctx.message, reply, ctx.taskflowClassifierRules)) return reply
 
-    const images = this.resolveTaskflowExplanationImages(ctx.key, ctx.message, reply)
+    const images = this.resolveTaskflowExplanationImages(
+      ctx.key,
+      ctx.message,
+      reply,
+      ctx.taskflowClassifierRules,
+    )
     if (images.length === 0) return reply
 
     return {
@@ -699,7 +737,7 @@ export class ChatService {
     reply: ChatReply,
   ): Promise<ChatReply | null> {
     if (!this.isTmsCanvasRoute(ctx.key)) return null
-    if (!this.looksLikeTaskflowComposeMessage(ctx.message)) return null
+    if (!this.looksLikeTaskflowComposeMessage(ctx.message, ctx.taskflowClassifierRules)) return null
     if (this.hasCanvasDraftParam(reply)) return null
 
     const actionParam = reply?.chat_action_param && typeof reply.chat_action_param === 'object'
@@ -789,6 +827,7 @@ export class ChatService {
     const currentPath = this.normalize(body.currentPath)
     const message = this.normalize(body.message)
     const key = this.resolveRouteKey(body, currentApp, currentPath, reqId)
+    const taskflowClassifierRules = await loadTaskflowClassifierRules(key)
     const author = this.resolveAuthor(body)
     const conversationId = this.resolveConversationId(body)
 
@@ -828,6 +867,7 @@ export class ChatService {
       currentPath,
       key,
       history,
+      taskflowClassifierRules,
     }
   }
 
@@ -1341,12 +1381,13 @@ export class ChatService {
     }
 
     const phraseMatch = await findPhraseMapMatch('robot/ailog/event', ctx.message)
-    const normalizedMessage = String(ctx.message ?? '').toLowerCase()
-    const heuristicQuickQuery =
-      /(이슈|이벤트)/.test(normalizedMessage) &&
-      /(오늘|어제|일주일|한달|한\s*달|1개월|3개월|3달|\d{1,2}월\s*\d{1,2}일|부터|까지)/.test(normalizedMessage)
+    const eventRuleMatch = await matchAiLogEventRule({
+      routeKey: 'robot/ailog/event',
+      message: ctx.message,
+      phraseMatch,
+    })
 
-    if (!phraseMatch && !heuristicQuickQuery) {
+    if (!eventRuleMatch) {
       this.stageLog('3단계:룰우선처리', 'miss', '매칭 규칙이 없어 일반 파이프라인으로 진행', ctx.reqId)
       return null
     }
@@ -1359,7 +1400,12 @@ export class ChatService {
         ctx.reqId,
       )
     } else {
-      this.stageLog('3단계:룰우선처리', 'heuristic', '휴리스틱 조건 만족으로 즉시 조회 처리', ctx.reqId)
+      this.stageLog(
+        '3단계:룰우선처리',
+        'rule-matched',
+        `이벤트 룰 매칭(${eventRuleMatch.type}, confidence=${eventRuleMatch.confidence})`,
+        ctx.reqId,
+      )
     }
 
     const toolCtx = buildToolContextFromBody({
@@ -1372,7 +1418,9 @@ export class ChatService {
     })
 
     try {
-      const result = (await queryEvents.execute({}, toolCtx)) as any
+      const result = (await queryEvents.execute({
+        ...eventRuleMatch.toolArgs,
+      }, toolCtx)) as any
       const filters = result?.resolvedFilters && typeof result.resolvedFilters === 'object'
         ? result.resolvedFilters
         : undefined
@@ -1386,6 +1434,17 @@ export class ChatService {
       }
 
       const normalizedReply = this.ensurePeriodInEventReply(reply)
+      const matchedRuleSource = eventRuleMatch.type === 'phrase-map' ? 'phrase-map' : 'db-rule'
+      const matchedRuleKey = String(eventRuleMatch.reason ?? '').replace(/^db-rule:/, '').trim()
+      normalizedReply.matchedRule = {
+        source: 'event-rule-first',
+        ruleType: matchedRuleSource,
+        ruleKey: matchedRuleKey || undefined,
+        reason: eventRuleMatch.reason,
+        confidence: Number.isFinite(Number(eventRuleMatch.confidence))
+          ? Number(eventRuleMatch.confidence)
+          : undefined,
+      }
       await this.saveLog(ctx.body, normalizedReply, ctx, this.buildChatLogDebugMeta(ctx, normalizedReply, undefined, 'rule-first'))
       this.stageLog('3단계:룰우선처리', 'served', '룰 기반 직접 조회 응답 반환 완료', ctx.reqId)
       return normalizedReply
@@ -1394,6 +1453,247 @@ export class ChatService {
         `[rule-first] direct query failed route=${matchedRouteKey} err=${e?.message ?? String(e)}; fallback to pipeline`,
       )
       this.stageLog('3단계:룰우선처리', 'error', '직접 조회 실패로 일반 파이프라인으로 폴백', ctx.reqId)
+      return null
+    }
+  }
+
+  private resolveFrontRuleCollections(routeKey: string): string[] {
+    const screen = getScreenConfig(routeKey)
+    if (!screen) return ['common']
+
+    const values = [
+      'common',
+      String(screen.ragCollection ?? '').trim(),
+      String(screen.appKey ?? '').trim(),
+    ].filter(Boolean)
+
+    return Array.from(new Set(values))
+  }
+
+  private resolveFrontRuleChunks(routeKey: string, chunkKeys: string[]): Array<{ key: string; title: string; body: string; collection: string }> {
+    const keys = Array.from(new Set((Array.isArray(chunkKeys) ? chunkKeys : []).map((item) => String(item ?? '').trim()).filter(Boolean)))
+    if (keys.length === 0) return []
+
+    const store = getPromptStore()
+    if (!store) return []
+
+    const collections = this.resolveFrontRuleCollections(routeKey)
+    const found: Array<{ key: string; title: string; body: string; collection: string }> = []
+    const seen = new Set<string>()
+
+    for (const chunkKey of keys) {
+      if (seen.has(chunkKey)) continue
+
+      for (const collectionName of collections) {
+        const collection = store.getCollection(collectionName)
+        if (!collection) continue
+
+        const chunk = (Array.isArray(collection.chunks) ? collection.chunks : []).find((row) => String(row.id ?? '').trim() === chunkKey)
+        if (!chunk) continue
+
+        found.push({
+          key: chunkKey,
+          title: String(chunk.title ?? '').trim(),
+          body: String(chunk.body ?? '').trim(),
+          collection: collectionName,
+        })
+        seen.add(chunkKey)
+        break
+      }
+    }
+
+    return found
+  }
+
+  private renderFrontRuleTemplate(
+    template: string | undefined,
+    message: string,
+    chunks: Array<{ key: string; title: string; body: string }>,
+  ): string {
+    const rawTemplate = String(template ?? '').trim()
+    const chunkBodies = chunks.map((row) => row.body).filter(Boolean)
+    const chunkTitles = chunks.map((row) => row.title).filter(Boolean)
+
+    if (!rawTemplate) {
+      if (chunkBodies.length > 0) return chunkBodies.join('\n\n')
+      return ''
+    }
+
+    return rawTemplate
+      .replace(/\$message/g, message)
+      .replace(/\$chunks/g, chunkBodies.join('\n\n'))
+      .replace(/\$chunkTitles/g, chunkTitles.join(', '))
+  }
+
+  private resolveRuleTool(routeKey: string, toolName: string): ToolDefinition | null {
+    const name = String(toolName ?? '').trim()
+    if (!name) return null
+
+    if (name === 'query_events') return queryEvents
+
+    const screen = getScreenConfig(routeKey)
+    if (!screen) return null
+
+    const allTools = [
+      ...(Array.isArray(screen.dataTools) ? screen.dataTools : []),
+      ...(Array.isArray(screen.actionTools) ? screen.actionTools : []),
+      ...(Array.isArray(screen.commonActionTools) ? screen.commonActionTools : []),
+    ]
+
+    return allTools.find((tool) => String(tool?.declaration?.name ?? '').trim() === name) ?? null
+  }
+
+  private buildRuleFirstActionReply(
+    routeKey: string,
+    ruleMatch: FrontRuleMatch,
+    toolName: string,
+    toolResult: unknown,
+  ): ChatReply {
+    if (toolName === 'query_events') {
+      const result = toolResult as any
+      const filters = result?.resolvedFilters && typeof result.resolvedFilters === 'object'
+        ? result.resolvedFilters
+        : undefined
+      const screen = getScreenConfig(routeKey)
+      return {
+        chat_action: ruleMatch.chatAction || screen?.chatActions.data || 'ailog/event/filter',
+        chat_action_param: filters ? { filters } : undefined,
+        text: this.toDisplayText(result?.summary) || String(ruleMatch.fallbackText ?? '').trim() || '조회 결과를 확인했습니다.',
+      }
+    }
+
+    const resultRow = toolResult && typeof toolResult === 'object'
+      ? (toolResult as Record<string, unknown>)
+      : {}
+    const text = this.toDisplayText(
+      resultRow.text ?? resultRow.summary ?? resultRow.message ?? resultRow.assistantText ?? toolResult,
+    )
+    const screen = getScreenConfig(routeKey)
+    const baseActionParam = ruleMatch.chatActionParam && typeof ruleMatch.chatActionParam === 'object'
+      ? (ruleMatch.chatActionParam as Record<string, unknown>)
+      : {}
+
+    return {
+      chat_action: ruleMatch.chatAction || screen?.chatActions.action || 'action',
+      chat_action_param: {
+        ...baseActionParam,
+        toolName,
+        toolResult: resultRow,
+      },
+      text: text || String(ruleMatch.fallbackText ?? '').trim() || '요청을 처리했습니다.',
+    }
+  }
+
+  private async tryFrontRuleEngine(ctx: ChatContext): Promise<ChatReply | null> {
+    const matchedRouteKey = this.findNearestRegisteredRouteKey(ctx.key, ctx.reqId) ?? ctx.key
+    const ruleMatch = await matchFrontRule({
+      routeKey: matchedRouteKey,
+      message: ctx.message,
+    })
+
+    if (!ruleMatch) {
+      this.stageLog('3단계:룰우선처리', 'miss', 'front-rule 매칭 없음', ctx.reqId)
+      return null
+    }
+
+    this.stageLog(
+      '3단계:룰우선처리',
+      'matched',
+      `front-rule 매칭 성공(ruleKey=${ruleMatch.ruleKey}, intent=${ruleMatch.intent})`,
+      ctx.reqId,
+    )
+
+    if (ruleMatch.intent === 'info') {
+      const chunks = this.resolveFrontRuleChunks(matchedRouteKey, ruleMatch.chunkKeys)
+      const text = this.renderFrontRuleTemplate(ruleMatch.answerTemplate, ctx.message, chunks)
+      const screen = getScreenConfig(matchedRouteKey)
+      const baseActionParam = ruleMatch.chatActionParam && typeof ruleMatch.chatActionParam === 'object'
+        ? (ruleMatch.chatActionParam as Record<string, unknown>)
+        : {}
+
+      const reply: ChatReply = {
+        chat_action: ruleMatch.chatAction || screen?.chatActions.info || 'info',
+        chat_action_param: {
+          ...baseActionParam,
+          matchedRuleKey: ruleMatch.ruleKey,
+          usedChunks: chunks.map((row) => row.key),
+          usedCollection: chunks[0]?.collection,
+        },
+        text: text || String(ruleMatch.fallbackText ?? '').trim() || '관련 정보를 찾지 못했습니다.',
+      }
+
+      reply.usedCollection = chunks[0]?.collection
+      reply.primaryChunkKey = chunks[0]?.key
+      reply.usedChunks = chunks.map((row) => row.key)
+      reply.pipelineConfidence = ruleMatch.confidence
+      reply.matchedRule = {
+        source: 'front-rule',
+        ruleKey: ruleMatch.ruleKey,
+        ruleType: ruleMatch.intent,
+        reason: ruleMatch.reason,
+        confidence: Number.isFinite(Number(ruleMatch.confidence))
+          ? Number(ruleMatch.confidence)
+          : undefined,
+      }
+
+      await this.saveLog(ctx.body, reply, ctx, this.buildChatLogDebugMeta(ctx, reply, {
+        pipelineIntent: 'info',
+        pipelineConfidence: ruleMatch.confidence,
+        pipelineTrace: `front-rule:${ruleMatch.ruleKey}`,
+      }, 'front-rule'))
+
+      return reply
+    }
+
+    const toolName = String(ruleMatch.toolName ?? '').trim()
+    if (!toolName) {
+      this.stageLog('3단계:룰우선처리', 'miss', `action 룰에 toolName 없음(ruleKey=${ruleMatch.ruleKey})`, ctx.reqId)
+      return null
+    }
+
+    const tool = this.resolveRuleTool(matchedRouteKey, toolName)
+    if (!tool) {
+      this.stageLog('3단계:룰우선처리', 'miss', `tool 미등록(toolName=${toolName})`, ctx.reqId)
+      return null
+    }
+
+    const toolCtx = buildToolContextFromBody({
+      body: {
+        ...ctx.body,
+        routeKey: matchedRouteKey,
+        screenRouteKey: matchedRouteKey,
+      },
+      message: ctx.message,
+      log: {
+        log: (m) => this.logger.log(m),
+        error: (m) => this.logger.error(m),
+      },
+    })
+
+    try {
+      const toolResult = await tool.execute({ ...(ruleMatch.toolArgs ?? {}) }, toolCtx)
+      const reply = this.buildRuleFirstActionReply(matchedRouteKey, ruleMatch, toolName, toolResult)
+      reply.pipelineConfidence = ruleMatch.confidence
+      reply.matchedRule = {
+        source: 'front-rule',
+        ruleKey: ruleMatch.ruleKey,
+        ruleType: ruleMatch.intent,
+        reason: ruleMatch.reason,
+        confidence: Number.isFinite(Number(ruleMatch.confidence))
+          ? Number(ruleMatch.confidence)
+          : undefined,
+      }
+
+      await this.saveLog(ctx.body, reply, ctx, this.buildChatLogDebugMeta(ctx, reply, {
+        pipelineIntent: 'action',
+        pipelineConfidence: ruleMatch.confidence,
+        pipelineTrace: `front-rule:${ruleMatch.ruleKey}`,
+      }, 'front-rule'))
+
+      return this.ensurePeriodInEventReply(reply)
+    } catch (e: any) {
+      this.logger.debug(`[front-rule] tool execute failed rule=${ruleMatch.ruleKey} tool=${toolName} err=${e?.message ?? String(e)}`)
+      this.stageLog('3단계:룰우선처리', 'error', `tool 실행 실패(rule=${ruleMatch.ruleKey})`, ctx.reqId)
       return null
     }
   }
@@ -1452,7 +1752,7 @@ export class ChatService {
     ctx: ChatContext,
     reply: ChatReply,
     meta?: Record<string, unknown>,
-    source: 'orchestrator' | 'rule-first' | 'guidance' = 'orchestrator',
+    source: 'orchestrator' | 'rule-first' | 'guidance' | 'front-rule' = 'orchestrator',
   ): ChatLogDebugMeta | undefined {
     const reqId = String(ctx?.reqId ?? '').trim() || undefined
     const pipelineIntent = String(meta?.pipelineIntent ?? '').trim().toLowerCase() || undefined
@@ -1465,12 +1765,22 @@ export class ChatService {
       : []
     const ragScores = Array.isArray(reply?.ragScores) ? reply.ragScores : []
     const screenTask = String(meta?.screenTask ?? '').trim() || undefined
-    const defaultLlmFallback = Boolean(meta?.defaultLlmFallback)
+    const isOrchestratorSource = source === 'orchestrator'
+    const defaultLlmFallback = isOrchestratorSource
+      ? Boolean(meta?.defaultLlmFallback)
+      : undefined
     const ragMinScoreRaw = Number(this.pipelineCfg.infoRagMinScore)
-    const ragMinScore = Number.isFinite(ragMinScoreRaw) ? ragMinScoreRaw : undefined
-    const ragSelectionRule = 'topScore >= minScore, rank by adjustedScore'
+    const ragMinScore = isOrchestratorSource && Number.isFinite(ragMinScoreRaw)
+      ? ragMinScoreRaw
+      : undefined
+    const ragSelectionRule = isOrchestratorSource
+      ? 'topScore >= minScore, rank by adjustedScore'
+      : undefined
     const executed = Array.isArray(meta?.executed) ? meta.executed : []
     const loginUser = this.resolveLoginUser(ctx?.body)
+    const matchedRule = reply?.matchedRule && typeof reply.matchedRule === 'object'
+      ? (reply.matchedRule as MatchedRuleInfo)
+      : undefined
 
     const debugMeta: ChatLogDebugMeta = {
       reqId,
@@ -1488,6 +1798,7 @@ export class ChatService {
       executed: executed.length > 0 ? executed : undefined,
       loginUser,
       source,
+      matchedRule,
     }
 
     const hasValues = Object.values(debugMeta).some((value) => value !== undefined)

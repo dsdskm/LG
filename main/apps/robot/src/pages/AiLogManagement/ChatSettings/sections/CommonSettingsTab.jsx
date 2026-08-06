@@ -314,6 +314,11 @@ export const CommonSettingsTab = ({
     savingCommonIntentPrompt,
     onCommonIntentPromptChange,
     onSaveCommonIntentPrompt,
+    commonInputHintPromptItem,
+    commonInputHintPromptDraft,
+    savingCommonInputHintPrompt,
+    onCommonInputHintPromptChange,
+    onSaveCommonInputHintPrompt,
     commonRagDocs,
     ragDrafts,
     savingRagKey,
@@ -356,6 +361,14 @@ export const CommonSettingsTab = ({
                 savingCommonIntentPrompt={savingCommonIntentPrompt}
                 onCommonIntentPromptChange={onCommonIntentPromptChange}
                 onSaveCommonIntentPrompt={onSaveCommonIntentPrompt}
+            />
+
+            <CommonInputHintPromptManagementCard
+                commonInputHintPromptItem={commonInputHintPromptItem}
+                commonInputHintPromptDraft={commonInputHintPromptDraft}
+                savingCommonInputHintPrompt={savingCommonInputHintPrompt}
+                onCommonInputHintPromptChange={onCommonInputHintPromptChange}
+                onSaveCommonInputHintPrompt={onSaveCommonInputHintPrompt}
             />
 
             <PromptManagementCard
@@ -472,6 +485,74 @@ const CommonIntentPromptManagementCard = ({
 
                     <PrimaryButton type="button" onClick={onSaveCommonIntentPrompt} disabled={savingCommonIntentPrompt}>
                         {savingCommonIntentPrompt ? '저장 중...' : hasPrompt ? '저장' : '등록'}
+                    </PrimaryButton>
+                </PromptFooter>
+            </PromptCard>
+        </SettingCard>
+    )
+}
+
+const CommonInputHintPromptManagementCard = ({
+    commonInputHintPromptItem,
+    commonInputHintPromptDraft,
+    savingCommonInputHintPrompt,
+    onCommonInputHintPromptChange,
+    onSaveCommonInputHintPrompt,
+}) => {
+    const hasPrompt = Boolean(commonInputHintPromptItem?.id)
+
+    return (
+        <SettingCard>
+            <CardHeader>
+                <CardTitle>공통 입력 힌트</CardTitle>
+            </CardHeader>
+
+            <PageDescription>
+                화면별 입력 힌트가 없을 때 AI Assistant 입력창 placeholder로 사용하는 기본 문구입니다.
+            </PageDescription>
+
+            <PromptCard>
+                <PromptMeta>
+                    <span>{commonInputHintPromptItem?.label || commonInputHintPromptDraft.label || '공통 입력 힌트'}</span>
+                    <span>key: common</span>
+                    <span>type: input-hint</span>
+                    {hasPrompt ? <span>updated: {formatDateTime(commonInputHintPromptItem?.updatedAt)}</span> : null}
+                </PromptMeta>
+
+                <FieldLabel>입력 힌트 문구</FieldLabel>
+                <PromptTextarea
+                    value={commonInputHintPromptDraft.content}
+                    onChange={(e) => onCommonInputHintPromptChange('content', e.target.value)}
+                    placeholder={"예: 현재 화면에 대해 질문해 보세요.\n예: 어떤 작업을 하시려는지 입력해 주세요."}
+                    style={{ minHeight: '130px' }}
+                />
+
+                <FieldHint>여러 문구를 줄바꿈으로 입력하면, 입력창에 랜덤하게 노출됩니다. 공백이면 화면별 힌트 또는 패널 기본 문구가 사용됩니다.</FieldHint>
+
+                <PromptFooter>
+                    <ToggleButton
+                        type="button"
+                        $active={Boolean(commonInputHintPromptDraft.enabled)}
+                        onClick={() => onCommonInputHintPromptChange('enabled', !commonInputHintPromptDraft.enabled)}
+                    >
+                        {commonInputHintPromptDraft.enabled ? '활성' : '비활성'}
+                    </ToggleButton>
+
+                    {hasPrompt ? (
+                        <SecondaryTextButton
+                            type="button"
+                            onClick={() => {
+                                onCommonInputHintPromptChange('content', String(commonInputHintPromptItem?.content ?? ''))
+                                onCommonInputHintPromptChange('label', String(commonInputHintPromptItem?.label ?? '공통 입력 힌트'))
+                                onCommonInputHintPromptChange('enabled', commonInputHintPromptItem?.enabled !== false)
+                            }}
+                        >
+                            원본 복원
+                        </SecondaryTextButton>
+                    ) : null}
+
+                    <PrimaryButton type="button" onClick={onSaveCommonInputHintPrompt} disabled={savingCommonInputHintPrompt}>
+                        {savingCommonInputHintPrompt ? '저장 중...' : hasPrompt ? '저장' : '등록'}
                     </PrimaryButton>
                 </PromptFooter>
             </PromptCard>

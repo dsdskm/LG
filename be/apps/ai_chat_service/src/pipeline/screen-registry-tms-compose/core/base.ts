@@ -1,5 +1,6 @@
 import { resolveTaskflowContextSource } from '../../taskflow-context-source.util'
 import { inferMoveStepsFromMessage } from '../../taskflow-move-parser.util'
+import type { TaskflowLanguageRules } from '../../taskflow-language-rules'
 
 type LinearTaskflowStep = {
   label: string
@@ -36,6 +37,15 @@ type FlowContextTaskSummary = {
   label?: string
   taskName?: string
   kind?: string
+}
+
+type FlowContextTaskCandidate = {
+  taskId?: number
+  taskName?: string
+  label?: string
+  kind?: string
+  contentId?: number
+  contentName?: string
 }
 
 type FlowContextTaskContentSummary = {
@@ -128,8 +138,8 @@ function toLinearTaskflowStep(input: unknown): LinearTaskflowStep | null {
   }
 }
 
-function inferLinearStepsFromMessage(value: unknown): LinearTaskflowStep[] {
-  return inferMoveStepsFromMessage(value)
+function inferLinearStepsFromMessage(value: unknown, rules?: TaskflowLanguageRules): LinearTaskflowStep[] {
+  return inferMoveStepsFromMessage(value, rules)
 }
 
 function normalizeNameToken(value: unknown): string {
@@ -473,18 +483,73 @@ function pickTaskContentByStep(
   return contentFirst[0] ?? null
 }
 
-function hydrateStepByTaskContents(
+function pickTaskByStep(
+  taskList: FlowContextTaskSummary[],
+  step: LinearTaskflowStep,
+): FlowContextTaskSummary | null {
+  const labelKey = normalizeNameKey(step.label)
+  const taskNameKey = normalizeNameKey(step.taskName)
+  const taskId = Number(step.taskId ?? 0)
+
+  let candidates = taskList.filter((item) => {
+    if (taskId > 0 && Number(item.taskId ?? 0) !== taskId) return false
+
+    const itemLabel = normalizeNameKey(item.label)
+    const itemTaskName = normalizeNameKey(item.taskName)
+    if (taskNameKey) {
+      return itemTaskName === taskNameKey || itemLabel === taskNameKey
+    }
+
+    return itemLabel === labelKey || itemTaskName === labelKey
+  })
+
+  if (candidates.length === 0) return null
+
+  if (taskNameKey) {
+    const narrowed = candidates.filter((item) => normalizeNameKey(item.taskName) === taskNameKey)
+    if (narrowed.length > 0) candidates = narrowed
+  }
+
+  return candidates
+    .slice()
+    .sort((a, b) => {
+      const ak = normalizeNameKey(a.taskName)
+      const bk = normalizeNameKey(b.taskName)
+      const aExact = taskNameKey ? Number(ak === taskNameKey) : Number(ak === labelKey)
+      const bExact = taskNameKey ? Number(bk === taskNameKey) : Number(bk === labelKey)
+      if (aExact !== bExact) return bExact - aExact
+
+      const al = normalizeNameKey(a.label)
+      const bl = normalizeNameKey(b.label)
+      const aLabelExact = Number(al === labelKey)
+      const bLabelExact = Number(bl === labelKey)
+      if (aLabelExact !== bLabelExact) return bLabelExact - aLabelExact
+
+      return Number(a.taskId ?? 0) - Number(b.taskId ?? 0)
+    })[0] ?? null
+}
+
+function pickTaskCandidateByStep(
+  taskContents: FlowContextTaskContentSummary[],
+  taskList: FlowContextTaskSummary[],
+  step: LinearTaskflowStep,
+): FlowContextTaskCandidate | null {
+  return pickTaskContentByStep(taskContents, step) ?? pickTaskByStep(taskList, step)
+}
+
+function hydrateStepByFlowContext(
   logger: ComposeToolDeps['logger'],
   step: LinearTaskflowStep,
+  taskList: FlowContextTaskSummary[],
   taskContents: FlowContextTaskContentSummary[],
 ): LinearTaskflowStep {
   if (!step?.label) return step
-  if (taskContents.length === 0) return step
+  if (taskContents.length === 0 && taskList.length === 0) return step
 
-  const matched = pickTaskContentByStep(taskContents, step)
+  const matched = pickTaskCandidateByStep(taskContents, taskList, step)
   if (!matched) {
     logger.log(
-      `[compose_linear_taskflow][taskContents-match] miss label=${step.label} taskName=${step.taskName ?? '-'} contentName=${step.contentName ?? '-'} candidateCount=${taskContents.length}`,
+      `[compose_linear_taskflow][taskContents-match] miss label=${step.label} taskName=${step.taskName ?? '-'} contentName=${step.contentName ?? '-'} candidateCount=${taskContents.length + taskList.length}`,
     )
     return step
   }
@@ -493,12 +558,17 @@ function hydrateStepByTaskContents(
     `[compose_linear_taskflow][taskContents-match] hit label=${step.label} matchedTaskId=${matched.taskId ?? '-'} matchedTaskName=${matched.taskName ?? '-'} matchedContentId=${matched.contentId ?? '-'} matchedContentName=${matched.contentName ?? '-'} matchedKind=${matched.kind ?? '-'}`,
   )
 
+  const matchedKind = normalizeNameKey(matched.kind)
+  const inferredTaskType = matchedKind === 'controltasknode' ? 'CONTROL' : 'ACTION'
+
   return {
     ...step,
+    label: normalizeNameToken(matched.label ?? matched.contentName ?? step.label) || step.label,
     taskName: step.taskName ?? matched.taskName,
-    contentName: step.contentName ?? matched.contentName ?? matched.label,
+    contentName: step.contentName ?? matched.contentName,
     taskId: step.taskId ?? matched.taskId,
     contentId: step.contentId ?? matched.contentId,
+    taskType: step.taskType ?? inferredTaskType,
   }
 }
 
@@ -570,17 +640,18 @@ function buildLinearFlowDraftFromSteps(
   const startX = Number((startNode?.position as Record<string, unknown> | undefined)?.x ?? 0)
   const startY = Number((startNode?.position as Record<string, unknown> | undefined)?.y ?? 0)
   const gapX = 140
+  const taskList = Array.isArray(flowContext.taskList) ? flowContext.taskList : []
   const taskContents = Array.isArray(flowContext.taskContents) ? flowContext.taskContents : []
 
-  if (taskContents.length === 0) {
-    logger.log('[compose_linear_taskflow][taskContents-guard] blocked reason=taskContents가 비어 있어 단계 매핑을 수행할 수 없음')
+  if (taskContents.length === 0 && taskList.length === 0) {
+    logger.log('[compose_linear_taskflow][taskContents-guard] blocked reason=taskContents/taskList가 비어 있어 단계 매핑을 수행할 수 없음')
     return null
   }
 
-  const unresolved = steps.find((step) => !pickTaskContentByStep(taskContents, step))
+  const unresolved = steps.find((step) => !pickTaskCandidateByStep(taskContents, taskList, step))
   if (unresolved) {
     logger.log(
-      `[compose_linear_taskflow][taskContents-guard] blocked reason=taskContents에서 단계를 찾지 못함 label=${unresolved.label} taskName=${unresolved.taskName ?? '-'} contentName=${unresolved.contentName ?? '-'}`,
+      `[compose_linear_taskflow][taskContents-guard] blocked reason=taskContents/taskList에서 단계를 찾지 못함 label=${unresolved.label} taskName=${unresolved.taskName ?? '-'} contentName=${unresolved.contentName ?? '-'}`,
     )
     return null
   }
@@ -593,7 +664,7 @@ function buildLinearFlowDraftFromSteps(
   const seed = Date.now()
 
   for (let i = 0; i < steps.length; i += 1) {
-    const step = hydrateStepByTaskContents(logger, steps[i], taskContents)
+    const step = hydrateStepByFlowContext(logger, steps[i], taskList, taskContents)
 
     nextNodes.push({
       id: `ai-${seed}-${i}`,
@@ -737,6 +808,8 @@ export {
   normalizeMessageKey,
   normalizeNameKey,
   normalizeNameToken,
+  pickTaskByStep,
+  pickTaskCandidateByStep,
   pickTaskContentByStep,
   resolveControlTaskContentCandidate,
   resolveFlowContextSummary,

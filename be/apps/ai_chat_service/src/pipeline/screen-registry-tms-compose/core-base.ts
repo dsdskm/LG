@@ -11,6 +11,8 @@ export {
   normalizeMessageKey,
   normalizeNameKey,
   normalizeNameToken,
+  pickTaskByStep,
+  pickTaskCandidateByStep,
   pickTaskContentByStep,
   resolveControlTaskContentCandidate,
   resolveFlowContextSummary,

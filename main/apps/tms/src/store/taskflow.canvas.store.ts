@@ -351,12 +351,21 @@ function buildNodeDataFromPaletteItem(item: PaletteItem): NodeData {
   }
 }
 
+function hasContentReference(task: TaskApiPayload): boolean {
+  return Object.values(task.propertySchema?.properties ?? {}).some((prop) => prop?.type === 'content_reference')
+}
+
 function buildPaletteAndCatalog(tasks: TaskApiPayload[]) {
   const palette: PaletteItem[] = []
   const contentsList: ContentApiPayload[] = []
 
   for (const task of tasks) {
     if (task.taskType === TASK_TYPE_CONTROL) {
+      palette.push({ kind: 'controlTaskNode', task, label: task.name })
+      continue
+    }
+
+    if (task.taskType !== TASK_TYPE_ROOT && !hasContentReference(task)) {
       palette.push({ kind: 'controlTaskNode', task, label: task.name })
       continue
     }

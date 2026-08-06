@@ -113,4 +113,56 @@ describe('buildLinearFlowDraftFromSteps', () => {
     expect(firstNewEdge).toBeTruthy()
     expect(String(firstNewEdge?.source ?? '')).toBe('existing-2')
   })
+
+  it('builds a linear draft from contentless action tasks listed in taskList', () => {
+    const draft = buildLinearFlowDraftFromSteps(
+      { log: () => {} },
+      {
+        fullFlow: {
+          nodes: [
+            {
+              id: 'start',
+              type: 'startNode',
+              position: { x: 0, y: 0 },
+              data: { label: 'Start' },
+            },
+          ],
+          edges: [],
+          viewport: { x: 0, y: 0, zoom: 1 },
+          flowMode: 'default',
+        },
+        taskList: [
+          {
+            taskId: 10,
+            taskName: 'PlayMotion',
+            label: 'PlayMotion',
+          },
+          {
+            taskId: 11,
+            taskName: 'Tts',
+            label: 'Tts',
+          },
+        ],
+      },
+      [
+        {
+          label: 'PlayMotion',
+        },
+        {
+          label: 'Tts',
+        },
+      ],
+      'default',
+    )
+
+    expect(draft).toBeTruthy()
+
+    const nodes = Array.isArray((draft as Record<string, unknown>).nodes)
+      ? ((draft as Record<string, unknown>).nodes as Array<Record<string, unknown>>)
+      : []
+
+    expect(nodes).toHaveLength(3)
+    expect(nodes[1]?.data).toMatchObject({ taskId: 10, taskName: 'PlayMotion', taskType: 'ACTION' })
+    expect(nodes[2]?.data).toMatchObject({ taskId: 11, taskName: 'Tts', taskType: 'ACTION' })
+  })
 })

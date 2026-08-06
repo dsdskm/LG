@@ -11,42 +11,51 @@ import {
   resolveControlTaskContentCandidate,
   toFlowContextSummary,
 } from '../../core'
+import {
+  replaceConfiguredPhrases,
+  type TaskflowLanguageRules,
+} from '../../../taskflow-language-rules'
 import { isGenericNodePlaceholder } from './intent'
 
-function normalizePickupTargetLabel(value: unknown): string {
-  return normalizeNameToken(value)
+function normalizePickupTargetLabel(value: unknown, rules?: TaskflowLanguageRules): string {
+  const requestTailPhrases = Array.isArray(rules?.requestTailPhrases) ? rules.requestTailPhrases : []
+  return replaceConfiguredPhrases(normalizeNameToken(value), requestTailPhrases, ' ')
     .replace(/^.*(?:에서)\s+/i, '')
     .replace(/\s*(?:을|를)?\s*(?:픽업|집어|집기|수거|적재)(?:하고|한\s*뒤|후)?\s*$/gi, '')
-    .replace(/\s*(?:해줘|해주세요|부탁해|부탁합니다)\s*$/gi, '')
     .trim()
 }
 
-function inferPickupTargetLabelsFromMessage(value: unknown): string[] {
+function inferPickupTargetLabelsFromMessage(value: unknown, rules?: TaskflowLanguageRules): string[] {
   const message = String(value ?? '').trim()
   if (!message) return []
 
-  const cleaned = message
-    .replace(/["'`]/g, '')
-    .replace(/태스크\s*플로우|태스크\s*플로|태스크플로우|태스크플로|taskflow|구성해줘|구성해\s*줘|만들어줘|만들어\s*줘|생성해줘|생성해\s*줘/gi, '')
+  const composeNoisePhrases = Array.isArray(rules?.composeNoisePhrases) ? rules.composeNoisePhrases : []
+  const composeVerbPhrases = Array.isArray(rules?.composeVerbPhrases) ? rules.composeVerbPhrases : []
+
+  const cleaned = replaceConfiguredPhrases(
+    replaceConfiguredPhrases(message.replace(/["'`]/g, ''), composeNoisePhrases, ' '),
+    composeVerbPhrases,
+    ' ',
+  )
     .replace(/→/g, '->')
 
   const explicit = Array.from(
     cleaned.matchAll(/([^,\n]+?)\s*(?:을|를)?\s*(?:pickup|pick\s*up|픽업|집어|집기|수거|적재)/gi),
   )
-    .map((match) => normalizePickupTargetLabel(match?.[1] ?? ''))
+    .map((match) => normalizePickupTargetLabel(match?.[1] ?? '', rules))
     .filter(Boolean)
   if (explicit.length > 0) return explicit
 
   if (cleaned.includes('->')) {
     const byArrow = cleaned
       .split('->')
-      .map((part) => normalizePickupTargetLabel(part))
+      .map((part) => normalizePickupTargetLabel(part, rules))
       .filter(Boolean)
     if (byArrow.length > 0) return byArrow
   }
 
-  return inferLinearStepsFromMessage(cleaned)
-    .map((step) => normalizePickupTargetLabel(step.label))
+  return inferLinearStepsFromMessage(cleaned, rules)
+    .map((step) => normalizePickupTargetLabel(step.label, rules))
     .filter(Boolean)
 }
 
@@ -116,6 +125,7 @@ function resolveAppendAnchor(
 function pickPickupTargetsFromMessage(
   flowContext: FlowContextSummary,
   message: string,
+  rules?: TaskflowLanguageRules,
 ): FlowContextTaskContentSummary[] {
   const taskContents = Array.isArray(flowContext.taskContents) ? flowContext.taskContents : []
   const pickupCandidates = taskContents.filter((item) => {
@@ -125,7 +135,7 @@ function pickPickupTargetsFromMessage(
   })
   if (pickupCandidates.length === 0) return []
 
-  const labels = inferPickupTargetLabelsFromMessage(message)
+  const labels = inferPickupTargetLabelsFromMessage(message, rules)
   const used = new Set<string>()
   const selected: FlowContextTaskContentSummary[] = []
 
@@ -162,8 +172,9 @@ function buildPickupPutDownFlowDraftFromMessage(
   flowContext: FlowContextSummary,
   message: string,
   flowMode?: 'default' | 'tree',
+  rules?: TaskflowLanguageRules,
 ): Record<string, unknown> | null {
-  const pickedUp = pickPickupTargetsFromMessage(flowContext, message)
+  const pickedUp = pickPickupTargetsFromMessage(flowContext, message, rules)
   if (pickedUp.length === 0) return null
 
   const taskContents = Array.isArray(flowContext.taskContents) ? flowContext.taskContents : []
@@ -303,6 +314,7 @@ function buildPickupPutDownFlowDraftFromMessage(
 function pickPlayMotionTargetsFromMessage(
   flowContext: FlowContextSummary,
   message: string,
+  rules?: TaskflowLanguageRules,
 ): FlowContextTaskContentSummary[] {
   const taskContents = Array.isArray(flowContext.taskContents) ? flowContext.taskContents : []
   const motionCandidates = taskContents.filter((item) => {
@@ -320,7 +332,7 @@ function pickPlayMotionTargetsFromMessage(
   })
   if (byMention.length > 0) return byMention.slice(0, 3)
 
-  const inferred = inferLinearStepsFromMessage(message)
+  const inferred = inferLinearStepsFromMessage(message, rules)
   const selected: FlowContextTaskContentSummary[] = []
   const used = new Set<string>()
   const keyOf = (item: FlowContextTaskContentSummary) => `${item.taskId ?? '-'}:${item.contentId ?? '-'}:${item.label ?? ''}`
@@ -346,8 +358,9 @@ function buildPlayMotionParallelFlowDraftFromMessage(
   flowContext: FlowContextSummary,
   message: string,
   flowMode?: 'default' | 'tree',
+  rules?: TaskflowLanguageRules,
 ): Record<string, unknown> | null {
-  const motionTargets = pickPlayMotionTargetsFromMessage(flowContext, message)
+  const motionTargets = pickPlayMotionTargetsFromMessage(flowContext, message, rules)
   if (motionTargets.length === 0) return null
 
   const taskContents = Array.isArray(flowContext.taskContents) ? flowContext.taskContents : []
@@ -517,6 +530,7 @@ function pickFirstByTaskName(
 function pickMoveStopsFromMessage(
   flowContext: FlowContextSummary,
   message: string,
+  rules?: TaskflowLanguageRules,
 ): FlowContextTaskContentSummary[] {
   const taskContents = Array.isArray(flowContext.taskContents) ? flowContext.taskContents : []
   const moveCandidates = taskContents.filter((item) => {
@@ -526,8 +540,8 @@ function pickMoveStopsFromMessage(
   })
   if (moveCandidates.length === 0) return []
 
-  const inferredSteps = inferLinearStepsFromMessage(message)
-    .filter((step) => !isGenericNodePlaceholder(step.label))
+  const inferredSteps = inferLinearStepsFromMessage(message, rules)
+    .filter((step) => !isGenericNodePlaceholder(step.label, rules))
     .map((step) => ({ ...step, taskName: 'MoveTo' }))
 
   const used = new Set<string>()
@@ -561,8 +575,9 @@ function buildMoveParallelFlowDraftFromMessage(
   flowContext: FlowContextSummary,
   message: string,
   flowMode?: 'default' | 'tree',
+  rules?: TaskflowLanguageRules,
 ): Record<string, unknown> | null {
-  const stops = pickMoveStopsFromMessage(flowContext, message)
+  const stops = pickMoveStopsFromMessage(flowContext, message, rules)
   if (stops.length === 0) return null
 
   const taskContents = Array.isArray(flowContext.taskContents) ? flowContext.taskContents : []
@@ -739,8 +754,9 @@ function buildDocentFlowDraftFromMessage(
   flowContext: FlowContextSummary,
   message: string,
   flowMode?: 'default' | 'tree',
+  rules?: TaskflowLanguageRules,
 ): Record<string, unknown> | null {
-  const stops = pickMoveStopsFromMessage(flowContext, message)
+  const stops = pickMoveStopsFromMessage(flowContext, message, rules)
   if (stops.length === 0) return null
 
   const taskContents = Array.isArray(flowContext.taskContents) ? flowContext.taskContents : []

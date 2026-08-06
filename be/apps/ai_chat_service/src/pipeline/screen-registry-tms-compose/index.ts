@@ -1,5 +1,12 @@
 import type { ToolDefinition } from '../tool.type'
 import {
+  buildConfiguredPhraseRegex,
+  includesConfiguredPhrase,
+  loadTaskflowLanguageRules,
+  replaceConfiguredPhrases,
+  type TaskflowLanguageRules,
+} from '../taskflow-language-rules'
+import {
   type ComposeToolDeps,
   type LinearTaskflowStep,
   buildDraftFromRagTemplate,
@@ -53,6 +60,7 @@ function toFlowDefinitionFromDraft(draft: Record<string, unknown> | null | undef
 function resolveComposeUserMessage(
   contextRow: Record<string, unknown>,
   steps: LinearTaskflowStep[],
+  rules: TaskflowLanguageRules,
 ): string {
   const candidates = [
     contextRow?.__userMessage,
@@ -68,34 +76,90 @@ function resolveComposeUserMessage(
     if (text) return text
   }
 
-  const docentLike = steps.some((step) => /도슨트|docent/i.test(
-    `${String(step.label ?? '')} ${String(step.contentName ?? '')} ${String(step.taskName ?? '')}`,
-  ))
-  if (docentLike) return '도슨트 태스크플로우 구성해줘'
+  const stepSummary = normalizeNameKey(
+    steps
+      .map((step) => `${String(step.label ?? '')} ${String(step.contentName ?? '')} ${String(step.taskName ?? '')}`)
+      .join(' '),
+  )
+  if (!stepSummary) return ''
+
+  const docentHints = Array.isArray(rules.docentHintPhrases) ? rules.docentHintPhrases : []
+  const composeVerbs = Array.isArray(rules.composeVerbPhrases) ? rules.composeVerbPhrases : []
+  const taskflowKeywords = Array.isArray(rules.taskflowKeywordPhrases) ? rules.taskflowKeywordPhrases : []
+  const hasDocentHint = docentHints
+    .map((item) => normalizeNameKey(item))
+    .filter(Boolean)
+    .some((item) => stepSummary.includes(item))
+
+  if (hasDocentHint) {
+    const docentToken = String(docentHints[0] ?? '').trim()
+    const keywordToken = String(taskflowKeywords[0] ?? '').trim()
+    const verbToken = String(composeVerbs[0] ?? '').trim()
+    return [docentToken, keywordToken, verbToken].filter(Boolean).join(' ').trim()
+  }
 
   return ''
 }
 
-function parseActionConnectMessage(message: string): { source: string; target: string } | null {
-  const cleaned = String(message ?? '')
-    .trim()
-    .replace(/["'`]/g, '')
-    .replace(/태스크\s*플로우|태스크플로우|taskflow|캔버스|canvas/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
+function parseActionConnectMessage(message: string, rules: TaskflowLanguageRules): { source: string; target: string } | null {
+  const normalizedMessage = String(message ?? '').trim().replace(/["'`]/g, '')
+  const removedNoise = replaceConfiguredPhrases(normalizedMessage, rules.composeNoisePhrases, ' ')
+  const removedTail = replaceConfiguredPhrases(removedNoise, rules.requestTailPhrases, ' ')
+  const cleaned = removedTail.replace(/\s+/g, ' ').trim()
 
   if (!cleaned) return null
 
-  const match = cleaned.match(
-    /^(.+?)\s*와\s*(.+?)\s*(?:노드\s*)?(?:연결|이어)(?:해줘|해\s*줘|해주세요|해|줘)?\s*$/i,
-  )
-  if (!match) return null
+  if (!includesConfiguredPhrase(cleaned, rules.connectIntentPhrases)) return null
 
-  const source = String(match[1] ?? '').trim()
-  const target = String(match[2] ?? '').trim()
+  const separatorRegex = buildConfiguredPhraseRegex(rules.connectPairSeparatorPhrases, 'i')
+  if (!separatorRegex) return null
+
+  const separatorMatch = separatorRegex.exec(cleaned)
+  if (!separatorMatch || separatorMatch.index < 0) return null
+
+  const separatorToken = String(separatorMatch[0] ?? '')
+  if (!separatorToken) return null
+
+  const pair = cleaned.split(separatorToken)
+  if (pair.length < 2) return null
+
+  const leftRaw = String(pair[0] ?? '').trim()
+  const rightRaw = String(pair.slice(1).join(separatorToken) ?? '').trim()
+  const right = replaceConfiguredPhrases(rightRaw, rules.connectIntentPhrases, ' ').trim()
+  const source = leftRaw
+  const target = right
+
   if (!source || !target) return null
 
   return { source, target }
+}
+
+function hasArrowChainRequest(message: string): boolean {
+  const text = String(message ?? '').trim()
+  if (!text) return false
+  return text.includes('->') || text.includes('→')
+}
+
+function matchesDirectActionTaskSequence(
+  taskList: Array<Record<string, unknown>>,
+  steps: LinearTaskflowStep[],
+): boolean {
+  if (steps.length === 0 || taskList.length === 0) return false
+
+  return steps.every((step) => {
+    const stepLabel = normalizeNameKey(step.label)
+    const stepTaskName = normalizeNameKey(step.taskName)
+    if (!stepLabel && !stepTaskName) return false
+
+    return taskList.some((item) => {
+      const itemLabel = normalizeNameKey(item.label)
+      const itemTaskName = normalizeNameKey(item.taskName)
+      if (stepTaskName) {
+        return itemTaskName === stepTaskName || itemLabel === stepTaskName
+      }
+      return itemLabel === stepLabel || itemTaskName === stepLabel
+    })
+  })
 }
 
 export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefinition {
@@ -140,17 +204,18 @@ export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefi
         .filter((item): item is LinearTaskflowStep => Boolean(item))
 
       const contextRow = (ctx.context as Record<string, unknown>)
-      const userMessage = resolveComposeUserMessage(contextRow, normalized)
+      const languageRules = await loadTaskflowLanguageRules('tms/taskflows/:taskFlowId/canvas')
+      const userMessage = resolveComposeUserMessage(contextRow, normalized, languageRules)
       const { flowContext, source } = resolveFlowContextSummary(contextRow)
 
-      if (isAmbiguousModeChangeMessage(userMessage)) {
+      if (isAmbiguousModeChangeMessage(userMessage, languageRules)) {
         return {
           clarification: '가로 모드와 세로 모드 중 어떤 방향으로 바꿀까요?',
           needUserInput: true,
         }
       }
 
-      if (isDeleteAllNodesMessage(userMessage)) {
+      if (isDeleteAllNodesMessage(userMessage, languageRules)) {
         const fullFlowNodes = Array.isArray(flowContext?.fullFlow?.nodes)
           ? (flowContext?.fullFlow?.nodes as Array<Record<string, unknown>>)
           : []
@@ -204,7 +269,7 @@ export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefi
         }
       }
 
-      const connectRequest = parseActionConnectMessage(userMessage)
+      const connectRequest = parseActionConnectMessage(userMessage, languageRules)
       if (connectRequest) {
         return {
           canvasDraft: {
@@ -220,14 +285,14 @@ export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefi
         }
       }
 
-      if (isNodeLevelEditMessage(userMessage)) {
+      if (isNodeLevelEditMessage(userMessage, languageRules)) {
         return {
           clarification: '개별 노드 추가/수정/삭제는 지원하지 않습니다. "A로 갔다가 B로 갔다가 C로 가는 태스크플로우를 구성해줘"처럼 전체 흐름 구성으로 요청해 주세요.',
           needUserInput: true,
         }
       }
 
-      if (isAmbiguousSaveMessage(userMessage)) {
+      if (isAmbiguousSaveMessage(userMessage, languageRules)) {
         return {
           clarification: '임시 저장과 정식 저장 중 어떤 방식으로 저장할까요?',
           needUserInput: true,
@@ -252,7 +317,7 @@ export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefi
         }
       }
 
-      const requestedSave = detectSaveCommand(userMessage)
+      const requestedSave = detectSaveCommand(userMessage, languageRules)
       if (requestedSave) {
         return {
           canvasCommand: {
@@ -264,7 +329,7 @@ export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefi
         }
       }
 
-      const requestedMode = detectRequestedFlowMode(userMessage)
+      const requestedMode = detectRequestedFlowMode(userMessage, languageRules)
       if (requestedMode) {
         const modeDraft = buildReplacedDraftFromFullFlow(
           deps.logger,
@@ -284,7 +349,7 @@ export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefi
         }
       }
 
-      if (isAlignRequestMessage(userMessage)) {
+      if (isAlignRequestMessage(userMessage, languageRules)) {
         const alignedDraft = buildReplacedDraftFromFullFlow(
           deps.logger,
           flowContext ?? {},
@@ -309,7 +374,15 @@ export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefi
         `================= [2-1단계:컨텍스트상태] [reqId=${reqId}] status=validated reason=source=${source}, fullFlow=${Boolean(flowContext?.fullFlow)}, flowDefinition=${Boolean(flowContext?.flowDefinition)}`,
       )
 
-      if (isPickUpFlowComposeMessage(userMessage)) {
+      const inferredActionSteps = inferLinearDraftPlanFromMessage(userMessage, languageRules).steps ?? []
+      const explicitActionSteps = inferredActionSteps.filter((step) => !isGenericNodePlaceholder(step.label, languageRules))
+      const directActionTasks = Array.isArray(flowContext?.taskList)
+        ? flowContext.taskList as Array<Record<string, unknown>>
+        : []
+      const isDirectActionSequence = matchesDirectActionTaskSequence(directActionTasks, explicitActionSteps)
+      const isArrowChainRequest = hasArrowChainRequest(userMessage)
+
+      if (!isArrowChainRequest && !isDirectActionSequence && isPickUpFlowComposeMessage(userMessage, languageRules)) {
         deps.logger.log(
           `================= [3단계:의도분기] [reqId=${reqId}] status=matched reason=픽업 요청으로 판단되어 PickUp->DoesObjectExist->PutDown 조립 경로 선택`,
         )
@@ -319,6 +392,7 @@ export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefi
           pickupFlowContext ?? flowContext ?? {},
           userMessage,
           args?.flowMode === 'tree' ? 'tree' : 'default',
+          languageRules,
         )
         if (pickupDraft) {
           deps.logger.log(
@@ -342,7 +416,7 @@ export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefi
         }
       }
 
-      if (isPlayMotionFlowComposeMessage(userMessage)) {
+      if (!isArrowChainRequest && !isDirectActionSequence && isPlayMotionFlowComposeMessage(userMessage, languageRules)) {
         deps.logger.log(
           `================= [3단계:의도분기] [reqId=${reqId}] status=matched reason=모션 요청으로 판단되어 PlayMotion+Tts Parallel 조립 경로 선택`,
         )
@@ -351,6 +425,7 @@ export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefi
           motionFlowContext ?? flowContext ?? {},
           userMessage,
           args?.flowMode === 'tree' ? 'tree' : 'default',
+          languageRules,
         )
         if (motionParallelDraft) {
           deps.logger.log(
@@ -372,7 +447,7 @@ export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefi
         }
       }
 
-      if (isDocentFlowComposeMessage(userMessage)) {
+      if (!isArrowChainRequest && !isDirectActionSequence && isDocentFlowComposeMessage(userMessage, languageRules)) {
         deps.logger.log(
           `================= [3단계:의도분기] [reqId=${reqId}] status=matched reason=도슨트 요청으로 판단되어 이동/안내 교차 Parallel 조립 경로 선택`,
         )
@@ -402,9 +477,9 @@ export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefi
         }
       }
 
-      if (isMoveFlowComposeMessage(userMessage)) {
-        const inferredMoveSteps = inferLinearDraftPlanFromMessage(userMessage).steps ?? []
-        const explicitMoveSteps = inferredMoveSteps.filter((step) => !isGenericNodePlaceholder(step.label))
+      if (!isArrowChainRequest && !isDirectActionSequence && isMoveFlowComposeMessage(userMessage, languageRules)) {
+        const inferredMoveSteps = inferLinearDraftPlanFromMessage(userMessage, languageRules).steps ?? []
+        const explicitMoveSteps = inferredMoveSteps.filter((step) => !isGenericNodePlaceholder(step.label, languageRules))
         if (explicitMoveSteps.length === 0) {
           deps.logger.log(
             `================= [3단계:의도분기] [reqId=${reqId}] status=blocked reason=이동 목적지 정보가 없어 구성 전 재안내 필요`,
@@ -455,6 +530,7 @@ export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefi
           moveFlowContext ?? flowContext ?? {},
           userMessage,
           args?.flowMode === 'tree' ? 'tree' : 'default',
+          languageRules,
         )
         if (moveParallelDraft) {
           deps.logger.log(
@@ -476,23 +552,22 @@ export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefi
         }
       }
 
-      const inferred = inferLinearDraftPlanFromMessage(
-        userMessage,
-      )
+      const inferred = inferLinearDraftPlanFromMessage(userMessage, languageRules)
       const steps = (normalized.length > 0 ? normalized : (inferred.steps ?? [])).slice(0, 12)
 
       const candidateSteps: LinearTaskflowStep[] = [
         ...steps,
       ]
 
-      const ambiguousStep = candidateSteps.find((step) => isGenericNodePlaceholder(step.label))
+      const ambiguousStep = candidateSteps.find((step) => isGenericNodePlaceholder(step.label, languageRules))
       if (ambiguousStep) {
-        if (/도슨트|docent/i.test(userMessage)) {
+        if (includesConfiguredPhrase(userMessage, languageRules.docentHintPhrases)) {
           const docentFlowContext = flowContext ?? resolveMoveFlowContext(contextRow)
           const docentDraft = buildDocentFlowDraftFromMessage(
             docentFlowContext ?? flowContext ?? {},
             userMessage,
             args?.flowMode === 'tree' ? 'tree' : 'default',
+            languageRules,
           )
 
           if (docentDraft) {
@@ -527,12 +602,13 @@ export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefi
         : null
 
       if (steps.length > 0 && !replaceFlowDraft) {
-        if (/도슨트|docent/i.test(userMessage)) {
+        if (includesConfiguredPhrase(userMessage, languageRules.docentHintPhrases)) {
           const docentFlowContext = flowContext ?? resolveMoveFlowContext(contextRow)
           const docentDraft = buildDocentFlowDraftFromMessage(
             docentFlowContext ?? flowContext ?? {},
             userMessage,
             args?.flowMode === 'tree' ? 'tree' : 'default',
+            languageRules,
           )
 
           if (docentDraft) {

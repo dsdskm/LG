@@ -3,164 +3,222 @@ import {
   inferLinearStepsFromMessage,
   normalizeNameKey,
 } from '../../core'
+import {
+  includesConfiguredPhrase,
+  normalizeForSignalMatch,
+  replaceConfiguredPhrases,
+  type TaskflowLanguageRules,
+} from '../../../taskflow-language-rules'
 
-function inferLinearDraftPlanFromMessage(value: unknown): LinearTaskflowDraftPlan {
+const CANONICAL_ARROW = '->'
+
+function normalizeSpace(value: string): string {
+  return String(value ?? '').replace(/\s+/g, ' ').trim()
+}
+
+function hasRulePhrase(text: string, phrases: string[] | undefined): boolean {
+  return includesConfiguredPhrase(text, Array.isArray(phrases) ? phrases : [])
+}
+
+function isNumberedPlaceholderByPrefix(key: string, prefixes: string[]): boolean {
+  if (!key) return false
+  return prefixes.some((prefix) => {
+    const head = normalizeNameKey(prefix)
+    if (!head) return false
+    return key.startsWith(head) && /^\d*$/.test(key.slice(head.length))
+  })
+}
+
+function parseArrowNamedSteps(message: string, rules?: TaskflowLanguageRules) {
+  const replacedArrow = String(message ?? '').replace(/→/g, CANONICAL_ARROW)
+  const removedNoise = replaceConfiguredPhrases(replacedArrow, rules?.composeNoisePhrases ?? [], ' ')
+  const removedTail = replaceConfiguredPhrases(removedNoise, rules?.requestTailPhrases ?? [], ' ')
+  const removedComposeVerbs = replaceConfiguredPhrases(removedTail, rules?.composeVerbPhrases ?? [], ' ')
+  const normalized = removedComposeVerbs.trim()
+
+  if (!normalized.includes(CANONICAL_ARROW)) return []
+
+  return normalized
+    .split(CANONICAL_ARROW)
+    .map((part) =>
+      String(part ?? '')
+        .replace(/["'`]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim(),
+    )
+    .filter(Boolean)
+    .map((label) => ({ label }))
+}
+
+function inferLinearDraftPlanFromMessage(value: unknown, rules?: TaskflowLanguageRules): LinearTaskflowDraftPlan {
   const message = String(value ?? '').trim()
   if (!message) return { mode: 'replace', steps: [] }
 
+  const arrowNamedSteps = parseArrowNamedSteps(message, rules)
+  if (arrowNamedSteps.length > 0) {
+    return {
+      mode: 'replace',
+      steps: arrowNamedSteps,
+    }
+  }
+
   return {
     mode: 'replace',
-    steps: inferLinearStepsFromMessage(message),
+    steps: inferLinearStepsFromMessage(message, rules),
   }
 }
 
-function isNodeLevelEditMessage(message: string): boolean {
+function isNodeLevelEditMessage(message: string, rules?: TaskflowLanguageRules): boolean {
   const text = String(message ?? '').trim()
   if (!text) return false
-
-  return /(노드\s*(추가|수정|변경|삭제|지워|제거)|이후에\s*.+\s*(추가|넣어|붙여)|뒤에\s*.+\s*(추가|넣어|붙여))/i.test(text)
+  return hasRulePhrase(text, rules?.nodeLevelEditPhrases)
 }
 
-function isGenericNodePlaceholder(label: unknown): boolean {
+function isGenericNodePlaceholder(label: unknown, rules?: TaskflowLanguageRules): boolean {
   const key = normalizeNameKey(label)
   if (!key) return true
 
-  const placeholders = new Set([
-    '노드', '노드하나', '노드한개', 'task', 'tasks', '태스크', '작업', '스텝', '단계', '항목',
-  ])
+  const placeholders = Array.isArray(rules?.nodePlaceholderPhrases)
+    ? rules.nodePlaceholderPhrases.map((item) => normalizeNameKey(item)).filter(Boolean)
+    : []
 
-  if (placeholders.has(key)) return true
-  if (/^노드\d*$/.test(key)) return true
-  if (/^(task|tasks|step|steps)\d*$/.test(key)) return true
+  if (placeholders.includes(key)) return true
+
+  const prefixes = Array.isArray(rules?.nodePlaceholderPrefixPhrases)
+    ? rules.nodePlaceholderPrefixPhrases
+    : []
+  if (isNumberedPlaceholderByPrefix(key, prefixes)) return true
+
   return false
 }
 
-function isAmbiguousModeChangeMessage(message: string): boolean {
+function isAmbiguousModeChangeMessage(message: string, rules?: TaskflowLanguageRules): boolean {
   const text = String(message ?? '').trim()
   if (!text) return false
-  const asksMode = /(모드\s*(바꿔|변경)|방향\s*(바꿔|변경)|정렬\s*방향)/i.test(text)
+  const asksMode = hasRulePhrase(text, rules?.modeRequestPhrases)
   if (!asksMode) return false
-  const hasDirection = /(가로|세로|horizontal|vertical|tree|default)/i.test(text)
+  const hasDirection =
+    hasRulePhrase(text, rules?.modeDirectionTreePhrases) ||
+    hasRulePhrase(text, rules?.modeDirectionDefaultPhrases)
   return !hasDirection
 }
 
-function isAmbiguousSaveMessage(message: string): boolean {
+function isAmbiguousSaveMessage(message: string, rules?: TaskflowLanguageRules): boolean {
   const text = String(message ?? '').trim()
   if (!text) return false
-  const asksSave = /(저장\s*해줘|저장\s*해\s*줘|저장)/i.test(text)
+  const asksSave = hasRulePhrase(text, rules?.saveRequestPhrases)
   if (!asksSave) return false
-  const hasDecisionHint = /(어떤|무슨|종류|방식|뭘로|중에서)/i.test(text)
+  const hasDecisionHint = hasRulePhrase(text, rules?.saveDecisionHintPhrases)
   if (!hasDecisionHint) return false
-  const hasType = /(임시\s*저장|정식\s*저장|최종\s*저장)/i.test(text)
+  const hasType =
+    hasRulePhrase(text, rules?.saveTypeTempPhrases) ||
+    hasRulePhrase(text, rules?.saveTypeFinalPhrases)
   return !hasType
 }
 
-function isDeleteAllNodesMessage(message: string): boolean {
+function isDeleteAllNodesMessage(message: string, rules?: TaskflowLanguageRules): boolean {
   const text = String(message ?? '').trim()
   if (!text) return false
 
-  if (/(초기화\s*해줘|초기화\s*해\s*줘|초기화|리셋\s*해줘|리셋\s*해\s*줘|리셋|reset)/i.test(text)) {
+  if (hasRulePhrase(text, rules?.resetAllPhrases)) {
     return true
   }
 
-  const asksDelete = /(지워줘|지워|삭제해줘|삭제해|삭제|제거해줘|제거해|제거|없애줘|없애)/i.test(text)
+  const asksDelete = hasRulePhrase(text, rules?.deleteRequestPhrases)
   if (!asksDelete) return false
 
-  const allKeyword = /(전부|전체|모두|모든|싹다|다|all|모든\s*노드|전체\s*노드)/i.test(text)
+  const allKeyword = hasRulePhrase(text, rules?.deleteAllScopePhrases)
   return allKeyword
 }
 
-function detectRequestedFlowMode(message: string): 'default' | 'tree' | null {
-  const text = String(message ?? '').trim().toLowerCase()
+function detectRequestedFlowMode(message: string, rules?: TaskflowLanguageRules): 'default' | 'tree' | null {
+  const text = normalizeSpace(String(message ?? '').toLowerCase())
   if (!text) return null
-  if (/(세로\s*모드|세로로|vertical|tree)/i.test(text)) return 'tree'
-  if (/(가로\s*모드|가로로|horizontal|default)/i.test(text)) return 'default'
+  if (hasRulePhrase(text, rules?.modeDirectionTreePhrases)) return 'tree'
+  if (hasRulePhrase(text, rules?.modeDirectionDefaultPhrases)) return 'default'
   return null
 }
 
-function isAlignRequestMessage(message: string): boolean {
-  return /(정렬해줘|정렬\s*해\s*줘|정렬|배치해줘|배치\s*해\s*줘|배열해줘|arrange|align)/i.test(String(message ?? '').trim())
+function isAlignRequestMessage(message: string, rules?: TaskflowLanguageRules): boolean {
+  return hasRulePhrase(String(message ?? '').trim(), rules?.alignRequestPhrases)
 }
 
-function detectSaveCommand(message: string): 'save' | 'temp-save' | null {
+function detectSaveCommand(message: string, rules?: TaskflowLanguageRules): 'save' | 'temp-save' | null {
   const text = String(message ?? '').trim()
   if (!text) return null
-  if (!/(저장)/i.test(text)) return null
-  if (/(임시\s*저장)/i.test(text)) return 'temp-save'
+  if (!hasRulePhrase(text, rules?.saveRequestPhrases)) return null
+  if (hasRulePhrase(text, rules?.saveTypeTempPhrases)) return 'temp-save'
   return 'save'
 }
 
-function normalizeIntentText(message: string): string {
-  return String(message ?? '')
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]/gu, '')
-}
-
-function isTaskflowComposeRequest(message: string): boolean {
+function isTaskflowComposeRequest(message: string, rules?: TaskflowLanguageRules): boolean {
   const text = String(message ?? '').trim()
   if (!text) return false
 
-  if (/(구성해줘|구성해\s*줘|만들어줘|만들어\s*줘|생성해줘|생성해\s*줘)/i.test(text)) {
-    if (/(태스크\s*플로우|태스크\s*플로|태스크플로우|태스크플로|taskflow)/i.test(text)) return true
+  const composeVerbs = Array.isArray(rules?.composeVerbPhrases) ? rules.composeVerbPhrases : []
+  const taskflowKeywords = Array.isArray(rules?.taskflowKeywordPhrases) ? rules.taskflowKeywordPhrases : []
+  const composeSignals = Array.isArray(rules?.composeSignalPhrases) ? rules.composeSignalPhrases : []
+
+  const normalizedArrowText = text.replace(/→/g, CANONICAL_ARROW)
+  const hasArrowRoute = normalizedArrowText.includes(CANONICAL_ARROW)
+  if (hasArrowRoute) {
+    if (includesConfiguredPhrase(normalizedArrowText, composeVerbs)) return true
+    return true
   }
 
-  const normalized = normalizeIntentText(text)
+  if (includesConfiguredPhrase(text, composeVerbs)) {
+    if (includesConfiguredPhrase(text, taskflowKeywords)) return true
+  }
+
+  const normalized = normalizeForSignalMatch(text)
   if (!normalized) return false
 
-  const composeSignals = [
-    '태스크플로우',
-    '태스크플로',
-    'taskflow',
-    'taskflows',
-    'taskflow구성',
-    'taskflow만들어',
-    'taskflow생성',
-    'taskflowcompose',
-  ]
-
-  return composeSignals.some((signal) => normalized.includes(signal))
+  return composeSignals
+    .map((signal) => normalizeForSignalMatch(signal))
+    .filter(Boolean)
+    .some((signal) => normalized.includes(signal))
 }
 
-function isMoveFlowComposeMessage(message: string): boolean {
+function isMoveFlowComposeMessage(message: string, rules?: TaskflowLanguageRules): boolean {
   const text = String(message ?? '').trim()
   if (!text) return false
 
-  const asksCompose = isTaskflowComposeRequest(text)
+  const asksCompose = isTaskflowComposeRequest(text, rules)
   if (!asksCompose) return false
 
-  return /(이동|move|->|→|거쳐|들러|갔다가|에서\s*.+\s*로)/i.test(text)
+  return hasRulePhrase(text, rules?.moveComposeHintPhrases)
 }
 
-function isPickUpFlowComposeMessage(message: string): boolean {
+function isPickUpFlowComposeMessage(message: string, rules?: TaskflowLanguageRules): boolean {
   const text = String(message ?? '').trim()
   if (!text) return false
 
-  const asksCompose = isTaskflowComposeRequest(text)
+  const asksCompose = isTaskflowComposeRequest(text, rules)
   if (!asksCompose) return false
 
-  return /(pickup|pick\s*up|픽업|집기|집어|수거|적재)/i.test(text)
+  return hasRulePhrase(text, rules?.pickupComposeHintPhrases)
 }
 
-function isPlayMotionFlowComposeMessage(message: string): boolean {
+function isPlayMotionFlowComposeMessage(message: string, rules?: TaskflowLanguageRules): boolean {
   const text = String(message ?? '').trim()
   if (!text) return false
 
-  const asksCompose = isTaskflowComposeRequest(text)
+  const asksCompose = isTaskflowComposeRequest(text, rules)
   if (!asksCompose) return false
 
-  return /(playmotion|play\s*motion|모션|동작|제스처|포즈)/i.test(text)
+  return hasRulePhrase(text, rules?.playMotionComposeHintPhrases)
 }
 
-function isDocentFlowComposeMessage(message: string): boolean {
+function isDocentFlowComposeMessage(message: string, rules?: TaskflowLanguageRules): boolean {
   const text = String(message ?? '').trim()
   if (!text) return false
 
-  const mentionsDocent = /(도슨트|docent)/i.test(text)
+  const mentionsDocent = hasRulePhrase(text, rules?.docentHintPhrases)
   if (!mentionsDocent) return false
 
   const asksCompose =
-    isTaskflowComposeRequest(text) ||
-    /(구성해줘|구성해\s*줘|만들어줘|만들어\s*줘|생성해줘|생성해\s*줘)/i.test(text)
+    isTaskflowComposeRequest(text, rules) ||
+    includesConfiguredPhrase(text, rules?.composeVerbPhrases ?? [])
 
   return asksCompose
 }
