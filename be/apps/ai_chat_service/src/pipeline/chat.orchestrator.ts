@@ -126,7 +126,7 @@ export class ChatOrchestrator {
     reason: string,
     reqId = '-',
   ): Promise<string | undefined> {
-    const systemPrompt = [screen.dataSystemPrompt, screen.actionSystemPrompt].filter(Boolean).join('\n\n')
+    const systemPrompt = String(screen.dataSystemPrompt ?? '').trim()
 
     this.logger.debug(
       `================= [5단계:기본LLM_폴백] [reqId=${reqId}] status=fallback reason=${reason}`,

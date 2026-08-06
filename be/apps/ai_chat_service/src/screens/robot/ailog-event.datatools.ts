@@ -352,6 +352,33 @@ function mergeKeyword(...values: Array<string | undefined>): string | undefined 
   return Array.from(new Set(tokens)).join(' ')
 }
 
+function isRelativePeriodToken(value?: string): boolean {
+  const raw = String(value ?? '').trim()
+  if (!raw) return false
+
+  const compact = compactForMatch(raw)
+  if (
+    compact === '오늘' ||
+    compact === '어제' ||
+    compact === '일주일' ||
+    compact === '한달' ||
+    compact === '한달간' ||
+    compact === '1개월' ||
+    compact === '최근' ||
+    compact === '이번주' ||
+    compact === '지난주' ||
+    compact === '이번달' ||
+    compact === '지난달'
+  ) {
+    return true
+  }
+
+  if (/^\d+\s*(?:달|개월)\s*(?:전|동안)?$/.test(raw)) return true
+  if (/^\d+\s*일\s*전$/.test(raw)) return true
+  if (/^(today|yesterday|week|month)$/i.test(raw)) return true
+  return false
+}
+
 function extractIssueQuerySlots(value?: string): { period?: string; keyword?: string } {
   const raw = String(value ?? '').trim()
   if (!raw) return {}
@@ -387,7 +414,8 @@ function extractIssueQuerySlots(value?: string): { period?: string; keyword?: st
 
   return {
     period: String(matched[1] ?? '').trim() || undefined,
-    keyword: String(matched[2] ?? '').trim() || undefined,
+    // 검색어는 룰 테이블에서 명시적으로 매핑된 값만 사용한다.
+    keyword: undefined,
   }
 }
 
@@ -605,10 +633,12 @@ export const queryEvents: ToolDefinition = {
     }
 
     const issueSlots = extractIssueQuerySlots(rawMessage)
+    const issueSlotPeriod = issueSlots.period ?? (isRelativePeriodToken(issueSlots.keyword) ? issueSlots.keyword : undefined)
+    const issueSlotKeyword = isRelativePeriodToken(issueSlots.keyword) ? undefined : issueSlots.keyword
 
     const normalizedMergedArgs: Record<string, unknown> = {
       ...mergedArgs,
-      period: asOptionalString(mergedArgs.period) ?? issueSlots.period,
+      period: asOptionalString(mergedArgs.period) ?? issueSlotPeriod,
       keyword: (() => {
         const existingKeyword = asOptionalString(mergedArgs.keyword)
         const hasStructuredFilter = Boolean(
@@ -618,7 +648,7 @@ export const queryEvents: ToolDefinition = {
         )
 
         if (hasStructuredFilter) return existingKeyword
-        return issueSlots.keyword ?? existingKeyword
+        return issueSlotKeyword ?? existingKeyword
       })(),
     }
 

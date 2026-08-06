@@ -32,9 +32,9 @@ export function buildToolContextFromBody({
 
   return {
     accessToken: body?.accessToken,
-    apiBaseUrl: body?.apiBaseUrl,
-    eventAnalyzerUrl: body?.eventAnalyzerUrl,
-    configManagerUrl: body?.configManagerUrl,
+    apiBaseUrl: body?.apiBaseUrl || process.env.URL_EVENT_RECEIVER || process.env.API_BASE_URL,
+    eventAnalyzerUrl: body?.eventAnalyzerUrl || process.env.URL_EVENT_ANALYZER || process.env.EVENT_ANALYZER_URL,
+    configManagerUrl: body?.configManagerUrl || process.env.URL_CONFIG_MANAGER || process.env.CONFIG_MANAGER_URL,
     ...(actionRunnerUrl ? { actionRunnerUrl } : {}),
     context: userMessage
       ? {

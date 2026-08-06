@@ -98,9 +98,6 @@ export async function matchAiLogEventRule(ctx: EventRuleContext): Promise<EventR
 
   if (ctx.phraseMatch) {
     const phraseToolArgs = toStringRecord(ctx.phraseMatch.filtersTemplate)
-    if (!hasMainFilter(phraseToolArgs)) {
-      phraseToolArgs.keyword = message
-    }
 
     return {
       type: 'phrase-map',

@@ -61,6 +61,10 @@ type ChatLogDebugMeta = {
   pipelineTrace?: string
   screenTask?: string
   defaultLlmFallback?: boolean
+  llmAttempted?: boolean
+  infoTextMissing?: boolean
+  emptyTextReason?: string
+  suggestedActionsAttached?: boolean
   ragMinScore?: number
   ragSelectionRule?: string
   usedCollection?: string
@@ -230,6 +234,13 @@ export class ChatService {
       return reply
     }
 
+    if (this.isInfoPipelineReply(reply)) {
+      return {
+        ...reply,
+        text: '정보 응답 생성에 실패했습니다.',
+      }
+    }
+
     const chatAction = String(reply?.chat_action ?? '').trim()
     const actionParam = reply?.chat_action_param && typeof reply.chat_action_param === 'object'
       ? (reply.chat_action_param as Record<string, unknown>)
@@ -248,6 +259,13 @@ export class ChatService {
       ...reply,
       text: fallbackText,
     }
+  }
+
+  private isInfoPipelineReply(reply: ChatReply | null | undefined): boolean {
+    const trace = String(reply?.pipelineTrace ?? '').trim()
+    if (!trace) return false
+
+    return trace.includes('rag(') || trace.includes('llm(정보 프롬프트)')
   }
 
   private sanitizeLeadingAssistantPreface(text: string): string {
@@ -558,6 +576,10 @@ export class ChatService {
       !this.hasCanvasDraftParam(reply)
     ) {
       // 구성 요청인데 draft 없는 응답을 suggested_actions로 덮어 실패를 감추지 않도록 한다.
+      return reply
+    }
+
+    if (this.isInfoPipelineReply(reply) && !String(reply?.text ?? '').trim()) {
       return reply
     }
 
@@ -1370,16 +1392,6 @@ export class ChatService {
    * phrase map 에 매칭되는 robot/ailog/event 조회 문장은 LLM 없이 즉시 처리한다.
    */
   private async tryRuleFirstEventQuery(ctx: ChatContext): Promise<ChatReply | null> {
-    const matchedRouteKey = this.findNearestRegisteredRouteKey(ctx.key, ctx.reqId)
-    const isAilogRoute =
-      matchedRouteKey === 'robot/ailog/event' ||
-      matchedRouteKey === 'robot/ailog' ||
-      String(ctx.key ?? '').startsWith('robot/ailog')
-
-    if (!isAilogRoute) {
-      return null
-    }
-
     const phraseMatch = await findPhraseMapMatch('robot/ailog/event', ctx.message)
     const eventRuleMatch = await matchAiLogEventRule({
       routeKey: 'robot/ailog/event',
@@ -1450,7 +1462,7 @@ export class ChatService {
       return normalizedReply
     } catch (e: any) {
       this.logger.debug(
-        `[rule-first] direct query failed route=${matchedRouteKey} err=${e?.message ?? String(e)}; fallback to pipeline`,
+        `[rule-first] direct query failed route=${ctx.key} err=${e?.message ?? String(e)}; fallback to pipeline`,
       )
       this.stageLog('3단계:룰우선처리', 'error', '직접 조회 실패로 일반 파이프라인으로 폴백', ctx.reqId)
       return null
@@ -1760,6 +1772,7 @@ export class ChatService {
     const pipelineConfidence = Number(reply?.pipelineConfidence)
     const usedCollection = String(reply?.usedCollection ?? '').trim() || undefined
     const primaryChunkKey = String(reply?.primaryChunkKey ?? '').trim() || undefined
+    const assistantText = String(reply?.text ?? '').trim()
     const usedChunks = Array.isArray(reply?.usedChunks)
       ? reply.usedChunks.map((item) => String(item ?? '').trim()).filter(Boolean)
       : []
@@ -1768,6 +1781,23 @@ export class ChatService {
     const isOrchestratorSource = source === 'orchestrator'
     const defaultLlmFallback = isOrchestratorSource
       ? Boolean(meta?.defaultLlmFallback)
+      : undefined
+    const llmAttempted = isOrchestratorSource && pipelineIntent === 'info'
+      ? (usedChunks.length === 0 || Boolean(defaultLlmFallback))
+      : undefined
+    const infoTextMissing = isOrchestratorSource && pipelineIntent === 'info'
+      ? assistantText.length === 0
+      : undefined
+    const suggestedActionsAttached = reply?.chat_action_param && typeof reply.chat_action_param === 'object'
+      ? Array.isArray((reply.chat_action_param as Record<string, unknown>)?.suggested_actions)
+        && ((reply.chat_action_param as Record<string, unknown>).suggested_actions as unknown[]).length > 0
+      : undefined
+    const emptyTextReason = infoTextMissing
+      ? defaultLlmFallback
+        ? 'info-llm-empty-text'
+        : usedChunks.length === 0
+          ? 'info-rag-miss-no-llm-text'
+          : 'info-rag-empty-text'
       : undefined
     const ragMinScoreRaw = Number(this.pipelineCfg.infoRagMinScore)
     const ragMinScore = isOrchestratorSource && Number.isFinite(ragMinScoreRaw)
@@ -1789,6 +1819,10 @@ export class ChatService {
       pipelineTrace,
       screenTask,
       defaultLlmFallback,
+      llmAttempted,
+      infoTextMissing,
+      emptyTextReason,
+      suggestedActionsAttached,
       ragMinScore,
       ragSelectionRule,
       usedCollection,
