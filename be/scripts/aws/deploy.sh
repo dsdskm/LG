@@ -93,6 +93,13 @@ if [[ ${#VALID_INSTANCE_IDS[@]} -eq 0 ]]; then
     exit 1
 fi
 
+if [[ ${#VALID_INSTANCE_IDS[@]} -ne 1 ]]; then
+    err "현재 유효 인스턴스 수=${#VALID_INSTANCE_IDS[@]} (1대 고정 위반)"
+    err "ASG=${ASG_NAME} 의 desired/min/max 를 1로 맞추고 다시 실행하세요."
+    err "감지된 인스턴스: ${VALID_INSTANCE_IDS[*]}"
+    exit 1
+fi
+
 INSTANCE_ID="${VALID_INSTANCE_IDS[0]}"
 
 ok "배포 대상 인스턴스 수: ${#VALID_INSTANCE_IDS[@]}"
@@ -134,7 +141,7 @@ sudo docker compose -p ${COMPOSE_PROJECT_NAME} --env-file ${ENV_FILE} -f ${COMPO
 sudo docker image prune -f;"
 
 CMD_ID=$(aws ssm send-command \
-    --instance-ids "${VALID_INSTANCE_IDS[@]}" \
+    --instance-ids "$INSTANCE_ID" \
     --document-name "AWS-RunShellScript" \
     --parameters "commands=[\"$REMOTE_CMD\"]" \
     --region "$AWS_REGION" \
@@ -143,32 +150,22 @@ CMD_ID=$(aws ssm send-command \
 
 log "SSM CommandId=$CMD_ID"
 
-FAILED_INSTANCES=()
-for target in "${VALID_INSTANCE_IDS[@]}"; do
-    aws ssm wait command-executed \
-        --command-id "$CMD_ID" \
-        --instance-id "$target" \
-        --region "$AWS_REGION" \
-        2>/dev/null || true
+aws ssm wait command-executed \
+    --command-id "$CMD_ID" \
+    --instance-id "$INSTANCE_ID" \
+    --region "$AWS_REGION" \
+    2>/dev/null || true
 
-    STATUS=$(aws ssm get-command-invocation \
-        --command-id "$CMD_ID" \
-        --instance-id "$target" \
-        --region "$AWS_REGION" \
-        --query 'Status' \
-        --output text)
+STATUS=$(aws ssm get-command-invocation \
+    --command-id "$CMD_ID" \
+    --instance-id "$INSTANCE_ID" \
+    --region "$AWS_REGION" \
+    --query 'Status' \
+    --output text)
 
-    if [[ "$STATUS" == "Success" ]]; then
-        ok "배포 성공: $target"
-    else
-        err "배포 실패: $target (Status=$STATUS)"
-        FAILED_INSTANCES+=("$target:$STATUS")
-    fi
-done
-
-if [[ ${#FAILED_INSTANCES[@]} -gt 0 ]]; then
-    err "일부 인스턴스 배포 실패: ${FAILED_INSTANCES[*]}"
+if [[ "$STATUS" != "Success" ]]; then
+    err "배포 실패: $INSTANCE_ID (Status=$STATUS)"
     exit 1
 fi
 
-ok "이미지 교체 완료 (${#VALID_INSTANCE_IDS[@]}대)"
+ok "이미지 교체 완료 (1대: $INSTANCE_ID)"
