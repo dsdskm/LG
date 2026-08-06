@@ -157,7 +157,7 @@ REMOTE_CMD="echo '$REMOTE_SCRIPT_B64' | base64 -d | bash"
 CMD_ID=$(aws ssm send-command \
     --instance-ids "${VALID_INSTANCE_IDS[@]}" \
     --document-name "AWS-RunShellScript" \
-        --parameters "commands=$REMOTE_CMD" \
+    --parameters "commands=[\"$REMOTE_CMD\"]" \
     --region "$AWS_REGION" \
     --query "Command.CommandId" \
     --output text)
