@@ -57,7 +57,8 @@ ENV CHAT_INFO_NODE_GUIDE_FALLBACK_CHUNK_KEYS=${CHAT_INFO_NODE_GUIDE_FALLBACK_CHU
 COPY --from=build /app /app
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
+ && chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # 배포용 compose 정본을 이미지에 동봉한다(단일 출처).
 #   user-data.sh / deploy-image.sh 가 이 파일을 꺼내 /opt/rsp-qa-ai/compose.qa.yml 로 사용.
