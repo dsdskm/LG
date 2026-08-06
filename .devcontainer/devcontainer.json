@@ -1,0 +1,43 @@
+{
+  "name": "LGE Development",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "latest"
+    }
+  },
+  "forwardPorts": [
+    3001, 3002, 3003, 3004, 3005, 3007, 3008, 9001,
+    5173, 5174, 5175, 5176, 5177, 5178, 5179, 5180, 5181, 5182, 5183, 5184,
+    5433, 5434, 5436, 5437, 5439, 5440
+  ],
+  "portsAttributes": {
+    "3001": { "label": "Event Receiver", "onAutoForward": "open", "visibility": "public" },
+    "3002": { "label": "Event Analyzer", "onAutoForward": "open", "visibility": "public" },
+    "3003": { "label": "LLM Gateway", "onAutoForward": "open", "visibility": "public" },
+    "3004": { "label": "Action Runner", "onAutoForward": "open", "visibility": "public" },
+    "3005": { "label": "Report Manager", "onAutoForward": "open", "visibility": "public" },
+    "3007": { "label": "AI Chat Service", "onAutoForward": "open", "visibility": "public" },
+    "3008": { "label": "Config Manager", "onAutoForward": "open", "visibility": "public" },
+    "9001": { "label": "Event Generator", "onAutoForward": "open", "visibility": "public" },
+    "5173": { "label": "Main App (Vite)", "onAutoForward": "open", "visibility": "public" },
+    "5174": { "label": "OTA App", "onAutoForward": "open", "visibility": "public" },
+    "5175": { "label": "Robot App", "onAutoForward": "open", "visibility": "public" },
+    "5176": { "label": "EBME App", "onAutoForward": "open", "visibility": "public" },
+    "5177": { "label": "Setup App", "onAutoForward": "open", "visibility": "public" },
+    "5178": { "label": "CMS App", "onAutoForward": "open", "visibility": "public" },
+    "5179": { "label": "TMS App", "onAutoForward": "open", "visibility": "public" },
+    "5180": { "label": "Learning App", "onAutoForward": "open", "visibility": "public" },
+    "5181": { "label": "Init Setup App", "onAutoForward": "open", "visibility": "public" }
+  },
+  "postCreateCommand": "pnpm install",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "ms-azuretools.vscode-docker"
+      ]
+    }
+  }
+}

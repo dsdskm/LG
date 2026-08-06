@@ -143,6 +143,9 @@ for c in \$containers; do
         printf '[ OK ] %-45s status=%s health=%s\n' "\$c" "\$status" "\$health"
     else
         printf '[FAIL] %-45s status=%s health=%s\n' "\$c" "\$status" "\$health"
+        echo "----- recent logs: \$c -----"
+        sudo docker logs --tail 50 "\$c" 2>&1 || true
+        echo "--------------------------------"
         fail=1
     fi
 done
