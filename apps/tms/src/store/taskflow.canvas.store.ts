@@ -71,6 +71,7 @@ export type CanvasNote = {
   id: string
   x: number
   y: number
+  title: string
   text: string
   width: number
   height: number
@@ -260,12 +261,14 @@ function normalizeViewport(viewport: any): RFViewport {
 const DEFAULT_CANVAS_NOTE_WIDTH = 240
 const DEFAULT_CANVAS_NOTE_HEIGHT = 150
 const DEFAULT_CANVAS_NOTE_COLOR = '#fef3c7'
+const DEFAULT_CANVAS_NOTE_TITLE = '메모'
 
 function normalizeCanvasNote(note: any): CanvasNote {
   return {
     id: String(note?.id ?? generateNodeId()),
     x: Number(note?.x ?? 0),
     y: Number(note?.y ?? 0),
+    title: String(note?.title ?? DEFAULT_CANVAS_NOTE_TITLE),
     text: String(note?.text ?? ''),
     width: Number(note?.width ?? DEFAULT_CANVAS_NOTE_WIDTH),
     height: Number(note?.height ?? DEFAULT_CANVAS_NOTE_HEIGHT),
@@ -278,6 +281,7 @@ function createCanvasNote(position: XYPosition): CanvasNote {
     id: generateNodeId(),
     x: Math.round(Number(position?.x ?? 0)),
     y: Math.round(Number(position?.y ?? 0)),
+    title: DEFAULT_CANVAS_NOTE_TITLE,
     text: '',
     width: DEFAULT_CANVAS_NOTE_WIDTH,
     height: DEFAULT_CANVAS_NOTE_HEIGHT,
@@ -1008,6 +1012,7 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
               id: note.id,
               x: patch.x === undefined ? note.x : Number(patch.x),
               y: patch.y === undefined ? note.y : Number(patch.y),
+              title: patch.title === undefined ? note.title : String(patch.title),
               text: patch.text === undefined ? note.text : String(patch.text),
               width: patch.width === undefined ? note.width : Number(patch.width),
               height: patch.height === undefined ? note.height : Number(patch.height)

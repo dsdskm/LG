@@ -31,16 +31,16 @@ import {
   FlowFill,
   PanelRoot,
   AlignOverlay,
+  AlignHintText,
   NodeActionOverlay,
   CanvasNoteLayer,
   CanvasNoteCard,
   CanvasNoteHeader,
   CanvasNoteHeaderActions,
-  CanvasNoteTitle,
+  CanvasNoteTitleInput,
   CanvasNoteDeleteButton,
   CanvasNoteTextarea,
   CanvasNoteResizeHandle,
-  CanvasNoteSizeButton,
   CanvasNoteColorButton
 } from './styles'
 import ConfirmModal from '@/pages/components/modal/ConfirmModal'
@@ -50,19 +50,19 @@ import { PaletteItem } from '@/types/palette'
 
 const DND_MIME = 'application/x-taskflow-palette'
 const NOTE_COLORS = ['#fef3c7', '#fee2e2', '#dbeafe', '#dcfce7', '#ede9fe']
-const NOTE_SIZES = [
-  { label: 'S', width: 200, height: 130 },
-  { label: 'M', width: 240, height: 150 },
-  { label: 'L', width: 320, height: 200 }
-]
 
 const nodeTypes: NodeTypes = { taskNode: TaskNode, startNode: StartNode }
 const edgeTypes: EdgeTypes = { taskEdge: TaskEdge }
 
-function CanvasNotes() {
+type CanvasNotesProps = {
+  selectedNoteId: string | null
+  onSelectNote: (id: string | null) => void
+  onRequestDeleteNote: (id: string) => void
+}
+
+function CanvasNotes({ selectedNoteId, onSelectNote, onRequestDeleteNote }: CanvasNotesProps) {
   const notes = useFlowEditorStore((s) => s.canvasNotes)
   const updateCanvasNote = useFlowEditorStore((s) => s.updateCanvasNote)
-  const removeCanvasNote = useFlowEditorStore((s) => s.removeCanvasNote)
   const { screenToFlowPosition } = useReactFlow()
 
   const dragRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null)
@@ -116,12 +116,17 @@ function CanvasNotes() {
         {notes.map((note: CanvasNote) => (
           <CanvasNoteCard
             key={note.id}
+            $selected={selectedNoteId === note.id}
             style={{
               left: note.x,
               top: note.y,
               width: note.width,
               height: note.height,
               background: `linear-gradient(180deg, ${note.color}, ${note.color}dd)`
+            }}
+            onPointerDown={(event) => {
+              event.stopPropagation()
+              onSelectNote(note.id)
             }}
           >
             <CanvasNoteHeader
@@ -137,22 +142,13 @@ function CanvasNotes() {
                 }
               }}
             >
-              <CanvasNoteTitle>메모</CanvasNoteTitle>
+              <CanvasNoteTitleInput
+                value={note.title ?? '메모'}
+                placeholder="메모"
+                onPointerDown={(event) => event.stopPropagation()}
+                onChange={(event) => updateCanvasNote(note.id, { title: event.target.value })}
+              />
               <CanvasNoteHeaderActions>
-                {NOTE_SIZES.map((size) => (
-                  <CanvasNoteSizeButton
-                    key={size.label}
-                    type="button"
-                    onClick={(event) => {
-                      event.preventDefault()
-                      event.stopPropagation()
-                      updateCanvasNote(note.id, { width: size.width, height: size.height })
-                    }}
-                    title={`${size.label} size`}
-                  >
-                    {size.label}
-                  </CanvasNoteSizeButton>
-                ))}
                 {NOTE_COLORS.map((color) => (
                   <CanvasNoteColorButton
                     key={color}
@@ -168,20 +164,20 @@ function CanvasNotes() {
                     aria-label={color}
                   />
                 ))}
-                <CanvasNoteDeleteButton
-                  type="button"
-                  onClick={(event) => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    removeCanvasNote(note.id)
-                  }}
-                  aria-label="메모 삭제"
-                  title="메모 삭제"
-                >
-                  ×
-                </CanvasNoteDeleteButton>
               </CanvasNoteHeaderActions>
             </CanvasNoteHeader>
+            <CanvasNoteDeleteButton
+              type="button"
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                onRequestDeleteNote(note.id)
+              }}
+              aria-label="메모 삭제"
+              title="메모 삭제"
+            >
+              ×
+            </CanvasNoteDeleteButton>
             <CanvasNoteTextarea
               value={note.text}
               placeholder="메모를 입력하세요"
@@ -189,6 +185,9 @@ function CanvasNotes() {
               onChange={(event) => updateCanvasNote(note.id, { text: event.target.value })}
             />
             <CanvasNoteResizeHandle
+              role="button"
+              aria-label="메모 크기 조절"
+              title="드래그해서 메모 크기 조절"
               onPointerDown={(event) => {
                 event.preventDefault()
                 event.stopPropagation()
@@ -216,12 +215,15 @@ function InnerCanvas() {
 
   const [selectedNodeCount, setSelectedNodeCount] = useState(0)
   const [showAlignGuideModal, setShowAlignGuideModal] = useState(false)
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
+  const [showNoteDeleteConfirm, setShowNoteDeleteConfirm] = useState(false)
   // Ctrl(⌘) 을 누르고 있는지 여부. 누르고 있는 동안에는 그룹 선택 사각형이 클릭을 통과시킨다.
   const [multiSelectKeyDown, setMultiSelectKeyDown] = useState(false)
 
   const nodes = useFlowEditorStore((s) => s.nodes)
   const edges = useFlowEditorStore((s) => s.edges)
   const addCanvasNote = useFlowEditorStore((s) => s.addCanvasNote)
+  const removeCanvasNote = useFlowEditorStore((s) => s.removeCanvasNote)
   const viewport = useFlowEditorStore((s) => s.viewport)
   const setViewport = useFlowEditorStore((s) => s.setViewport)
 
@@ -427,6 +429,20 @@ function InnerCanvas() {
     })
   }, [alignSelectedNodesAuto, canAlign, setViewport])
 
+  const requestDeleteSelectedNote = useCallback((noteId?: string) => {
+    const id = noteId ?? selectedNoteId
+    if (!id) return
+    setSelectedNoteId(id)
+    setShowNoteDeleteConfirm(true)
+  }, [selectedNoteId])
+
+  const confirmDeleteSelectedNote = useCallback(() => {
+    if (!selectedNoteId) return
+    removeCanvasNote(selectedNoteId)
+    setSelectedNoteId(null)
+    setShowNoteDeleteConfirm(false)
+  }, [removeCanvasNote, selectedNoteId])
+
   const renderedEdges = useMemo(() => {
     return edges.map((e) => {
       // 단일 선택(selectedEdgeId) 과 박스 드래그·Ctrl 클릭으로 만든 그룹 선택(e.selected) 을 같은 강조로 표시한다.
@@ -495,11 +511,24 @@ function InnerCanvas() {
         onDropCapture={(e) => e.preventDefault()}
         tabIndex={0}
         onKeyDownCapture={(e) => {
+          const target = e.target as HTMLElement | null
+          const tag = target?.tagName
+          if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) {
+            return
+          }
+
           // Ctrl/Cmd + D: 선택 노드(그룹 포함) 복제
           if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
             e.preventDefault()
             e.stopPropagation()
             onDuplicateClick()
+            return
+          }
+
+          if (selectedNoteId && (e.key === 'Delete' || e.key === 'Backspace')) {
+            e.preventDefault()
+            e.stopPropagation()
+            requestDeleteSelectedNote()
             return
           }
 
@@ -552,6 +581,8 @@ function InnerCanvas() {
             {t('canvas.mode.tree')}
           </Button>
         </AlignOverlay>
+
+        <AlignHintText>빈 곳을 더블 클릭하여 메모를 생성할 수 있습니다.</AlignHintText>
 
         <NodeActionOverlay>
           <Button
@@ -621,6 +652,7 @@ function InnerCanvas() {
             }}
             onNodeClick={(evt, node) => {
               evt.stopPropagation()
+              setSelectedNoteId(null)
 
               // Ctrl(⌘) + 클릭 = 그룹 선택 토글. node.selected 토글은 React Flow 가 이미 처리했으므로
               // 여기서는 "그룹에서 빠진" 경우만 잔여 단일 선택/연결 엣지를 정리한다.
@@ -639,6 +671,7 @@ function InnerCanvas() {
             }}
             onEdgeClick={(evt, edge) => {
               evt.stopPropagation()
+              setSelectedNoteId(null)
 
               // 노드와 동일하게 Ctrl(⌘) + 클릭으로 그룹에서 엣지 하나만 빼낼 수 있다.
               if (evt.ctrlKey || evt.metaKey) {
@@ -657,6 +690,7 @@ function InnerCanvas() {
             onPaneClick={() => {
               selectNode(null)
               selectEdge(null)
+              setSelectedNoteId(null)
               setSelectedNodeCount(0)
             }}
             onDoubleClick={(event) => {
@@ -687,7 +721,11 @@ function InnerCanvas() {
             <Background />
             <MiniMap />
             <Controls />
-            <CanvasNotes />
+            <CanvasNotes
+              selectedNoteId={selectedNoteId}
+              onSelectNote={setSelectedNoteId}
+              onRequestDeleteNote={requestDeleteSelectedNote}
+            />
             <HelperLines vertical={helperLineVertical} horizontal={helperLineHorizontal} />
           </ReactFlow>
         </FlowFill>
@@ -701,6 +739,15 @@ function InnerCanvas() {
         closeOnOverlayClick
         onCancel={() => setShowAlignGuideModal(false)}
         onConfirm={() => setShowAlignGuideModal(false)}
+      />
+
+      <ConfirmModal
+        open={showNoteDeleteConfirm}
+        title="메모 삭제"
+        description="선택한 메모를 삭제할까요?"
+        closeOnOverlayClick
+        onCancel={() => setShowNoteDeleteConfirm(false)}
+        onConfirm={confirmDeleteSelectedNote}
       />
     </>
   )
