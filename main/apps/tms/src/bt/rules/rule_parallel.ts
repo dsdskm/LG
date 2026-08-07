@@ -37,6 +37,7 @@ export const rule_parallel: BtRule<typeof parallelNodeName> = {
     // main_nodes 가 비어 있으면(미설정) 모든 자식을 main 으로 간주(기존 동작 유지).
     const mainTargetSet = resolveMainTargetSet(node, orderedBranchEntries)
     const mainCount = mainTargetSet ? mainTargetSet.size : childCount
+    const nonMainCount = childCount - mainCount
 
     const branchChildren: BtAstNode[] = orderedBranchEntries.map((entry, idx) => {
       const astList = buildAstList(entry.targetId)
@@ -47,9 +48,9 @@ export const rule_parallel: BtRule<typeof parallelNodeName> = {
       return isMain ? child : { kind: forceSuccessNodeType, child }
     })
 
-    // 사용자가 입력한 success/failure 임계값은 main_nodes 개수 기준으로 검증하고,
-    // 보정 없이 입력값 그대로 내보낸다.
-    const successCount = resolveSuccessCount(node, mainCount)
+    // success_count 는 main 기준 입력값으로 검증한 뒤,
+    // BT 에는 non-main 개수를 더한 실제 임계값으로 반영한다.
+    const successCount = resolveSuccessCount(node, mainCount, nonMainCount)
     const failureCount = resolveFailureCount(node, mainCount)
 
     const parallelNode: BtParallelNode = {
@@ -147,10 +148,15 @@ function sortBranchEntriesByCanvasPosition(entries: BranchEntry[], nodeById: Map
   return orderedIds.map((targetId) => entryByTargetId.get(targetId)).filter((entry): entry is BranchEntry => !!entry)
 }
 
-function resolveSuccessCount(node: any, childCount: number): number {
+function resolveSuccessCount(node: any, childCount: number, nonMainCount: number): number {
   const value = getNodeNumberPropertyValue(node, -1, parallelSuccessCountProp)
+  const validated = validateParallelThreshold(value, childCount, parallelSuccessCountProp, node)
 
-  return validateParallelThreshold(value, childCount, parallelSuccessCountProp, node)
+  if (validated === -1) {
+    return -1
+  }
+
+  return validated + nonMainCount
 }
 
 function resolveFailureCount(node: any, childCount: number): number {

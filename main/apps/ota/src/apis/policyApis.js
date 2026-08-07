@@ -4,11 +4,11 @@ import { ENDPOINTS } from './constants'
 const axiosOta = client(import.meta.env.VITE_OTA_API_BASE_URL)
 
 const retrievePolicy = async (orgIds, id) => {
-  const params = { orgIds }
+  const data = { orgIds }
   if (id) {
-    params.id = id
+    data.id = id
   }
-  const response = await axiosOta.get(ENDPOINTS.POLICY, { params })
+  const response = await axiosOta.post(ENDPOINTS.POLICY, data)
   return response
 }
 

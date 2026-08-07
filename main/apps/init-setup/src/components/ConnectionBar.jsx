@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import styled from 'styled-components'
+import { Button } from '@repo/ui'
 import { startMapping, createMapping, resetMapping, cancelMapping } from '@/apis/mapApis'
 import { toast } from 'react-toastify'
 
@@ -69,8 +70,25 @@ const StyledSlider = styled.input`
  *
  * WebSocket URL 입력 + 연결/해제 버튼 컴포넌트.
  * 연결 상태(status)에 따라 버튼 텍스트와 색상이 변경됨.
+ *
+ * 매핑 버튼의 맵 이름은 여기서 입력받지 않는다 — 위치 계층(Building/Floor/Area)에서 만든
+ * mapName 과 시작 가능 여부(canStartMapping)를 부모(pages/Map)에서 props 로 받는다.
+ *
+ * @param {string} [mapName] 저장에 쓸 맵 이름 (Building명-Floor명-Area명 또는 'Default')
+ * @param {boolean} [canStartMapping] 위치 선택이 끝나 매핑을 시작할 수 있는지
  */
-export default function ConnectionBar({ url, onUrlChange, status, onConnect, onDisconnect, fps, onFpsChange, t }) {
+export default function ConnectionBar({
+  url,
+  onUrlChange,
+  status,
+  onConnect,
+  onDisconnect,
+  fps,
+  onFpsChange,
+  mapName = '',
+  canStartMapping = true,
+  t
+}) {
   const isConnected = status === 'connected'
   const isConnecting = status === 'connecting'
   const [isMapping, setIsMapping] = useState(false)
@@ -83,6 +101,10 @@ export default function ConnectionBar({ url, onUrlChange, status, onConnect, onD
     error: { label: t('error'), color: '#e74c3c' }
   }
   const { label, color } = STATUS_CONFIG[status] || STATUS_CONFIG.disconnected
+
+  // 위치 계층을 받아온 경우에는 Building/Floor/Area 가 모두 선택돼야 매핑을 시작할 수 있다
+  // (맵 이름이 곧 위치라서, 미선택 상태로 시작하면 어디를 그린 맵인지 남지 않는다).
+  const isStartDisabled = isMapping || !canStartMapping
 
   // init-setup-be → robot-hub gRPC 경유라 로봇이 거부하면 4xx/5xx 로 돌아온다.
   // 실패 시 isMapping 을 되돌려야 버튼 상태가 실제 로봇 상태와 어긋나지 않는다.
@@ -107,7 +129,11 @@ export default function ConnectionBar({ url, onUrlChange, status, onConnect, onD
     })
   }
   const handleSave = async () => {
-    await runMappingAction(createMapping, {
+    // save-map 바디는 { name } 만 받는다 — save_path 는 LIO_MAP_BASE_DIR 하위 강제라 FE 가 쓸 이유가 없다.
+    // name 은 위치 계층에서 만든 Building명-Floor명-Area명(계층이 없으면 'Default')이다.
+    // 빈 문자열은 백엔드가 400 으로 거부하므로 그 경우 키를 빼고 보낸다(맵 이름 자동 생성).
+    const name = mapName.trim()
+    await runMappingAction(() => createMapping(name ? { name } : {}), {
       onSuccess: () => setIsMapping(false),
       successMessage: 'Map saved'
     })
@@ -124,7 +150,7 @@ export default function ConnectionBar({ url, onUrlChange, status, onConnect, onD
 
   return (
     <div style={styles.bar}>
-      <span style={styles.title}> Map Scan Viewer</span>
+      {/* 페이지 제목은 페이지의 Title 이 담당한다 — 툴바는 조작 요소만 갖는다. */}
 
       {/* WebSocket URL 입력 필드 */}
       <input
@@ -138,17 +164,13 @@ export default function ConnectionBar({ url, onUrlChange, status, onConnect, onD
 
       {/* 연결/해제 버튼 */}
       {isConnected ? (
-        <button style={{ ...styles.btn, background: '#e74c3c' }} onClick={onDisconnect}>
+        <Button size="md" theme="delete" onClick={onDisconnect}>
           {t('disconnect')}
-        </button>
+        </Button>
       ) : (
-        <button
-          style={{ ...styles.btn, background: isConnecting ? '#aaa' : '#2980b9' }}
-          onClick={onConnect}
-          disabled={isConnecting}
-        >
+        <Button size="md" onClick={onConnect} disabled={isConnecting}>
           {isConnecting ? t('connecting') : t('connect')}
-        </button>
+        </Button>
       )}
 
       {/* 연결 상태 표시 뱃지 */}
@@ -171,23 +193,27 @@ export default function ConnectionBar({ url, onUrlChange, status, onConnect, onD
 
       {isConnected && (
         <div style={styles.mappingContainer}>
-          {isMapping ? (
-            <>
-              <button style={{ ...styles.btn, background: '#2980b9' }} onClick={handleSave}>
-                {t('save')}
-              </button>
-              <button style={{ ...styles.btn, background: '#2980b9' }} onClick={handleReset}>
-                {t('reset')}
-              </button>
-              <button style={{ ...styles.btn, background: '#2980b9' }} onClick={handleCancel}>
-                {t('cancel')}
-              </button>
-            </>
-          ) : (
-            <button style={{ ...styles.btn, background: '#2980b9' }} onClick={handleStart}>
-              {t('start')}
-            </button>
-          )}
+          {/* 저장될 맵 이름(위치 계층에서 자동 생성). 직접 입력하지 않는다. */}
+          <span style={styles.mapName} title={mapName}>
+            {mapName || '-'}
+          </span>
+          <Button
+            size="md"
+            onClick={handleStart}
+            disabled={isStartDisabled}
+            title={canStartMapping ? undefined : t('selectLocationForMapping')}
+          >
+            {t('start')}
+          </Button>
+          <Button size="md" onClick={handleSave}>
+            {t('save')}
+          </Button>
+          <Button size="md" theme="tertiary" onClick={handleReset}>
+            {t('reset')}
+          </Button>
+          <Button size="md" theme="tertiary" onClick={handleCancel}>
+            {t('cancel')}
+          </Button>
         </div>
       )}
     </div>
@@ -195,63 +221,60 @@ export default function ConnectionBar({ url, onUrlChange, status, onConnect, onD
 }
 
 const styles = {
+  // Section(카드) 안에 놓이는 툴바다 — 배경/좌우 여백은 Section 이 이미 갖고 있어서
+  // 아래쪽 구분선과 그만큼의 여백만 남긴다.
   bar: {
     display: 'flex',
     alignItems: 'center',
     gap: 10,
-    padding: '10px 16px',
-    background: '#fff',
-    borderBottom: '1px solid #ddd',
+    paddingBottom: 12,
+    borderBottom: '1px solid var(--color-secondary-20)',
     flexWrap: 'wrap'
   },
-  title: {
-    fontWeight: 'bold',
-    fontSize: 16,
-    marginRight: 8,
-    whiteSpace: 'nowrap'
-  },
+  // 글꼴 크기는 공용 토큰(--font-size-body-5/6)만 쓴다 — 툴바 안에서 12/13/14px 이 섞이지 않게.
   input: {
     width: '200px',
     padding: '6px 10px',
-    border: '1px solid #ccc',
-    borderRadius: 4,
-    fontSize: 14,
-    fontFamily: 'monospace'
+    border: '1px solid var(--color-secondary-20)',
+    borderRadius: 'var(--radius-xs)',
+    fontSize: 'var(--font-size-body-5)',
+    color: 'var(--color-neutral-80)'
   },
   badge: {
     padding: '4px 10px',
     borderRadius: 12,
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
-    whiteSpace: 'nowrap'
-  },
-  btn: {
-    padding: '6px 16px',
-    border: 'none',
-    borderRadius: 4,
-    color: '#fff',
-    fontSize: 14,
-    cursor: 'pointer',
+    color: 'var(--color-neutral-10)',
+    fontSize: 'var(--font-size-body-6)',
+    fontWeight: 700,
     whiteSpace: 'nowrap'
   },
   mappingContainer: {
     display: 'flex',
+    alignItems: 'center',
     gap: 10,
     marginLeft: 'auto'
+  },
+  mapName: {
+    maxWidth: 220,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    fontSize: 'var(--font-size-body-5)',
+    fontWeight: 700,
+    color: 'var(--color-neutral-70)'
   },
   fpsContainer: {
     display: 'flex',
     alignItems: 'center',
     gap: 10,
     whiteSpace: 'nowrap',
-    backgroundColor: '#f8f9fa',
+    backgroundColor: 'var(--color-secondary-10)',
     padding: '4px 12px',
-    borderRadius: 6,
-    border: '1px solid #e9ecef'
+    borderRadius: 'var(--radius-xs)',
+    border: '1px solid var(--color-secondary-20)'
   },
   fpsLabel: {
-    fontSize: 13,
-    color: '#495057'
+    fontSize: 'var(--font-size-body-5)',
+    color: 'var(--color-neutral-70)'
   }
 }

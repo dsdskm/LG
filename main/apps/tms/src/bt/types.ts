@@ -12,6 +12,7 @@ import { BtActionNode } from './nodes/btActionNode'
 import { BtReactiveAndNode } from './nodes/btReactiveAndNode'
 import { BtRetryUntilSuccessfulNode } from './nodes/btRetryUntilSuccessfulNode'
 import { BtPreconditionNode } from './nodes/btPreconditionNode'
+import { BtDelayNode } from './nodes/btDelayNode'
 
 export type BtAstNode =
   | BtActionNode
@@ -28,6 +29,7 @@ export type BtAstNode =
   | BtForceFailureNode
   | BtRetryUntilSuccessfulNode
   | BtPreconditionNode
+  | BtDelayNode
 
 export type BuildResult = {
   model: BtSequenceNode

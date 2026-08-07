@@ -1,39 +1,33 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { StyledPageContent, Section, Title, Button } from '@repo/ui'
-import { ButtonWrapper } from './styles'
-
-import { Table } from '@repo/ui'
+import { useState, useEffect } from 'react'
+import { Section, SectionTitle, Button, Input, Dropdown, IconButton, Icon } from '@repo/ui'
+import { ButtonWrapper, DetailWrapper, FieldGrid, MetaText, PropertyRow } from './styles'
 
 const SemanticDetail = ({ row, onPoiCreated, onPoiEdited, onPoiCancel }) => {
   const POI_TYPES = ['GENERAL', 'ETC']
 
   const [loading, setLoading] = useState(false)
   const [workObj, setWorkObj] = useState(null)
+  // properties 편집용 로컬 배열. key 이름 변경/추가/삭제를 다루기 쉽게 배열로 들고,
+  // 저장 시점의 workObj.properties(객체)로는 syncProperties 가 직렬화한다.
+  const [propEntries, setPropEntries] = useState([])
 
   const handlePoiCreate = () => {
-    console.log('handlePoiCreate:', workObj)
     const retObj = { ...workObj }
-    retObj._work.state = 'CREATED'
+    retObj._work.created = true
     onPoiCreated(retObj)
   }
 
   const handlePoiEdit = () => {
+    console.log('handlePoiEdit')
     const retObj = { ...workObj }
-    retObj.name.default = '222'
-    if (retObj._work.state === 'EXSITED') {
-      retObj._work.state = 'EDITED'
-    }
+    retObj._work.edited = true
     onPoiEdited(retObj)
   }
 
   const handleTypeChange = (value) => {
     setWorkObj((prev) => ({
       ...prev,
-      type: value,
-      _work: {
-        ...prev._work,
-        state: prev._work.state === 'EXISTED' ? 'EDITED' : prev._work.state
-      }
+      type: value
     }))
   }
 
@@ -47,7 +41,6 @@ const SemanticDetail = ({ row, onPoiCreated, onPoiEdited, onPoiCancel }) => {
   }
 
   const handlePosChange = (axis, value) => {
-    console.log(axis)
     const newPose = { ...workObj.pose }
     const floatValue = value === '' ? '' : parseFloat(value)
     newPose.position[axis] = floatValue
@@ -57,11 +50,80 @@ const SemanticDetail = ({ row, onPoiCreated, onPoiEdited, onPoiCancel }) => {
     }))
   }
 
+  const handleOrientationChange = (axis, value) => {
+    const newPose = { ...workObj.pose }
+    const floatValue = value === '' ? '' : parseFloat(value)
+    newPose.orientation[axis] = floatValue
+    setWorkObj((prev) => ({
+      ...prev,
+      pose: newPose
+    }))
+  }
+
+  const handleYawDegChange = (value) => {
+    const floatValue = value === '' ? '' : parseFloat(value)
+    setWorkObj((prev) => ({
+      ...prev,
+      yawDeg: floatValue
+    }))
+  }
+
+  const handleToleranceChange = (value) => {
+    const floatValue = value === '' ? '' : parseFloat(value)
+    setWorkObj((prev) => ({
+      ...prev,
+      tolerance: floatValue
+    }))
+  }
+
+  // 편집 배열 → properties 객체(string 값). 빈 key 는 제외, 중복 key 는 나중 값이 우선.
+  const syncProperties = (entries) => {
+    const obj = {}
+    entries.forEach(({ key, value }) => {
+      const k = key.trim()
+      if (k) obj[k] = value
+    })
+    setWorkObj((prev) => ({
+      ...prev,
+      properties: obj
+    }))
+  }
+
+  const handlePropKeyChange = (id, key) => {
+    const next = propEntries.map((e) => (e.id === id ? { ...e, key } : e))
+    setPropEntries(next)
+    syncProperties(next)
+  }
+
+  const handlePropValueChange = (id, value) => {
+    const next = propEntries.map((e) => (e.id === id ? { ...e, value } : e))
+    setPropEntries(next)
+    syncProperties(next)
+  }
+
+  const handleAddProp = () => {
+    if (propEntries.length >= 5) return
+    setPropEntries((prev) => [...prev, { id: crypto.randomUUID(), key: '', value: '' }])
+  }
+
+  const handleRemoveProp = (id) => {
+    const next = propEntries.filter((e) => e.id !== id)
+    setPropEntries(next)
+    syncProperties(next)
+  }
+
   useEffect(() => {
-    console.log(row)
     if (row) {
       const tempObj = { ...row }
+      if (!tempObj.properties) tempObj.properties = {}
       setWorkObj(tempObj)
+      setPropEntries(
+        Object.entries(tempObj.properties).map(([key, value]) => ({
+          id: crypto.randomUUID(),
+          key,
+          value: String(value)
+        }))
+      )
     } else {
       const tempObj = {}
       tempObj.id = crypto.randomUUID()
@@ -76,8 +138,15 @@ const SemanticDetail = ({ row, onPoiCreated, onPoiEdited, onPoiCancel }) => {
         y: 0.0,
         z: 0.0
       }
+      tempObj.pose.orientation = {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+        w: 0.0
+      }
+      tempObj.yawDeg = 0.0
+      tempObj.properties = {}
       tempObj._work = {}
-      tempObj._work.state = 'CREATING'
       setWorkObj(tempObj)
     }
     setLoading(true)
@@ -85,96 +154,154 @@ const SemanticDetail = ({ row, onPoiCreated, onPoiEdited, onPoiCancel }) => {
 
   return (
     loading && (
-      <>
-        {workObj._work.state}
-        <ButtonWrapper>
-          {workObj._work.state === 'EXSITED' || workObj._work.state === 'CREATED' ? (
-            <Button size="md" onClick={handlePoiEdit}>
-              수정
+      <DetailWrapper key={workObj.id}>
+        {/* 상단: 상태 + 액션 버튼 */}
+        <Section>
+          <SectionTitle title="POI 상세">
+            <MetaText>{workObj._work.state}</MetaText>
+          </SectionTitle>
+          <ButtonWrapper>
+            {workObj._work.saved || workObj._work.created ? (
+              <Button size="md" onClick={handlePoiEdit}>
+                수정
+              </Button>
+            ) : (
+              <Button size="md" onClick={handlePoiCreate}>
+                생성
+              </Button>
+            )}
+            <Button size="md" variant="outline" onClick={onPoiCancel}>
+              취소
             </Button>
-          ) : (
-            <Button size="md" onClick={handlePoiCreate}>
-              생성
-            </Button>
-          )}
-          <Button size="md" onClick={onPoiCancel}>
-            취소
-          </Button>
-        </ButtonWrapper>
+          </ButtonWrapper>
+        </Section>
 
-        {/* 세부정보 */}
-        <div>
-          <p>id :{row?.id} </p>
-        </div>
-
-        <div style={{ marginBottom: '12px' }}>
-          <label>Type</label>
-
-          <select value={workObj?.type || 'GENERAL'} onChange={(e) => handleTypeChange(e.target.value)}>
-            <option value="GENERAL">GENERAL</option>
-            <option value="ETC">ETC</option>
-          </select>
-        </div>
-
-        <div style={{ marginBottom: '12px' }}>
-          <label>기본 이름</label>
-          <input
-            type="text"
-            value={workObj?.name?.default || ''}
+        {/* 기본 정보 */}
+        <Section gap="1.2rem">
+          <SectionTitle title="기본 정보" />
+          <MetaText>ID: {workObj.id}</MetaText>
+          <Dropdown
+            label="Type"
+            size="md"
+            value={workObj.type}
+            options={POI_TYPES.map((t) => ({ name: t, value: t }))}
+            onChange={(value) => handleTypeChange(value)}
+          />
+          <Input
+            label="기본 이름"
+            size="md"
+            value={workObj.name?.default || ''}
             onChange={(e) => handleNameChange('default', e.target.value)}
           />
-        </div>
+          <FieldGrid>
+            <Input
+              label="영문 이름"
+              size="md"
+              value={workObj.name?.['en-US'] || ''}
+              onChange={(e) => handleNameChange('en-US', e.target.value)}
+            />
+            <Input
+              label="한글 이름"
+              size="md"
+              value={workObj.name?.['ko-KR'] || ''}
+              onChange={(e) => handleNameChange('ko-KR', e.target.value)}
+            />
+          </FieldGrid>
+        </Section>
 
-        <div style={{ marginBottom: '12px' }}>
-          <label>영문 이름</label>
-          <input
-            type="text"
-            value={workObj?.name['en-US'] || ''}
-            onChange={(e) => handleNameChange('en-US', e.target.value)}
-          />
-        </div>
+        {/* Position */}
+        <Section gap="1.2rem">
+          <SectionTitle title="Position" />
+          <FieldGrid>
+            {['x', 'y', 'z'].map((axis) => (
+              <Input
+                key={axis}
+                label={axis.toUpperCase()}
+                type="number"
+                step="0.001"
+                size="md"
+                value={workObj.pose?.position?.[axis] ?? ''}
+                onChange={(e) => handlePosChange(axis, e.target.value)}
+              />
+            ))}
+          </FieldGrid>
+        </Section>
 
-        <div style={{ marginBottom: '12px' }}>
-          <label>한글 이름</label>
-          <input
-            type="text"
-            value={workObj?.name['ko-KR'] || ''}
-            onChange={(e) => handleNameChange('ko-KR', e.target.value)}
-          />
-        </div>
+        {/* Orientation */}
+        <Section gap="1.2rem">
+          <SectionTitle title="Orientation" />
+          <FieldGrid>
+            {['x', 'y', 'z', 'w'].map((axis) => (
+              <Input
+                key={axis}
+                label={axis.toUpperCase()}
+                type="number"
+                step="0.001"
+                size="md"
+                value={workObj.pose?.orientation?.[axis] ?? ''}
+                onChange={(e) => handleOrientationChange(axis, e.target.value)}
+              />
+            ))}
+          </FieldGrid>
+        </Section>
 
-        <h4>Position</h4>
+        {/* 기타 */}
+        <Section gap="1.2rem">
+          <SectionTitle title="기타" />
+          <FieldGrid>
+            <Input
+              label="yaw deg"
+              type="number"
+              step="0.001"
+              unit="°"
+              size="md"
+              value={workObj.yawDeg ?? 0.0}
+              onChange={(e) => handleYawDegChange(e.target.value)}
+            />
+            <Input
+              label="tolerance"
+              type="number"
+              step="0.001"
+              size="md"
+              value={workObj.tolerance ?? 0.0}
+              onChange={(e) => handleToleranceChange(e.target.value)}
+            />
+          </FieldGrid>
+        </Section>
 
-        <div style={{ marginBottom: '12px' }}>
-          <label>X</label>
-          <input
-            type="number"
-            step="0.001"
-            value={workObj?.pose?.position?.x ?? ''}
-            onChange={(e) => handlePosChange('x', e.target.value)}
-          />
-        </div>
-
-        <div style={{ marginBottom: '12px' }}>
-          <label>Y</label>
-          <input
-            type="number"
-            step="0.001"
-            value={workObj?.pose?.position.y ?? ''}
-            onChange={(e) => handlePosChange('y', e.target.value)}
-          />
-        </div>
-
-        <div style={{ marginBottom: '12px' }}>
-          <label>Z</label>
-          <input
-            type="number"
-            step="0.001"
-            value={workObj?.pose?.position.z ?? ''}
-            onChange={(e) => handlePosChange('z', e.target.value)}
-          />
-        </div>
-      </>
+        {/* Properties (사용자 정의 key/value, string 값, 최대 5개) */}
+        <Section gap="1.2rem">
+          <SectionTitle title="Properties">
+            <IconButton size="sm" onClick={handleAddProp} disabled={propEntries.length >= 5}>
+              <Icon name="add" size={18} />
+            </IconButton>
+          </SectionTitle>
+          <MetaText>키/값 문자열, 최대 5개</MetaText>
+          {propEntries.map((entry) => (
+            <PropertyRow key={entry.id}>
+              <div className="field">
+                <Input
+                  size="sm"
+                  placeholder="key"
+                  value={entry.key}
+                  onChange={(e) => handlePropKeyChange(entry.id, e.target.value)}
+                />
+              </div>
+              <div className="field">
+                <Input
+                  size="sm"
+                  placeholder="value"
+                  value={entry.value}
+                  onChange={(e) => handlePropValueChange(entry.id, e.target.value)}
+                />
+              </div>
+              <IconButton size="sm" onClick={() => handleRemoveProp(entry.id)}>
+                <Icon name="subtract" size={18} />
+              </IconButton>
+            </PropertyRow>
+          ))}
+        </Section>
+      </DetailWrapper>
     )
   )
 }

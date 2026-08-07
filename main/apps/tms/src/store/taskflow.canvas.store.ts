@@ -67,6 +67,17 @@ export type RFViewport = {
   zoom: number
 }
 
+export type CanvasNote = {
+  id: string
+  x: number
+  y: number
+  title: string
+  text: string
+  width: number
+  height: number
+  color: string
+}
+
 type FlowSnapshot = {
   nodes: RFNode[]
   edges: RFEdge[]
@@ -245,6 +256,37 @@ function normalizeViewport(viewport: any): RFViewport {
   }
 
   return { ...DEFAULT_VIEWPORT }
+}
+
+const DEFAULT_CANVAS_NOTE_WIDTH = 240
+const DEFAULT_CANVAS_NOTE_HEIGHT = 150
+const DEFAULT_CANVAS_NOTE_COLOR = '#fef3c7'
+const DEFAULT_CANVAS_NOTE_TITLE = '메모'
+
+function normalizeCanvasNote(note: any): CanvasNote {
+  return {
+    id: String(note?.id ?? generateNodeId()),
+    x: Number(note?.x ?? 0),
+    y: Number(note?.y ?? 0),
+    title: String(note?.title ?? DEFAULT_CANVAS_NOTE_TITLE),
+    text: String(note?.text ?? ''),
+    width: Number(note?.width ?? DEFAULT_CANVAS_NOTE_WIDTH),
+    height: Number(note?.height ?? DEFAULT_CANVAS_NOTE_HEIGHT),
+    color: String(note?.color ?? DEFAULT_CANVAS_NOTE_COLOR)
+  }
+}
+
+function createCanvasNote(position: XYPosition): CanvasNote {
+  return {
+    id: generateNodeId(),
+    x: Math.round(Number(position?.x ?? 0)),
+    y: Math.round(Number(position?.y ?? 0)),
+    title: DEFAULT_CANVAS_NOTE_TITLE,
+    text: '',
+    width: DEFAULT_CANVAS_NOTE_WIDTH,
+    height: DEFAULT_CANVAS_NOTE_HEIGHT,
+    color: DEFAULT_CANVAS_NOTE_COLOR
+  }
 }
 
 function normalizeContentPayload(content: any): ContentApiPayload {
@@ -703,6 +745,7 @@ type FlowEditorState = {
 
   nodes: RFNode[]
   edges: RFEdge[]
+  canvasNotes: CanvasNote[]
   viewport: RFViewport
 
   historyPast: FlowSnapshot[]
@@ -737,6 +780,9 @@ type FlowEditorState = {
   addNodeFromPalette: (item: Extract<PaletteItem, { kind: 'contentNode' }>, position: XYPosition) => void
 
   addControlNodeFromTask: (task: TaskApiPayload, position: XYPosition) => void
+  addCanvasNote: (position: XYPosition) => void
+  updateCanvasNote: (id: string, patch: Partial<CanvasNote>) => void
+  removeCanvasNote: (id: string) => void
 
   selectNode: (id: string | null) => void
   selectEdge: (id: string | null) => void
@@ -750,6 +796,7 @@ type FlowEditorState = {
 
   setNodes: (nodes: RFNode[]) => void
   setEdges: (edges: RFEdge[]) => void
+  setCanvasNotes: (notes: CanvasNote[]) => void
   setViewport: (viewport: RFViewport) => void
 
   applyNodesChange: (changes: NodeChange<RFNode>[]) => void
@@ -818,6 +865,7 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
 
   nodes: [],
   edges: [],
+  canvasNotes: [],
   viewport: { ...DEFAULT_VIEWPORT },
 
   historyPast: [],
@@ -946,6 +994,42 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
     }))
   },
 
+  addCanvasNote: (position) => {
+    set((state) => ({
+      canvasNotes: [...state.canvasNotes, createCanvasNote(position)]
+    }))
+  },
+
+  updateCanvasNote: (id, patch) => {
+    const targetId = String(id)
+
+    set((state) => ({
+      canvasNotes: state.canvasNotes.map((note) =>
+        note.id === targetId
+          ? {
+              ...note,
+              ...patch,
+              id: note.id,
+              x: patch.x === undefined ? note.x : Number(patch.x),
+              y: patch.y === undefined ? note.y : Number(patch.y),
+              title: patch.title === undefined ? note.title : String(patch.title),
+              text: patch.text === undefined ? note.text : String(patch.text),
+              width: patch.width === undefined ? note.width : Number(patch.width),
+              height: patch.height === undefined ? note.height : Number(patch.height)
+            }
+          : note
+      )
+    }))
+  },
+
+  removeCanvasNote: (id) => {
+    const targetId = String(id)
+
+    set((state) => ({
+      canvasNotes: state.canvasNotes.filter((note) => note.id !== targetId)
+    }))
+  },
+
   selectNode: (id) =>
     set({
       selectedNodeId: id,
@@ -1042,6 +1126,7 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
 
   setNodes: (nodes) => set({ nodes }),
   setEdges: (edges) => set({ edges }),
+  setCanvasNotes: (canvasNotes) => set({ canvasNotes }),
   setViewport: (viewport) => set({ viewport: normalizeViewport(viewport) }),
 
   loadFromFlowDefinition: (def) => {
@@ -1052,6 +1137,9 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
     const nodes = applyRootTaskToStartNode(rawNodes, tasks)
 
     const edges = Array.isArray((safeDef as any).edges) ? ((safeDef as any).edges as RFEdge[]) : []
+    const canvasNotes = Array.isArray((safeDef as any).canvasNotes)
+      ? ((safeDef as any).canvasNotes as CanvasNote[]).map(normalizeCanvasNote)
+      : []
     const viewport = normalizeViewport((safeDef as any).viewport)
 
     const flowMode = normalizeFlowMode((safeDef as any).flowMode)
@@ -1059,6 +1147,7 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
     set({
       nodes,
       edges,
+      canvasNotes,
       viewport,
       flowMode,
       positionsByMode: {},
@@ -1081,10 +1170,14 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
 
     const safeDef = ensureStartNode(def, tasks)
     const rawNodes = Array.isArray((safeDef as any).nodes) ? ((safeDef as any).nodes as RFNode[]) : []
+    const canvasNotes = Array.isArray((safeDef as any).canvasNotes)
+      ? ((safeDef as any).canvasNotes as CanvasNote[]).map(normalizeCanvasNote)
+      : get().canvasNotes
 
     set((state) => ({
       nodes: applyRootTaskToStartNode(rawNodes, tasks),
       edges: Array.isArray((safeDef as any).edges) ? ((safeDef as any).edges as RFEdge[]) : [],
+      canvasNotes,
       viewport: normalizeViewport((safeDef as any).viewport ?? viewport),
       flowMode: normalizeFlowMode((safeDef as any).flowMode ?? flowMode),
       positionsByMode: {},
@@ -1108,6 +1201,7 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
     set((state) => ({
       nodes: startNodes.map((node) => (node.selected ? { ...node, selected: false } : node)),
       edges: [],
+      canvasNotes: [],
       selectedNodeId: null,
       selectedEdgeId: null,
       selectedPalette: null,
@@ -1131,6 +1225,7 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
       helperLineHorizontal: undefined,
       nodes: [],
       edges: [],
+      canvasNotes: [],
       viewport: { ...DEFAULT_VIEWPORT },
       historyPast: [],
       historyFuture: [],

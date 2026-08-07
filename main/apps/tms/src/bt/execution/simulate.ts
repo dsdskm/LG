@@ -33,6 +33,7 @@ import { reactiveAndNodeType } from '../nodes/btReactiveAndNode'
 import { andNodeType } from '../nodes/btAndNode'
 import { retryUntilSuccessfulNodeType } from '../nodes/btRetryUntilSuccessfulNode'
 import { btPreconditionNodeType } from '../nodes/btPreconditionNode'
+import { btDelayNodeType } from '../nodes/btDelayNode'
 
 export type SimStatus = 'SUCCESS' | 'FAILURE' | 'RUNNING'
 
@@ -105,6 +106,9 @@ export function buildSimTrace(
       // Precondition: if 스크립트를 시뮬레이터가 평가할 수 없으므로 "조건 통과"로 보고
       // 자식을 tick 해 그 결과를 그대로 반환한다(else 분기는 시뮬 안 함).
       case btPreconditionNodeType:
+        return wrapControl(node, () => exec(node.child))
+      // Delay: 실제 지연 시간은 시뮬레이션에서 다루지 않고 자식 실행 결과만 반영한다.
+      case btDelayNodeType:
         return wrapControl(node, () => exec(node.child))
       default:
         return 'SUCCESS'
@@ -183,6 +187,14 @@ export function buildSimTrace(
 
   // Repeat: 자식을 numCycles 회 반복(무한/과대값은 안전하게 제한). 도중 비-SUCCESS 면 중단.
   function runRepeat(child: BtAstNode, numCycles: number): SimStatus {
+    // BT.CPP: num_cycles = -1 은 무한 반복.
+    // 시뮬레이터에서는 한 tick 당 1회만 실행하고,
+    // SUCCESS면 계속 반복 중이므로 RUNNING 으로 본다.
+    if (numCycles === -1) {
+      const r = exec(child)
+      return r === 'FAILURE' ? 'FAILURE' : 'RUNNING'
+    }
+
     const cycles = Number.isFinite(numCycles) && numCycles > 0 ? Math.min(numCycles, 100) : 1
     for (let i = 0; i < cycles; i++) {
       const r = exec(child)

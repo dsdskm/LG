@@ -3,10 +3,10 @@ import { ENDPOINTS } from './constants'
 
 const axiosOta = client(import.meta.env.VITE_OTA_API_BASE_URL)
 const retrieveAction = async (orgIds, id) => {
-  const params = { orgIds }
-  if (id) params.id = String(id)
+  const data = { orgIds }
+  if (id) data.id = String(id)
   try {
-    const response = await axiosOta.get(ENDPOINTS.ACTION, { params })
+    const response = await axiosOta.post(ENDPOINTS.ACTION, data)
     return response
   } catch (error) {
     console.error('Failed to retrieve action:', error)

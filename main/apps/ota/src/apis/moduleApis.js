@@ -5,10 +5,10 @@ const axiosOta = client(import.meta.env.VITE_OTA_API_BASE_URL)
 
 const retrieveModules = async (companyId, id = null, use = 'false') => {
   try {
-    const params = { companyId, moduleUse: use }
+    const data = { companyId, moduleUse: use }
 
-    if (id) params.id = String(id)
-    const response = await axiosOta.get(ENDPOINTS.MODULE.BASE, { params })
+    if (id) data.id = String(id)
+    const response = await axiosOta.post(ENDPOINTS.MODULE.BASE, data)
     return response
   } catch (error) {
     console.error('Failed to retrieve modules:', error)

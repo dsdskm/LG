@@ -21,6 +21,7 @@ import { reactiveOrNodeType } from '@/bt/nodes/btReactiveOrNode'
 import { reactiveAndNodeType } from '@/bt/nodes/btReactiveAndNode'
 import { retryUntilSuccessfulNodeType } from '@/bt/nodes/btRetryUntilSuccessfulNode'
 import { btPreconditionNodeType } from '@/bt/nodes/btPreconditionNode'
+import { btDelayNodeType } from '@/bt/nodes/btDelayNode'
 
 // 로컬 개발용: buildBehaviorTree 결과(BtAst)를 텍스트 트리로 보여주고,
 // tick 진행에 따라 각 노드의 RUNNING/SUCCESS/FAILURE 를 함께 표시한다.
@@ -61,6 +62,7 @@ function childrenOf(node: BtAstNode): BtAstNode[] {
     case forceSuccessNodeType:
     case forceFailureNodeType:
     case btPreconditionNodeType:
+    case btDelayNodeType:
       return node.child ? [node.child] : []
     default:
       return []
@@ -97,6 +99,8 @@ function labelOf(node: BtAstNode): string {
       return 'ForceFailure'
     case btPreconditionNodeType:
       return 'PreCondition'
+    case btDelayNodeType:
+      return 'Delay'
     default:
       return (node as any).kind
   }

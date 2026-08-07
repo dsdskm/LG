@@ -6,7 +6,7 @@ import { useFlowEditorStore } from '@/store/taskflow.canvas.store'
 import { PropertyDef } from '../../../types'
 import { EXECUTION_CONDITION_KEY, EXECUTION_CONDITION_OPTIONS, EXECUTION_CONDITION_DEFAULT } from '@/common/constants'
 import { Select } from '../../../styles'
-import { FieldBody, FieldCard, FieldLabel, InfoBox, TextInput } from './styles.sections'
+import { FieldBody, FieldCard, FieldDesc, FieldLabel, InfoBox, TextInput } from './styles.sections'
 import ParallelMainNodesSection from '../../ParallelMainNodesSection'
 
 type TaskInfoSectionProps = {
@@ -18,6 +18,81 @@ type TaskInfoSectionProps = {
 export default function TaskInfoSection({ selectedData, readOnly = false }: TaskInfoSectionProps) {
   const { t } = useTranslation('tms')
   const updateSelectedNodeProps = useFlowEditorStore((s) => s.updateSelectedNodeProps)
+  const selectedNodeId = useFlowEditorStore((s) => s.selectedNodeId)
+  const edges = useFlowEditorStore((s) => s.edges)
+
+  const parallelSuccessGuide = useMemo(() => {
+    if (!selectedData) return null
+
+    const taskType = String(selectedData.taskType ?? '').toUpperCase()
+    const taskName = String(selectedData.taskName ?? selectedData.label ?? '')
+      .trim()
+      .toLowerCase()
+
+    if (taskType !== 'CONTROL' || taskName !== 'parallel') {
+      return null
+    }
+
+    const rawSuccess = selectedData.properties?.success_count
+    if (rawSuccess === '' || rawSuccess === null || rawSuccess === undefined) {
+      return null
+    }
+
+    const successValue = Number(rawSuccess)
+    if (!Number.isFinite(successValue)) {
+      return null
+    }
+
+    const childIds = Array.from(
+      new Set(
+        edges
+          .filter((e) => e.source === selectedNodeId && (e as any).sourceHandle === 'left')
+          .map((e) => String(e.target))
+      )
+    )
+    const childCount = childIds.length
+
+    const rawMainNodes = selectedData.properties?.main_nodes
+    const isExplicitMainNodes = Array.isArray(rawMainNodes)
+    const mainSet = new Set<string>()
+
+    if (isExplicitMainNodes) {
+      for (const nodeId of rawMainNodes) {
+        const id = String(nodeId)
+        if (childIds.includes(id)) {
+          mainSet.add(id)
+        }
+      }
+    }
+
+    const mainCount = isExplicitMainNodes ? mainSet.size : childCount
+    const nonMainCount = childCount - mainCount
+
+    if (successValue === -1) {
+      return t('canvas.property.parallelSuccessCountAuto')
+    }
+
+    if (mainCount <= 0) {
+      return t('canvas.property.parallelSuccessCountNoMain')
+    }
+
+    if (successValue > mainCount) {
+      return t('canvas.property.parallelSuccessCountInvalid', {
+        input: successValue,
+        mainCount
+      })
+    }
+
+    if (successValue < 1) {
+      return null
+    }
+
+    return t('canvas.property.parallelSuccessCountGuide', {
+      input: successValue,
+      nonMainCount,
+      effective: successValue + nonMainCount
+    })
+  }, [selectedData, edges, selectedNodeId, t])
 
   const taskRows = useMemo(() => {
     if (!selectedData) return []
@@ -127,29 +202,32 @@ export default function TaskInfoSection({ selectedData, readOnly = false }: Task
                 }}
               />
             ) : (
-              <Input
-                size="sm"
-                type={row.type === 'number' ? 'number' : 'text'}
-                value={row.value === null || row.value === undefined ? '' : String(row.value)}
-                disabled={row.disabled}
-                readOnly={row.disabled}
-                onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                  if (row.disabled) return
+              <>
+                <Input
+                  size="sm"
+                  type={row.type === 'number' ? 'number' : 'text'}
+                  value={row.value === null || row.value === undefined ? '' : String(row.value)}
+                  disabled={row.disabled}
+                  readOnly={row.disabled}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                    if (row.disabled) return
 
-                  const rawValue = e.target.value
+                    const rawValue = e.target.value
 
-                  if (row.type === 'number') {
+                    if (row.type === 'number') {
+                      updateSelectedNodeProps({
+                        [row.key]: rawValue === '' ? '' : Number(rawValue)
+                      })
+                      return
+                    }
+
                     updateSelectedNodeProps({
-                      [row.key]: rawValue === '' ? '' : Number(rawValue)
+                      [row.key]: rawValue
                     })
-                    return
-                  }
-
-                  updateSelectedNodeProps({
-                    [row.key]: rawValue
-                  })
-                }}
-              />
+                  }}
+                />
+                {row.key === 'success_count' && parallelSuccessGuide ? <FieldDesc>{parallelSuccessGuide}</FieldDesc> : null}
+              </>
             )}
           </Field>
         ))

@@ -28,6 +28,7 @@ type BuildTaskFlowPersistPayloadParams = {
   flowDescription?: string
   nodes: any[]
   edges: any[]
+  canvasNotes?: any[]
   viewport?: ViewportLike
   flowMode: FlowMode
   behaviorTree?: string
@@ -117,6 +118,18 @@ function normalizeEdge(edge: any) {
     markerEnd: edge?.markerEnd ?? undefined,
     style: edge?.style ?? undefined,
     data: edge?.data ?? undefined
+  }
+}
+
+function normalizeCanvasNote(note: any) {
+  return {
+    id: note?.id,
+    x: Number(note?.x ?? 0),
+    y: Number(note?.y ?? 0),
+    text: String(note?.text ?? ''),
+    width: Number(note?.width ?? 240),
+    height: Number(note?.height ?? 150),
+    color: String(note?.color ?? '#fef3c7')
   }
 }
 
@@ -227,6 +240,7 @@ export function buildTaskFlowPersistPayload({
   flowDescription,
   nodes,
   edges,
+  canvasNotes = [],
   viewport,
   flowMode,
   behaviorTree,
@@ -235,6 +249,7 @@ export function buildTaskFlowPersistPayload({
 }: BuildTaskFlowPersistPayloadParams) {
   const normalizedNodes = nodes.map(normalizeNode)
   const normalizedEdges = edges.map(normalizeEdge)
+  const normalizedCanvasNotes = canvasNotes.map(normalizeCanvasNote)
   const tasks = buildTasksFromNodes(normalizedNodes)
   const contents = buildContentsFromNodes(normalizedNodes)
 
@@ -259,6 +274,7 @@ export function buildTaskFlowPersistPayload({
     contents,
     nodes: normalizedNodes,
     edges: normalizedEdges,
+    canvasNotes: normalizedCanvasNotes,
     viewport: resolvedViewport,
     flowMode: resolvedFlowMode
   }
@@ -287,6 +303,7 @@ export function buildTaskFlowPersistPayload({
     contents,
     nodes: normalizedNodes,
     edges: normalizedEdges,
+    canvasNotes: normalizedCanvasNotes,
     viewport: resolvedViewport,
     flowMode: resolvedFlowMode
   }

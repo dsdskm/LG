@@ -89,8 +89,159 @@ export const AlignOverlay = styled.div`
   }
 `
 
+export const AlignHintText = styled.div`
+  position: absolute;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  pointer-events: none;
+  font-size: 12px;
+  font-weight: 500;
+  color: #94a3b8;
+  white-space: nowrap;
+`
+
 // 선택 노드 복제/삭제 액션 (캔버스 우측 상단)
 export const NodeActionOverlay = styled.div`
   ${overlayBase};
   right: 12px;
+`
+
+export const CanvasNoteLayer = styled.div`
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+`
+
+export const CanvasNoteCard = styled.div<{ $selected?: boolean }>`
+  position: absolute;
+  pointer-events: auto;
+  width: 240px;
+  min-height: 150px;
+  border-radius: 14px;
+  border: 1px solid ${({ $selected }) => ($selected ? 'rgba(217, 119, 6, 0.9)' : 'rgba(234, 179, 8, 0.45)')};
+  background: linear-gradient(180deg, rgba(255, 251, 235, 0.98), rgba(254, 243, 199, 0.95));
+  box-shadow: ${({ $selected }) =>
+    $selected ? '0 0 0 2px rgba(217, 119, 6, 0.2), 0 12px 24px rgba(15, 23, 42, 0.16)' : '0 12px 24px rgba(15, 23, 42, 0.16)'};
+  color: #3f3f46;
+  font-size: 9px;
+  overflow: hidden;
+  user-select: none;
+`
+
+export const CanvasNoteHeader = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 34px 8px 10px;
+  background: rgba(251, 191, 36, 0.2);
+  font-size: 9px;
+  font-weight: 600;
+  cursor: grab;
+  touch-action: none;
+`
+
+export const CanvasNoteTitleInput = styled.input`
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: #713f12;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+
+  &::placeholder {
+    color: #a16207;
+    opacity: 0.9;
+  }
+`
+
+export const CanvasNoteHeaderActions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 10px;
+  flex-wrap: wrap;
+`
+
+export const CanvasNoteColorButton = styled.button<{ $active?: boolean; $swatch: string }>`
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid ${({ $active }) => ($active ? 'rgba(120, 53, 15, 0.75)' : 'rgba(120, 53, 15, 0.25)')};
+  background: ${({ $swatch }) => $swatch};
+  box-shadow: ${({ $active }) => ($active ? '0 0 0 2px rgba(255, 255, 255, 0.7)' : 'none')};
+  cursor: pointer;
+`
+
+export const CanvasNoteResizeHandle = styled.div`
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 18px;
+  height: 18px;
+  border-right: 2px solid rgba(120, 53, 15, 0.55);
+  border-bottom: 2px solid rgba(120, 53, 15, 0.55);
+  border-radius: 0 0 12px 0;
+  cursor: nwse-resize;
+  touch-action: none;
+
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    width: 8px;
+    border-top: 1px solid rgba(120, 53, 15, 0.45);
+    transform: rotate(-45deg);
+    transform-origin: right bottom;
+  }
+
+  &::after {
+    right: 5px;
+    bottom: 5px;
+    width: 6px;
+  }
+`
+
+export const CanvasNoteDeleteButton = styled.button`
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 3;
+  border: 0;
+  background: rgba(255, 255, 255, 0.72);
+  color: #a16207;
+  font-size: 14px;
+  line-height: 1;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  padding: 0;
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.9);
+  }
+`
+
+export const CanvasNoteTextarea = styled.textarea`
+  width: 100%;
+  height: calc(100% - 36px);
+  min-height: 114px;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  padding: 10px 12px 12px;
+  font: inherit;
+  color: inherit;
+  line-height: 1.35;
+  user-select: text;
 `

@@ -57,14 +57,28 @@ export const SectionBodyPadded = styled(SectionBody)`
   padding: 12px; /* p-3 */
 `
 
-export const ControlGrid = styled.div`
+export const ContentGrid = styled.div<{ $compact: boolean }>`
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)); /* grid-cols-2 */
-  gap: 8px; /* gap-2 */
+  gap: 8px;
+
+  grid-template-columns: ${({ $compact }) =>
+    $compact ? 'repeat(2, minmax(0, 1fr))' : 'repeat(3, minmax(0, 1fr))'};
+
+  border-radius: 8px;
+  background: #f8fafc; /* slate-50 */
+`
+
+export const ControlGrid = styled.div<{ $compact: boolean }>`
+  display: grid;
+  gap: 8px;
+
+  grid-template-columns: ${({ $compact }) =>
+    $compact ? 'repeat(2, minmax(0, 1fr))' : 'repeat(3, minmax(0, 1fr))'};
 `
 
 export const DividerList = styled.div`
   border-top: 1px solid #f1f5f9; /* slate-100 */
+
   > * + * {
     border-top: 1px solid #f1f5f9; /* divide-y slate-100 */
   }
@@ -113,19 +127,9 @@ export const ContentBlock = styled.div`
   padding: 0 12px 12px; /* px-3 pb-3 */
 `
 
-export const ContentGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-
-  border-radius: 8px; /* rounded-lg */
-  background: #f8fafc; /* slate-50 */
-  padding: 8px; /* p-2 */
-`
-
 /* Card base */
 const selectedStyles = css`
-  border-color: #94a3b8; /* slate-400 */
+  border-color: #393b3dff; /* slate-400 */
   background: #f1f5f9; /* slate-100 */
 `
 
@@ -160,24 +164,23 @@ export const NodeCard = styled.div<{ $selected: boolean }>`
   justify-content: center;
   text-align: center;
 
-  white-space: normal; /* 추가: 명시적으로 줄바꿈 허용 */
-  word-break: keep-all; /* 한글이면 어절 단위 */
-  overflow-wrap: break-word; /* 긴 단어(영문)는 강제로 끊기 */
-  overflow: hidden; /* aspect-ratio 넘칠 때 카드 밖으로 안 삐져나가게 */
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  overflow: hidden;
 
   ${({ $selected }) => ($selected ? selectedStyles : unselectedStyles)};
 `
 
 export const CardLabel = styled.div`
-  /* line-clamp-3 */
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
 
   overflow: hidden;
 
-  font-size: 12px; /* text-[12px] */
-  line-height: 1.4; /* leading-tight */
+  font-size: 12px;
+  line-height: 1.4;
 `
 
 /* Disabled row */

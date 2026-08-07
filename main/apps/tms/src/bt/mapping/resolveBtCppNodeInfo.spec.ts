@@ -18,7 +18,7 @@ function makePlaySoundNode(properties: Record<string, unknown>) {
       propertySchema: {
         properties: {
           sound_id: { type: 'content_reference', required: true, content_type: 'BGM' },
-          repeat_count: { type: 'number', default: 1, required: false }
+          // repeat_count: { type: 'number', default: 1, required: false }
         }
       },
       properties

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   PanelRoot,
@@ -27,6 +27,12 @@ import { ContentApiPayload, TaskApiPayload } from '@/types/api/taskPayload'
 import { DND_FALLBACK_TEXT, DND_MIME, TASK_PANEL, TASK_TYPE_CONTROL } from '@/common/constants'
 import { TaskType } from '@/types/task'
 
+const PALETTE_COMPACT_RATIO = 0.5
+
+const getMaxVisibleGridItems = (compact: boolean) => {
+  return compact ? 4 : 6
+}
+
 function makePaletteLabel(kind: PaletteItem['kind'], task: TaskApiPayload, content?: ContentApiPayload) {
   if (kind === 'controlTaskNode') return task.name
   return content?.name ?? task.name
@@ -38,6 +44,13 @@ function sortByNameAsc<T extends { name?: string | null }>(items: T[]): T[] {
 }
 
 export default function PalettePanel({ groupId, siteId }: { groupId: string | null; siteId: string | null }) {
+  const panelRef = useRef<HTMLDivElement | null>(null)
+
+  const [paletteMeasure, setPaletteMeasure] = useState({
+    width: 0,
+    maxWidth: 0
+  })
+
   const loading = useFlowEditorStore((s) => s.loadingTasks)
   const tasks = useFlowEditorStore((s) => s.tasks)
   const loadTasks = useFlowEditorStore((s) => s.loadTasks)
@@ -47,6 +60,11 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
   const addNodeFromPalette = useFlowEditorStore((s) => s.addNodeFromPalette)
   const addControlNodeFromTask = useFlowEditorStore((s) => s.addControlNodeFromTask)
   const nodes = useFlowEditorStore((s) => s.nodes)
+
+  const paletteGridCompact =
+    paletteMeasure.maxWidth > 0 && paletteMeasure.width <= paletteMeasure.maxWidth * PALETTE_COMPACT_RATIO
+
+  const maxVisibleGridItems = getMaxVisibleGridItems(paletteGridCompact)
 
   const getNextCanvasPosition = () => {
     const index = nodes.length
@@ -62,6 +80,36 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
   useEffect(() => {
     loadTasks(groupId, siteId)
   }, [loadTasks, groupId, siteId])
+
+  useEffect(() => {
+    const el = panelRef.current
+
+    if (!el || typeof ResizeObserver === 'undefined') {
+      return
+    }
+
+    const updateWidth = (width: number) => {
+      setPaletteMeasure((prev) => ({
+        width,
+        maxWidth: Math.max(prev.maxWidth, width)
+      }))
+    }
+
+    updateWidth(el.getBoundingClientRect().width)
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (!entry) return
+
+      updateWidth(entry.contentRect.width)
+    })
+
+    observer.observe(el)
+
+    return () => {
+      observer.disconnect()
+    }
+  }, [])
 
   const controlTasks = useMemo(() => sortByNameAsc(tasks.filter((t) => t.taskType === TASK_TYPE_CONTROL)), [tasks])
 
@@ -98,6 +146,10 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
       actionTaskCount: otherTasks.length,
       directActionTaskCount: directActionTasks.length,
       expandableTaskCount: expandableTasks.length,
+      paletteWidth: paletteMeasure.width,
+      paletteMaxWidth: paletteMeasure.maxWidth,
+      paletteGridCompact,
+      maxVisibleGridItems,
       visibleTasks: tasks.map((task) => ({
         id: task.id,
         name: task.name,
@@ -105,10 +157,21 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
         contentsCount: Array.isArray(task.contents) ? task.contents.length : 0
       }))
     })
-  }, [loading, tasks, controlTasks.length, otherTasks.length, directActionTasks.length, expandableTasks.length])
+  }, [
+    loading,
+    tasks,
+    controlTasks.length,
+    otherTasks.length,
+    directActionTasks.length,
+    expandableTasks.length,
+    paletteMeasure.width,
+    paletteMeasure.maxWidth,
+    paletteGridCompact,
+    maxVisibleGridItems
+  ])
 
   return (
-    <PanelRoot>
+    <PanelRoot ref={panelRef}>
       <HeaderRow>
         <div>
           <Subtitle>{TASK_PANEL.SUBTITLE}</Subtitle>
@@ -123,7 +186,7 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
           </SectionHeader>
 
           <SectionBodyPadded>
-            <ControlGrid>
+            <ControlGrid $compact={paletteGridCompact}>
               {controlTasks.map((task) => (
                 <ControlTaskNodeCard
                   key={task.id}
@@ -153,7 +216,7 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
 
                   {defaultOpen ? (
                     <ContentBlock>
-                      <ContentGrid>
+                      <ContentGrid $compact={paletteGridCompact}>
                         {directActionTasks.map((task) => (
                           <ControlTaskNodeCard
                             key={task.id}
@@ -186,7 +249,7 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
 
                     {open ? (
                       <ContentBlock>
-                        <ContentGrid>
+                        <ContentGrid $compact={paletteGridCompact}>
                           {contents.map((content) => (
                             <ContentNodeCard
                               key={content.id}

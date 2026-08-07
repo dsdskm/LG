@@ -13,6 +13,20 @@ import API_BASE from './index'
 //   인증을 재도입한다면 BE 의 CORS allowedHeaders 에 해당 헤더를 함께 추가해야 preflight 가 통과한다.
 export const axiosApi = client(`${API_BASE}/api/v1`)
 
+// client() 의 요청 인터셉터(세션 accessToken → Authorization 주입)를 제거한다.
+// init-setup-be 는 Authorization 을 읽지 않는데, 헤더가 붙으면 요청이 단순 요청이 아니게 되어
+// preflight 가 발생하고 BE 의 allowedHeaders(Content-Type 만)에서 막혀 CORS 에러가 된다.
+// 응답 인터셉터(응답 봉투 unwrap · 전역 에러 처리)는 그대로 유지해야 하므로 request 만 비운다.
+// ※ 나중에 인터셉터를 추가해 헤더를 지우는 방식은 안 된다 — axios 요청 인터셉터는 등록 역순으로
+//   실행되므로 client() 에서 먼저 등록된 토큰 주입이 나중에 돌아 헤더를 다시 붙인다.
+axiosApi.interceptors.request.clear()
+
+// 헬스체크(GET /api/health)는 버전 접두사가 없어 baseURL 이 달라 별도 인스턴스가 필요하다.
+// 여기도 API_BASE 를 붙여야 한다 — 상대경로 '/api' 로 두면 dev 에서 BE(3100) 가 아니라
+// vite(5181) 로 가고, vite 에는 /api 프록시가 없어 실패한다.
+export const axiosHealthApi = client(`${API_BASE}/api`)
+axiosHealthApi.interceptors.request.clear()
+
 /**
  * 표준 CRUD 팩토리. init-setup-be 의 리소스 라우트는 모두 동일한 형태다.
  *   POST   /{resource}          create

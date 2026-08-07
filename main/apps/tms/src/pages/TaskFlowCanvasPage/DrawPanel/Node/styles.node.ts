@@ -20,14 +20,28 @@ export const TaskH = {
  *  ========================= */
 
 export const NodeHandle = styled(Handle)`
-  width: 4px;
-  height: 4px;
+  width: 8px;
+  height: 8px;
   border-radius: 9999px;
 
   background: #e2e8f0;
   border: 1px solid #cbd5e1;
 
   z-index: 2;
+
+  /* 연결 시작이 잘 안 되는 문제를 줄이기 위해,
+     시각 점보다 넓은 투명 히트 영역을 추가한다. */
+  &::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 20px;
+    height: 20px;
+    transform: translate(-50%, -50%);
+    border-radius: 9999px;
+    background: transparent;
+  }
 `
 
 export const LeftHandle = styled(NodeHandle)`

@@ -837,6 +837,7 @@ export default function TaskFlowCanvasPage() {
 
   const nodes = useFlowEditorStoreHook((s) => s.nodes)
   const edges = useFlowEditorStoreHook((s) => s.edges)
+  const canvasNotes = useFlowEditorStoreHook((s) => s.canvasNotes)
   const viewport = useFlowEditorStoreHook((s) => s.viewport)
   const flowMode = useFlowEditorStoreHook((s) => s.flowMode)
 
@@ -1354,6 +1355,7 @@ export default function TaskFlowCanvasPage() {
         flowDescription: trimmedDescription,
         nodes,
         edges,
+        canvasNotes,
         viewport,
         flowMode,
         behaviorTree: behaviorTreeXml,
