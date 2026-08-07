@@ -30,8 +30,11 @@ export const rule_delay: BtRule<typeof btDelayNodeName> = {
     const orderedBranchRefs = sortOutgoingEdgeRefsByCanvasPosition(candidateTargetRefs, nodeById)
     const children: BtAstNode[] = orderedBranchRefs.flatMap((ref) => buildAstList(ref.targetId))
 
-    const body: BtAstNode =
-      children.length === 1 ? children[0] : { kind: sequenceNodeType, name: 'delay_body', children }
+    const body: BtAstNode = {
+      kind: sequenceNodeType,
+      name: 'delay_body',
+      children
+    }
 
     const properties = (node.data?.properties ?? {}) as Record<string, unknown>
     const attrs: Record<string, string> = {

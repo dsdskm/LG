@@ -187,6 +187,14 @@ export function buildSimTrace(
 
   // Repeat: 자식을 numCycles 회 반복(무한/과대값은 안전하게 제한). 도중 비-SUCCESS 면 중단.
   function runRepeat(child: BtAstNode, numCycles: number): SimStatus {
+    // BT.CPP: num_cycles = -1 은 무한 반복.
+    // 시뮬레이터에서는 한 tick 당 1회만 실행하고,
+    // SUCCESS면 계속 반복 중이므로 RUNNING 으로 본다.
+    if (numCycles === -1) {
+      const r = exec(child)
+      return r === 'FAILURE' ? 'FAILURE' : 'RUNNING'
+    }
+
     const cycles = Number.isFinite(numCycles) && numCycles > 0 ? Math.min(numCycles, 100) : 1
     for (let i = 0; i < cycles; i++) {
       const r = exec(child)

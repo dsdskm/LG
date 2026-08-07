@@ -160,7 +160,7 @@ export function isParallelRuleMatch(node: Node, outgoing?: OutgoingInfo): boolea
 }
 
 export function isRepeatRuleMatch(node: Node, outgoing?: OutgoingInfo): boolean {
-  return isRepeatControlNode(node) && hasLeftBranches(outgoing)
+  return isRepeatControlNode(node)
 }
 
 export function isForceSuccessRuleMatch(node: Node, outgoing?: OutgoingInfo): boolean {

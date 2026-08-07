@@ -134,6 +134,171 @@ describe('buildBehaviorTreeFromFlowDefinition', () => {
     const { xml } = buildBehaviorTreeFromFlowDefinition(definition)
 
     expect(xml).toContain('<Delay delay_msec="3000">')
+    expect(xml).toContain('<Sequence name="delay_body">')
     expect(xml).toContain('<Action ID="Tts" name="tts" tts_id="4_400_7_14" node_id="tts-1"/>')
+  })
+
+  it('Repeat:no-child throws error', () => {
+    const definition = {
+      nodes: [
+        {
+          id: 'start',
+          type: 'startNode',
+          position: { x: 0, y: 0 },
+          data: { label: 'START' }
+        },
+        {
+          id: 'repeat-1',
+          type: 'taskNode',
+          position: { x: 200, y: 0 },
+          data: {
+            label: 'Repeat',
+            taskName: 'Repeat',
+            taskType: 'CONTROL',
+            properties: {
+              num_cycles: 2
+            }
+          }
+        }
+      ],
+      edges: [
+        {
+          id: 'e-start-repeat',
+          source: 'start',
+          target: 'repeat-1',
+          sourceHandle: 'right',
+          targetHandle: 'left'
+        }
+      ]
+    }
+
+    expect(() => buildBehaviorTreeFromFlowDefinition(definition as any)).toThrow(/Repeat 노드는 자식이 있어야 합니다/)
+  })
+
+  it('Repeat:more-than-one-child throws error', () => {
+    const definition = {
+      nodes: [
+        {
+          id: 'start',
+          type: 'startNode',
+          position: { x: 0, y: 0 },
+          data: { label: 'START' }
+        },
+        {
+          id: 'repeat-1',
+          type: 'taskNode',
+          position: { x: 200, y: 0 },
+          data: {
+            label: 'Repeat',
+            taskName: 'Repeat',
+            taskType: 'CONTROL',
+            properties: {
+              num_cycles: 2
+            }
+          }
+        },
+        {
+          id: 'child-1',
+          type: 'taskNode',
+          position: { x: 360, y: -40 },
+          data: {
+            label: 'Tts',
+            taskName: 'Tts',
+            taskType: 'ACTION'
+          }
+        },
+        {
+          id: 'child-2',
+          type: 'taskNode',
+          position: { x: 360, y: 40 },
+          data: {
+            label: 'PlaySound',
+            taskName: 'PlaySound',
+            taskType: 'ACTION'
+          }
+        }
+      ],
+      edges: [
+        {
+          id: 'e-start-repeat',
+          source: 'start',
+          target: 'repeat-1',
+          sourceHandle: 'right',
+          targetHandle: 'left'
+        },
+        {
+          id: 'e-repeat-child-1',
+          source: 'repeat-1',
+          target: 'child-1',
+          sourceHandle: 'left',
+          targetHandle: 'left'
+        },
+        {
+          id: 'e-repeat-child-2',
+          source: 'repeat-1',
+          target: 'child-2',
+          sourceHandle: 'left',
+          targetHandle: 'left'
+        }
+      ]
+    }
+
+    expect(() => buildBehaviorTreeFromFlowDefinition(definition as any)).toThrow(/Repeat 노드는 자식이 1개만 있어야 합니다/)
+  })
+
+  it('Repeat:num_cycles -1 is preserved in XML', () => {
+    const definition = {
+      nodes: [
+        {
+          id: 'start',
+          type: 'startNode',
+          position: { x: 0, y: 0 },
+          data: { label: 'START' }
+        },
+        {
+          id: 'repeat-1',
+          type: 'taskNode',
+          position: { x: 180, y: 0 },
+          data: {
+            label: 'Repeat',
+            taskName: 'Repeat',
+            taskType: 'CONTROL',
+            properties: {
+              num_cycles: -1
+            }
+          }
+        },
+        {
+          id: 'child-1',
+          type: 'taskNode',
+          position: { x: 360, y: 0 },
+          data: {
+            label: 'Tts',
+            taskName: 'Tts',
+            taskType: 'ACTION'
+          }
+        }
+      ],
+      edges: [
+        {
+          id: 'e-start-repeat',
+          source: 'start',
+          target: 'repeat-1',
+          sourceHandle: 'right',
+          targetHandle: 'left'
+        },
+        {
+          id: 'e-repeat-child-1',
+          source: 'repeat-1',
+          target: 'child-1',
+          sourceHandle: 'left',
+          targetHandle: 'left'
+        }
+      ]
+    }
+
+    const { xml } = buildBehaviorTreeFromFlowDefinition(definition as any)
+
+    expect(xml).toContain('<Repeat name="repeat_Repeat" num_cycles="-1">')
   })
 })
