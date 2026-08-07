@@ -13,6 +13,7 @@ import { repeatNodeType, repeatNumCyclesProp } from '../nodes/btRepeatNode'
 import { actionNodeType } from '../nodes/btActionNode'
 import { reactiveAndNodeType } from '../nodes/btReactiveAndNode'
 import { retryUntilSuccessfulNodeType, retryUntilSuccessfulNumAttemptsProp } from '../nodes/btRetryUntilSuccessfulNode'
+import { btDelayNodeType } from '../nodes/btDelayNode'
 
 // 제어 노드(Sequence/Parallel/Repeat 등)는 node_id 를 XML 로 내보내지 않는다.
 // node_id 는 시뮬레이터/검증이 attrs 로 내부 참조하므로 AST 에는 남기고, 렌더링 시에만 제외한다.
@@ -110,6 +111,12 @@ function renderAstNode(node: BtAstNode, depth: number): string {
     // attrs 에 if/else 가 실려 있음(node_id 는 omit). BT.CPP: <Precondition if="..." else="...">
     const attrs = attrsToString({ ...(node.name ? { name: node.name } : {}), ...omitNodeId(node.attrs) })
     return `${pad}<Precondition${attrs}>\n${childXml}\n${pad}</Precondition>`
+  }
+
+  if (node.kind === btDelayNodeType) {
+    const childXml = renderAstNode(node.child, depth + 1)
+    const attrs = attrsToString({ ...omitNodeId(node.attrs) })
+    return `${pad}<Delay${attrs}>\n${childXml}\n${pad}</Delay>`
   }
 
   if (node.kind === repeatNodeType) {

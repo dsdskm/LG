@@ -18,6 +18,7 @@ import { reactiveOrNodeType } from '../nodes/btReactiveOrNode'
 import { repeatNodeType } from '../nodes/btRepeatNode'
 import { retryUntilSuccessfulNodeType } from '../nodes/btRetryUntilSuccessfulNode'
 import { sequenceNodeType } from '../nodes/btSequenceNode'
+import { btDelayNodeType } from '../nodes/btDelayNode'
 import type { BtAstNode } from '../types'
 
 export function getBtChildren(node: BtAstNode): BtAstNode[] {
@@ -36,6 +37,7 @@ export function getBtChildren(node: BtAstNode): BtAstNode[] {
     case forceSuccessNodeType:
     case forceFailureNodeType:
     case btPreconditionNodeType:
+    case btDelayNodeType:
       return node.child ? [node.child] : []
     default:
       return []

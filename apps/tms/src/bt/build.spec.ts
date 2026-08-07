@@ -71,4 +71,69 @@ describe('buildBehaviorTreeFromFlowDefinition', () => {
       /And 노드는 왼쪽으로 자식이 연결되어 있어야 합니다/
     )
   })
+
+  it('Delay: wraps child action as Delay XML', () => {
+    const definition = {
+      nodes: [
+        {
+          id: 'start',
+          type: 'startNode',
+          position: { x: 0, y: 0 },
+          data: { label: 'START' }
+        },
+        {
+          id: 'delay-1',
+          type: 'taskNode',
+          position: { x: 200, y: 0 },
+          data: {
+            label: 'Delay',
+            taskName: 'Delay',
+            taskType: 'CONTROL',
+            properties: {
+              delay_msec: 3000
+            }
+          }
+        },
+        {
+          id: 'tts-1',
+          type: 'taskNode',
+          position: { x: 400, y: 0 },
+          data: {
+            label: 'Tts',
+            taskName: 'Tts',
+            taskType: 'ACTION',
+            propertySchema: {
+              properties: {
+                tts_id: { type: 'string' }
+              }
+            },
+            properties: {
+              tts_id: '4_400_7_14'
+            }
+          }
+        }
+      ],
+      edges: [
+        {
+          id: 'e-start-delay',
+          source: 'start',
+          target: 'delay-1',
+          sourceHandle: 'right',
+          targetHandle: 'left'
+        },
+        {
+          id: 'e-delay-tts',
+          source: 'delay-1',
+          target: 'tts-1',
+          sourceHandle: 'left',
+          targetHandle: 'left'
+        }
+      ]
+    }
+
+    const { xml } = buildBehaviorTreeFromFlowDefinition(definition)
+
+    expect(xml).toContain('<Delay delay_msec="3000">')
+    expect(xml).toContain('<Action ID="Tts" name="tts" tts_id="4_400_7_14" node_id="tts-1"/>')
+  })
 })

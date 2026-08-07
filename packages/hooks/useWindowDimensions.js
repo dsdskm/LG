@@ -1,7 +1,7 @@
 import { throttle } from 'lodash'
 import { useCallback, useEffect, useState } from 'react'
 import { useResponsiveStore, useSideBarStore } from '@repo/stores'
-import { BREAKPOINTS, RESPONSIVE_MODES } from '@repo/constants'
+import { BREAKPOINTS, RESPONSIVE_MODES } from '@repo/constants/responsive'
 import '../ui/styles/vars.css'
 
 export const useWindowDimensions = () => {
