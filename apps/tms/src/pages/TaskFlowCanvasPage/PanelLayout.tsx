@@ -1,9 +1,9 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react'
 import styled from 'styled-components'
 
-const LEFT_MIN = 220
+const LEFT_MIN = 0
 const LEFT_MAX = 520
-const RIGHT_MIN = 260
+const RIGHT_MIN = 0
 const RIGHT_MAX = 720
 
 const Grid = styled.div`
