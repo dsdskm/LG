@@ -3,6 +3,7 @@ import { SectionRobot as Section, Button } from '@repo/ui'
 import CardConfigModal from '../modal/CardConfigModal'
 import ConsoleCard from '../component/ConsoleCard'
 import styled from 'styled-components'
+import config from '../config'
 import { getClientId } from '../config/clientId'
 
 // ✅ 모든 styled-components 정의
@@ -92,7 +93,7 @@ const EmptyState = styled.div`
   }
 `
 
-const WebConsole = ({ t, deviceId }) => {
+const WebConsole = ({ t, deviceId, i18n }) => {
   const [showConfigModal, setShowConfigModal] = useState(false)
   const [cards, setCards] = useState([])
   const cardRefs = useRef({}) // ★ cardId → ref
@@ -136,8 +137,8 @@ const WebConsole = ({ t, deviceId }) => {
       RAAT: {
         name: 'RAAT',
         path: '/',
-        port: 80,
-        icon: '�'
+        port: 3002,
+        icon: '🛠️'
       },
       'map-settings': {
         name: t('mapSetting'),
@@ -195,10 +196,10 @@ const WebConsole = ({ t, deviceId }) => {
             cardId: card.cardId ?? `${index + 1}`,
             cardName: card.name ?? card.cardName ?? card.title ?? def?.name ?? 'Unknown',
             targetPath: savedPath,
-            targetPort: String(card.port ?? card.targetPort ?? def?.port ?? '3000'),
+            targetPort: String(card.port ?? card.targetPort ?? def?.port ?? '3002'),
             icon: card.icon ?? def?.icon ?? '�',
             // ✅ � 핵심 수정 (순서 변경)
-            cardType: def?.categoryKey ?? card.type ?? card.cardType ?? 'READONLY',
+            cardType: def?.categoryKey ?? card.type ?? card.cardType ?? 'CONTROL',
             isRealtime: def?.isRealtime ?? card.isRealtime ?? false,
             realtimePort: def?.realtimePort ?? card.realtimePort ?? null,
             realtimePath: def?.realtimePath ?? card.realtimePath ?? null
@@ -214,19 +215,11 @@ const WebConsole = ({ t, deviceId }) => {
       const defaultCards = [
         {
           cardId: '1',
-          cardName: t('stateInformation'),
-          targetPath: '/status',
-          targetPort: '3000',
-          icon: '📊',
-          cardType: 'READONLY'
-        },
-        {
-          cardId: '2',
-          cardName: t('sensorData'),
-          targetPath: '/sensor',
-          targetPort: '3000',
-          icon: '🔍',
-          cardType: 'READONLY'
+          cardName: 'RAAT',
+          path: '/',
+          port: 3002,
+          icon: '🛠️',
+          cardType: 'CONTROL'
         }
       ]
       setCards(defaultCards)
@@ -255,9 +248,9 @@ const WebConsole = ({ t, deviceId }) => {
         cardId: `${index + 1}`,
         cardName: card.name || card.cardName || card.title || def?.name || 'Unknown',
         targetPath,
-        targetPort: String(card.port || card.targetPort || def?.port || '3000'),
+        targetPort: String(card.port || card.targetPort || def?.port || '3002'),
         icon: card.icon || def?.icon || '📱',
-        cardType: card.type || card.cardType || def?.categoryKey || 'READONLY',
+        cardType: card.type || card.cardType || def?.categoryKey || 'CONTROL',
         isRealtime: def?.isRealtime ?? card.isRealtime ?? false,
         realtimePort: def?.realtimePort ?? card.realtimePort ?? null,
         realtimePath: def?.realtimePath ?? card.realtimePath ?? null
@@ -286,8 +279,9 @@ const WebConsole = ({ t, deviceId }) => {
   const handleCardExpand = (card) => {
     console.log('🔍 Expanding card in popup:', card)
     const cid = getClientId(deviceId, card.targetPort)
+    const lang = i18n?.language || 'en-US'
 
-    const expandUrl = `${config.proxyServerUrl}${card.targetPath}?_deviceId=${deviceId}&_port=${card.targetPort}&_cid=${cid}&mode=readonly&expanded=true`
+    const expandUrl = `${config.proxyServerUrl}${card.targetPath}?_deviceId=${deviceId}&_port=${card.targetPort}&_cid=${cid}&mode=readonly&expanded=true&lang=${lang}`
 
     const expandWindow = window.open(
       expandUrl,

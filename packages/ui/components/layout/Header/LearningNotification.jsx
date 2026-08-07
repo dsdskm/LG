@@ -65,24 +65,26 @@ const MOCK_NOTIFICATIONS = [
 ]
 
 const TYPE_CONFIG = {
-  model_complete:      { label: '학습 완료',   color: '#16a34a', bg: '#dcfce7', symbol: '✓' },
-  data_ready:          { label: '데이터 완료', color: '#2563eb', bg: '#dbeafe', symbol: '◉' },
-  review_required:     { label: '검토 요청',   color: '#d97706', bg: '#fef3c7', symbol: '!' },
-  deploy_complete:     { label: '배포 완료',   color: '#7c3aed', bg: '#ede9fe', symbol: '▲' },
-  training_failed:     { label: '학습 실패',   color: '#dc2626', bg: '#fee2e2', symbol: '✕' },
-  simulation_complete: { label: '시뮬레이션',  color: '#0891b2', bg: '#cffafe', symbol: '◎' }
+  model_complete: { label: '학습 완료', color: '#16a34a', bg: '#dcfce7', symbol: '✓' },
+  data_ready: { label: '데이터 완료', color: '#2563eb', bg: '#dbeafe', symbol: '◉' },
+  review_required: { label: '검토 요청', color: '#d97706', bg: '#fef3c7', symbol: '!' },
+  deploy_complete: { label: '배포 완료', color: '#7c3aed', bg: '#ede9fe', symbol: '▲' },
+  training_failed: { label: '학습 실패', color: '#dc2626', bg: '#fee2e2', symbol: '✕' },
+  simulation_complete: { label: '시뮬레이션', color: '#0891b2', bg: '#cffafe', symbol: '◎' }
 }
 
 const SOURCE_STYLE = {
   learn: { bg: '#eef2ff', color: '#4338ca' },
-  ota:   { bg: '#fff7ed', color: '#c2410c' }
+  ota: { bg: '#fff7ed', color: '#c2410c' }
 }
 
 // ── SVG 아이콘: 학사모 (학습 상징) ───────────────────────────────────────────
 const GraduationCapIcon = ({ size = 20, color = 'currentColor' }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill={color} xmlns="http://www.w3.org/2000/svg">
-    <path d="M12 3L1 9l11 6 9-4.91V17h2V9L12 3z" />
-    <path d="M5 13.18v4L12 21l7-3.82v-4L12 17l-7-3.82z" />
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      d="M12.0264 4.32815C12.1763 4.26448 12.3462 4.26448 12.4961 4.32815L22.7607 8.69046C22.982 8.78454 23.1257 9.0018 23.126 9.24221C23.126 9.48285 22.9822 9.70079 22.7607 9.79495L22.3906 9.9512C22.3908 9.95724 22.3925 9.96367 22.3926 9.96975V15.4512C22.3924 15.7824 22.1242 16.0507 21.793 16.0508C21.4617 16.0508 21.1926 15.7824 21.1924 15.4512V10.461L18.7207 11.5108L18.0869 17.2608L18.0859 17.2705C18.0002 17.9508 17.5753 18.5619 16.916 18.8428C15.9095 19.2714 13.9245 20.0215 12.2607 20.0215C10.5972 20.0214 8.61292 19.2714 7.60645 18.8428C6.9471 18.562 6.5213 17.9508 6.43555 17.2705L6.43457 17.2608L5.80078 11.5108L1.76172 9.79495C1.54028 9.70079 1.39648 9.48285 1.39648 9.24221C1.39672 9.00178 1.5404 8.78452 1.76172 8.69046L12.0264 4.32815ZM12.4961 14.1573C12.3461 14.221 12.1763 14.221 12.0264 14.1573L7.06836 12.0498L7.62695 17.1201L7.64648 17.2246C7.70684 17.4605 7.86505 17.6482 8.07617 17.7383C9.08156 18.1665 10.8655 18.8222 12.2607 18.8223C13.656 18.8223 15.4398 18.1665 16.4453 17.7383C16.6869 17.6354 16.8596 17.4047 16.8955 17.1201L17.4531 12.0498L12.4961 14.1573ZM3.5293 9.24221L12.2607 12.9522L20.9912 9.24221L12.2607 5.53128L3.5293 9.24221Z"
+      fill="white"
+    />
   </svg>
 )
 
@@ -122,8 +124,9 @@ const UnreadBadge = styled.span`
   color: #fff;
   font-size: 9px;
   font-weight: 700;
-  line-height: 16px;
-  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0 3px;
   pointer-events: none;
   border: 1.5px solid rgba(255, 255, 255, 0.4);
@@ -136,7 +139,9 @@ const Panel = styled.div`
   width: 360px;
   background: #fff;
   border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.06);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.14),
+    0 2px 8px rgba(0, 0, 0, 0.06);
   border: 1px solid rgba(0, 0, 0, 0.07);
   z-index: 1000;
   overflow: hidden;
@@ -313,7 +318,7 @@ const LearningNotification = () => {
   return (
     <Wrapper ref={wrapperRef}>
       <TriggerBtn type="button" onClick={toggle} title="학습 알림">
-        <GraduationCapIcon size={20} color="white" />
+        <GraduationCapIcon size={24} color="white" />
         {unread > 0 && <UnreadBadge>{unread > 9 ? '9+' : unread}</UnreadBadge>}
       </TriggerBtn>
 

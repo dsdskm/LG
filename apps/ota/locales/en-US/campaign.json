@@ -57,5 +57,6 @@
   "setting": "Setting",
   "deploying": "Deploying",
   "noAvailableDevices": "No Available Devices",
-  "groupedCommandsCount": "{{count}} commands for this device"
+  "groupedCommandsCount": "{{count}} commands for this device",
+  "selectPackageType": "Select Package Type"
 }

@@ -113,6 +113,14 @@ export class SmoothViewController {
     if (typeof next.panX === 'number') this.target.panX = next.panX
     if (typeof next.panY === 'number') this.target.panY = next.panY
   }
+
+  // ✅ 추가: 보간 없이 즉시 반영(상호작용 중 실시간 팬/줌용)
+  snapTo(next) {
+    this.setTarget(next)
+    this.cur.zoom = this.target.zoom
+    this.cur.panX = this.target.panX
+    this.cur.panY = this.target.panY
+  }
   // LERP 한 스텝 진행. smooth in [0..1]
   step(smooth = 0.18) {
     const lerp = (a, b, t) => a + (b - a) * t

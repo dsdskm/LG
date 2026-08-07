@@ -10,6 +10,7 @@ export type SelectedData = {
   contentTypeId?: number
   contentTypeName?: string
   contentValue?: string
+  contentVersion?: string
   groupId?: string | null
   siteId?: string | null
 

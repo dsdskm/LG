@@ -1,23 +1,25 @@
 import { COMMON_GNB } from '@repo/constants/routes'
 import { getAppPrefix } from '@repo/utils'
 import { StyledNavButton, HeaderMobileDropdown } from './styles'
-import { useResponsiveStore } from '@repo/stores'
+import { useResponsiveStore, useSideBarStore } from '@repo/stores'
 
 const ServiceMenuIcon = ({ headerRoutes = COMMON_GNB, t }) => {
   const fullPathname = typeof window !== 'undefined' ? window.location.pathname : '/'
   const currentAppPrefix = getAppPrefix(fullPathname)
   const currentAppName = currentAppPrefix.replace('/', '')
   const { responsiveMode } = useResponsiveStore()
+  const { setCompactSideBar } = useSideBarStore()
   const activeRoute =
     headerRoutes.find(
       (item) => item.name === currentAppName || (item.path !== '/' && fullPathname.startsWith(item.path))
     ) || headerRoutes[0]
 
   const handleMenuClick = (path) => {
+    setCompactSideBar(true)
     window.location.href = path
   }
 
-  if (responsiveMode !== 'PC') {
+  if (responsiveMode !== 'PC' && responsiveMode !== null) {
     return (
       <HeaderMobileDropdown
         options={headerRoutes.map((item) => ({ name: t(`SideBar.gnb.${item.name}`), value: item.path }))}
@@ -25,12 +27,13 @@ const ServiceMenuIcon = ({ headerRoutes = COMMON_GNB, t }) => {
         onChange={handleMenuClick}
         useSelectedIcon={true}
         minWidth="14rem"
+        className={responsiveMode}
       />
     )
   }
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '2rem', flexWrap: 'nowrap', minWidth: 0 }}>
       {headerRoutes.map((item) => {
         const isActive = item.name === currentAppName || (item.path !== '/' && fullPathname.startsWith(item.path))
         return (

@@ -6,6 +6,7 @@ export type Command = 'start' | 'stop' | 'pause' | 'resume' | 'enable' | 'disabl
 export interface Control {
   title: string
   command: Command
+  onRequest: boolean
   execute: (command: string, taskFlowId: number) => void
 }
 
@@ -32,10 +33,10 @@ const TaskFlowControlButton = ({
     event.stopPropagation()
     control.execute(control.command, taskFlowId)
   }
-
+  enabled = control.onRequest
   switch (control.command) {
     case 'start':
-      enabled = enabled && taskFlowRunningStatus === 'READY'
+      enabled = enabled && taskFlowRunningStatus !== 'PAUSED' && taskFlowRunningStatus !== 'RUNNING'
       break
     case 'pause':
       enabled = enabled && taskFlowRunningStatus === 'RUNNING'
@@ -44,7 +45,7 @@ const TaskFlowControlButton = ({
       enabled = enabled && taskFlowRunningStatus === 'PAUSED'
       break
     case 'stop':
-      enabled = enabled && taskFlowRunningStatus !== 'READY'
+      enabled = enabled && (taskFlowRunningStatus === 'PAUSED' || taskFlowRunningStatus === 'RUNNING')
       break
     case 'enable':
       enabled = isTaskFlowActive

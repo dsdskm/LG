@@ -7,6 +7,13 @@ export const ManageActions = styled.div`
   justify-content: center;
 `
 
+// ExpandableSection 헤더 버튼의 hover 시 밑줄 제거 (밑줄은 버튼이 그리므로 버튼에서 덮어써야 함)
+export const NoUnderlineExpandable = styled.div`
+  .selectButton:hover:not(:disabled) {
+    text-decoration: none;
+  }
+`
+
 export const BaseActionButton = styled.button`
   min-width: 36px;
   height: 24px;
@@ -154,16 +161,16 @@ export const PlayButton = styled.button`
 
   font-size: 11px;
 
-  border: 1px solid #6ee7b7;
-  background-color: #f0fdf4;
-  color: #059669;
+  border: 1px solid var(--t-play-btn-border);
+  background-color: var(--t-play-btn-bg);
+  color: var(--t-play-btn-text);
 
   cursor: pointer;
 
   transition: background-color 0.2s ease;
 
   &:hover {
-    background-color: #dcfce7;
+    background-color: var(--t-play-btn-hover-bg);
   }
 `
 

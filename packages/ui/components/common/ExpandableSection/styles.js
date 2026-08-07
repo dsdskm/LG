@@ -2,7 +2,7 @@ import styled from 'styled-components'
 
 export const StyledSelectButton = styled.button`
   display: flex;
-  justify-content: space-between;
+  justify-content: ${({ $iconPosition }) => ($iconPosition === 'left' ? 'flex-start' : 'space-between')};
   gap: 1rem;
   align-items: center;
   width: 100%;
@@ -10,6 +10,7 @@ export const StyledSelectButton = styled.button`
   outline-offset: -2px;
   background: var(--color-neutral-10);
   border: 1px solid var(--color-secondary-20);
+  color: #7d776a;
   border-radius: ${({ $size }) => ($size === 'sm' ? 'var(--radius-xs)' : 'var(--radius-sm)')};
   height: ${({ $size }) => `${$size === 'sm' ? 2.8 : 3.6}rem`};
   ${({ $isOpen, $error }) =>
@@ -35,7 +36,6 @@ export const StyledSelectButton = styled.button`
     overflow: hidden;
     text-overflow: ellipsis;
   }
-
 `
 
 export const StyledDiv = styled.div`

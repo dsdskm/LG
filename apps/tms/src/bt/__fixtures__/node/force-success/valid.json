@@ -1,0 +1,664 @@
+{
+    "id": 0,
+    "name": "복잡-force-success(with sequence)",
+    "groupId": "rBEAAp1NGc2BnVDXCa8ACA",
+    "siteId": "rBEAAp1NGc2BnVDYFR8ACg",
+    "status": "ACTIVE",
+    "version": 0,
+    "createdAt": "",
+    "updatedAt": "",
+    "description": "",
+    "tasks": [
+        {
+            "id": 39,
+            "siteId": null,
+            "taskType": "ROOT",
+            "name": "Start",
+            "propertySchema": {
+                "properties": {
+                    "execution_condition": {
+                        "type": "string",
+                        "required": true,
+                        "direction": "in",
+                        "description": ""
+                    }
+                }
+            },
+            "minExecVer": "1.0.0",
+            "version": "1.0.0",
+            "description": null,
+            "isDeployable": true,
+            "status": "ACTIVE",
+            "createdAt": "",
+            "updatedAt": ""
+        },
+        {
+            "id": 48,
+            "siteId": null,
+            "taskType": "ACTION",
+            "name": "SetInterrupt",
+            "propertySchema": {
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "required": true,
+                        "direction": "in",
+                        "description": "모니터링할 인터럽트 name"
+                    }
+                }
+            },
+            "minExecVer": "1.0.0",
+            "version": "1.0.0",
+            "description": null,
+            "isDeployable": true,
+            "status": "ACTIVE",
+            "createdAt": "",
+            "updatedAt": ""
+        },
+        {
+            "id": 47,
+            "siteId": null,
+            "taskType": "ACTION",
+            "name": "ScriptCondition",
+            "propertySchema": {
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "required": true,
+                        "direction": "in",
+                        "description": "간단한 조건 비교문"
+                    }
+                }
+            },
+            "minExecVer": "1.0.0",
+            "version": "1.0.0",
+            "description": null,
+            "isDeployable": true,
+            "status": "ACTIVE",
+            "createdAt": "",
+            "updatedAt": ""
+        },
+        {
+            "id": 51,
+            "siteId": null,
+            "taskType": "CONTROL",
+            "name": "ForceSuccess",
+            "propertySchema": {},
+            "minExecVer": "1.0.0",
+            "version": "1.0.0",
+            "description": null,
+            "isDeployable": true,
+            "status": "ACTIVE",
+            "createdAt": "",
+            "updatedAt": ""
+        },
+        {
+            "id": 29,
+            "siteId": null,
+            "taskType": "ACTION",
+            "name": "MoveTo",
+            "propertySchema": {
+                "properties": {
+                    "poi_id": {
+                        "type": "content_reference",
+                        "required": true,
+                        "direction": "in",
+                        "description": "",
+                        "content_type": "POI"
+                    }
+                }
+            },
+            "minExecVer": "1.0.0",
+            "version": "1.0.0",
+            "description": null,
+            "isDeployable": true,
+            "status": "ACTIVE",
+            "createdAt": "",
+            "updatedAt": ""
+        },
+        {
+            "id": 31,
+            "siteId": null,
+            "taskType": "ACTION",
+            "name": "PlaySound",
+            "propertySchema": {
+                "properties": {
+                    "sound_id": {
+                        "type": "content_reference",
+                        "required": true,
+                        "direction": "in",
+                        "description": "소리낼 SOUND",
+                        "content_type": "BGM"
+                    },
+                    "repeat_count": {
+                        "type": "number",
+                        "default": 1,
+                        "required": false,
+                        "direction": "in",
+                        "description": "플레이 횟수. -1이면 무한반복"
+                    }
+                }
+            },
+            "minExecVer": "1.0.0",
+            "version": "1.0.0",
+            "description": null,
+            "isDeployable": true,
+            "status": "ACTIVE",
+            "createdAt": "",
+            "updatedAt": ""
+        },
+        {
+            "id": 7,
+            "siteId": null,
+            "taskType": "ACTION",
+            "name": "DoesObjectExist",
+            "propertySchema": {
+                "properties": {
+                    "object_id": {
+                        "type": "content_reference",
+                        "required": true,
+                        "direction": "in",
+                        "description": "오브젝트",
+                        "content_type": "OBJECT"
+                    }
+                }
+            },
+            "minExecVer": "1.0.0",
+            "version": "1.0.0",
+            "description": null,
+            "isDeployable": true,
+            "status": "ACTIVE",
+            "createdAt": "",
+            "updatedAt": ""
+        }
+    ],
+    "contents": [
+        {
+            "id": 18,
+            "contentTypeId": 3,
+            "contentTypeName": "POI",
+            "contentValue": "{\"mapId\":\"6c0b5ccc-786d-4e9d-9e9a-80c8d207cd1d\",\"poi\":{\"poi_id\":\"03f3f744-7e64-4ada-b8fb-2091ce846723\",\"name\":{\"default\":\"Meeting Room A\",\"ko-KR\":\"회의실 A\",\"en-US\":\"Meeting Room A\"},\"type\":\"GENERAL\",\"pose\":{\"position\":{\"x\":-1.5,\"y\":-12,\"z\":0},\"orientation\":{\"x\":0,\"y\":0,\"z\":-0.7071068,\"w\":0.7071068}},\"yaw_deg\":-90,\"tolerance\":0.2,\"properties\":{\"floor\":1}},\"buildingId\":null,\"floorId\":null,\"areaId\":null}",
+            "createdAt": "",
+            "groupId": "rBEAAp1NGc2BnVDXCa8ACA",
+            "name": "회의실 A",
+            "siteId": "rBEAAp1NGc2BnVDYFR8ACg",
+            "status": "ACTIVE",
+            "updatedAt": "",
+            "version": "1.0.0"
+        },
+        {
+            "id": 42,
+            "contentTypeId": 7,
+            "contentTypeName": "BGM",
+            "contentValue": "{\"id\":27,\"fileContents\":[{\"id\":38,\"fileName\":\"bgm-03.wav\",\"fileType\":\"AUDIO\",\"fileSize\":56716,\"fileStatus\":\"STATUS_UPLOAD_DONE\"}],\"textContents\":[]}",
+            "createdAt": "",
+            "groupId": "rBEAAp1NGc2BnVDXCa8ACA",
+            "name": "이동(gs)",
+            "siteId": "rBEAAp1NGc2BnVDYFR8ACg",
+            "status": "ACTIVE",
+            "updatedAt": "",
+            "version": "1.0.0"
+        },
+        {
+            "id": 15,
+            "contentTypeId": 10,
+            "contentTypeName": "OBJECT",
+            "contentValue": "/object/common/cup.json",
+            "createdAt": "",
+            "groupId": "",
+            "name": "컵",
+            "siteId": null,
+            "status": "ACTIVE",
+            "updatedAt": "",
+            "version": "1.0.0"
+        }
+    ],
+    "nodes": [
+        {
+            "id": "start",
+            "type": "startNode",
+            "position": {
+                "x": -155,
+                "y": -71
+            },
+            "data": {
+                "label": "Start",
+                "locked": false,
+                "taskId": 39,
+                "taskName": "Start",
+                "taskType": "ROOT",
+                "properties": {
+                    "execution_condition": "Boot"
+                },
+                "propertySchema": {
+                    "properties": {
+                        "execution_condition": {
+                            "type": "string",
+                            "required": true,
+                            "direction": "in",
+                            "description": ""
+                        }
+                    }
+                }
+            },
+            "measured": {
+                "width": 78,
+                "height": 47
+            },
+            "selected": false,
+            "dragging": false,
+            "draggable": true,
+            "selectable": true,
+            "deletable": false,
+            "connectable": true
+        },
+        {
+            "id": "1785119339783",
+            "type": "taskNode",
+            "position": {
+                "x": -60.75,
+                "y": -71
+            },
+            "data": {
+                "groupId": null,
+                "siteId": null,
+                "label": "SetInterrupt",
+                "taskId": 48,
+                "taskName": "SetInterrupt",
+                "taskType": "ACTION",
+                "propertySchema": {
+                    "properties": {
+                        "code": {
+                            "type": "string",
+                            "required": true,
+                            "direction": "in",
+                            "description": "모니터링할 인터럽트 name"
+                        }
+                    }
+                },
+                "properties": {
+                    "code": ""
+                }
+            },
+            "measured": {
+                "width": 78,
+                "height": 47
+            },
+            "selected": false,
+            "dragging": false,
+            "draggable": true,
+            "selectable": true,
+            "deletable": true,
+            "connectable": true
+        },
+        {
+            "id": "1785119341023",
+            "type": "taskNode",
+            "position": {
+                "x": 32.25,
+                "y": -12.25
+            },
+            "data": {
+                "groupId": null,
+                "siteId": null,
+                "label": "ScriptCondition",
+                "taskId": 47,
+                "taskName": "ScriptCondition",
+                "taskType": "ACTION",
+                "propertySchema": {
+                    "properties": {
+                        "code": {
+                            "type": "string",
+                            "required": true,
+                            "direction": "in",
+                            "description": "간단한 조건 비교문"
+                        }
+                    }
+                },
+                "properties": {
+                    "code": ""
+                }
+            },
+            "measured": {
+                "width": 78,
+                "height": 47
+            },
+            "selected": false,
+            "dragging": false,
+            "draggable": true,
+            "selectable": true,
+            "deletable": true,
+            "connectable": true
+        },
+        {
+            "id": "1785119377576",
+            "type": "taskNode",
+            "position": {
+                "x": 32.25,
+                "y": -71
+            },
+            "data": {
+                "groupId": null,
+                "siteId": null,
+                "label": "ForceSuccess",
+                "taskId": 51,
+                "taskName": "ForceSuccess",
+                "taskType": "CONTROL",
+                "propertySchema": {},
+                "properties": {}
+            },
+            "measured": {
+                "width": 78,
+                "height": 47
+            },
+            "selected": false,
+            "dragging": false,
+            "draggable": true,
+            "selectable": true,
+            "deletable": true,
+            "connectable": true
+        },
+        {
+            "id": "1785119439857",
+            "type": "taskNode",
+            "position": {
+                "x": 123.75,
+                "y": -12.25
+            },
+            "data": {
+                "label": "회의실 A",
+                "taskId": 29,
+                "taskName": "MoveTo",
+                "taskType": "ACTION",
+                "contentId": 18,
+                "contentName": "회의실 A",
+                "contentTypeId": 3,
+                "contentTypeName": "POI",
+                "contentValue": "{\"mapId\":\"6c0b5ccc-786d-4e9d-9e9a-80c8d207cd1d\",\"poi\":{\"poi_id\":\"03f3f744-7e64-4ada-b8fb-2091ce846723\",\"name\":{\"default\":\"Meeting Room A\",\"ko-KR\":\"회의실 A\",\"en-US\":\"Meeting Room A\"},\"type\":\"GENERAL\",\"pose\":{\"position\":{\"x\":-1.5,\"y\":-12,\"z\":0},\"orientation\":{\"x\":0,\"y\":0,\"z\":-0.7071068,\"w\":0.7071068}},\"yaw_deg\":-90,\"tolerance\":0.2,\"properties\":{\"floor\":1}},\"buildingId\":null,\"floorId\":null,\"areaId\":null}",
+                "groupId": "rBEAAp1NGc2BnVDXCa8ACA",
+                "siteId": "rBEAAp1NGc2BnVDYFR8ACg",
+                "propertySchema": {
+                    "properties": {
+                        "poi_id": {
+                            "type": "content_reference",
+                            "required": true,
+                            "direction": "in",
+                            "description": "",
+                            "content_type": "POI"
+                        }
+                    }
+                },
+                "properties": {
+                    "poi_id": 18
+                }
+            },
+            "measured": {
+                "width": 78,
+                "height": 47
+            },
+            "selected": false,
+            "dragging": false,
+            "draggable": true,
+            "selectable": true,
+            "deletable": true,
+            "connectable": true
+        },
+        {
+            "id": "1785119449056",
+            "type": "taskNode",
+            "position": {
+                "x": 211.9375,
+                "y": -12.25
+            },
+            "data": {
+                "label": "이동(gs)",
+                "taskId": 31,
+                "taskName": "PlaySound",
+                "taskType": "ACTION",
+                "contentId": 42,
+                "contentName": "이동(gs)",
+                "contentTypeId": 7,
+                "contentTypeName": "BGM",
+                "contentValue": "{\"id\":27,\"fileContents\":[{\"id\":38,\"fileName\":\"bgm-03.wav\",\"fileType\":\"AUDIO\",\"fileSize\":56716,\"fileStatus\":\"STATUS_UPLOAD_DONE\"}],\"textContents\":[]}",
+                "groupId": "rBEAAp1NGc2BnVDXCa8ACA",
+                "siteId": "rBEAAp1NGc2BnVDYFR8ACg",
+                "propertySchema": {
+                    "properties": {
+                        "sound_id": {
+                            "type": "content_reference",
+                            "required": true,
+                            "direction": "in",
+                            "description": "소리낼 SOUND",
+                            "content_type": "BGM"
+                        },
+                        "repeat_count": {
+                            "type": "number",
+                            "default": 1,
+                            "required": false,
+                            "direction": "in",
+                            "description": "플레이 횟수. -1이면 무한반복"
+                        }
+                    }
+                },
+                "properties": {
+                    "sound_id": 42,
+                    "repeat_count": 1
+                }
+            },
+            "measured": {
+                "width": 78,
+                "height": 47
+            },
+            "selected": false,
+            "dragging": false,
+            "draggable": true,
+            "selectable": true,
+            "deletable": true,
+            "connectable": true
+        },
+        {
+            "id": "1785119499297",
+            "type": "taskNode",
+            "position": {
+                "x": 123.75,
+                "y": -71
+            },
+            "data": {
+                "label": "컵",
+                "taskId": 7,
+                "taskName": "DoesObjectExist",
+                "taskType": "ACTION",
+                "contentId": 15,
+                "contentName": "컵",
+                "contentTypeId": 10,
+                "contentTypeName": "OBJECT",
+                "contentValue": "/object/common/cup.json",
+                "groupId": null,
+                "siteId": null,
+                "propertySchema": {
+                    "properties": {
+                        "object_id": {
+                            "type": "content_reference",
+                            "required": true,
+                            "direction": "in",
+                            "description": "오브젝트",
+                            "content_type": "OBJECT"
+                        }
+                    }
+                },
+                "properties": {
+                    "object_id": 15
+                }
+            },
+            "measured": {
+                "width": 78,
+                "height": 47
+            },
+            "selected": false,
+            "dragging": false,
+            "draggable": true,
+            "selectable": true,
+            "deletable": true,
+            "connectable": true
+        }
+    ],
+    "edges": [
+        {
+            "id": "1785119451809",
+            "source": "1785119439857",
+            "target": "1785119449056",
+            "sourceHandle": "right",
+            "targetHandle": "left",
+            "type": "default",
+            "markerEnd": {
+                "type": "arrowclosed",
+                "width": 10,
+                "height": 10,
+                "color": "#94a3b8"
+            },
+            "style": {
+                "stroke": "#94a3b8",
+                "strokeWidth": 1.25
+            },
+            "data": {
+                "sourceNodeId": "1785119439857",
+                "targetNodeId": "1785119449056",
+                "sourceHandleId": "right",
+                "targetHandleId": "left",
+                "edgeType": "bezier"
+            }
+        },
+        {
+            "id": "1785119485658",
+            "source": "1785119341023",
+            "target": "1785119439857",
+            "sourceHandle": "right",
+            "targetHandle": "left",
+            "type": "default",
+            "markerEnd": {
+                "type": "arrowclosed",
+                "width": 10,
+                "height": 10,
+                "color": "#94a3b8"
+            },
+            "style": {
+                "stroke": "#94a3b8",
+                "strokeWidth": 1.25
+            },
+            "data": {
+                "sourceNodeId": "1785119341023",
+                "targetNodeId": "1785119439857",
+                "sourceHandleId": "right",
+                "targetHandleId": "left",
+                "edgeType": "bezier"
+            }
+        },
+        {
+            "id": "1785119640787",
+            "source": "start",
+            "target": "1785119339783",
+            "sourceHandle": "right",
+            "targetHandle": "left",
+            "type": "default",
+            "markerEnd": {
+                "type": "arrowclosed",
+                "width": 10,
+                "height": 10,
+                "color": "#94a3b8"
+            },
+            "style": {
+                "stroke": "#94a3b8",
+                "strokeWidth": 1.25
+            },
+            "data": {
+                "sourceNodeId": "start",
+                "targetNodeId": "1785119339783",
+                "sourceHandleId": "right",
+                "targetHandleId": "left",
+                "edgeType": "bezier"
+            }
+        },
+        {
+            "id": "xy-edge__1785119339783right-1785119377576left",
+            "source": "1785119339783",
+            "target": "1785119377576",
+            "sourceHandle": "right",
+            "targetHandle": "left",
+            "type": "taskEdge",
+            "markerEnd": {
+                "type": "arrowclosed",
+                "width": 10,
+                "height": 10,
+                "color": "#94a3b8"
+            },
+            "style": {
+                "stroke": "#94a3b8",
+                "strokeWidth": 1.25,
+                "strokeLinecap": "round"
+            },
+            "data": {
+                "sourceNodeId": "1785119339783",
+                "targetNodeId": "1785119377576",
+                "sourceHandleId": "right",
+                "targetHandleId": "left",
+                "edgeType": "bezier"
+            }
+        },
+        {
+            "id": "1785119658467",
+            "source": "1785119377576",
+            "target": "1785119341023",
+            "sourceHandle": "left",
+            "targetHandle": "left",
+            "type": "default",
+            "markerEnd": {
+                "type": "arrowclosed",
+                "width": 10,
+                "height": 10,
+                "color": "#94a3b8"
+            },
+            "style": {
+                "stroke": "#94a3b8",
+                "strokeWidth": 1.25
+            },
+            "data": {
+                "sourceNodeId": "1785119377576",
+                "targetNodeId": "1785119341023",
+                "sourceHandleId": "left",
+                "targetHandleId": "left",
+                "edgeType": "bezier"
+            }
+        },
+        {
+            "id": "1785119665612",
+            "source": "1785119377576",
+            "target": "1785119499297",
+            "sourceHandle": "right",
+            "targetHandle": "left",
+            "type": "default",
+            "markerEnd": {
+                "type": "arrowclosed",
+                "width": 10,
+                "height": 10,
+                "color": "#94a3b8"
+            },
+            "style": {
+                "stroke": "#94a3b8",
+                "strokeWidth": 1.25
+            },
+            "data": {
+                "sourceNodeId": "1785119377576",
+                "targetNodeId": "1785119499297",
+                "sourceHandleId": "right",
+                "targetHandleId": "left",
+                "edgeType": "bezier"
+            }
+        }
+    ],
+    "viewport": {
+        "x": 264.125,
+        "y": 316.5,
+        "zoom": 2
+    },
+    "flowMode": "default"
+}

@@ -327,7 +327,8 @@ const MapHistory = () => {
         : navi.svgDownloadUrl
           ? { type: 'svg', url: navi.svgDownloadUrl }
           : null
-      return { mapData, navi: { origin: navi.origin, resolution: navi.resolution } }
+      // pngDownloadUrl: SVG 선택 시 MULTIGRID 좌표 변환에 필요한 원본 NAVI 래스터 크기 조회용
+      return { mapData, navi: { origin: navi.origin, resolution: navi.resolution, pngDownloadUrl: navi.pngDownloadUrl } }
     }
     // 과거 NAVI는 서버 per-version 렌더 API가 없어 zip에서 이미지 추출 (jszip)
     const dl = await mapApis.getVersionDownload(naviVersionId)
@@ -352,7 +353,12 @@ const MapHistory = () => {
       url = URL.createObjectURL(new Blob([ab], { type: mime }))
       objUrlsRef.current.push(url)
     }
-    return { mapData: { type: 'png', url }, navi: { origin: dl.metadata.origin, resolution: dl.metadata.resolution } }
+    // 과거 버전은 presigned pngDownloadUrl이 없으므로 zip에서 추출한 원본 이미지(url)를
+    // 그대로 재사용 — SVG 선택 시 MULTIGRID 변환의 원본 래스터 크기 조회에 쓰임
+    return {
+      mapData: { type: 'png', url },
+      navi: { origin: dl.metadata.origin, resolution: dl.metadata.resolution, pngDownloadUrl: url }
+    }
     },
     [latestNaviId, latestMapData, navi]
   )
@@ -377,7 +383,7 @@ const MapHistory = () => {
       try {
         const base = naviId ? await resolveNaviRender(naviId) : null
         let mapData = base?.mapData ?? latestMapData ?? null
-        const naviMeta = base?.navi ?? (navi ? { origin: navi.origin, resolution: navi.resolution } : undefined)
+        const naviMeta = base?.navi ?? (navi ? { origin: navi.origin, resolution: navi.resolution, pngDownloadUrl: navi.pngDownloadUrl } : undefined)
         // SVG 선택 시 베이스 이미지를 SVG로 대체
         if (svgId) {
           const url = await mapApis.getVersionDownloadUrl(svgId)

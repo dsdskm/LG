@@ -7,6 +7,8 @@ type Props = {
   open: boolean;
   title?: string;
   description?: string;
+  /** 설명과 버튼 사이에 넣을 추가 UI (체크박스 등) */
+  children?: React.ReactNode;
   confirmText?: string;
   cancelText?: string;
   showCancelButton?: boolean;
@@ -21,6 +23,7 @@ export default function ConfirmModal({
   open,
   title = "",
   description = "",
+  children,
   confirmText,
   cancelText,
   showCancelButton = true,
@@ -71,6 +74,8 @@ export default function ConfirmModal({
         {description ? (
           <Description id="confirm-modal-description">{description}</Description>
         ) : null}
+
+        {children ? <ExtraContent>{children}</ExtraContent> : null}
 
         <ButtonRow>
           {showCancelButton && (
@@ -133,6 +138,10 @@ const Description = styled.p`
   font-size: 14px;
   line-height: 1.6;
   color: #4b5563;
+`;
+
+const ExtraContent = styled.div`
+  margin: 16px 0 0;
 `;
 
 const ButtonRow = styled.div`

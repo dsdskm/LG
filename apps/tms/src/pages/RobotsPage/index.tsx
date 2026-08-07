@@ -64,6 +64,13 @@ const RobotsPage = () => {
     })
 
     const filtered = robots.filter((robot) => {
+      const [group, site] = groupSite.value
+      if (group == 'none' && robot.group !== '') {
+        return false
+      }
+      if (site == 'none' && robot.site !== '') {
+        return false
+      }
       if (firstFilter !== 'all' && robot.runningTaskFlowName !== firstFilter) {
         return false
       }
@@ -88,7 +95,7 @@ const RobotsPage = () => {
 
       return (a.name ?? '').localeCompare(b.name ?? '', 'ko')
     })
-  }, [devicesData, firstFilter, secondFilter])
+  }, [devicesData, firstFilter, secondFilter, groupSite])
 
   if (devicesLoading) return <p>Loading...</p>
   if (devicesError) return <p>error: {devicesError.message}</p>
@@ -119,8 +126,7 @@ const RobotsPage = () => {
   }
 
   const onOrgChanged = (e: any) => {
-    setGroupSite(e)
-
+    setGroupSite({ value: e.values })
     const [group, site] = e.values
 
     console.log('org info', e.values)
@@ -147,6 +153,10 @@ const RobotsPage = () => {
 
     setDeviceParams(nextParams)
     console.log('nextParams = ', nextParams)
+  }
+
+  const onTaskFlowStatusChaged = (value: string) => {
+    setSecondFlilter(value)
   }
 
   return (
@@ -191,7 +201,7 @@ const RobotsPage = () => {
                   placeholder="TaskFlow 상태"
                   defaultValue={t('robots.taskflowFilter')}
                   options={taskFlowStatusOptions}
-                  onChange={() => {}}
+                  onChange={onTaskFlowStatusChaged}
                 />
 
                 <SearchContainer>

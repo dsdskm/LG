@@ -318,3 +318,23 @@ export const PageMessage = styled.div`
   font-size: 12px;
   font-weight: 700;
 `
+
+/**
+ * 플로우 정의 탭(저장 / 체크포인트) 영역.
+ * @repo/ui Tabs 의 기본 여백이 좁아, 이 화면에서만 탭 버튼의 좌우/상하 여백과 간격을 넓힌다.
+ * 구조: Tabs(div) > TabList(div, 첫 번째 자식) > TabItem(button)
+ */
+export const FlowTabsWrap = styled.div`
+  width: 100%;
+
+  & > div > div:first-of-type {
+    gap: 8px;
+    margin-bottom: 24px;
+
+    > button {
+      padding: 14px 24px;
+      border-radius: 8px 8px 0 0;
+      font-weight: 700;
+    }
+  }
+`

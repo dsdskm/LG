@@ -25,7 +25,7 @@ test('버튼 Style을 정상적으로 적용하는지 확인', () => {
   )
   const buttonElement = screen.getByText(/large button/i)
   expect(buttonElement).toHaveStyle('padding: 1.4rem 1.6rem')
-  expect(buttonElement).toHaveStyle('background: var(--color-primary-70)')
+  expect(buttonElement).toHaveStyle('background: var(--t-primary-btn-bg)')
 
   rerender(
     <Button size="sm" theme="secondary">

@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 
 const useContentsScrollListener = (callBack) => {
   useEffect(() => {
-    const contents = document.getElementById('contents')
+    const contents = document.getElementById('mainContent')
     const handleScroll = () => {
       if (callBack) callBack()
     }

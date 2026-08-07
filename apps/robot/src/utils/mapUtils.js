@@ -13,86 +13,71 @@ export const applyMatrix = (mat, x, y) => ({
   y: mat[1] * x + mat[3] * y + mat[5]
 })
 
-// Parse the MULTIGRID tag → first grid's { matrix, imgWidth, imgHeight }
+// Parse the MULTIGRID tag or data-transform-matrix attribute → { matrix }
+// The matrix maps a point in the full NAVI raster's pixel space to the cropped/rendered SVG's pixel space.
 export const parseMultigrid = (svgText) => {
   if (!svgText) return null
   try {
     const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml')
+
+    // Try to get transform matrix from data-transform-matrix attribute on SVG root
+    const svg = doc.documentElement
+    const dataTransformMatrix = svg.getAttribute('data-transform-matrix')
+    if (dataTransformMatrix) {
+      const values = dataTransformMatrix.split(',').map(v => {
+        // Evaluate expressions like "1000/1039" or "-84*456/477"
+        try {
+          return Function('"use strict"; return (' + v.trim() + ')')()
+        } catch {
+          return parseFloat(v)
+        }
+      })
+
+      if (values.length === 6) {
+        return { matrix: values }
+      }
+    }
+
+    // Fallback: Try MULTIGRID element
     const mg = doc.getElementById('MULTIGRID')
-    if (!mg) return null
-    for (const child of mg.children) {
-      const mat = extractMatrix(child.getAttribute('transform'))
-      if (!mat) continue
-      const w = parseFloat(child.getAttribute('width') || '0')
-      const h = parseFloat(child.getAttribute('height') || '0')
-      if (w > 0 && h > 0) return { matrix: mat, imgWidth: w, imgHeight: h }
+    if (mg) {
+      for (const child of mg.children) {
+        const mat = extractMatrix(child.getAttribute('transform'))
+        if (!mat) continue
+        const w = parseFloat(child.getAttribute('width') || '0')
+        const h = parseFloat(child.getAttribute('height') || '0')
+        if (w > 0 && h > 0) {
+          return { matrix: mat }
+        }
+      }
     }
   } catch (e) {
-    console.error('parseMultigrid:', e)
+    console.error('parseMultigrid error:', e)
   }
   return null
 }
 
 // ROS world (wx, wy) → SVG pixel (top-left origin).
-// timv.js pipeline: world → SLAM PNG pixel (Y flip) → SVG pixel (MULTIGRID matrix).
-export const worldToSvgPixel = (wx, wy, navi, multigrid, svgHeight) => {
+// timv.js pipeline: world → SLAM PNG pixel (Y flip, full NAVI raster height) → SVG pixel (MULTIGRID matrix).
+// `imgHeight` must be the full NAVI raster height (the PNG the MULTIGRID matrix was derived from),
+// not the cropped/rendered SVG height — the matrix's translation term already accounts for the crop.
+export const worldToSvgPixel = (wx, wy, navi, multigrid, imgHeight) => {
   const res = navi.resolution
   const [ox, oy] = navi.origin
-  const imgH = multigrid ? multigrid.imgHeight : svgHeight ?? 1000
   const px = (wx - ox) / res
-  const py = imgH - 1 - (wy - oy) / res
+  const py = imgHeight - 1 - (wy - oy) / res
+
   return multigrid ? applyMatrix(multigrid.matrix, px, py) : { x: px, y: py }
 }
 
-// PNG → SVG URL
-export const createSvgUrlFromPng = async (imgSrc) => {
-  const img = new Image()
-
-  return new Promise((resolve, reject) => {
-    img.onload = () => {
-      const width = img.naturalWidth
-      const height = img.naturalHeight
-
-      const canvas = document.createElement('canvas')
-      canvas.width = width
-      canvas.height = height
-
-      const ctx = canvas.getContext('2d')
-      if (!ctx) {
-        reject(new Error('canvas context 생성 실패'))
-        return
-      }
-
-      ctx.drawImage(img, 0, 0)
-
-      const pngDataUrl = canvas.toDataURL('image/png')
-
-      const svg = `
-        <svg xmlns="http://www.w3.org/2000/svg"
-             width="${width}"
-             height="${height}"
-             viewBox="0 0 ${width} ${height}">
-          <image href="${pngDataUrl}" width="100%" height="100%" />
-        </svg>
-      `
-
-      const blob = new Blob([svg], { type: 'image/svg+xml' })
-      const url = URL.createObjectURL(blob)
-
-      resolve({
-        url,
-        width,
-        height
-      })
-    }
-
-    img.onerror = () => {
-      reject(new Error('이미지 로드 실패'))
-    }
-
+// Fetch an image's natural pixel size without rendering it
+export const getImageNaturalSize = (imgSrc) =>
+  new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight })
+    img.onerror = () => reject(new Error('이미지 로드 실패'))
     img.src = imgSrc
   })
-}
 
 export const getSvgSize = async (svgUrl) => {
   const res = await fetch(svgUrl)

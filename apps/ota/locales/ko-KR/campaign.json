@@ -59,5 +59,6 @@
   "deploymentPolicy": "배포 정책",
   "waitTimeout": "대기Timeout",
   "noAvailableDevices": "선택 가능한 디바이스가 없습니다",
-  "groupedCommandsCount": "이 디바이스의 명령 {{count}}개"
+  "groupedCommandsCount": "이 디바이스의 명령 {{count}}개",
+  "selectPackageType": "패키지 타입 선택"
 }

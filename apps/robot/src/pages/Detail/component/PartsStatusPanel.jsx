@@ -199,7 +199,12 @@ function parseRobotState(robotState) {
 // ─── Utils ────────────────────────────────────────────────────────────────────
 
 // 한국어일 때만 labelKo, 그 외 언어는 labelEn 사용
-const pickLabel = (item, lang) => (String(lang || '').toLowerCase().startsWith('ko') ? item.labelKo : item.labelEn)
+const pickLabel = (item, lang) =>
+  String(lang || '')
+    .toLowerCase()
+    .startsWith('ko')
+    ? item.labelKo
+    : item.labelEn
 
 const CATEGORY_META = {
   HW_COMPONENTS: { labelKo: 'HW 컴포넌트', labelEn: 'HW Components' },
@@ -229,9 +234,12 @@ function formatDate(isoStr) {
 
 const Grid = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(305px, 1fr));
+  /* auto-fit으로 카드가 창 폭에 맞춰 확장되도록 설정
+     좁은 화면(모바일)에서 305px를 강제하지 않고 컨테이너 폭까지 축소되도록 min() 사용 */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 305px), 1fr));
   gap: 16px;
   width: 100%;
+  min-width: 0;
 `
 
 const CategoryCard = styled.div`
@@ -246,7 +254,8 @@ const CategoryHeader = styled.div`
   align-items: center;
   justify-content: space-between;
   padding: 14px 16px;
-  border-bottom: 1px solid #f3f4f6;
+  background: #eae8e2;
+  border-bottom: 1px solid #d8d4cc;
 `
 
 const CategoryTitle = styled.div`

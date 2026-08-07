@@ -320,16 +320,6 @@ export const S = {
     width: '100%',
     height: '100%'
   },
-  map3DHint: {
-    position: 'absolute',
-    bottom: 28,
-    left: '50%',
-    transform: 'translateX(-50%)',
-    fontSize: 12,
-    color: '#9CA3AF',
-    pointerEvents: 'none',
-    whiteSpace: 'nowrap'
-  },
   map3DDebugInfo: {
     position: 'absolute',
     top: 8,

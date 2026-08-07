@@ -76,7 +76,7 @@ const Artifact = () => {
     const matchesModule = filterQuery === 'all' || artifact.Module?.id === filterQuery
     const matchesSearch = artifact.displayName.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesOrg =
-      session.userRole === 'SYSTEM_MANAGER' && orgFilter.actualOrgs.length === 0
+      session?.userRole === 'SYSTEM_MANAGER' && orgFilter.actualOrgs.length === 0
         ? true
         : artifact.Organization
           ? orgFilter.matchesOrg(artifact.Organization)
@@ -171,7 +171,7 @@ const Artifact = () => {
 
   const handleCreate = () => {
     navigate(
-      `/ota/artifact/detail?orgId=${session.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0 ? defaultOrg.id : actualOrgs[0].id}`
+      `/ota/artifact/detail?orgId=${session?.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0 ? defaultOrg.id : actualOrgs[0].id}`
     )
   }
 
@@ -189,12 +189,12 @@ const Artifact = () => {
   }, [company, t])
 
   const orgIds =
-    session.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
+    session?.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
       ? [...allOrgs, defaultOrg].map((org) => org.id).join(',')
       : actualOrgs.map((org) => org.id).join(',')
 
   useEffect(() => {
-    if (actualOrgs.length === 0 && session.userRole !== 'SYSTEM_MANAGER') {
+    if (actualOrgs.length === 0 && session?.userRole !== 'SYSTEM_MANAGER') {
       setIsLoading(false)
       return
     }
@@ -247,7 +247,7 @@ const Artifact = () => {
             <Button
               variant="contained"
               onClick={handleCreate}
-              disabled={actualOrgs.length !== 1 && session.userRole !== 'SYSTEM_MANAGER'}
+              disabled={actualOrgs.length !== 1 && session?.userRole !== 'SYSTEM_MANAGER'}
             >
               {t('create')}
             </Button>

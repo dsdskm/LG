@@ -78,6 +78,7 @@ export function parseDeviceInfo(deviceinfo) {
   returnJson.version = deviceinfo.deviceFirmwareVersion
   returnJson.updateDate = deviceinfo.updatedAt
   returnJson.registerDate = deviceinfo.registeredAt
+  returnJson.deviceStateUpdatedAt = deviceinfo.deviceStateUpdatedAt
 
   returnJson.batterySoc = deviceinfo.state?.batteryState?.batteryCharge
   returnJson.batterySoh = deviceinfo.state?.batteryState?.batteryHealth
@@ -131,7 +132,8 @@ export function parseRobotData(deviceinfo) {
     // heading (rad). Backend may expose it as theta/yaw; undefined → faces +X.
     theta: pos?.theta ?? pos?.yaw ?? deviceinfo.state?.pose?.yaw,
     robotState: deviceinfo.deviceState,
-    siteName: !deviceinfo.provision.isDefaultSite ? deviceinfo.provision?.siteName : '-'
+    siteName: !deviceinfo.provision.isDefaultSite ? deviceinfo.provision?.siteName : '-',
+    areaId: deviceinfo.state?.sitePosition?.areaId
   }
   return returnJson
 }
@@ -155,6 +157,36 @@ export function getLocalizedName(name, lang) {
 }
 
 // robotUtils.js
+
+/**
+ * taskFlows 중 isActive와 isEnabled가 모두 true인 항목만 유효한 업무 목록으로 인정
+ * @param {Array} taskFlows - data.tms.taskFlowState.taskFlows
+ */
+export function filterActiveTaskFlows(taskFlows) {
+  const list = Array.isArray(taskFlows) ? taskFlows : []
+  return list.filter((tf) => tf.isActive && tf.isEnabled)
+}
+
+/**
+ * taskFlows(운영 업무 목록)의 operationStatus를 기준으로 업무 제어 버튼(시작/정지/일시정지/재개) 활성 여부를 계산
+ * - canStart: RUNNING/PAUSED 상태인 업무가 하나도 없을 때 (신규 시작 가능)
+ * - canStop: RUNNING/PAUSED 상태인 업무가 하나라도 있을 때
+ * - canPause: RUNNING 상태인 업무가 하나라도 있을 때
+ * - canResume: PAUSED 상태인 업무가 하나라도 있을 때
+ * @param {Array} taskFlows - data.tms.taskFlowState.taskFlows
+ */
+export function getTaskFlowControlState(taskFlows) {
+  const list = Array.isArray(taskFlows) ? taskFlows : []
+  const hasRunning = list.some((tf) => tf.operationStatus === 'RUNNING')
+  const hasPaused = list.some((tf) => tf.operationStatus === 'PAUSED')
+
+  return {
+    canStart: !hasRunning && !hasPaused,
+    canStop: hasRunning || hasPaused,
+    canPause: hasRunning,
+    canResume: hasPaused
+  }
+}
 
 /**
  * hwComponents 배열에서 WiFi Module을 찾아 rxPower 기준으로 3단계 상태를 반환

@@ -240,6 +240,22 @@ export const HeaderTitleGroup = styled.div`
   justify-content: space-between;
   gap: 4px;
   align-items: center;
+
+  @media all and (max-width: 767px) {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+`
+
+export const DivSectionTitleWrap = styled.div`
+  display: flex;
+  align-items: center;
+
+  @media all and (max-width: 767px) {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 1rem;
+  }
 `
 
 export const SearchContainer = styled.div`
@@ -269,6 +285,22 @@ export const SearchContainer = styled.div`
 
     &::placeholder {
       color: #adb5bd;
+    }
+  }
+
+  @media all and (max-width: 767px) {
+    width: 100%;
+    flex-wrap: wrap;
+    margin-bottom: 0.8rem;
+
+    .search {
+      width: 100%;
+      margin-bottom: 0.8rem;
+    }
+
+    .dropdown {
+      width: calc(50% - 6px);
+      min-width: 140px;
     }
   }
 `

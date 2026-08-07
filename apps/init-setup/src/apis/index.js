@@ -13,29 +13,18 @@
 //const API_BASE = `http://${window.location.hostname}:8081`
 //export default API_BASE
 
-const DEFAULT_API_PORT = import.meta.env.VITE_API_PORT || '8081'
+const DEFAULT_API_PORT = import.meta.env.VITE_BE_PORT
 const browserHost = window.location.hostname || 'localhost'
 const browserProtocol = window.location.protocol === 'https:' ? 'https:' : 'http:'
-
-const envBase = import.meta.env.VITE_API_BASE_URL
-const envBaseIsLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(envBase || '')
-
-// VITE_API_BASE_URL이 명시되어 있고 localhost가 아닌 경우만 우선 사용한다.
-// localhost 값은 외부 폰/PC 접속에서 API 호출을 깨뜨리므로 무시한다.
-// const API_BASE = envBase && !envBaseIsLocalhost
-//   ? envBase.replace(/\/$/, '')
-//   : `${browserProtocol}//${browserHost}:${DEFAULT_API_PORT}`
 
 //-------------------------------------------------------------------
 // nginx/captive portal 모드에서는 상대경로 /api 사용
 // 예: http://192.168.188.1/api/...
-const useRelativeApi =
-  import.meta.env.VITE_USE_RELATIVE_API === 'true' || window.location.port === '' || window.location.port === '80'
+const useRelativeApi = window.location.port === '' || window.location.port === '80'
 
-const API_BASE = useRelativeApi
-  ? ''
-  : envBase && !envBaseIsLocalhost
-    ? envBase.replace(/\/$/, '')
-    : `${browserProtocol}//${browserHost}:${DEFAULT_API_PORT}`
+// 그 외(개발 서버 등)에서는 현재 페이지 hostname + VITE_BE_PORT 로 직접 호출한다.
+// 고정 base URL 환경변수는 쓰지 않는다 — 폰/PC 가 로봇 AP 로 접속하는 구성에서
+// localhost 나 빌드 시점 IP 가 박히면 API 호출이 깨진다.
+const API_BASE = useRelativeApi ? '' : `${browserProtocol}//${browserHost}:${DEFAULT_API_PORT}`
 
 export default API_BASE

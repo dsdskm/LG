@@ -7,19 +7,23 @@
  * allOrgs 에 저장된 .id 를 코드로 매칭해 가져온다.
  */
 
-const isRealCode = (v) => v && v !== 'none' && v !== 'all'
+export const isRealCode = (v) => v && v !== 'none' && v !== 'all'
 
 export const resolveOrgIds = (selectedOrgs, allOrgs) => {
   const [groupCode, siteCode] = selectedOrgs || []
+  const orgs = allOrgs || []
   let groupId
   let siteId
   if (isRealCode(groupCode)) {
-    const g = (allOrgs || []).find((o) => o.originalType === 'CMS_GROUP' && String(o.code) === String(groupCode))
-    groupId = g?.id
+    groupId = orgs.find((o) => o.originalType === 'CMS_GROUP' && String(o.code) === String(groupCode))?.id
   }
   if (isRealCode(siteCode)) {
-    const s = (allOrgs || []).find((o) => o.originalType === 'CMS_SITE' && String(o.code) === String(siteCode))
+    const s = orgs.find((o) => o.originalType === 'CMS_SITE' && String(o.code) === String(siteCode))
     siteId = s?.id
+    // 그룹이 '전체(all)'여도 특정 사이트가 선택되면 사이트의 부모 그룹으로 groupId 유도
+    if (groupId == null && s?.parentCode != null) {
+      groupId = orgs.find((o) => o.originalType === 'CMS_GROUP' && String(o.code) === String(s.parentCode))?.id
+    }
   }
   return { groupId, siteId }
 }
@@ -33,11 +37,12 @@ export const resolveOrgIds = (selectedOrgs, allOrgs) => {
  */
 export const resolveOrgQuery = (selectedOrgs, allOrgs) => {
   const groupSel = selectedOrgs?.[0]
-  // 그룹 자체를 '-'(미지정)로 선택 → 어떤 콘텐츠도 조회하지 않음(null 신호)
-  if (groupSel === 'none') return null
+  // 그룹 '-'(미지정) → group_id IS NULL 콘텐츠만 (어느 조직에도 속하지 않는 콘텐츠)
+  if (groupSel === 'none') return { groupUnassigned: true }
   const { groupId, siteId } = resolveOrgIds(selectedOrgs, allOrgs)
   const siteSel = selectedOrgs?.[1]
   if (siteId != null) return { siteId }
   if (groupId != null) return siteSel === 'none' ? { groupId, siteUnassigned: true } : { groupId }
-  return {}
+  // 전체그룹 → 그룹이 지정된 콘텐츠만(미지정 null 제외)
+  return { groupAssigned: true }
 }

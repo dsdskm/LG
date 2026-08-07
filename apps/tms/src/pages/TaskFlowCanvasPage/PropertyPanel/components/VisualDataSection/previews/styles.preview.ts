@@ -1,10 +1,10 @@
-import styled from "styled-components"
+import styled from 'styled-components'
 
-export const PreviewCard = styled.div`
-  display: flex;
+export const PreviewCard = styled.div<{ $hidden?: boolean }>`
+  display: ${({ $hidden }) => ($hidden ? 'none' : 'flex')};
   flex-direction: column;
   gap: 12px;
-  padding: 16px;
+  padding: 10px;
   border: 1px solid #d1d5db;
   border-radius: 16px;
   background: #f7f7f8;
@@ -51,5 +51,12 @@ export const AudioControlButton = styled.button`
 
   &:hover {
     background: #f3f4f6;
+  }
+  &:disabled {
+    background: #f9fafb;
+    color: #9ca3af;
+    border-color: #e5e7eb;
+    cursor: not-allowed;
+    opacity: 0.6;
   }
 `

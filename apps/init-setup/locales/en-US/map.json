@@ -21,6 +21,7 @@
   "maxDistance": "Max Distance",
   "angleRange": "Angle Range",
   "lidarInfo": "Lidar Info",
+  "mappingStatus": "Mapping Status",
   "legend": "Legend",
   "unknown": "Unknown",
   "freeSpace": "Free Space (Passable)",
@@ -38,5 +39,11 @@
   "save": "Save",
   "reset": "Reset",
   "cancel": "Cancel",
-  "topicInfo": "Topic Info"
+  "topicInfo": "Topic Info",
+  "building": "Building",
+  "floor": "Floor",
+  "area": "Area",
+  "selectBuilding": "Select Building",
+  "selectFloor": "Select Floor",
+  "selectArea": "Select Area"
 }

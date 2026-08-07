@@ -37,9 +37,10 @@ export function resolveBtCppNodeInfo(n: Node): {
 
   // attribute 의 "키"는 task 의 property schema 에 정의된 것만 사용하고,
   // "값"은 content value(JSON) 에서 해당 키의 값을 가져온다.
-  const schemaProps = (data.propertySchema?.properties ??
-    payload?.propertySchema?.properties ??
-    {}) as Record<string, unknown>
+  const schemaProps = (data.propertySchema?.properties ?? payload?.propertySchema?.properties ?? {}) as Record<
+    string,
+    unknown
+  >
   const schemaKeys = Object.keys(schemaProps)
 
   const contentValues = parseContentValue(data.contentValue ?? payload?.contentValue)
@@ -77,7 +78,12 @@ export function resolveBtCppNodeInfo(n: Node): {
 // schema 키가 content value 의 최상위에 없고 중첩되어 있는 경우의 예외 매핑.
 // (예: MoveTo 의 poi_id 는 content value 상 poi.poi_id 에 위치)
 const CONTENT_VALUE_KEY_PATHS: Record<string, string> = {
-  poi_id: 'poi.poi_id'
+  poi_id: 'poi.poi_id',
+  face_id: 'id',
+  sound_id: 'id',
+  motion_id: 'id',
+  tts_id: 'id',
+  object_id: 'id'
 }
 
 // content value 에서 schema 키에 해당하는 값을 찾는다.

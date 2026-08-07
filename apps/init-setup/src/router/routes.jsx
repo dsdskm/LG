@@ -1,7 +1,6 @@
 import { Navigate } from 'react-router-dom'
 import Map from '@/pages/Map'
-import Poi from '@/pages/Map/Poi'
-import Zone from '@/pages/Map/Zone'
+import Semantic from '@/pages/Map/Semantic'
 import Language from '@/pages/Default/Language'
 import Network from '@/pages/Default/Network'
 import SiteCode from '@/pages/Default/SiteCode'
@@ -72,16 +71,10 @@ export const appRoutes = [
         element: <Map />
       },
       {
-        name: 'zone',
-        path: '/map/zone',
+        name: 'semantic',
+        path: '/map/semantic',
         prefix: '',
-        element: <Zone />
-      },
-      {
-        name: 'poi',
-        path: '/map/poi',
-        prefix: '',
-        element: <Poi />
+        element: <Semantic />
       }
     ]
   },

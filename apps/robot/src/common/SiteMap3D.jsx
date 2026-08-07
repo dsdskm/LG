@@ -4,14 +4,15 @@ import { Canvas, useThree, useFrame } from '@react-three/fiber'
 import { OrbitControls, Html } from '@react-three/drei'
 import * as THREE from 'three'
 import { SVGLoader } from 'three/examples/jsm/loaders/SVGLoader.js'
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import { toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
+
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
+import { Modal, ModalButton } from '@repo/ui'
 import SiteMap from './SiteMap'
 import { parseMultigrid, worldToSvgPixel } from '@/utils/mapUtils'
 import { getLocalizedName } from '@/utils/robotUtils'
+import poiMarkerSvg from '@/assets/icons/figma/marker.svg?url'
 
 // ─── coordinate helpers ───────────────────────────────────────────────────────
 // MULTIGRID parsing + world→SVG pixel conversion live in mapUtils so the 2D
@@ -36,47 +37,84 @@ function parseSvgSize(svgText) {
 // ─── colors ───────────────────────────────────────────────────────────────────
 
 const STATE_COLORS = {
-  OPERATION: '#22c55e',
-  WAIT: '#f59e0b',
-  CHARGE: '#3b82f6',
-  ERROR: '#ef4444',
-  OFFLINE: '#6b7280'
+  OPERATION: '#22A56C',
+  STANDBY: '#777772',
+  WAIT: '#777772',
+  CHARGE: '#965BE3',
+  LEARNING: '#3194CB',
+  ERROR: '#A34F4E',
+  OFFLINE: '#AD7744'
 }
-const stateColor = (s) => STATE_COLORS[s] ?? '#8b5cf6'
+const stateColor = (s) => STATE_COLORS[s] ?? '#777772'
+
+// ─── 3D 로봇 아이콘 (구체 + 림 글로우) ──────────────────────────────────────
+
+function RobotSphereIcon({ state, radius }) {
+  const color = STATE_COLORS[state] ?? '#777772'
+  return (
+    <group>
+      {/* 메인 구체 — MeshStandardMaterial 로 조명에 반응해 입체감 생성 */}
+      <mesh>
+        <sphereGeometry args={[radius, 48, 48]} />
+        <meshStandardMaterial color={color} roughness={0.18} metalness={0.08} />
+      </mesh>
+      {/* 흰색 림 — BackSide 를 이용해 구체 가장자리에 테두리를 표현 */}
+      <mesh>
+        <sphereGeometry args={[radius * 1.06, 48, 48]} />
+        <meshBasicMaterial color="#ffffff" side={THREE.BackSide} transparent opacity={0.22} depthWrite={false} />
+      </mesh>
+    </group>
+  )
+}
 
 // ─── HTML markers (same look as 2D SiteMap, rendered as 3D billboards) ──────────
 
+/* 마커 앵커 = 컨테이너 바닥 중앙 → 화살표 끝이 POI 3D 좌표에 정확히 닿음.
+   Figma: 그림자(drop-shadow)는 라벨+마커 전체를 감싸는 이 컨테이너 1개에만 적용. */
 const HtmlPoiMarker = styled.div`
-  position: relative;
-  transform: translate(-50%, -50%);
-
-  &:hover span {
-    display: block;
-  }
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translate(-50%, -100%);
+  filter: drop-shadow(0px 2px 4px rgba(17, 17, 17, 0.2));
 `
 
-const HtmlPoiDot = styled.div`
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: ${({ $isCharging }) => ($isCharging ? '#16a34a' : '#f59e0b')};
-  border: 2px solid #fff;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-`
-
-const HtmlPoiLabel = styled.div`
-  position: absolute;
-  left: 50%;
-  top: calc(100% + 4px);
-  transform: translateX(-50%);
-  font-size: 13px;
-  color: #ffffff;
-  white-space: nowrap;
-  font-weight: 500;
+// marker.svg 는 라벨 하단에 붙는 작은 커넥터(꼬리표) 모양 — Figma 원본 크기 11×4.085px 그대로.
+// height: auto 로 렌더링해야 object-fit 레터박싱 없이 이미지 하단 = 뾰족점이 정확히 일치.
+const HtmlPoiIcon = styled.img`
+  width: 11px;
+  height: auto;
+  display: block;
   pointer-events: none;
-  background-color: rgba(0, 0, 0, 0.75);
-  padding: 2px 6px;
+  -webkit-user-drag: none;
+  position: relative;
+  z-index: 0;
+`
+
+// const HtmlPoiDot = styled.div`
+//   width: 20px;
+//   height: 20px;
+//   border-radius: 50%;
+//   background: ${({ $isCharging }) => ($isCharging ? '#16a34a' : '#f59e0b')};
+//   border: 2px solid #fff;
+//   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+// `
+
+// 라벨-마커 연결부는 poiMarkerSvg(HtmlPoiIcon)가 담당하므로 별도 화살표 불필요.
+// Figma: 배경 rgba(255,255,255,0.8) + 레이어 opacity 80% 이 별도로 곱해짐
+// (배경 실효 알파 0.64, 텍스트 알파 0.8) — 두 값을 그대로 반영.
+const HtmlPoiLabel = styled.div`
+  font-size: 12px;
+  color: #484848;
+  white-space: nowrap;
+  font-weight: 600;
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.8);
+  opacity: 0.8;
+  padding: 4px 8px;
   border-radius: 4px;
+  position: relative;
+  z-index: 1;
 `
 
 // ─── 3D mesh data from SVG paths ──────────────────────────────────────────────
@@ -348,106 +386,17 @@ function PngFloor({ pngUrl, navi }) {
   )
 }
 
-// ─── Robot 3D icon (single baked STL under public/urdf/robot_icon) ──────────────
-// The hmc_v2_hand URDF was baked (fixed default pose) into ONE merged, indexed
-// glTF (full-resolution silhouette, lossless). ROS frame: Z-up / meters; the
-// caller rotates Z-up→Y-up, drops it to the floor (-minZ) and scales.
-const ROBOT_ICON_FALLBACK_H = 1.5 // meters, used for sizing until the model loads
-let robotModelPromise = null
+// 로봇 마커 기준 높이(미터). 맵 축척 변환 후 최소 크기 보장에 사용.
+const ROBOT_ICON_FALLBACK_H = 1.5
 
-function loadRobotModel() {
-  if (robotModelPromise) return robotModelPromise
-  const p = new Promise((resolve, reject) => {
-    // Resolve against the app base (Vite BASE_URL), NOT document.baseURI — the
-    // latter follows the current SPA route and would mangle the path.
-    const base = (import.meta.env?.BASE_URL || '/').replace(/\/$/, '')
-    const url = `${window.location.origin}${base}/urdf/robot_icon/robot_icon.glb`
-
-    new GLTFLoader().load(
-      url,
-      (gltf) => {
-        gltf.scene.updateMatrixWorld(true)
-        let srcMesh = null
-        gltf.scene.traverse((o) => {
-          if (o.isMesh && !srcMesh) srcMesh = o
-        })
-        if (!srcMesh) {
-          reject(new Error('robot_icon.glb has no mesh'))
-          return
-        }
-        // Positions are int16-quantized (KHR_mesh_quantization) with the dequant
-        // scale on the node. Bake raw ints → float and apply the node matrix to
-        // recover real meters; ship no normals → compute creased ones here.
-        const src = srcMesh.geometry
-        const p = src.attributes.position
-        const fa = new Float32Array(p.count * 3)
-        for (let i = 0; i < p.count; i++) {
-          fa[i * 3] = p.getX(i)
-          fa[i * 3 + 1] = p.getY(i)
-          fa[i * 3 + 2] = p.getZ(i)
-        }
-        let g = new THREE.BufferGeometry()
-        g.setAttribute('position', new THREE.Float32BufferAttribute(fa, 3))
-        if (src.index) g.setIndex(src.index.clone())
-        g.applyMatrix4(srcMesh.matrixWorld) // dequantize (node scale → real meters)
-
-        try {
-          g = toCreasedNormals(g, Math.PI / 5) // smooth curves, crisp edges (~36°)
-        } catch (e) {
-          console.warn('Robot icon: normal smoothing failed, using vertex normals:', e)
-          if (!g.attributes?.normal) g.computeVertexNormals()
-        }
-        g.computeBoundingBox()
-        const bb = g.boundingBox
-        // original light body tone; transparent+depthWrite so it renders in the
-        // transparent pass AFTER the (always-on-top) ring → ring never covers it.
-        const mat = new THREE.MeshStandardMaterial({
-          color: 0xc7d0ea,
-          roughness: 0.55,
-          metalness: 0.1,
-          transparent: true,
-          opacity: 1,
-          depthWrite: true
-        })
-        const mesh = new THREE.Mesh(g, mat)
-        mesh.userData.height = bb.max.z - bb.min.z || ROBOT_ICON_FALLBACK_H
-        mesh.userData.minZ = Number.isFinite(bb.min.z) ? bb.min.z : 0
-        resolve(mesh)
-      },
-      undefined,
-      (err) => reject(err)
-    )
-  })
-  // Don't cache a rejection — let a later mount retry.
-  p.catch(() => {
-    if (robotModelPromise === p) robotModelPromise = null
-  })
-  robotModelPromise = p
-  return p
-}
-
-function useRobotModel() {
-  const [model, setModel] = useState(null)
-  useEffect(() => {
-    let alive = true
-    loadRobotModel()
-      .then((g) => alive && setModel(g))
-      .catch((e) => console.error('Robot icon URDF load failed:', e))
-    return () => {
-      alive = false
-    }
-  }, [])
-  return model
-}
-
-// Robot marker for 3D: real URDF model + state-colored floor ring + name label
-function RobotPin({ position, color, name, state, model, minZ, modelScale, ringRadius, worldHeight, yaw = 0, clickable, onClick }) {
-  const geo = model?.geometry
-
-  // reset cursor if we unmount while hovered (e.g. right after navigating)
-  useEffect(() => () => {
-    document.body.style.cursor = 'auto'
-  }, [])
+// Robot marker for 3D: 상태별 구체 아이콘 + 라벨
+function RobotPin({ position, color, name, state, ringRadius, worldHeight, yaw = 0, clickable, onClick }) {
+  useEffect(
+    () => () => {
+      document.body.style.cursor = 'auto'
+    },
+    []
+  )
 
   const setCursor = (v) => {
     if (clickable) document.body.style.cursor = v
@@ -475,49 +424,28 @@ function RobotPin({ position, color, name, state, model, minZ, modelScale, ringR
         </mesh>
       )}
 
-      {/* state color ring — depthTest off (visible over raised floor objects),
-          renderOrder LOW so the robot (rendered later) still draws over it */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.06, 0]} renderOrder={1}>
-        <ringGeometry args={[ringRadius * 0.74, ringRadius, 48]} />
-        <meshBasicMaterial
-          color={color}
-          side={THREE.DoubleSide}
-          transparent
-          opacity={0.95}
-          depthTest={false}
-          depthWrite={false}
-        />
-      </mesh>
+      {/* 상태별 구체 아이콘 — 조명을 받아 입체적으로 보임 */}
+      <group position={[0, ringRadius, 0]}>
+        <RobotSphereIcon state={state} radius={ringRadius} />
+      </group>
 
-      {/* robot model: yaw about world Y (heading), then ROS Z-up → world Y-up,
-          base dropped to floor. Yaw wraps only the model so the ring/label stay.
-          renderOrder 3 (> ring) → robot is never hidden by the ring. */}
-      {geo && (
-        <group rotation={[0, yaw, 0]}>
-          <group rotation={[-Math.PI / 2, 0, 0]} scale={modelScale}>
-            <mesh geometry={geo} material={model.material} position={[0, 0, -minZ]} renderOrder={3} />
-          </group>
-        </group>
-      )}
-
-      {/* label anchored at the ring's near edge (world space) so the gap to the
-          robot stays constant across zoom — a screen-fixed offset from center
-          would drift as the ring scales. */}
+      {/* label anchored at the ring's near edge (world space) */}
       <Html position={[0, 0, ringRadius]} zIndexRange={[100, 0]} style={{ pointerEvents: clickable ? 'auto' : 'none' }}>
         <div
           onClick={onClick}
           style={{
             transform: 'translate(-50%, 2px)',
-            padding: '2px 8px',
-            borderRadius: 10,
+            padding: '4px 8px',
+            borderRadius: 6,
             background: color,
             color: '#fff',
-            fontSize: 11,
+            fontSize: 12,
             fontWeight: 600,
             whiteSpace: 'nowrap',
             cursor: clickable ? 'pointer' : 'default',
-            textShadow: '0 1px 2px rgba(0,0,0,0.35)',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+            border: '1.5px solid rgba(255,255,255,0.85)',
+            textShadow: '0 1px 2px rgba(0,0,0,0.4)',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.35)'
           }}
         >
           {name} / {state}
@@ -528,12 +456,91 @@ function RobotPin({ position, color, name, state, model, minZ, modelScale, ringR
 }
 
 // POI marker — identical visual to the 2D SiteMap
-function PoiPin({ position, isCharging, label }) {
+function PoiPin({ position, isCharging, label, clickable, onClick, poiData = {} }) {
+  const [isHovered, setIsHovered] = React.useState(false)
+
   return (
-    <Html position={position} zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
-      <HtmlPoiMarker>
-        <HtmlPoiDot $isCharging={isCharging} />
-        <HtmlPoiLabel>{label}</HtmlPoiLabel>
+    <Html position={position} zIndexRange={[100, 0]} style={{ pointerEvents: 'auto' }}>
+      <HtmlPoiMarker
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        style={{ pointerEvents: 'auto' }}
+      >
+        {isHovered && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '100%',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              background: 'rgba(0, 0, 0, 0.9)',
+              color: '#ffffff',
+              padding: '8px 12px',
+              borderRadius: '6px',
+              fontSize: '11px',
+              fontFamily: "'LG_Smart_UI', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+              zIndex: 10000,
+              marginBottom: '8px',
+              pointerEvents: 'none'
+            }}
+          >
+            <div
+              style={{
+                position: 'absolute',
+                top: '100%',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                borderLeft: '5px solid transparent',
+                borderRight: '5px solid transparent',
+                borderTop: '5px solid rgba(0, 0, 0, 0.9)',
+                width: 0,
+                height: 0
+              }}
+            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <span style={{ color: '#b0b0b0', minWidth: '60px' }}>Name:</span>
+                <span>{label}</span>
+              </div>
+              {poiData.x != null && poiData.y != null && (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <span style={{ color: '#b0b0b0', minWidth: '60px' }}>Position:</span>
+                  <span>
+                    X: {poiData.x.toFixed(2)}, Y: {poiData.y.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              {poiData.yawDeg != null && (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <span style={{ color: '#b0b0b0', minWidth: '60px' }}>Yaw:</span>
+                  <span>{poiData.yawDeg.toFixed(1)}°</span>
+                </div>
+              )}
+              {poiData.tolerance != null && (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <span style={{ color: '#b0b0b0', minWidth: '60px' }}>Tolerance:</span>
+                  <span>{poiData.tolerance.toFixed(2)}m</span>
+                </div>
+              )}
+              {poiData.properties?.description && (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <span style={{ color: '#b0b0b0', minWidth: '60px' }}>Description:</span>
+                  <span>{poiData.properties.description}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        <HtmlPoiLabel
+          onClick={clickable ? onClick : undefined}
+          style={{
+            pointerEvents: clickable ? 'auto' : 'none', // styled의 pointer-events:none 을 덮어씀
+            cursor: clickable ? 'pointer' : 'default'
+          }}
+        >
+          {label}
+        </HtmlPoiLabel>
+        <HtmlPoiIcon src={poiMarkerSvg} alt={label} draggable={false} />
       </HtmlPoiMarker>
     </Html>
   )
@@ -563,9 +570,7 @@ function CameraRig({ mode, controlsRef, fitKey }) {
 
     // 시점 방향(중심 → 카메라). 2D=정수직 하향, 3D=비스듬한 각도
     const dir =
-      mode === '2D'
-        ? new THREE.Vector3(0, 1, 0.0001).normalize()
-        : new THREE.Vector3(0, 0.8, 0.55).normalize()
+      mode === '2D' ? new THREE.Vector3(0, 1, 0.0001).normalize() : new THREE.Vector3(0, 0.8, 0.55).normalize()
 
     // 카메라 화면 기준축(right/up) 구성 → 박스를 이 축에 투영해 실제 화면 점유폭 계산
     const forward = dir.clone().negate() // 카메라가 바라보는 방향(-dir)
@@ -598,15 +603,14 @@ function CameraRig({ mode, controlsRef, fitKey }) {
     // FILL < 1 → 렌더 영역을 꽉 채우도록 카메라를 더 당김(상하 가장자리 약간 크롭 허용).
     // 값을 낮출수록 더 크게(더 많이 크롭). 1.0 = 크롭 없음.
     const FILL = 0.82
-    const dist =
-      (Math.max(hh / Math.tan(vFov / 2), hw / Math.tan(hFov / 2)) + hd) * FILL
+    const dist = (Math.max(hh / Math.tan(vFov / 2), hw / Math.tan(hFov / 2)) + hd) * FILL
 
     camera.near = Math.max(dist / 1000, 0.01)
     camera.far = dist * 10
 
     // 기울어진 3D 뷰에서 가까운 변(화면 아래)이 크게 보여 콘텐츠가 아래로 쏠린다.
     // 카메라·타깃을 화면-세로(-up)로 패닝해 맵 이미지를 위로 올리고 위쪽 여백을 줄인다.
-    const V_SHIFT = 0.10 // hh 대비 위로 이동 비율(클수록 맵이 위로, 낮출수록 아래로)
+    const V_SHIFT = 0.1 // hh 대비 위로 이동 비율(클수록 맵이 위로, 낮출수록 아래로)
     const aim = center.clone().add(up.clone().multiplyScalar(-hh * V_SHIFT))
 
     camera.position.copy(aim.clone().add(dir.clone().multiplyScalar(dist)))
@@ -728,28 +732,45 @@ const ViewToggleButton = styled.button`
   font-size: 12px;
   font-weight: 600;
   color: ${({ $active }) => ($active ? '#ffffff' : '#374151')};
-  background: ${({ $active }) => ($active ? '#3b82f6' : 'transparent')};
+  background: ${({ $active }) => ($active ? 'var(--t-toggle-active-bg)' : 'transparent')};
   transition: background 0.15s;
 
   &:hover {
-    background: ${({ $active }) => ($active ? '#3b82f6' : 'rgba(0, 0, 0, 0.06)')};
+    background: ${({ $active }) => ($active ? 'var(--t-toggle-active-bg)' : 'rgba(0, 0, 0, 0.06)')};
   }
 `
 
 // expand / compress icons (inline so we don't depend on the icon set)
 const ExpandIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
   </svg>
 )
 const CompressIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
   </svg>
 )
 
-const isTouchDevice = () =>
-  typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0)
+const isTouchDevice = () => typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0)
 
 // Guide text per view-mode and device (i18n).
 const guideText = (t, mode, touch) => {
@@ -770,6 +791,8 @@ const SiteMap3D = ({
   robotDatas = [],
   mapServer,
   clickRobot = false,
+  clickPoi = false, // ← 추가: POI 클릭 활성화
+  onMovePoi = null, // ← 추가: '이동' 확정 시 실행할 콜백(poi)
   height = '500px',
   only2D = false,
   mapApplyControl = null,
@@ -793,12 +816,12 @@ const SiteMap3D = ({
   const [fullscreen, setFullscreen] = useState(false)
   const [isTouch, setIsTouch] = useState(false)
   const [rotateMode, setRotateMode] = useState(false)
+  const [poiToMove, setPoiToMove] = useState(null)
   const blobRef = useRef(null)
   const controlsRef = useRef()
   const canvasWrapRef = useRef(null)
   const longPressRef = useRef({ timer: null, startX: 0, startY: 0 })
   const navigate = useNavigate()
-  const robotModel = useRobotModel()
 
   useEffect(() => {
     setIsTouch(isTouchDevice())
@@ -905,7 +928,6 @@ const SiteMap3D = ({
     if (svgText || pngUrl) return
     let canceled = false
     setLoading(true)
-
     ;(async () => {
       try {
         const res = await fetch(mapData.url)
@@ -1016,21 +1038,16 @@ const SiteMap3D = ({
     return (multigrid ? Math.hypot(multigrid.matrix[0], multigrid.matrix[1]) : 1) / res
   }, [navi, isSvg, multigrid])
 
-  // Robot model sizing. The STL model is in meters; convert to world units
-  // (SVG px in svg mode, meters in png mode) using map resolution + MULTIGRID
-  // scale, with a minimum so it stays visible on large maps.
-  const { modelScale, ringRadius, worldHeight } = useMemo(() => {
+  // Robot marker sizing: 1.5m 기준 높이를 맵 좌표계 단위로 변환.
+  // 맵이 크더라도 span 의 3% 이상으로 유지해 항상 보이도록 보정.
+  const { ringRadius, worldHeight } = useMemo(() => {
     const pxPerM = pxPerMeter || 1
-    const modelH = robotModel?.userData?.height || ROBOT_ICON_FALLBACK_H
-    let scale = pxPerM
-    const minWorldH = span * 0.03
-    if (modelH * scale < minWorldH) scale = minWorldH / modelH
+    const targetH = Math.max(ROBOT_ICON_FALLBACK_H * pxPerM, span * 0.03)
     return {
-      modelScale: scale,
-      ringRadius: Math.max(0.5 * scale, span * 0.02),
-      worldHeight: modelH * scale
+      ringRadius: Math.max(targetH * 0.4, span * 0.02),
+      worldHeight: targetH
     }
-  }, [pxPerMeter, span, robotModel])
+  }, [pxPerMeter, span])
 
   const content = (
     <Wrapper $fullscreen={fullscreen} $height={height}>
@@ -1075,6 +1092,8 @@ const SiteMap3D = ({
           robotDatas={robotDatas}
           mapServer={mapServer}
           clickRobot={clickRobot}
+          clickPoi={clickPoi && !fullscreen}
+          onPoiClick={setPoiToMove}
           height={fullscreen ? '100%' : height}
         />
       ) : (
@@ -1119,7 +1138,11 @@ const SiteMap3D = ({
 
             {/* 맵 지오메트리(바닥/벽)만 fit 대상 → 맵 밖 로봇 때문에 축소되지 않도록 named group으로 감쌈 */}
             <group name="map-content">
-              {isSvg ? <SvgMeshGroup svgText={svgText} pxPerMeter={pxPerMeter} /> : <PngFloor pngUrl={pngUrl} navi={navi} />}
+              {isSvg ? (
+                <SvgMeshGroup svgText={svgText} pxPerMeter={pxPerMeter} />
+              ) : (
+                <PngFloor pngUrl={pngUrl} navi={navi} />
+              )}
             </group>
 
             {robots.map((r) => (
@@ -1129,18 +1152,11 @@ const SiteMap3D = ({
                 color={stateColor(r.robotState)}
                 name={r.deviceName}
                 state={r.robotState}
-                model={robotModel}
-                minZ={robotModel?.userData?.minZ || 0}
-                modelScale={modelScale}
                 ringRadius={ringRadius}
                 worldHeight={worldHeight}
                 yaw={r.yaw}
                 clickable={clickRobot}
-                onClick={
-                  clickRobot
-                    ? () => navigate('/robot/management/detail?deviceId=' + r.deviceId)
-                    : undefined
-                }
+                onClick={clickRobot ? () => navigate('/robot/management/detail?deviceId=' + r.deviceId) : undefined}
               />
             ))}
 
@@ -1150,6 +1166,9 @@ const SiteMap3D = ({
                 position={poi.pos}
                 isCharging={poi.type === 'CHARGING'}
                 label={getLocalizedName(poi.name, i18n.language)}
+                clickable={clickPoi && !fullscreen && poi.type !== 'CHARGING'}
+                onClick={() => setPoiToMove(poi)}
+                poiData={poi}
               />
             ))}
           </Canvas>
@@ -1160,6 +1179,38 @@ const SiteMap3D = ({
         <RotateBadge onClick={() => setRotateMode(false)}>{t('map.rotateMode')}</RotateBadge>
       )}
       <ControlsHint>{guideText(t, viewMode, isTouch)}</ControlsHint>
+
+      {poiToMove && (
+        <Modal
+          isOpen={!!poiToMove}
+          size="xs"
+          onClose={() => setPoiToMove(null)}
+          renderButtonComponent={
+            <div style={{ display: 'flex', gap: '0.75rem', width: '100%', justifyContent: 'flex-end' }}>
+              <ModalButton variant="outlined" theme="default" onClick={() => setPoiToMove(null)}>
+                {t('cancel')}
+              </ModalButton>
+              <ModalButton
+                variant="contained"
+                theme="primary"
+                disabled={poiToMove.type === 'CHARGING'} // ← CHARGING이면 '이동' 비활성화
+                onClick={() => {
+                  onMovePoi?.(poiToMove)
+                  setPoiToMove(null)
+                }}
+              >
+                이동
+              </ModalButton>
+            </div>
+          }
+        >
+          <div style={{ textAlign: 'center', padding: '20px 0' }}>
+            <p className="typographyBody2">
+              {`장소 이동을 실행하겠습니까? (목적지 : ${getLocalizedName(poiToMove.name, i18n.language)})`}
+            </p>
+          </div>
+        </Modal>
+      )}
     </Wrapper>
   )
 

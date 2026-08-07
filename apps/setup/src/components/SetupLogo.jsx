@@ -1,4 +1,3 @@
-import { Link } from 'react-router-dom'
 import SvgLogo from '../assets/logo.svg'
 import { useResponsiveStore } from '@repo/stores/useResponsiveStore'
 import { useState } from 'react'
@@ -15,6 +14,13 @@ function SetupLogo({ disableLink = false }) {
 
   const logoHeight = logoWidth * logoRatio
   const baseUrl = (import.meta.env && import.meta.env.VITE_PORTAL_BASE_URL) || '/'
+
+  const handleLogoLinkClick = () => {
+    if (typeof window === 'undefined') {
+      return
+    }
+    window.location.href = baseUrl
+  }
 
   const handleLogoClick = () => {
     if (typeof window !== 'undefined') {
@@ -37,9 +43,9 @@ function SetupLogo({ disableLink = false }) {
       ) : (
         <>
           {responsiveMode === 'PC' ? (
-            <Link to="/">
+            <div onClick={handleLogoLinkClick} role="link" tabIndex={0} style={{ cursor: 'pointer' }}>
               <LogoContent />
-            </Link>
+            </div>
           ) : (
             <div onClick={handleLogoClick}>
               <LogoContent />

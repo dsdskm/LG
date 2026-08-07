@@ -18,7 +18,21 @@
 //
 
 import { buildBehaviorTreeFromFlowDefinition } from '../build'
-import type { BtAstNode, BtSequenceNode } from '../types'
+import { forceFailureNodeType } from '../nodes/btForceFailureNode'
+import { forceSuccessNodeType } from '../nodes/btForceSuccessNode'
+import { orNodeType } from '../nodes/btOrNode'
+import { parallelNodeType } from '../nodes/btParallelNode'
+import type { BtAstNode } from '../types'
+import { sequenceNodeType, type BtSequenceNode } from '../nodes/btSequenceNode'
+import { fallbackOnFailureNodeType } from '../nodes/btFallbackOnFailureNode'
+import { ifThenElseNodeType } from '../nodes/btIfThenElseNode'
+import { repeatNodeType } from '../nodes/btRepeatNode'
+import { reactiveOrNodeType } from '../nodes/btReactiveOrNode'
+import { actionNodeType } from '../nodes/btActionNode'
+import { reactiveAndNodeType } from '../nodes/btReactiveAndNode'
+import { andNodeType } from '../nodes/btAndNode'
+import { retryUntilSuccessfulNodeType } from '../nodes/btRetryUntilSuccessfulNode'
+import { btPreconditionNodeType } from '../nodes/btPreconditionNode'
 
 export type SimStatus = 'SUCCESS' | 'FAILURE' | 'RUNNING'
 
@@ -33,6 +47,11 @@ export type ControlSpan = {
   start: number
   end: number
   status: SimStatus
+  // ReactiveFallback(reactiveOr) 구간 여부. true 면 RUNNING 시 매 tick 첫 자식부터 재평가한다.
+  reactive?: boolean
+  // Parallel 구간 여부. true 면 자식이 RUNNING 이어도 멈추지 않고 다음 자식으로 진행하고,
+  // 전체가 RUNNING 인 동안 매 tick 모든 자식을 재평가한다(BT.CPP ParallelNode).
+  parallel?: boolean
 }
 
 export type ResolveFn = (nodeId: string) => SimStatus
@@ -47,38 +66,63 @@ export function buildSimTrace(
 
   function exec(node: BtAstNode): SimStatus {
     switch (node.kind) {
-      case 'action': {
+      case actionNodeType: {
         const nodeId = String(node.attrs?.node_id ?? '')
         const status = resolve(nodeId)
         if (nodeId) trace.push({ nodeId, status })
         return status
       }
-      case 'sequence':
+
+      case sequenceNodeType:
         return runSequence(node.children)
-      case 'ifThenElse':
+      case ifThenElseNodeType:
         return wrapControl(node, () => runIfThenElse(node.children))
-      case 'or':
-      case 'fallbackOnFailure':
+      case orNodeType:
+      case fallbackOnFailureNodeType:
         return wrapControl(node, () => runFallback(node.children))
-      case 'parallel':
-        return wrapControl(node, () => runParallel(node.children, node.successCount))
-      case 'repeat':
+      case reactiveOrNodeType:
+        return wrapControl(node, () => runFallback(node.children), true)
+      case andNodeType:
+        return wrapControl(node, () => runSequence(node.children))
+      case reactiveAndNodeType:
+        return wrapControl(node, () => runSequence(node.children), true)
+      case parallelNodeType:
+        return wrapControl(node, () => runParallel(node.children, node.successCount, node.failureCount), false, true)
+      case repeatNodeType:
         return wrapControl(node, () => runRepeat(node.child, node.numCycles))
-      case 'forceSuccess': {
-        const r = exec(node.child)
-        return r === 'RUNNING' ? 'RUNNING' : 'SUCCESS'
-      }
+      case retryUntilSuccessfulNodeType:
+        return wrapControl(node, () => runRetry(node.child, node.numAttempts))
+      case forceSuccessNodeType:
+        return wrapControl(node, () => {
+          const r = exec(node.child)
+          return r === 'RUNNING' ? 'RUNNING' : 'SUCCESS'
+        })
+      case forceFailureNodeType:
+        return wrapControl(node, () => {
+          const r = exec(node.child)
+          return r === 'RUNNING' ? 'RUNNING' : 'FAILURE'
+        })
+      // Precondition: if 스크립트를 시뮬레이터가 평가할 수 없으므로 "조건 통과"로 보고
+      // 자식을 tick 해 그 결과를 그대로 반환한다(else 분기는 시뮬 안 함).
+      case btPreconditionNodeType:
+        return wrapControl(node, () => exec(node.child))
       default:
         return 'SUCCESS'
     }
   }
 
   // 컨트롤 노드를 실행하면서, 차지한 leaf 구간(span)을 기록한다.
-  function wrapControl(node: BtAstNode & { attrs?: Record<string, string> }, run: () => SimStatus): SimStatus {
+  // reactive=true 면 RUNNING 시 매 tick 첫 자식부터 재평가하는 구간으로 표시한다.
+  function wrapControl(
+    node: BtAstNode & { attrs?: Record<string, string> },
+    run: () => SimStatus,
+    reactive = false,
+    parallel = false
+  ): SimStatus {
     const nodeId = String(node.attrs?.node_id ?? '')
     const start = trace.length
     const status = run()
-    if (nodeId) spans.push({ nodeId, start, end: trace.length, status })
+    if (nodeId) spans.push({ nodeId, start, end: trace.length, status, reactive, parallel })
     return status
   }
 
@@ -117,16 +161,24 @@ export function buildSimTrace(
     return 'FAILURE'
   }
 
-  // Parallel: 모든 자식 실행(시뮬레이션은 순차 방문). successCount 이상 성공하면 SUCCESS.
-  function runParallel(children: BtAstNode[], successCount: number): SimStatus {
+  // Parallel(BT.CPP ParallelNode): 자식을 순서대로 tick 하되 RUNNING 자식에서 멈추지 않고 계속 tick.
+  // 각 자식 결과가 나올 때마다 임계값을 확인해, SUCCESS 수 ≥ successCount → SUCCESS,
+  // FAILURE 수 ≥ failureCount → FAILURE 가 되면 남은 자식은 tick 하지 않고 즉시 종료(halt).
+  // 그 외(일부 RUNNING) → RUNNING.
+  function runParallel(children: BtAstNode[], successCount: number, failureCount: number): SimStatus {
+    const needSuccess = successCount > 0 ? successCount : children.length
+    const needFailure = failureCount > 0 ? failureCount : 1
     let success = 0
+    let failure = 0
     for (const child of children) {
-      const r = exec(child)
-      if (r === 'RUNNING') return 'RUNNING'
+      const r = exec(child) // RUNNING 이어도 멈추지 않고 다음 자식으로 계속
       if (r === 'SUCCESS') success++
+      else if (r === 'FAILURE') failure++
+      // 각 자식 tick 직후 임계값 확인 → 충족되면 남은 자식은 실행하지 않고 종료
+      if (success >= needSuccess) return 'SUCCESS'
+      if (failure >= needFailure) return 'FAILURE'
     }
-    const need = successCount > 0 ? successCount : children.length
-    return success >= need ? 'SUCCESS' : 'FAILURE'
+    return 'RUNNING'
   }
 
   // Repeat: 자식을 numCycles 회 반복(무한/과대값은 안전하게 제한). 도중 비-SUCCESS 면 중단.
@@ -137,6 +189,19 @@ export function buildSimTrace(
       if (r !== 'SUCCESS') return r
     }
     return 'SUCCESS'
+  }
+
+  // RetryUntilSuccessful: 자식이 SUCCESS 면 성공, FAILURE 면 최대 numAttempts 회 재시도.
+  // RUNNING 이면 RUNNING(대기), 모든 시도 실패면 FAILURE.
+  function runRetry(child: BtAstNode, numAttempts: number): SimStatus {
+    const attempts = Number.isFinite(numAttempts) && numAttempts > 0 ? Math.min(numAttempts, 100) : 1
+    for (let i = 0; i < attempts; i++) {
+      const r = exec(child)
+      if (r === 'RUNNING') return 'RUNNING'
+      if (r === 'SUCCESS') return 'SUCCESS'
+      // FAILURE → 다음 시도
+    }
+    return 'FAILURE'
   }
 
   try {

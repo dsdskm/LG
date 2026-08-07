@@ -10,6 +10,7 @@
   "removeAll": "Remove All",
   "confirm": "Confirm",
   "cancel": "Cancel",
+  "search": "Search",
   "group": "Group",
   "site": "Site",
   "siteName": "Site Name",
@@ -33,11 +34,24 @@
     "unprocessableEntity": "The input values are incorrect.",
     "internalServerError": "A server error occurred.",
     "unexpected": "An unexpected error occurred.",
-    "fileUploadError": "File upload error"
+    "fileUploadError": "File upload error",
+    "code": {
+      "MISSING_PARAMETER": "A required field is missing.",
+      "INVALID_PARAM": "Invalid input value.",
+      "DB_VALIDATION_ERROR": "Input validation failed.",
+      "DB_FK_CONSTRAINT_ERROR": "Cannot proceed: referenced data is in use or does not exist.",
+      "NOT_FOUND": "The requested item was not found.",
+      "DB_DUPLICATE_ENTRY": "This value already exists.",
+      "DATA_ALREADY_EXIST": "The data already exists.",
+      "DATA_NOT_EXIST": "No such data.",
+      "DATABASE_ERROR": "A database error occurred.",
+      "INTERNAL_ERROR": "A server error occurred."
+    }
   },
   "close": "Close",
   "contentFile": "Content File",
   "enterContent": "Enter content",
+  "enterSearchKeyword": "Enter search keyword",
   "copied": "Copied",
   "loadingApiDoc": "Loading API documentation...",
   "loadingFail": "Failed to load API documentation.",

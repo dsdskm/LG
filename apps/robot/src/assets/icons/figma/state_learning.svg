@@ -1,4 +1,5 @@
-<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect width="64" height="64" rx="32" fill="#E9EDFB"/>
-<path d="M21.7143 30.5714L22.8293 40.7773C22.9359 41.6304 23.4602 42.3741 24.2502 42.7134C26.0142 43.471 29.3179 44.7143 32 44.7143C34.6821 44.7143 37.9858 43.471 39.7498 42.7134C40.5398 42.3741 41.0641 41.6304 41.1707 40.7773L42.2857 30.5714M48.7143 28V37.6923M32 19L14 26.7143L32 34.4286L50 26.7143L32 19Z" stroke="#0397E9" stroke-opacity="0.8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<svg width="56" height="56" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect x="1.5" y="1.5" width="53" height="53" rx="26.5" fill="#C7D3F5" fill-opacity="0.4"/>
+<rect x="1.5" y="1.5" width="53" height="53" rx="26.5" stroke="#0397E9" stroke-width="3"/>
+<path d="M17.7143 26.5714L18.8293 36.7773C18.9359 37.6304 19.4601 38.3741 20.2501 38.7134C22.0142 39.471 25.3179 40.7143 28 40.7143C30.6821 40.7143 33.9858 39.471 35.7498 38.7134C36.5398 38.3741 37.064 37.6304 37.1707 36.7773L38.2857 26.5714M44.7143 24V33.6923M28 15L9.99998 22.7143L28 30.4286L46 22.7143L28 15Z" stroke="#0397E9" stroke-opacity="0.8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

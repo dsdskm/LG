@@ -1,6 +1,12 @@
 import { create } from 'zustand'
 import type { Node, Edge, XYPosition, NodeChange, EdgeChange, Connection } from '@xyflow/react'
-import { applyNodeChanges, applyEdgeChanges, MarkerType, addEdge, reconnectEdge as reconnectEdgeHelper } from '@xyflow/react'
+import {
+  applyNodeChanges,
+  applyEdgeChanges,
+  MarkerType,
+  addEdge,
+  reconnectEdge as reconnectEdgeHelper
+} from '@xyflow/react'
 
 import type { TaskApiPayload, ContentApiPayload, PropertySchema } from '../types/api/taskPayload'
 
@@ -29,6 +35,7 @@ export type NodeData = {
   contentTypeId?: number
   contentTypeName?: string
   contentValue?: string
+  contentVersion?: string
   groupId?: string | null
   siteId?: string | null
 
@@ -70,94 +77,116 @@ type FlowSnapshot = {
 const HISTORY_LIMIT = 80
 const DEFAULT_VIEWPORT: RFViewport = { x: 0, y: 0, zoom: 1 }
 
-// undo/redo 히스토리를 localStorage 에 flow 별로 저장하기 위한 키 prefix
-const HISTORY_PREFIX = 'tms:flow-history:'
-// localStorage 용량 초과 시 줄여서 재시도할 히스토리 길이
-const PERSIST_FALLBACK_LIMIT = 20
-
-type PersistedHistory = {
-  nodes: RFNode[]
-  edges: RFEdge[]
-  viewport: RFViewport
-  flowMode: FlowMode
-  historyPast: FlowSnapshot[]
-  historyFuture: FlowSnapshot[]
-}
-
 const DEFAULT_FLOW_MODE: FlowMode = 'default'
 
 function normalizeFlowMode(value: any): FlowMode {
   return value === 'tree' ? 'tree' : 'default'
 }
 
-function readPersistedHistory(flowKey: string): PersistedHistory | null {
-  try {
-    if (typeof localStorage === 'undefined') return null
-    const raw = localStorage.getItem(HISTORY_PREFIX + flowKey)
-    if (!raw) return null
-
-    const parsed = JSON.parse(raw)
-    if (!parsed || !Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) return null
-
-    return {
-      nodes: parsed.nodes as RFNode[],
-      edges: parsed.edges as RFEdge[],
-      viewport: normalizeViewport(parsed.viewport),
-      flowMode: normalizeFlowMode(parsed.flowMode),
-      historyPast: Array.isArray(parsed.historyPast) ? (parsed.historyPast as FlowSnapshot[]) : [],
-      historyFuture: Array.isArray(parsed.historyFuture) ? (parsed.historyFuture as FlowSnapshot[]) : []
-    }
-  } catch {
-    return null
-  }
-}
-
-function writePersistedHistory(flowKey: string, data: PersistedHistory) {
-  if (typeof localStorage === 'undefined') return
-
-  const key = HISTORY_PREFIX + flowKey
-  const save = (past: FlowSnapshot[], future: FlowSnapshot[]) => {
-    localStorage.setItem(
-      key,
-      JSON.stringify({
-        nodes: data.nodes,
-        edges: data.edges,
-        viewport: data.viewport,
-        flowMode: data.flowMode,
-        historyPast: past,
-        historyFuture: future
-      })
-    )
-  }
-
-  try {
-    save(data.historyPast, data.historyFuture)
-  } catch {
-    // 용량 초과 등으로 실패하면 히스토리를 줄여 재시도, 그래도 실패하면 제거
-    try {
-      save(data.historyPast.slice(-PERSIST_FALLBACK_LIMIT), data.historyFuture.slice(0, PERSIST_FALLBACK_LIMIT))
-    } catch {
-      try {
-        localStorage.removeItem(key)
-      } catch {
-        // ignore
-      }
-    }
-  }
-}
-
-function clearPersistedHistoryByKey(flowKey: string) {
-  try {
-    if (typeof localStorage === 'undefined') return
-    localStorage.removeItem(HISTORY_PREFIX + flowKey)
-  } catch {
-    // ignore
-  }
-}
-
 function cloneSnapshot(snapshot: FlowSnapshot): FlowSnapshot {
   if (typeof structuredClone === 'function') return structuredClone(snapshot)
   return JSON.parse(JSON.stringify(snapshot)) as FlowSnapshot
+}
+
+/**
+ * 이미 쓰인 id 를 피해서 다음 id 를 발급한다.
+ * 저장된 flow 의 id 가 (기기 간 시계 오차 등으로) 미래 값일 수 있으므로 그 뒤로 건너뛴다.
+ * 한 번 건너뛸 때마다 값이 반드시 증가하므로 반복 횟수는 기존 id 개수를 넘지 않는다.
+ */
+function nextUniqueId(used: Set<string>): string {
+  let candidate = generateNodeId()
+
+  while (used.has(candidate)) {
+    lastIssuedId = Number(candidate) + 1
+    candidate = String(lastIssuedId)
+  }
+
+  used.add(candidate)
+  return candidate
+}
+
+function cloneNodeData(data?: NodeData): NodeData {
+  if (!data) return {}
+  if (typeof structuredClone === 'function') return structuredClone(data)
+  return JSON.parse(JSON.stringify(data)) as NodeData
+}
+
+/**
+ * 삭제/복제 대상 노드 id 목록.
+ * - 박스 드래그·ctrl 클릭으로 만든 그룹 선택(node.selected)과 단일 선택(selectedNodeId)을 함께 본다.
+ * - START 노드는 삭제/복제 대상에서 제외한다.
+ */
+export function getEditableSelectedNodeIds(nodes: RFNode[], selectedNodeId: string | null): string[] {
+  const ids: string[] = []
+  const seen = new Set<string>()
+
+  for (const node of nodes) {
+    const id = String(node.id)
+    if (!node.selected || isStartNodeId(id) || seen.has(id)) continue
+    seen.add(id)
+    ids.push(id)
+  }
+
+  if (selectedNodeId && !isStartNodeId(selectedNodeId) && !seen.has(selectedNodeId)) {
+    if (nodes.some((node) => String(node.id) === selectedNodeId)) ids.push(selectedNodeId)
+  }
+
+  return ids
+}
+
+export function countEditableSelectedNodes(state: { nodes: RFNode[]; selectedNodeId: string | null }): number {
+  return getEditableSelectedNodeIds(state.nodes, state.selectedNodeId).length
+}
+
+// 노드 실측 크기가 없을 때 쓰는 기본 크기 (styles.node.ts 의 78px / aspect 5:3 기준)
+const NODE_FALLBACK_WIDTH = 78
+const NODE_FALLBACK_HEIGHT = 47
+// 복제본을 원본 그룹에서 떼어놓을 간격
+const DUPLICATE_GAP = 40
+
+type NodeBox = { left: number; top: number; right: number; bottom: number }
+
+function getNodeBox(node: RFNode, offset: XYPosition = { x: 0, y: 0 }): NodeBox {
+  const measured = (node as any)?.measured
+  const width = Number(measured?.width) > 0 ? Number(measured.width) : NODE_FALLBACK_WIDTH
+  const height = Number(measured?.height) > 0 ? Number(measured.height) : NODE_FALLBACK_HEIGHT
+  const left = Number(node.position?.x ?? 0) + offset.x
+  const top = Number(node.position?.y ?? 0) + offset.y
+
+  return { left, top, right: left + width, bottom: top + height }
+}
+
+function boxesOverlap(a: NodeBox, b: NodeBox): boolean {
+  return !(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top)
+}
+
+/**
+ * 복제본을 놓을 위치 오프셋.
+ * 원본 그룹 옆(가로 모드) / 아래(세로 모드)로 그룹 전체를 통째로 비켜 놓고,
+ * 기존 노드와 겹치면 같은 방향으로 한 칸 더 밀어 빈 자리를 찾는다.
+ */
+function computeDuplicateOffset(targets: RFNode[], allNodes: RFNode[], flowMode: FlowMode): XYPosition {
+  const boxes = targets.map((node) => getNodeBox(node))
+  const groupWidth = Math.max(...boxes.map((box) => box.right)) - Math.min(...boxes.map((box) => box.left))
+  const groupHeight = Math.max(...boxes.map((box) => box.bottom)) - Math.min(...boxes.map((box) => box.top))
+
+  const step: XYPosition =
+    flowMode === 'tree' ? { x: 0, y: groupHeight + DUPLICATE_GAP } : { x: groupWidth + DUPLICATE_GAP, y: 0 }
+
+  const occupied = allNodes.map((node) => getNodeBox(node))
+
+  for (let attempt = 1; attempt <= 12; attempt += 1) {
+    const offset = { x: step.x * attempt, y: step.y * attempt }
+    const collides = targets.some((node) => {
+      const box = getNodeBox(node, offset)
+      return occupied.some((other) => boxesOverlap(box, other))
+    })
+
+    if (!collides) return offset
+  }
+
+  // 빈 자리를 못 찾으면 대각선으로 살짝 어긋나게 놓아 최소한 겹쳐 보이지 않게 한다.
+  return { x: step.x + DUPLICATE_GAP, y: step.y + DUPLICATE_GAP }
 }
 
 function makeSnapshot(nodes: RFNode[], edges: RFEdge[], viewport: RFViewport, flowMode: FlowMode): FlowSnapshot {
@@ -171,12 +200,21 @@ function pushHistory(historyPast: FlowSnapshot[], prev: FlowSnapshot) {
     historyPast: nextPast,
     historyFuture: [] as FlowSnapshot[],
     canUndo: nextPast.length > 0,
-    canRedo: false
+    canRedo: false,
+    // 히스토리를 남기는 변경 = 저장이 필요한 변경. (선택/측정/패닝은 여기로 오지 않는다)
+    isDirty: true
   }
 }
 
+// 노드/엣지 id 는 타임스탬프 문자열을 쓴다.
+// 같은 밀리초에 여러 개를 만들면(복제 등) 값이 겹치므로 마지막 발급값을 기억해 항상 증가시킨다.
+let lastIssuedId = 0
+
 function generateNodeId(): string {
-  return String(Date.now())
+  const now = Date.now()
+  lastIssuedId = now > lastIssuedId ? now : lastIssuedId + 1
+
+  return String(lastIssuedId)
 }
 
 function toStringOrNull(value: unknown): string | null {
@@ -214,6 +252,7 @@ function normalizeContentPayload(content: any): ContentApiPayload {
     contentTypeId: Number(content?.contentTypeId ?? 0),
     contentTypeName: toStringOrEmpty(content?.contentTypeName),
     contentValue: toStringOrEmpty(content?.contentValue),
+    contentVersion: toStringOrEmpty(content?.contentVersion),
     createdAt: toStringOrEmpty(content?.createdAt),
     groupId: toStringOrNull(content?.groupId),
     id: Number(content?.id ?? 0),
@@ -294,6 +333,7 @@ function buildNodeDataFromPaletteItem(item: PaletteItem): NodeData {
       contentTypeId: content.contentTypeId,
       contentTypeName: content.contentTypeName,
       contentValue: content.contentValue,
+      contentVersion: content.version,
       groupId: content.groupId,
       siteId: content.siteId,
       propertySchema: task.propertySchema,
@@ -341,19 +381,6 @@ function buildPaletteAndCatalog(tasks: TaskApiPayload[]) {
 // 캔버스의 start 노드는 코드로 자리만 만들고, 실제 표시 이름/속성 스키마는
 // 서버 TaskList 의 ROOT 타입 task 에서 가져온다. (CONTROL 노드와 동일하게 property_schema 로 표현)
 // tasks 로드 전에 캔버스가 초기화될 수 있으므로, tasks 가 들어온 시점에도 다시 적용한다.
-// 저장된(localStorage) 노드 중 start 노드를 항상 이동 가능/삭제 불가로 정규화한다.
-// (구버전에서 draggable:false 로 저장된 경우 이동이 안 되는 문제 보정)
-function normalizePersistedStartNode(nodes: RFNode[]): RFNode[] {
-  let changed = false
-  const next = nodes.map((node) => {
-    if (!isStartNodeId(node.id)) return node
-    if (node.draggable === true && node.deletable === false && node.selectable !== false) return node
-    changed = true
-    return { ...node, draggable: true, selectable: true, deletable: false }
-  })
-  return changed ? next : nodes
-}
-
 function applyRootTaskToStartNode(nodes: RFNode[], tasks: TaskApiPayload[]): RFNode[] {
   const rootTask = tasks.find((task) => task.taskType === TASK_TYPE_ROOT)
   if (!rootTask) return nodes
@@ -683,7 +710,12 @@ type FlowEditorState = {
   canUndo: boolean
   canRedo: boolean
 
-  // 현재 편집 중인 flow 의 localStorage 키 ('new' | flowId)
+  // 마지막 저장/불러오기 이후 편집이 있었는지. 캔버스를 벗어날 때 경고할지 판단하는 데 쓴다.
+  isDirty: boolean
+  // 저장 성공 직후 호출해 "저장되지 않은 변경 없음" 상태로 되돌린다.
+  markSaved: () => void
+
+  // 현재 편집 중인 flow 의 식별자 ('new' | flowId). 메모리 전용.
   flowKey: string | null
 
   // 캔버스 표시 방향 모드 (default: 좌→우, tree: 위→아래)
@@ -710,6 +742,10 @@ type FlowEditorState = {
   selectEdge: (id: string | null) => void
   selectPalette: (item: PaletteItem | null) => void
 
+  // Ctrl(⌘) + 클릭으로 그룹 선택에서 노드/엣지 하나만 빼낸다.
+  removeNodeFromSelection: (id: string) => void
+  removeEdgeFromSelection: (id: string) => void
+
   updateSelectedNodeProps: (patch: Record<string, any>) => void
 
   setNodes: (nodes: RFNode[]) => void
@@ -730,18 +766,22 @@ type FlowEditorState = {
   pushHistoryCheckpoint: () => void
   getSelectedNode: () => RFNode | null
   loadFromFlowDefinition: (def: Record<string, unknown>) => void
+  // 외부에서 받은 정의(체크포인트 되돌리기, AI 초안 등)로 캔버스 내용을 교체한다. undo 로 되돌릴 수 있다.
+  applyFlowDefinitionWithHistory: (def: Record<string, unknown>) => void
+  // Start 노드만 남기고 모든 노드/엣지를 삭제한다.
+  clearAllNodesExceptStart: () => void
 
-  // flowKey 기준으로 localStorage 에 저장된 히스토리가 있으면 복원, 없으면 def 로 초기화
+  // 항상 서버에서 받은 def 로 초기화한다. (브라우저 저장소는 사용하지 않음)
   initFlowEditor: (flowKey: string, def: Record<string, unknown>) => void
   // 다른 taskflow 진입 등으로 에디터를 비울 때 사용 (이전 flow 의 작업상태/undo 가 남지 않도록)
   resetFlowEditor: () => void
-  // 특정 flow(또는 현재 flow) 의 저장된 히스토리 제거
-  clearPersistedHistory: (flowKey?: string) => void
-  // 신규 flow 생성 직후처럼 flowKey 가 바뀔 때, 현재 편집 상태(모드 포함)를 새 키로 이관한다.
-  // (이후 라우트 변경으로 재초기화돼도 새 키의 저장본에서 복원되어 모드/배치가 유지됨)
+  // 신규 flow 생성 직후처럼 flowKey 만 바뀔 때, 현재 편집 상태를 유지한 채 키를 갱신한다.
   adoptFlowKey: (newKey: string) => void
 
-  deleteSelectedNode: () => void
+  // 선택된 노드 전체(그룹 선택 포함) 삭제. START 는 제외된다.
+  deleteSelectedNodes: () => void
+  // 선택된 노드 전체(그룹 선택 포함) 복제. 복제한 개수를 반환한다. (엣지는 복제하지 않음)
+  duplicateSelectedNodes: () => number
   deleteSelectedEdge: () => void
   // 선택된 엣지의 시각 유형(곡선/직선/꺾은선) 변경
   setSelectedEdgeType: (edgeType: EdgeVisualType) => void
@@ -785,6 +825,9 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
   canUndo: false,
   canRedo: false,
 
+  isDirty: false,
+  markSaved: () => set({ isDirty: false }),
+
   flowKey: null,
 
   flowMode: DEFAULT_FLOW_MODE,
@@ -802,7 +845,7 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
     try {
       console.log('[TASK_PANEL][LOAD_START]', {
         groupId,
-        siteId,
+        siteId
       })
 
       const rawTasks = await listTasks({ groupId, siteId, include: 'contents' })
@@ -812,8 +855,8 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
           id: task.id,
           name: task.name,
           taskType: task.taskType,
-          contentsCount: Array.isArray((task as any)?.contents) ? (task as any).contents.length : 0,
-        })),
+          contentsCount: Array.isArray((task as any)?.contents) ? (task as any).contents.length : 0
+        }))
       })
 
       const tasks = rawTasks.map(normalizeTaskPayload)
@@ -825,7 +868,7 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
         contentsCount: contentsList.length,
         controlTaskCount: tasks.filter((task) => task.taskType === TASK_TYPE_CONTROL).length,
         actionTaskCount: tasks.filter((task) => task.taskType === 'ACTION').length,
-        rootTaskCount: tasks.filter((task) => task.taskType === TASK_TYPE_ROOT).length,
+        rootTaskCount: tasks.filter((task) => task.taskType === TASK_TYPE_ROOT).length
       })
 
       // tasks 로드 전에 캔버스가 먼저 초기화된 경우, 지금 start 노드에 ROOT task 정보를 반영한다.
@@ -842,7 +885,7 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
       set({ loadingTasks: false })
       console.log('[TASK_PANEL][LOAD_END]', {
         groupId,
-        siteId,
+        siteId
       })
     }
   },
@@ -924,6 +967,52 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
       selectedPalette: item ? buildNodeDataFromPaletteItem(item) : null
     }),
 
+  // 그룹 선택에서 노드 하나만 제외한다. (나머지 그룹은 그대로 유지)
+  // - 그룹 상태(node.selected) 해제는 React Flow 기본 동작이 이미 처리하지만,
+  //   단일 선택(selectedNodeId) 으로 남아 있으면 삭제/복제 대상에 계속 포함되므로 함께 정리한다.
+  // - 엣지는 박스 드래그와 같은 기준("그룹 노드에 하나라도 붙어 있으면 그룹")으로 다시 맞춘다.
+  //   즉 빠진 노드에 붙은 엣지 중, 반대쪽 끝도 그룹 밖인 엣지만 그룹에서 뺀다.
+  removeNodeFromSelection: (id) => {
+    const targetId = String(id)
+
+    set((state) => {
+      const nodes = state.nodes.map((node) =>
+        String(node.id) === targetId && node.selected ? { ...node, selected: false } : node
+      )
+
+      const selectedNodeIds = new Set(nodes.filter((node) => node.selected).map((node) => String(node.id)))
+
+      const edges = state.edges.map((edge) => {
+        if (!edge.selected) return edge
+
+        const source = String(edge.source)
+        const target = String(edge.target)
+        if (source !== targetId && target !== targetId) return edge
+        if (selectedNodeIds.has(source) || selectedNodeIds.has(target)) return edge
+
+        return { ...edge, selected: false }
+      })
+
+      return {
+        nodes,
+        edges,
+        selectedNodeId: state.selectedNodeId === targetId ? null : state.selectedNodeId
+      }
+    })
+  },
+
+  // 그룹 선택에서 엣지 하나만 제외한다.
+  removeEdgeFromSelection: (id) => {
+    const targetId = String(id)
+
+    set((state) => ({
+      edges: state.edges.map((edge) =>
+        String(edge.id) === targetId && edge.selected ? { ...edge, selected: false } : edge
+      ),
+      selectedEdgeId: state.selectedEdgeId === targetId ? null : state.selectedEdgeId
+    }))
+  },
+
   updateSelectedNodeProps: (patch) => {
     const { selectedNodeId, nodes, edges, viewport } = get()
     if (!selectedNodeId) return
@@ -981,42 +1070,60 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
       historyPast: [],
       historyFuture: [],
       canUndo: false,
-      canRedo: false
+      canRedo: false,
+      isDirty: false
     })
   },
 
+  applyFlowDefinitionWithHistory: (def) => {
+    const { nodes, edges, viewport, flowMode, tasks } = get()
+    const prev = makeSnapshot(nodes, edges, viewport, flowMode)
+
+    const safeDef = ensureStartNode(def, tasks)
+    const rawNodes = Array.isArray((safeDef as any).nodes) ? ((safeDef as any).nodes as RFNode[]) : []
+
+    set((state) => ({
+      nodes: applyRootTaskToStartNode(rawNodes, tasks),
+      edges: Array.isArray((safeDef as any).edges) ? ((safeDef as any).edges as RFEdge[]) : [],
+      viewport: normalizeViewport((safeDef as any).viewport ?? viewport),
+      flowMode: normalizeFlowMode((safeDef as any).flowMode ?? flowMode),
+      positionsByMode: {},
+      helperLineVertical: undefined,
+      helperLineHorizontal: undefined,
+      selectedNodeId: null,
+      selectedEdgeId: null,
+      selectedPalette: null,
+      ...pushHistory(state.historyPast, prev)
+    }))
+  },
+
+  clearAllNodesExceptStart: () => {
+    const { nodes, edges, viewport, flowMode } = get()
+
+    const startNodes = nodes.filter((node) => isStartNodeId(node.id))
+    if (startNodes.length === nodes.length && edges.length === 0) return
+
+    const prev = makeSnapshot(nodes, edges, viewport, flowMode)
+
+    set((state) => ({
+      nodes: startNodes.map((node) => (node.selected ? { ...node, selected: false } : node)),
+      edges: [],
+      selectedNodeId: null,
+      selectedEdgeId: null,
+      selectedPalette: null,
+      ...pushHistory(state.historyPast, prev)
+    }))
+  },
+
   initFlowEditor: (flowKey, def) => {
-    const persisted = readPersistedHistory(flowKey)
-
-    if (persisted) {
-      set({
-        flowKey,
-        // 과거 버전에서 저장된 히스토리는 start 노드가 draggable:false 로 굳어 있을 수 있어
-        // 복원 시 이동 가능하도록 정규화한다. (loadFromFlowDefinition 경로와 동일한 보정)
-        nodes: normalizePersistedStartNode(persisted.nodes),
-        edges: persisted.edges,
-        viewport: persisted.viewport,
-        flowMode: persisted.flowMode,
-        positionsByMode: {},
-        historyPast: persisted.historyPast,
-        historyFuture: persisted.historyFuture,
-        canUndo: persisted.historyPast.length > 0,
-        canRedo: persisted.historyFuture.length > 0,
-        selectedNodeId: null,
-        selectedEdgeId: null,
-        selectedPalette: null
-      })
-      return
-    }
-
-    // 저장된 히스토리가 없으면 flowKey 만 설정하고 def 로 초기화
+    // 브라우저 저장소를 쓰지 않으므로 항상 서버에서 내려온 def 가 유일한 소스다.
+    // (저장하지 않은 편집 내용은 페이지를 벗어나면 사라진다)
     set({ flowKey })
     get().loadFromFlowDefinition(def)
   },
 
   resetFlowEditor: () =>
     set({
-      // flowKey=null 로 두어 비어있는 동안 localStorage 에 잘못 저장되지 않게 한다
       flowKey: null,
       flowMode: DEFAULT_FLOW_MODE,
       positionsByMode: {},
@@ -1029,29 +1136,14 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
       historyFuture: [],
       canUndo: false,
       canRedo: false,
+      isDirty: false,
       selectedNodeId: null,
       selectedEdgeId: null,
       selectedPalette: null
     }),
 
-  clearPersistedHistory: (flowKey) => {
-    const key = flowKey ?? get().flowKey
-    if (!key) return
-    clearPersistedHistoryByKey(key)
-  },
-
   adoptFlowKey: (newKey) => {
-    const { nodes, edges, viewport, flowMode, historyPast, historyFuture } = get()
-    // 현재 편집 상태를 새 키로 즉시 저장해 두면, 라우트 변경 → resetFlowEditor → initFlowEditor 가
-    // 새 키의 저장본을 읽어 모드/노드 배치/히스토리를 그대로 복원한다.
-    writePersistedHistory(newKey, {
-      nodes,
-      edges,
-      viewport,
-      flowMode,
-      historyPast,
-      historyFuture
-    })
+    // 신규 flow 저장 직후 'new' → '{id}' 로 키만 갈아끼운다. 편집 상태는 메모리에 그대로 유지된다.
     set({ flowKey: newKey })
   },
 
@@ -1137,7 +1229,7 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
     if (denyReason) return denyReason
 
     const edgeWithArrow: RFEdge = {
-      id: String(Date.now()),
+      id: nextUniqueId(new Set(edges.map((edge) => String(edge.id)))),
       source: connection.source ?? '',
       target: connection.target ?? '',
       sourceHandle: connection.sourceHandle ?? null,
@@ -1183,16 +1275,16 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
     const next = reconnected.map((edge) =>
       edge.id === oldEdge.id
         ? {
-          ...edge,
-          data: {
-            ...edge.data,
-            sourceNodeId: newConnection.source ?? null,
-            targetNodeId: newConnection.target ?? null,
-            sourceHandleId: newConnection.sourceHandle ?? null,
-            targetHandleId: newConnection.targetHandle ?? null,
-            waypoints: undefined
+            ...edge,
+            data: {
+              ...edge.data,
+              sourceNodeId: newConnection.source ?? null,
+              targetNodeId: newConnection.target ?? null,
+              sourceHandleId: newConnection.sourceHandle ?? null,
+              targetHandleId: newConnection.targetHandle ?? null,
+              waypoints: undefined
+            }
           }
-        }
         : edge
     ) as RFEdge[]
 
@@ -1206,9 +1298,7 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
 
   setEdgeWaypoints: (edgeId, waypoints) => {
     set((state) => ({
-      edges: state.edges.map((edge) =>
-        edge.id === edgeId ? { ...edge, data: { ...edge.data, waypoints } } : edge
-      )
+      edges: state.edges.map((edge) => (edge.id === edgeId ? { ...edge, data: { ...edge.data, waypoints } } : edge))
     }))
   },
 
@@ -1227,15 +1317,18 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
     return nodes.find((node) => node.id === selectedNodeId) ?? null
   },
 
-  deleteSelectedNode: () => {
+  deleteSelectedNodes: () => {
     const { selectedNodeId, nodes, edges, viewport } = get()
-    if (!selectedNodeId) return
-    if (isStartNodeId(selectedNodeId)) return
 
+    const targetIds = getEditableSelectedNodeIds(nodes, selectedNodeId)
+    if (targetIds.length === 0) return
+
+    const targets = new Set(targetIds)
     const prev = makeSnapshot(nodes, edges, viewport, get().flowMode)
 
-    const nextNodes = nodes.filter((node) => node.id !== selectedNodeId)
-    const nextEdges = edges.filter((edge) => edge.source !== selectedNodeId && edge.target !== selectedNodeId)
+    const nextNodes = nodes.filter((node) => !targets.has(String(node.id)))
+    // 삭제된 노드에 붙어 있던 엣지도 함께 정리한다.
+    const nextEdges = edges.filter((edge) => !targets.has(String(edge.source)) && !targets.has(String(edge.target)))
 
     set((state) => ({
       nodes: nextNodes,
@@ -1247,11 +1340,93 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
     }))
   },
 
+  duplicateSelectedNodes: () => {
+    const { selectedNodeId, nodes, edges, viewport, flowMode } = get()
+
+    const targetIds = getEditableSelectedNodeIds(nodes, selectedNodeId)
+    if (targetIds.length === 0) return 0
+
+    const targets = new Set(targetIds)
+    const sourceNodes = nodes.filter((node) => targets.has(String(node.id)))
+    const offset = computeDuplicateOffset(sourceNodes, nodes, flowMode)
+
+    const usedNodeIds = new Set(nodes.map((node) => String(node.id)))
+
+    // 원본 id → 복제본 id. 엣지 복제 시 양 끝점을 새 id 로 바꿔 붙이기 위해 필요하다.
+    const idMap = new Map<string, string>()
+
+    const copies: RFNode[] = sourceNodes.map((node) => {
+      const id = nextUniqueId(usedNodeIds)
+      idMap.set(String(node.id), id)
+
+      return {
+        ...node,
+        id,
+        position: {
+          x: Number(node.position?.x ?? 0) + offset.x,
+          y: Number(node.position?.y ?? 0) + offset.y
+        },
+        // properties 등 중첩 객체를 원본과 공유하지 않도록 깊은 복사한다.
+        data: cloneNodeData(node.data),
+        selected: true,
+        dragging: false
+      }
+    })
+
+    // 그룹 안에서 양 끝점이 모두 복제된 엣지는 복제본끼리 다시 연결해 준다.
+    // (한쪽 끝만 선택된 엣지는 대상이 모호하므로 복제하지 않는다)
+    const usedEdgeIds = new Set(edges.map((edge) => String(edge.id)))
+    const edgeCopies: RFEdge[] = []
+
+    edges.forEach((edge) => {
+      const nextSource = idMap.get(String(edge.source))
+      const nextTarget = idMap.get(String(edge.target))
+      if (!nextSource || !nextTarget) return
+
+      edgeCopies.push({
+        ...edge,
+        id: nextUniqueId(usedEdgeIds),
+        source: nextSource,
+        target: nextTarget,
+        selected: false,
+        data: {
+          ...(edge.data ?? {}),
+          sourceNodeId: nextSource,
+          targetNodeId: nextTarget,
+          // 경유점(waypoint)도 노드와 같은 만큼 이동시켜 원본과 같은 모양을 유지한다.
+          waypoints: Array.isArray(edge.data?.waypoints)
+            ? edge.data.waypoints.map((point) => ({
+                x: Number(point?.x ?? 0) + offset.x,
+                y: Number(point?.y ?? 0) + offset.y
+              }))
+            : edge.data?.waypoints
+        }
+      })
+    })
+
+    const prev = makeSnapshot(nodes, edges, viewport, flowMode)
+
+    // 원본 선택은 해제하고 복제본만 선택 상태로 남겨, 바로 이어서 이동/삭제할 수 있게 한다.
+    const nextNodes = [...nodes.map((node) => (node.selected ? { ...node, selected: false } : node)), ...copies]
+    const nextEdges = [...edges.map((edge) => (edge.selected ? { ...edge, selected: false } : edge)), ...edgeCopies]
+
+    set((state) => ({
+      nodes: nextNodes,
+      edges: nextEdges,
+      selectedNodeId: copies[0]?.id ?? null,
+      selectedEdgeId: null,
+      selectedPalette: null,
+      ...pushHistory(state.historyPast, prev)
+    }))
+
+    return copies.length
+  },
+
   deleteSelectedEdge: () => {
     const { selectedEdgeId, edges, viewport } = get()
     if (!selectedEdgeId) return
 
-    const prev = makeSnapshot(get().nodes, edges, viewport,get().flowMode)
+    const prev = makeSnapshot(get().nodes, edges, viewport, get().flowMode)
 
     set((state) => ({
       edges: edges.filter((edge) => edge.id !== selectedEdgeId),
@@ -1332,9 +1507,8 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
   confirmDeleteOpen: false,
 
   openDeleteConfirm: () => {
-    const { selectedNodeId } = get()
-    if (!selectedNodeId) return
-    if (isStartNodeId(selectedNodeId)) return
+    const { nodes, selectedNodeId } = get()
+    if (getEditableSelectedNodeIds(nodes, selectedNodeId).length === 0) return
     set({ confirmDeleteOpen: true })
   },
 
@@ -1342,7 +1516,7 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
 
   confirmDeleteSelectedNode: () => {
     set({ confirmDeleteOpen: false })
-    get().deleteSelectedNode()
+    get().deleteSelectedNodes()
   },
 
   confirmDeleteEdgeOpen: false,
@@ -1411,30 +1585,5 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
     }))
   }
 }))
-
-// nodes/edges/viewport/history 가 바뀔 때마다 현재 flow 의 히스토리를 localStorage 에 저장
-useFlowEditorStore.subscribe((state, prev) => {
-  if (!state.flowKey) return
-
-  if (
-    state.nodes === prev.nodes &&
-    state.edges === prev.edges &&
-    state.viewport === prev.viewport &&
-    state.flowMode === prev.flowMode &&
-    state.historyPast === prev.historyPast &&
-    state.historyFuture === prev.historyFuture
-  ) {
-    return
-  }
-
-  writePersistedHistory(state.flowKey, {
-    nodes: state.nodes,
-    edges: state.edges,
-    viewport: state.viewport,
-    flowMode: state.flowMode,
-    historyPast: state.historyPast,
-    historyFuture: state.historyFuture
-  })
-})
 
 export { buildDefaultProperties, generateNodeId, buildNodeDataFromPaletteItem }

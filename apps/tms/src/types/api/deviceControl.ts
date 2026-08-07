@@ -19,12 +19,12 @@ export interface InstantActionsPayload {
   actions: InstantAction[]
 }
 
-export interface InstantActionsRequestBody {
-  //userId: string
-  payload: InstantActionsPayload
-}
+// export interface InstantActionsRequestBody {
+//   //userId: string
+//   payload: InstantActionsPayload
+// }
 
 export interface InstantActionsRequest {
   deviceId: string
-  body: InstantActionsRequestBody
+  body: InstantActionsPayload
 }

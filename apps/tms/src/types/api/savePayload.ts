@@ -1,6 +1,13 @@
 import { TaskFlowStatus, TaskFlow } from '@/types/taskflow'
 
-type SaveMode = 'save' | 'temp'
+/**
+ * 저장 대상
+ *  - 'saved' : flowDefinitionDraft(저장 버전) 만 갱신
+ *  - 'both'  : flowDefinitionDraft + flowDefinition(최종 버전) 동시 갱신
+ *
+ * 저장 버전은 어떤 경우에도 항상 갱신된다. (최종 버전만 따로 갱신하는 저장은 없다)
+ */
+export type SaveMode = 'saved' | 'both'
 type FlowMode = 'default' | 'tree'
 
 type ViewportLike =
@@ -32,6 +39,14 @@ const DEFAULT_VIEWPORT = {
   x: 0,
   y: 0,
   zoom: 1
+}
+
+// 아직 값이 없는 쪽(flowDefinition / flowDefinitionDraft)에 넣는 값
+const EMPTY_FLOW_DEFINITION = {}
+
+// 최종 버전(flowDefinition)을 갱신하는 저장인지
+function writesFinal(mode: SaveMode) {
+  return mode === 'both'
 }
 
 function normalizeOrgId(value: any) {
@@ -158,7 +173,7 @@ function buildContentsFromNodes(nodes: any[]) {
         siteId: data.siteId ?? null,
         status: 'ACTIVE',
         updatedAt: '',
-        version: '1.0.0'
+        version: data.contentVersion ?? ''
       }
     })
     .filter(Boolean)
@@ -167,11 +182,7 @@ function buildContentsFromNodes(nodes: any[]) {
 }
 
 function getSnapshotStatus(mode: SaveMode) {
-  return mode === 'temp' ? TaskFlowStatus.DRAFT : TaskFlowStatus.ACTIVE
-}
-
-function getPublishedFlowDefinition(baseFlow: any) {
-  return baseFlow?.flowDefinition ?? null
+  return writesFinal(mode) ? TaskFlowStatus.ACTIVE : TaskFlowStatus.DRAFT
 }
 
 function getBaseViewport(baseFlow: any) {
@@ -187,6 +198,25 @@ function getBaseFlowMode(baseFlow: any): FlowMode {
   return normalizeFlowMode(
     baseFlow?.flowDefinitionDraft?.flowMode ?? baseFlow?.flowDefinition?.flowMode ?? baseFlow?.flowMode
   )
+}
+
+// 최종 버전을 갱신할 때 기존 Behavior Tree가 변경되면 버전을 하나 올린다.
+function resolveVersion(mode: SaveMode, baseFlow: any, behaviorTree?: string): number {
+  const baseVersion = baseFlow?.version ?? 0
+
+  // 최종 버전을 갱신하지 않는 저장은 버전을 유지한다.
+  if (!writesFinal(mode)) return baseVersion
+
+  const prevBt = String(baseFlow?.behaviorTree ?? '').trim()
+  const nextBt = String(behaviorTree ?? '').trim()
+
+  // 이전 BT가 존재하고 내용이 실제로 바뀐 경우에만 +1
+  // (최초 저장 시 prevBt는 placeholder ' ' → trim 후 '' 이므로 증가하지 않음)
+  if (prevBt && nextBt && prevBt !== nextBt) {
+    return baseVersion + 1
+  }
+
+  return baseVersion
 }
 
 export function buildTaskFlowPersistPayload({
@@ -213,6 +243,7 @@ export function buildTaskFlowPersistPayload({
   const resolvedGroupId = normalizeOrgId(groupId) ?? normalizeOrgId(baseFlow?.groupId)
   const resolvedSiteId = normalizeOrgId(siteId) ?? normalizeOrgId(baseFlow?.siteId)
   const resolvedStatus = getSnapshotStatus(mode)
+  const resolvedVersion = resolveVersion(mode, baseFlow, behaviorTree)
 
   const snapshot = {
     id: flowId ?? baseFlow?.id ?? 0,
@@ -220,7 +251,7 @@ export function buildTaskFlowPersistPayload({
     groupId: resolvedGroupId,
     siteId: resolvedSiteId,
     status: resolvedStatus,
-    version: baseFlow?.version ?? 0,
+    version: resolvedVersion,
     createdAt: baseFlow?.createdAt ?? '',
     updatedAt: baseFlow?.updatedAt ?? '',
     description: flowDescription || '',
@@ -232,7 +263,9 @@ export function buildTaskFlowPersistPayload({
     flowMode: resolvedFlowMode
   }
 
-  const publishedFlowDefinition = mode === 'save' ? snapshot : (getPublishedFlowDefinition(baseFlow) ?? snapshot)
+  // 갱신하지 않는 쪽(최종 버전)은 기존 값을 그대로 되돌려 보내 보존한다.
+  const isFinal = writesFinal(mode)
+  const previousFinal = baseFlow?.flowDefinition ?? EMPTY_FLOW_DEFINITION
 
   return {
     id: flowId ?? baseFlow?.id ?? 0,
@@ -240,15 +273,16 @@ export function buildTaskFlowPersistPayload({
     siteId: resolvedSiteId,
     name: flowName,
     description: flowDescription || undefined,
-    version: baseFlow?.version ?? 0,
+    version: resolvedVersion,
     status: resolvedStatus,
     createdAt: baseFlow?.createdAt ?? '',
     updatedAt: baseFlow?.updatedAt ?? '',
-    flowDefinition: publishedFlowDefinition,
+    flowDefinition: isFinal ? snapshot : previousFinal,
     flowDefinitionDraft: snapshot,
     robotSkillIds: baseFlow?.robotSkillIds ?? [],
     robotSkillInfos: baseFlow?.robotSkillInfos ?? [],
-    behaviorTree: mode === 'save' ? behaviorTree?.trim() || ' ' : (baseFlow?.behaviorTree ?? ' '),
+    // BT 는 최종 버전(배포 대상)과 짝을 이룬다. 최종 버전을 갱신하지 않으면 이전 BT 를 그대로 유지한다.
+    behaviorTree: isFinal ? behaviorTree?.trim() || ' ' : (baseFlow?.behaviorTree ?? ' '),
     tasks,
     contents,
     nodes: normalizedNodes,

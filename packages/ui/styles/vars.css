@@ -223,7 +223,7 @@
   --t-sidebar-fg: var(--color-neutral-90);
   --t-sidebar-hover-bg: rgba(255, 255, 255, 0.5);
   --t-sidebar-press-bg: rgba(255, 255, 255, 0.75);
-  --t-sidebar-pad: 0.8rem;
+  --t-sidebar-pad: 1.6rem;
   --t-sidebar-item-gap: 0.4rem;
   --t-gnb-radius: var(--radius-md);
 
@@ -234,6 +234,24 @@
   --t-table-border: rgba(140, 134, 120, 0.22);
 
   --t-tab-active: #4e422c;
+  --t-toggle-active-bg: #7d776a;
+  /* rgba() 로 반투명 강조(halo)를 만들 때 사용. --t-toggle-active-bg 와 값이 같아야 한다. */
+  --t-toggle-active-bg-rgb: 125, 119, 106;
+  --t-play-btn-border: #7d776a;
+  --t-play-btn-bg: #f4f1ec;
+  --t-play-btn-text: #7d776a;
+  --t-play-btn-hover-bg: #e8e1d8;
+
+  --t-major-action-btn-bg: #7d776a;
+  --t-major-action-btn-border: #7d776a;
+  --t-major-action-btn-text: #ffffff;
+  --t-major-action-btn-hover-bg: #6b655a;
+
+  --t-primary-btn-bg: #7d776a;
+  --t-primary-btn-text: var(--color-neutral-10);
+  --t-primary-btn-hover-bg: #6b655a;
+  --t-primary-btn-active-bg: #59544b;
+
   --t-select-accent: #b91c4c;
   --t-select-accent-hover: #cd7b94;
 
@@ -257,7 +275,7 @@
   --t-sidebar-bg: var(--color-secondary-15);
   --t-sidebar-fg: var(--color-neutral-70);
   --t-sidebar-hover-bg: var(--color-secondary-20);
-  --t-sidebar-press-bg: var(--color-secondary-30);
+  --t-sidebar-press-bg: rgba(255, 255, 255);
   /* 선택 박스의 둥근 모양·여백(pad/gap/radius)은 테마 공통 유지 → legacy 미override */
 
   --t-page-bg: var(--color-secondary-10);
@@ -267,6 +285,23 @@
   --t-table-border: rgba(53, 64, 86, 0.1);
 
   --t-tab-active: var(--color-primary-70);
+  --t-toggle-active-bg: #3b82f6;
+  --t-toggle-active-bg-rgb: 59, 130, 246;
+  --t-play-btn-border: #6ee7b7;
+  --t-play-btn-bg: #f0fdf4;
+  --t-play-btn-text: #059669;
+  --t-play-btn-hover-bg: #dcfce7;
+
+  --t-major-action-btn-bg: var(--color-primary-70);
+  --t-major-action-btn-border: var(--color-primary-70);
+  --t-major-action-btn-text: #ffffff;
+  --t-major-action-btn-hover-bg: var(--color-primary-60);
+
+  --t-primary-btn-bg: var(--color-primary-70);
+  --t-primary-btn-text: var(--color-neutral-10);
+  --t-primary-btn-hover-bg: var(--color-primary-80);
+  --t-primary-btn-active-bg: var(--color-primary-90);
+
   --t-select-accent: var(--color-primary-70);
   --t-select-accent-hover: var(--color-primary-50);
 

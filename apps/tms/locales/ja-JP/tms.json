@@ -10,18 +10,18 @@
       "redoTitle": "다시 실행 (Ctrl+Shift+Z)",
       "editInfo": "정보 수정",
       "editInfoTitle": "Task Flow 정보 수정",
-      "tempSave": "임시 저장",
-      "tempSaving": "임시 저장중...",
-      "tempSaveNotConnected": "임시 저장 기능이 연결되지 않았습니다.",
-      "tempSaveNoChanges": "임시 저장할 변경사항이 없습니다.",
       "save": "저장",
       "saving": "저장중...",
       "saveNotConnected": "저장 기능이 연결되지 않았습니다.",
-      "saveNoChanges": "저장할 변경사항이 없습니다."
+      "saveNoChanges": "저장할 변경사항이 없습니다.",
+      "resetToFinal": "최종 버전으로 리셋",
+      "resetToFinalTitle": "캔버스 내용을 저장된 최종 버전으로 되돌립니다.",
+      "resetToFinalNone": "저장된 최종 버전이 없습니다."
     },
     "confirmDelete": {
       "title": "노드를 삭제할까요?",
-      "description": "삭제하면 되돌릴 수 없습니다."
+      "description": "삭제하면 되돌릴 수 없습니다.",
+      "multiTitle": "선택한 노드 {{count}}개를 삭제할까요?"
     },
     "align": {
       "button": "정렬",
@@ -104,10 +104,7 @@
       "newFlowTitle": "새 Task Flow",
       "defaultTitle": "Task Flow",
       "warnings": "경고:",
-      "btSuccessTitle": "BT 변환 성공",
-      "btSuccessMessage": "BT 변환이 성공했습니다.",
       "btUnknownError": "BT 변환 중 알 수 없는 오류가 발생했습니다.",
-      "btFailTitle": "BT 변환 실패",
       "orgRequired": "조직 정보가 필요합니다. 그룹과 사이트를 모두 선택한 뒤 다시 시도해주세요.",
       "nameRequired": "Task Flow 이름은 필수입니다.",
       "btNoResult": "BT 변환 결과가 없습니다. 다시 시도해주세요.",
@@ -116,25 +113,51 @@
       "infoDialogTitle": "Task Flow 정보 수정",
       "infoDialogDesc": "Task Flow 이름과 설명을 수정할 수 있습니다.",
       "apply": "적용",
-      "btTempSave": "임시 저장",
-      "btTempSaving": "임시 저장 중...",
-      "btSave": "저장",
-      "btSaving": "저장 중...",
-      "tempSaveDoneTitle": "임시 저장 완료",
       "saveDoneTitle": "저장 완료",
-      "tempSaveDoneDesc": "작업 내용이 임시 저장되었습니다.",
-      "saveDoneDesc": "작업 내용이 성공적으로 저장되었습니다.",
-      "tempSaveFailTitle": "임시 저장 실패",
+      "saveDoneDesc": "작업 내용을 저장 버전에 저장했습니다.",
       "saveFailTitle": "저장 실패",
       "moveToMapIdMismatch": "MoveTo Taskはすべて同じmapIdである必要があります。",
       "leaveConfirmDesc": "保存されていない変更は保持されません。",
       "leaveConfirmYes": "はい",
-      "leaveConfirmNo": "いいえ"
+      "leaveConfirmNo": "いいえ",
+      "finalSaveDoneTitle": "최종 버전으로 저장되었습니다",
+      "finalSaveDoneDesc": "작업 내용을 저장 버전과 최종 버전에 함께 저장했습니다.",
+      "finalSkipped": "최종 버전은 갱신하지 않았습니다. (Behavior Tree 생성 불가)"
     },
     "sound": {
       "play": "재생",
       "pause": "일시정지",
       "stop": "정지"
+    },
+    "nodeActions": {
+      "duplicate": "복제",
+      "duplicateWithCount": "복제 ({{count}})",
+      "duplicateTitle": "선택 노드 복제 (Ctrl + D)",
+      "duplicateEmpty": "복제할 노드를 먼저 선택하세요.",
+      "deleteTitle": "선택 노드 삭제 (Delete)",
+      "deleteWithCount": "삭제 ({{count}})",
+      "deleteEmpty": "삭제할 노드를 먼저 선택하세요."
+    },
+    "leaveConfirm": {
+      "title": "저장되지 않은 변경이 있습니다",
+      "description": "저장되지 않은 사항은 나가면 유지되지 않습니다.\n그래도 나가시겠습니까?",
+      "confirm": "나가기"
+    },
+    "finalReset": {
+      "title": "최종 버전으로 리셋할까요?",
+      "description": "현재 캔버스 내용을 저장된 최종 버전으로 바꿉니다.\n저장하기 전까지는 서버에 반영되지 않고, 되돌리기(Ctrl+Z)로 취소할 수 있습니다.",
+      "confirm": "리셋"
+    },
+    "btWarning": {
+      "title": "Behavior Tree 생성이 불가능합니다",
+      "description": "현재 구성은 Behavior Tree 로 변환할 수 없어 최종 버전으로는 저장할 수 없습니다.\n저장 버전으로만 저장하시겠습니까?",
+      "confirm": "저장 버전으로 저장"
+    },
+    "saveConfirm": {
+      "title": "저장하시겠습니까?",
+      "description": "현재 캔버스 구성을 저장합니다.",
+      "saveFinal": "최종 버전 저장",
+      "saveFinalHint": "체크하면 저장 버전과 함께 최종 버전(배포에 쓰이는 버전)도 갱신합니다.\n(Behavior Tree 생성이 가능한 구성이어야 합니다)"
     }
   },
   "infoDialog": {
@@ -164,7 +187,15 @@
       "descPrefix": "우측 상단의 ",
       "createButton": "신규 생성",
       "descSuffix": " 버튼으로 Task Flow를 추가해보세요."
-    }
+    },
+    "copying": "복제 중...",
+    "copyDoneTitle": "복제 완료",
+    "copyFailTitle": "복제 실패",
+    "select": "선택",
+    "selectCancel": "선택 취소",
+    "copySelected": "복제 ({{count}})",
+    "copyBulkDoneDesc": "{{count}}개의 Task Flow 를 복제했습니다.",
+    "copyBulkPartialDesc": "{{successCount}}개를 복제했고 {{failCount}}개는 실패했습니다."
   },
   "detail": {
     "status": {
@@ -228,6 +259,12 @@
       "deactivateFail": "비활성화 실패",
       "deleteFail": "삭제 실패",
       "processFail": "처리 실패"
+    },
+    "flowTab": {
+      "final": "최종 버전",
+      "saved": "저장 버전",
+      "finalEmpty": "저장된 최종 버전이 없습니다.",
+      "savedEmpty": "저장된 버전이 없습니다."
     }
   },
   "deploy": {

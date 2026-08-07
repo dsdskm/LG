@@ -1,7 +1,12 @@
 // hooks/useLogReplayData.js
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { fileApis } from '@/apis'
-import { extractFilenameFromContentDisposition, triggerAnchorDownload } from '../logReplayRender.js'
+import {
+  extractFilenameFromContentDisposition,
+  triggerAnchorDownload,
+  compileKeywordMatcher
+} from '../logReplayRender.js'
 import useLogSearch from './useLogSearch.js'
 import {
   loadPosesFromMcapUrl,
@@ -51,8 +56,7 @@ function dedupeSortedByTSec(arr) {
   return out
 }
 
-const EMPTY_OPTION = { id: '__empty__', label: '파일 없음' }
-const INITIAL_HINT = 'mcap 파일 선택 후 조회 버튼을 눌러주세요'
+const EMPTY_OPTION = { id: '__empty__', labelKey: 'logreplay.header.noFile' }
 
 // ✅ 맵 통합 로더: pose 윈도우를 읽는 "같은 청크 스캔"에 costmap/path/goal을 편승시켜
 //   같은 청크를 토픽마다 반복 압축해제하던 낭비를 제거한다(ReplayControls 편승 패턴 이식).
@@ -113,6 +117,7 @@ export default function useLogReplayData({
   // ✅ [ADD] 사용자 seek 카운터 getter — 변화 감지 시 pose 누적 캐시 리셋(연속 재생은 누적 유지)
   getSeekEpoch
 }) {
+  const { t } = useTranslation('robot')
   // 스트리밍 상태 ref
   const expectedDurationSecRef = useRef(0)
   const decodedSpanSecRef = useRef(0)
@@ -202,6 +207,8 @@ export default function useLogReplayData({
   const logWindowCacheRef = useRef([]) // [{tSec, epochMs, level, text}] sorted
   const lastLogApplyIdxRef = useRef(-1)
   const appliedKeywordRef = useRef('')
+  // ✅ appliedKeywordRef가 바뀔 때만 재컴파일(매 tick마다 정규식 재생성 방지). "/pattern/flags"면 정규식 매칭.
+  const compiledKeywordMatcherRef = useRef(null)
 
   // ✅ [ADD] 누적/seek 모드 구분
   const logAccModeRef = useRef('seek') // 'seek' | 'accumulate'
@@ -311,8 +318,8 @@ export default function useLogReplayData({
   }, [loadPhase, setLoadPhase])
   const rightOverlayVisible = useMemo(() => loadPhase === 'init' || loadPhase === 'error', [loadPhase])
   const rightOverlayText = useMemo(
-    () => (loadPhase === 'init' ? INITIAL_HINT : loadPhase === 'error' ? '로딩 실패' : ''),
-    [loadPhase]
+    () => (loadPhase === 'init' ? t('logreplay.map.initialHint') : loadPhase === 'error' ? t('logreplay.map.loadFailed') : ''),
+    [loadPhase, t]
   )
   // presigned URL
   const presignedCacheRef = useRef(new Map())
@@ -710,8 +717,11 @@ export default function useLogReplayData({
   )
 
   // ✅ [ADD] playhead 기준 로그 표시 (window cache에서 선택)
+  // force=true: endIdx(재생 위치)가 이전과 같아도 강제로 재계산.
+  //   키워드/레벨 필터만 바뀌고 재생 위치는 그대로인 경우(예: 정지 상태에서 검색)
+  //   endIdx 게이트에 걸려 필터가 적용되지 않고 하이라이트만 되는 문제를 방지한다.
   const applyLogsByPlayhead = useCallback(
-    (playSec) => {
+    (playSec, force = false) => {
       const entries = logWindowCacheRef.current
 
       if (!Array.isArray(entries) || entries.length === 0) return
@@ -730,25 +740,24 @@ export default function useLogReplayData({
       }
       const endIdx = lo
 
-      if (endIdx === lastLogApplyIdxRef.current) return
+      if (!force && endIdx === lastLogApplyIdxRef.current) return
       lastLogApplyIdxRef.current = endIdx
 
       const visible = endIdx <= 1 ? entries : entries.slice(0, endIdx)
 
       // 레벨/키워드 필터(현재 상태 기준)
       const levels = activeLevelsRef.current || []
-      const keyword = (appliedKeywordRef.current || '').toLowerCase()
+      const keywordRaw = appliedKeywordRef.current || ''
 
       let filtered = visible
       if (levels.length && levels.length < 5) {
         filtered = filtered.filter((e) => levels.includes(e.level))
       }
-      if (keyword) {
-        filtered = filtered.filter((e) =>
-          String(e.text || '')
-            .toLowerCase()
-            .includes(keyword)
-        )
+      if (keywordRaw) {
+        // ✅ "/pattern/flags" 형태면 정규식으로, 아니면 대소문자무시 부분일치로 매칭
+        //    (하이라이트와 동일한 파싱 규칙 — compileKeywordMatcher/parseSlashRegex 공유)
+        const matcher = compiledKeywordMatcherRef.current || compileKeywordMatcher(keywordRaw)
+        filtered = filtered.filter((e) => matcher(e.text))
       }
 
       // ✅ 실제 표시 범위 계산
@@ -756,12 +765,14 @@ export default function useLogReplayData({
       const filtSlice = filtered.length > MAX_FILTER_VIEW ? filtered.slice(-MAX_FILTER_VIEW) : filtered
 
       // ✅ 이전과 길이가 같으면 setState 스킵 (새 배열 참조로 인한 불필요 리렌더 방지)
+      //   force=true(키워드/필터 변경 직후)일 때는 내용이 바뀌었어도 길이가 우연히 같을 수 있으므로
+      //   길이 비교로 스킵하지 않고 항상 갱신한다.
       setLogLines((prev) => {
-        if (prev.length === baseSlice.length) return prev
+        if (!force && prev.length === baseSlice.length) return prev
         return baseSlice.map((e) => e.text)
       })
       setFilteredLines((prev) => {
-        if (prev.length === filtSlice.length) return prev
+        if (!force && prev.length === filtSlice.length) return prev
         return filtSlice.map((e) => e.text)
       })
     },
@@ -774,19 +785,41 @@ export default function useLogReplayData({
   }, [applyLogsByPlayhead])
   // ── overlay playhead 적용 (costmap/path/goal 일괄) ──
 
+  // ✅ 재생 위치가 그대로여도(정지 상태) 로그 필터를 강제로 즉시 재적용.
+  //   키워드 검색/레벨 필터 토글처럼 "재생 위치는 안 바뀌었는데 필터 기준만 바뀐" 경우에 사용.
+  //   (endIdx 게이트 때문에 다음 250ms tick까지 기다려도 반영 안 되는 문제 방지)
+  const reapplyLogFilterNow = useCallback(() => {
+    try {
+      const t = typeof getPlayTimeSec === 'function' ? Number(getPlayTimeSec()) : Number.NaN
+      if (Number.isFinite(t)) applyLogsByPlayheadRef.current?.(t, true)
+    } catch {}
+  }, [getPlayTimeSec])
+
   const handleKeywordSearchClick = useCallback(async () => {
     const keyword = (pendingKeywordRef.current || '').trim()
 
     // 키워드는 logWindowCache 기반 ref 필터(applyLogsByPlayhead)로 반영
     appliedKeywordRef.current = keyword
+    compiledKeywordMatcherRef.current = compileKeywordMatcher(keyword)
     setAppliedKeyword(keyword)
 
-    // 현재 시점 즉시 반영 (다음 250ms tick 기다리지 않도록)
-    try {
-      const t = typeof getPlayTimeSec === 'function' ? Number(getPlayTimeSec()) : Number.NaN
-      if (Number.isFinite(t)) applyLogsByPlayheadRef.current?.(t)
-    } catch {}
-  }, [getPlayTimeSec])
+    reapplyLogFilterNow()
+  }, [reapplyLogFilterNow])
+
+  // ✅ 레벨 체크박스 토글. activeLevelsRef를 "먼저" 동기적으로 갱신한 뒤 강제 재적용해야 한다.
+  //   setLevelFilter(state)만 하면 activeLevelsRef는 useEffect(다음 렌더 이후)에야 갱신되므로,
+  //   그 직후 reapplyLogFilterNow를 불러도 예전 레벨 기준으로 필터링되어 체크박스가 무반응처럼 보인다.
+  const toggleLevel = useCallback(
+    (lv) => {
+      const next = { ...levelFilter, [lv]: !levelFilter[lv] }
+      activeLevelsRef.current = Object.entries(next)
+        .filter(([, v]) => !!v)
+        .map(([k]) => k)
+      setLevelFilter(next)
+      reapplyLogFilterNow()
+    },
+    [levelFilter, reapplyLogFilterNow]
+  )
 
   useEffect(() => {
     if (typeof getPlayTimeSec !== 'function') return
@@ -843,7 +876,7 @@ export default function useLogReplayData({
     const downloadUrl = await getPresignedUrl(selectedLogId)
     if (!downloadUrl) {
       setIsPreparingDownload(false)
-      alert('다운로드 URL이 설정되지 않았습니다.')
+      alert(t('logreplay.alerts.downloadUrlMissing'))
       return
     }
 
@@ -851,7 +884,7 @@ export default function useLogReplayData({
 
     try {
       const resp = await fetch(downloadUrl, { mode: 'cors' })
-      if (!resp.ok) throw new Error(`다운로드 실패: HTTP ${resp.status}`)
+      if (!resp.ok) throw new Error(t('logreplay.alerts.downloadFailed', { status: resp.status }))
 
       const blob = await resp.blob()
       const cd = resp.headers.get('Content-Disposition') || resp.headers.get('content-disposition')
@@ -865,7 +898,7 @@ export default function useLogReplayData({
             suggestedName: finalFileName,
             types: [
               {
-                description: 'MCAP 로그 파일',
+                description: t('logreplay.alerts.mcapFileDescription'),
                 accept: { 'application/octet-stream': ['.mcap'], 'application/x-mcap': ['.mcap'] }
               }
             ]
@@ -892,7 +925,7 @@ export default function useLogReplayData({
       setIsPreparingDownload(false)
       triggerAnchorDownload(downloadUrl, fallbackFileName, true)
     }
-  }, [selectedLogId, logOptions, getPresignedUrl])
+  }, [selectedLogId, logOptions, getPresignedUrl, t])
 
   // Lichtblick
   const handleOpenLichtblick = useCallback(async () => {
@@ -903,7 +936,7 @@ export default function useLogReplayData({
 
     const downloadUrl = await getPresignedUrl(selectedLogId)
     if (!downloadUrl) {
-      alert('Logfile URL not found')
+      alert(t('logreplay.alerts.lichtblickUrlNotFound'))
       return
     }
     const ds = 'remote-file'
@@ -916,7 +949,7 @@ export default function useLogReplayData({
     const href = u.toString()
     const popup = window.open(href, '_blank', 'noopener,noreferrer')
     if (popup) popup.opener = null
-  }, [selectedLogId, logOptions, getPresignedUrl])
+  }, [selectedLogId, logOptions, getPresignedUrl, t])
 
   const TOPICS = {
     grid: '/carto_service/occupancygrid',
@@ -935,13 +968,13 @@ export default function useLogReplayData({
 
     const filename = (selected.label ?? '').toLowerCase()
     if (!filename.includes('mcap')) {
-      alert('선택한 항목은 분석 가능한 파일이 아닙니다.')
+      alert(t('logreplay.alerts.notAnalyzableFile'))
       return
     }
 
     const downloadUrl = await getPresignedUrl(selectedLogId)
     if (!downloadUrl) {
-      alert('다운로드 URL이 설정되지 않았습니다.')
+      alert(t('logreplay.alerts.downloadUrlMissing'))
       return
     }
 
@@ -1274,7 +1307,7 @@ export default function useLogReplayData({
           } else {
             logWindowCacheRef.current = []
             setLogLines([])
-            setFilteredLines(['표시할 로그가 없습니다.'])
+            setFilteredLines([t('logreplay.logs.empty')])
           }
 
           return
@@ -1445,7 +1478,8 @@ export default function useLogReplayData({
     resetView,
     renderNow,
     updateBuffer,
-    buildOdomChartsFromPoses
+    buildOdomChartsFromPoses,
+    t
   ])
 
   const formatDate = useCallback(function (yyyyMMdd) {
@@ -1475,6 +1509,7 @@ export default function useLogReplayData({
     logError,
     levelFilter,
     setLevelFilter,
+    toggleLevel,
     pendingKeyword,
     setPendingKeyword,
     appliedKeyword,

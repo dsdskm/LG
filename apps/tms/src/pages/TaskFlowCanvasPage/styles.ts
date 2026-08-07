@@ -16,3 +16,12 @@ export const Main = styled.main`
   min-height: 0;
   padding: 20px;
 `
+
+// 저장 확인 모달 안 "최종 버전 저장" 체크박스 아래 설명 문구
+export const SaveHint = styled.p`
+  margin: 8px 0 0 28px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #6b7280;
+  white-space: pre-line;
+`

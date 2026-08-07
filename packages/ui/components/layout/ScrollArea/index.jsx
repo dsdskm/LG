@@ -1,11 +1,14 @@
+import { forwardRef } from 'react'
 import { StyledScrollArea } from './styles'
 
-const ScrollArea = ({ children }) => {
+const ScrollArea = forwardRef(({ children, ...props }, ref) => {
   return (
-    <StyledScrollArea id="contents" className="scrollArea">
+    <StyledScrollArea ref={ref} id="contents" className="scrollArea" {...props}>
       {children}
     </StyledScrollArea>
   )
-}
+})
+
+ScrollArea.displayName = 'ScrollArea'
 
 export default ScrollArea

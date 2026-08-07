@@ -6,6 +6,7 @@ import useClickOutSide from '@repo/hooks/useClickOutSide'
 import { toast } from 'react-toastify'
 
 const LABEL_LIMIT_COUNT = 5
+const MAX_LABEL_LENGTH = 20 // label.displayName VARCHAR(20)
 
 const SuggestionList = styled.ul`
   position: absolute;
@@ -62,6 +63,10 @@ const LabelManager = ({ id, labels, setLabels, reservedLabels = [], options = []
   const addLabel = (raw) => {
     const name = (raw ?? '').trim()
     if (!name) return
+    if (name.length > MAX_LABEL_LENGTH) {
+      toast.error(`${t('labelTooLong', { max: MAX_LABEL_LENGTH })}`, { autoClose: 2000 })
+      return
+    }
     if (reservedLabels.includes(name)) {
       toast.error(`${t('labelReserved', { defaultValue: '예약된 라벨은 추가할 수 없습니다.' })}`, { autoClose: 2000 })
       return

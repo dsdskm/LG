@@ -2,7 +2,7 @@ import { useMemo, useState, type ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@repo/ui'
 
-import { useFlowEditorStore, DEFAULT_EDGE_TYPE } from '../../../store/taskflow.canvas.store'
+import { countEditableSelectedNodes, useFlowEditorStore, DEFAULT_EDGE_TYPE } from '../../../store/taskflow.canvas.store'
 import type { EdgeVisualType } from '../../../store/taskflow.canvas.store'
 
 import { InfoTab, ViewMode } from './types'
@@ -47,6 +47,9 @@ export default function PropertyPanel() {
   const confirmDeleteSelectedEdge = useFlowEditorStore((s) => s.confirmDeleteSelectedEdge)
 
   const setSelectedEdgeType = useFlowEditorStore((s) => s.setSelectedEdgeType)
+
+  // 그룹 선택 상태에서 삭제하면 여러 개가 지워지므로, 확인 문구에 개수를 노출한다.
+  const deleteTargetCount = useFlowEditorStore(countEditableSelectedNodes)
 
   const selectedNode = useMemo(() => {
     if (!selectedNodeId) return null
@@ -174,6 +177,11 @@ export default function PropertyPanel() {
 
       <ConfirmDeleteModal
         open={confirmDeleteOpen}
+        title={
+          deleteTargetCount > 1
+            ? t('canvas.confirmDelete.multiTitle', { count: deleteTargetCount })
+            : undefined
+        }
         onConfirm={confirmDeleteSelectedNode}
         onCancel={closeDeleteConfirm}
       />

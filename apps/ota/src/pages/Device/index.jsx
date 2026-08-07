@@ -50,7 +50,7 @@ const Device = () => {
   })
 
   const orgIds =
-    session.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
+    session?.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
       ? [...allOrgs, defaultOrg]
           .map((org) => org?.id)
           .sort((a, b) => a - b)
@@ -60,7 +60,7 @@ const Device = () => {
   const parsedOrgIds = orgIds ? orgIds.split(',').map((id) => Number(id.trim())) : []
 
   const fetchDevices = async () => {
-    if (actualOrgs.length === 0 && session.userRole !== 'SYSTEM_MANAGER') return
+    if (actualOrgs.length === 0 && session?.userRole !== 'SYSTEM_MANAGER') return
 
     setIsLoading(true)
     try {
@@ -77,7 +77,7 @@ const Device = () => {
   }
 
   useEffect(() => {
-    if (actualOrgs.length === 0 && session.userRole !== 'SYSTEM_MANAGER') return
+    if (actualOrgs.length === 0 && session?.userRole !== 'SYSTEM_MANAGER') return
 
     fetchDevices()
 

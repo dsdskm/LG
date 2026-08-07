@@ -26,12 +26,16 @@ export type ExecSnapshot = {
   currentNodeId: string | null
   // 전체 실행 종료 여부
   finished: boolean
+  // 노드 id → 현재 tick 반복 횟수. 같은 노드가 계속 RUNNING(예: 강제 RUNNING)이면 매 tick 증가한다.
+  // → 화면상 변화가 없는 RUNNING 노드에 "다음 tick에 다시 실행됨"을 숫자로 보여주는 데 쓴다.
+  runningCountById: Record<string, number>
 }
 
 export const EMPTY_SNAPSHOT: ExecSnapshot = {
   statusById: {},
   currentNodeId: null,
-  finished: false
+  finished: false,
+  runningCountById: {}
 }
 
 export interface FlowExecutor {

@@ -1,6 +1,7 @@
 import { ChevronUp, MapPin, Mic, RotateCcw, RotateCw, Search, SendHorizontal, Settings, Sparkles, Square } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'react-toastify'
+import { getMap, getMapId, type MapPoi } from '@/api/mapApi'
 
 type RobotControlTopPanelProps = {
   groupId: string | null
@@ -27,12 +28,6 @@ type NativeCallbackMessage = {
   code?: string
 }
 
-type PoiItem = {
-  id: string
-  name: string
-  floor: string
-}
-
 const BASIC_CONTROLS = [
   { key: 'turn-left', label: '좌측 회전', Icon: RotateCcw },
   { key: 'turn-right', label: '우측 회전', Icon: RotateCw },
@@ -49,13 +44,6 @@ const MOTION_PRESETS = [
   { key: 'bloom', name: '블룸', duration: '2.0s' },
   { key: 'spin', name: '회람', duration: '2.2s' },
   { key: 'jig', name: '기지개', duration: '4.5s' }
-]
-
-const POI_LIST: PoiItem[] = [
-  { id: 'poi-b', name: 'POI-입구B', floor: '미분류/1층' },
-  { id: 'poi-yard', name: 'POI-출고장', floor: '출고동/1층' },
-  { id: 'poi-lobby', name: 'POI-로비', floor: '본관/1층' },
-  { id: 'poi-lab', name: 'POI-실험실', floor: '연구동/2층' }
 ]
 
 const CALLBACK_FN_NAME = 'TMS_NATIVE_CALLBACK'
@@ -131,18 +119,29 @@ const parseNativeCallback = (input: unknown): NativeCallbackMessage | null => {
   return null
 }
 
+const getPoiLabel = (poi: MapPoi): string => {
+  return poi.name?.['ko-KR'] ?? poi.name?.default ?? poi.name?.['en-US'] ?? poi.poiId
+}
+
 const RobotControlTopPanel = ({ groupId, siteId, deviceId }: RobotControlTopPanelProps) => {
   const [collapsed, setCollapsed] = useState(false)
   const [poiQuery, setPoiQuery] = useState('')
   const [activeActionKey, setActiveActionKey] = useState<string | null>(null)
   const [lastMessage, setLastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [poiList, setPoiList] = useState<MapPoi[]>([])
+  const [poiLoading, setPoiLoading] = useState(false)
   const activeRequestRef = useRef<{ actionKey: string; timeoutId: number } | null>(null)
 
   const filteredPoiList = useMemo(() => {
     const query = poiQuery.trim().toLowerCase()
-    if (!query) return POI_LIST
-    return POI_LIST.filter((poi) => poi.name.toLowerCase().includes(query) || poi.floor.toLowerCase().includes(query))
-  }, [poiQuery])
+    if (!query) return poiList
+    return poiList.filter((poi) => {
+      const label = getPoiLabel(poi).toLowerCase()
+      const poiId = poi.poiId.toLowerCase()
+      const type = poi.type?.toLowerCase?.() ?? ''
+      return label.includes(query) || poiId.includes(query) || type.includes(query)
+    })
+  }, [poiList, poiQuery])
 
   const hasWorking = useMemo(() => activeActionKey !== null, [activeActionKey])
 
@@ -181,6 +180,52 @@ const RobotControlTopPanel = ({ groupId, siteId, deviceId }: RobotControlTopPane
       activeRequestRef.current = null
     }
   }, [])
+
+  useEffect(() => {
+    let isActive = true
+
+    const loadPoiList = async () => {
+      if (!groupId || !siteId || !deviceId) {
+        setPoiList([])
+        return
+      }
+
+      setPoiLoading(true)
+
+      try {
+        const mapIdResult = await getMapId({
+          groupId,
+          siteId,
+          deviceId,
+          mapType: 'navi'
+        })
+
+        if (!mapIdResult.mapId) {
+          throw new Error('mapId is empty')
+        }
+
+        const mapResult = await getMap({ mapId: mapIdResult.mapId })
+
+        if (!isActive) return
+
+        setPoiList(mapResult.poiData.pois)
+      } catch (error) {
+        console.error('failed to load poi list', error)
+        if (!isActive) return
+        setPoiList([])
+      } finally {
+        if (isActive) {
+          setPoiLoading(false)
+        }
+      }
+    }
+
+    loadPoiList()
+
+    return () => {
+      isActive = false
+    }
+  }, [groupId, siteId, deviceId])
 
   const executeNativeAction = (
     actionKey: string,
@@ -412,10 +457,13 @@ const RobotControlTopPanel = ({ groupId, siteId, deviceId }: RobotControlTopPane
                 }}
               />
             </div>
+            {poiLoading && (
+              <div style={{ marginBottom: '10px', fontSize: '13px', color: '#94a3b8' }}>POI 목록을 불러오는 중입니다.</div>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {filteredPoiList.map((poi) => (
                 <div
-                  key={poi.id}
+                  key={poi.poiId}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -430,18 +478,18 @@ const RobotControlTopPanel = ({ groupId, siteId, deviceId }: RobotControlTopPane
                     <MapPin size={14} color="#7b8ea7" />
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: '14px', color: '#334155', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {poi.name}
+                        {getPoiLabel(poi)}
                       </div>
-                      <div style={{ fontSize: '12px', color: '#94a3b8' }}>{poi.floor}</div>
+                      <div style={{ fontSize: '12px', color: '#94a3b8' }}>{poi.poiId}</div>
                     </div>
                   </div>
                   <button
-                    onClick={() => onClickMovePoi(poi.id)}
+                    onClick={() => onClickMovePoi(poi.poiId)}
                     disabled={hasWorking}
                     style={{
                       border: '1px solid #d6dfeb',
                       borderRadius: '8px',
-                      backgroundColor: activeActionKey === `poi:${poi.id}` ? '#e2e8f0' : '#f8fafc',
+                      backgroundColor: activeActionKey === `poi:${poi.poiId}` ? '#e2e8f0' : '#f8fafc',
                       color: '#475569',
                       padding: '6px 10px',
                       fontSize: '13px',
@@ -449,10 +497,13 @@ const RobotControlTopPanel = ({ groupId, siteId, deviceId }: RobotControlTopPane
                       flexShrink: 0
                     }}
                   >
-                    {activeActionKey === `poi:${poi.id}` ? 'working...' : '이동'}
+                    {activeActionKey === `poi:${poi.poiId}` ? 'working...' : '이동'}
                   </button>
                 </div>
               ))}
+              {!poiLoading && filteredPoiList.length === 0 && (
+                <div style={{ padding: '12px 0', fontSize: '13px', color: '#94a3b8' }}>표시할 POI가 없습니다.</div>
+              )}
             </div>
           </div>
 

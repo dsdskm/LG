@@ -142,7 +142,7 @@ const Policy = () => {
 
   const handleCreate = () => {
     navigate(
-      `/ota/policy/detail?orgId=${session.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0 ? defaultOrg.id : actualOrgs[0].id}`
+      `/ota/policy/detail?orgId=${session?.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0 ? defaultOrg.id : actualOrgs[0].id}`
     )
   }
 
@@ -178,7 +178,7 @@ const Policy = () => {
   }
 
   const orgIds =
-    session.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
+    session?.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
       ? [...allOrgs, defaultOrg].map((org) => org.id).join(',')
       : actualOrgs.map((org) => org.id).join(',')
 
@@ -227,7 +227,7 @@ const Policy = () => {
               <Button
                 variant="contained"
                 onClick={handleCreate}
-                disabled={orgFilter.actualOrgs.length !== 1 && session.userRole !== 'SYSTEM_MANAGER'}
+                disabled={orgFilter.actualOrgs.length !== 1 && session?.userRole !== 'SYSTEM_MANAGER'}
               >
                 {t('create')}
               </Button>

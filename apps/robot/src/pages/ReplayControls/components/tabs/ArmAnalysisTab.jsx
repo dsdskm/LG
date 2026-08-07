@@ -1,5 +1,6 @@
 // ArmAnalysisTab.jsx (A안: tSec=상대초 기준 전체 교체본)
 import React, { useMemo, useEffect, useRef, useState } from 'react'
+import { useTranslation, Trans } from 'react-i18next'
 import { theme, UX } from '../../styles'
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, ReferenceLine } from 'recharts'
 import { rosStampToKstHms } from '@/utils/dateUtils'
@@ -145,6 +146,7 @@ export default function ArmAnalysisTab({
   isParsingMcap = false,
   mcapParseError = null
 }) {
+  const { t } = useTranslation('robot')
   const DEBUG = false
 
   const chartAreaRef = useRef(null)
@@ -394,21 +396,27 @@ export default function ArmAnalysisTab({
     <div style={styles.root}>
       {/* ── Joint Status ── */}
       <div style={UX.card}>
-        <div style={UX.sideTitle(side)}>Joint 상태 — {side === 'right' ? 'RIGHT ARM ▶' : '◀ LEFT ARM'}</div>
+        <div style={UX.sideTitle(side)}>
+          {side === 'right'
+            ? t('replayControls.tabs.armAnalysis.jointStatusTitleRight')
+            : t('replayControls.tabs.armAnalysis.jointStatusTitleLeft')}
+        </div>
 
         {/* 로딩/에러 상태 */}
         {mcapParseError ? (
           <div style={UX.noticePill('error')}>
-            ❌ MCAP parse error: {mcapParseError?.message ?? String(mcapParseError)}
+            {t('replayControls.common.mcapParseError', {
+              message: mcapParseError?.message ?? String(mcapParseError)
+            })}
           </div>
         ) : isParsingMcap ? (
-          <div style={UX.noticePill('info')}>MCAP parsing...</div>
+          <div style={UX.noticePill('info')}>{t('replayControls.common.mcapParsing')}</div>
         ) : !hasData ? (
-          <div style={UX.noticePill('warn')}>⚠️ /joint_states에서 {side} arm joint를 찾지 못했습니다.</div>
+          <div style={UX.noticePill('warn')}>{t('replayControls.tabs.armAnalysis.noArmJointFound', { side })}</div>
         ) : (
           <>
             <div style={{ ...UX.kvRow, marginBottom: 10 }}>
-              <span style={UX.kvLabel}>Stamp</span>
+              <span style={UX.kvLabel}>{t('replayControls.common.stamp')}</span>
               <span style={UX.badge({ ok: true })}>{rosStampToKstHms(currentSample?.header?.stamp)}</span>
               <span style={UX.kvSub}>frame: {currentSample?.header?.frame_id ?? '-'}</span>
             </div>
@@ -445,20 +453,28 @@ export default function ArmAnalysisTab({
         )}
 
         <div style={{ marginTop: 8, fontSize: 11, color: theme.colors.textMuted }}>
-          * 주요 팔 관절(<code>{side}_joint_N</code>)만 표시합니다. 손가락 관절은 End-Effector 탭에서 확인하세요.
-          <br />* 🟡/🔴 표시는 vel/effort <b>추정 임계값</b> 기반이며 실측 고장 판정이 아닙니다.
+          <Trans
+            i18nKey="replayControls.tabs.armAnalysis.footnoteArmJoints"
+            values={{ side }}
+            components={{ 1: <code /> }}
+          />
+          <br />* {t('replayControls.tabs.armAnalysis.footnoteThreshold')}
         </div>
       </div>
 
       {/* ── 관절 추이 차트 (전체 구간) ── */}
       <div style={UX.card}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-          <div style={{ ...UX.sideTitle(side), marginBottom: 0 }}>관절 추이 (Position / Velocity / Effort)</div>
+          <div style={{ ...UX.sideTitle(side), marginBottom: 0 }}>
+            {t('replayControls.tabs.armAnalysis.jointTrendTitle')}
+          </div>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 11, color: theme.colors.textMuted }}>Joint</span>
+            <span style={{ fontSize: 11, color: theme.colors.textMuted }}>
+              {t('replayControls.tabs.armAnalysis.jointLabel')}
+            </span>
             <Dropdown
               size="sm"
-              title="Joint 선택"
+              title={t('replayControls.tabs.armAnalysis.jointSelectTitle')}
               value={chartJointIdx != null ? String(chartJointIdx) : ''}
               options={jointOptions}
               onChange={(v) => setSelectedJointIdx(Number(v))}
@@ -468,11 +484,11 @@ export default function ArmAnalysisTab({
         <div ref={chartAreaRef} style={{ width: '100%', minWidth: 0 }}>
           {/* 전체 구간 차트 로딩 중에는 ±2초 윈도우를 잠깐 보여줬다 바꾸지 않고 로딩 표시 → 모양 급변 방지 */}
           {chartTimelineLoading && !hasChartTimeline ? (
-            <div style={UX.noticePill('info')}>전체 구간 차트 불러오는 중…</div>
+            <div style={UX.noticePill('info')}>{t('replayControls.common.chartLoadingFull')}</div>
           ) : chartData.length === 0 ? (
-            <div style={UX.noticePill('warn')}>차트에 표시할 joint 데이터가 없습니다.</div>
+            <div style={UX.noticePill('warn')}>{t('replayControls.tabs.armAnalysis.noJointChartData')}</div>
           ) : chartWidth <= 0 ? (
-            <div style={UX.noticePill('info')}>차트 영역 계산 중...</div>
+            <div style={UX.noticePill('info')}>{t('replayControls.tabs.armAnalysis.chartAreaCalculating')}</div>
           ) : (
             <>
               {/* ── Position Chart ── */}
@@ -520,7 +536,7 @@ export default function ArmAnalysisTab({
                     </LineChart>
                   </ResponsiveContainer>
                 ) : (
-                  <div style={UX.noticePill('warn')}>position 데이터가 없습니다.</div>
+                  <div style={UX.noticePill('warn')}>{t('replayControls.tabs.armAnalysis.noPositionData')}</div>
                 )}
               </div>
 
@@ -546,7 +562,7 @@ export default function ArmAnalysisTab({
                       marginRight: 4
                     }}
                   />
-                  Actual (실측 위치)
+                  {t('replayControls.tabs.armAnalysis.legendActual')}
                 </span>
                 {hasTarget ? (
                   <span>
@@ -560,10 +576,10 @@ export default function ArmAnalysisTab({
                         marginRight: 4
                       }}
                     />
-                    Target (명령 위치)
+                    {t('replayControls.tabs.armAnalysis.legendTarget')}
                   </span>
                 ) : (
-                  <span>Target 없음 (/tracking_controller/joint 미수신)</span>
+                  <span>{t('replayControls.tabs.armAnalysis.legendNoTarget')}</span>
                 )}
               </div>
 
@@ -599,7 +615,7 @@ export default function ArmAnalysisTab({
                     </LineChart>
                   </ResponsiveContainer>
                 ) : (
-                  <div style={UX.noticePill('info')}>velocity 데이터가 없습니다.</div>
+                  <div style={UX.noticePill('info')}>{t('replayControls.tabs.armAnalysis.noVelocityData')}</div>
                 )}
               </div>
 
@@ -636,14 +652,16 @@ export default function ArmAnalysisTab({
                     </LineChart>
                   </ResponsiveContainer>
                 ) : (
-                  <div style={UX.noticePill('info')}>effort(토크) 데이터가 없습니다.</div>
+                  <div style={UX.noticePill('info')}>{t('replayControls.tabs.armAnalysis.noEffortData')}</div>
                 )}
               </div>
 
               <div style={{ marginTop: 6, fontSize: 11, color: theme.colors.textMuted }}>
                 joint: {names[chartJointIdx]} · samples: {chartData.length}
                 {' · '}
-                <span style={{ color: theme.colors.statusError }}>effort 급변 구간은 충돌/과부하를 의심하세요.</span>
+                <span style={{ color: theme.colors.statusError }}>
+                  {t('replayControls.tabs.armAnalysis.effortSpikeHint')}
+                </span>
               </div>
             </>
           )}
@@ -652,10 +670,10 @@ export default function ArmAnalysisTab({
 
       {/* ── Stability Analysis ── */}
       <div style={UX.card}>
-        <div style={UX.sideTitle(side)}>안정성 분석 (joint_states 기반)</div>
+        <div style={UX.sideTitle(side)}>{t('replayControls.tabs.armAnalysis.stabilityTitle')}</div>
 
         {!stability ? (
-          <div style={UX.noticePill('warn')}>⚠️ 안정성 분석을 위해 /joint_states 샘플이 더 필요합니다.</div>
+          <div style={UX.noticePill('warn')}>{t('replayControls.tabs.armAnalysis.noStabilitySample')}</div>
         ) : (
           <>
             <div style={UX.gaugeRow}>
@@ -693,7 +711,7 @@ export default function ArmAnalysisTab({
             </div>
 
             <div style={{ marginTop: 8, fontSize: 11, color: theme.colors.textMuted }}>
-              * Smoothness는 velRMS 기반 <b>추정 지표</b>입니다(실측 안정성/진동 측정 아님).
+              {t('replayControls.tabs.armAnalysis.footnoteSmoothness')}
             </div>
           </>
         )}
@@ -701,11 +719,11 @@ export default function ArmAnalysisTab({
 
       {/* ── Derived Event History ── */}
       <div style={UX.card}>
-        <div style={UX.sideTitle(side)}>이벤트/경고 (자동 생성)</div>
+        <div style={UX.sideTitle(side)}>{t('replayControls.tabs.armAnalysis.eventsTitle')}</div>
 
         <div style={{ ...UX.colTight, gap: 4 }}>
           {derivedEvents.length === 0 ? (
-            <div style={UX.noticePill('info')}>표시할 이벤트가 없습니다.</div>
+            <div style={UX.noticePill('info')}>{t('replayControls.common.noEvents')}</div>
           ) : (
             derivedEvents.map((c, i) => (
               <div key={i} style={UX.cmdItem({ warn: c.warn, error: c.error })}>
@@ -716,7 +734,7 @@ export default function ArmAnalysisTab({
         </div>
 
         <div style={{ marginTop: 8, color: theme.colors.textMuted, fontSize: 11 }}>
-          * /rosout, command topic이 없어서 joint_states로부터 파생된 경고만 표시합니다.
+          {t('replayControls.tabs.armAnalysis.footnoteEvents')}
         </div>
       </div>
     </div>

@@ -145,17 +145,17 @@ const buttonStyles = css`
       case 'primary':
       default:
         return `
-          background: var(--color-primary-70);
-          color: var(--color-neutral-10);
+          background: var(--t-primary-btn-bg);
+          color: var(--t-primary-btn-text);
           border: 1px solid transparent;
-          
+
           &:hover:not(:disabled) {
             text-decoration: underline;
-            background: var(--color-primary-80);
+            background: var(--t-primary-btn-hover-bg);
           }
           &:active:not(:disabled) {
             text-decoration: none;
-            background: var(--color-primary-90);
+            background: var(--t-primary-btn-active-bg);
           }
         `
     }

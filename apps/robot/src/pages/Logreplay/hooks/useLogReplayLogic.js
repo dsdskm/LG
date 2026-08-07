@@ -1,5 +1,6 @@
 // hooks/useLogReplayLogic.js
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import useLogReplayPlayer2D from './useLogReplayPlayer2D.js'
 import useLogReplayData from './useLogReplayData.js'
 import { makeMapPlaceholder, detectLevel } from '../logReplayRender.js'
@@ -7,6 +8,7 @@ import { makeMapPlaceholder, detectLevel } from '../logReplayRender.js'
 const INITIAL_HINT = 'mcap 파일 선택 후 조회 버튼을 눌러주세요'
 
 export function useLogReplayLogic({ initialDate, deviceId }) {
+  const { t } = useTranslation('robot')
   // 상/하단 레이아웃
   const [topRatio, setTopRatio] = useState(60)
   const containerRef = useRef(null)
@@ -186,7 +188,7 @@ export function useLogReplayLogic({ initialDate, deviceId }) {
     tarError,
     logError,
     levelFilter,
-    setLevelFilter,
+    toggleLevel,
     pendingKeyword,
     setPendingKeyword,
     appliedKeyword,
@@ -313,10 +315,10 @@ export function useLogReplayLogic({ initialDate, deviceId }) {
 
     // ✅ 타임라인 무시 모드에서는 "타임라인 불일치" 문구를 쓰지 않음
     if (!IGNORE_TIMELINE_FOR_LOGS && hasAnyTarLogs) {
-      return '현재 타임라인과 일치하는 로그가 없습니다.'
+      return t('logreplay.logs.noTimelineMatch')
     }
-    return '표시할 로그가 없습니다.'
-  }, [isLoadingLogs, hasAnyTarLogs])
+    return t('logreplay.logs.empty')
+  }, [isLoadingLogs, hasAnyTarLogs, t])
   // 변경 시 초기화
 
   // ✅ 최종 UI 표시용 소스 선택
@@ -484,7 +486,7 @@ export function useLogReplayLogic({ initialDate, deviceId }) {
     handleFetchListClick,
     handleVisibleRangeChange,
     allowedDateKeys,
-    toggleLevel: useCallback((lv) => setLevelFilter((f) => ({ ...f, [lv]: !f[lv] })), [setLevelFilter]),
+    toggleLevel,
     onDragStart,
     onDateChange: onDateChangeAndReset,
     onLogChange: onLogChangeAndReset,

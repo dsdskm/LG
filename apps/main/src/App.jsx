@@ -8,6 +8,7 @@ import ErrorPage from './pages/Error'
 import SetPassword from './pages/auth/SetPassword'
 import ResetPassword from './pages/auth/ResetPassword'
 import CustomerInquiry from './pages/CustomerInquiry'
+import Invitations from './pages/auth/Invitations'
 
 const OTA = React.lazy(() => import('ota/App'))
 const Robot = React.lazy(() => import('robot/App'))
@@ -48,6 +49,7 @@ const App = () => {
           <Route path="/set-password" element={<SetPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/customer-inquiry" element={<CustomerInquiry />} />
+          <Route path="/invitations" element={<Invitations />} />
           <Route path="/" element={<RootRedirect />} />
           <Route
             path="/ota/*"

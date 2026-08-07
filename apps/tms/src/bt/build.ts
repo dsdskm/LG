@@ -1,13 +1,15 @@
 import type { Node } from '@xyflow/react'
 
 import { ensureStartNode, START_NODE_ID } from './flow'
-import type { BuildResult, BtAstNode, BtSequenceNode } from './types'
+import type { BuildResult, BtAstNode } from './types'
+import { sequenceNodeType, BtSequenceNode } from './nodes/btSequenceNode'
 
 import { indexGraph } from './graph/indexGraph'
 import { renderBehaviorTreeXml } from './render/renderBtCppXlm'
 import { btRules } from './rules'
 import type { OutgoingEdgeRef, OutgoingInfo } from './rules/types'
 import { createBtActionNode } from './mapping/createBtActionNode'
+import { getNodeDisplayName } from './bt.util'
 
 type PreparedBuildInput = {
   nodeById: Map<string, Node>
@@ -49,6 +51,8 @@ function prepareBuildInput(flowDefinition: any): PreparedBuildInput {
   validateStartNodeExists(indexedGraph.nodeById)
 
   const startChildren = collectStartChildrenOrThrow(indexedGraph.outgoing, indexedGraph.warnings)
+
+  console.log('indexedGraph.nodeById', indexedGraph.nodeById)
 
   return {
     nodeById: indexedGraph.nodeById,
@@ -117,7 +121,7 @@ function buildBtModel(
   const buildAstList = createAstBuilder(nodeById, outgoing)
 
   return {
-    kind: 'sequence',
+    kind: sequenceNodeType,
     name: 'root_sequence',
     children: startChildren.flatMap((ref) => buildAstList(ref.targetId))
   }
@@ -182,6 +186,20 @@ function applyRulesOrCreateLeaf(ctx: RuleContext): BtAstNode[] {
     if (rule.match(ctx)) {
       return rule.apply(ctx)
     }
+  }
+
+  // 어떤 규칙도 매칭되지 않아 leaf(액션)로 처리한다. 이때 아직 처리 못 한 다음 연결
+  // (right/bottom/leftBranch)이 남아 있으면 그 하위 노드들이 조용히 버려지므로(도달 불가),
+  // 명확한 에러로 알린다.
+  //  - 액션 노드는 오른쪽(다음) 1개만 연결 가능 (only-right 는 ifThen 규칙이 처리)
+  //  - else(왼쪽→bottom) 분기는 IfThenElse 의 조건일 때만 허용된다.
+  const out = ctx.outgoing
+  const hasDanglingOutgoing = !!out.right || !!out.bottom || (out.leftBranches?.length ?? 0) > 0
+  if (hasDanglingOutgoing) {
+    throw new Error(
+      `"${getNodeDisplayName(ctx.node)}" 노드의 다음 연결을 해석할 수 없습니다. ` +
+        `액션 노드는 오른쪽(다음) 1개만 연결할 수 있고, else(왼쪽) 분기는 IfThenElse 조건일 때만 사용할 수 있습니다.`
+    )
   }
 
   return [createBtActionNode(ctx.node)]

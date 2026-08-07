@@ -117,9 +117,15 @@ const GnbButton = ({ as = 'NavLink', name, icon, path, depthLevel = 0, prefix, o
     }
   }
 
+  // icon: 기존 방식(문자열, Icon 컴포넌트가 outlinedPaths.json에서 조회)과
+  // 신규 방식(svg를 컴포넌트로 그대로 import)을 둘 다 지원
+  const IconComponent = typeof icon === 'string' ? null : icon
+
   return (
     <Component {...props[finalAs]}>
-      {icon && !hideIcon && <Icon name={icon} size={depthLevel === 0 ? 32 : 24} />}
+      {icon &&
+        !hideIcon &&
+        (IconComponent ? <IconComponent /> : <Icon name={icon} size={depthLevel === 0 ? 24 : 24} />)}
       {(depthLevel === 0 && !compactSideBar) || depthLevel === 1 ? name : null}
     </Component>
   )

@@ -179,6 +179,38 @@ export function detectLevel(line) {
   return 'UNKNOWN'
 }
 
+/** "/pattern/flags" 형태를 정규식으로 파싱. 슬래시 형태가 아니거나 유효하지 않으면 null.
+ *  하이라이트(LogsSection)와 필터(useLogReplayData)가 같은 파싱 규칙을 쓰도록 공유. */
+export function parseSlashRegex(raw) {
+  const m = String(raw ?? '').match(/^\/(.+)\/([a-z]*)$/i)
+  if (!m) return null
+  try {
+    return new RegExp(m[1], m[2])
+  } catch {
+    return null
+  }
+}
+
+/** 로그 검색 키워드 → 매칭 함수.
+ *  "/pattern/flags" 형태면 정규식, 아니면 대소문자 무시 부분일치로 동작.
+ *  키워드가 비어있으면 null. */
+export function compileKeywordMatcher(raw) {
+  const kw = String(raw ?? '').trim()
+  if (!kw) return null
+
+  const rgx = parseSlashRegex(kw)
+  if (rgx) {
+    return (text) => {
+      // g/y 플래그의 lastIndex 상태가 재사용 시 결과를 오염시키는 것을 방지
+      rgx.lastIndex = 0
+      return rgx.test(String(text ?? ''))
+    }
+  }
+
+  const lower = kw.toLowerCase()
+  return (text) => String(text ?? '').toLowerCase().includes(lower)
+}
+
 export function extractFilenameFromContentDisposition(cd) {
   try {
     const starMatch = cd.match(/filename\*\s*=\s*([^']*)''([^;]+)/i)

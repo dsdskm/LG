@@ -1,24 +1,19 @@
 import React from 'react'
-import styled from 'styled-components'
 import { useTranslation } from 'react-i18next'
+import { Dropdown } from '@repo/ui'
+import styled from 'styled-components'
 
+const Wrapper = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+`
 // 건물 → 층 → 영역 계층 셀렉터 (공통 컴포넌트).
 // 각 계층은 하위 항목이 있을 때만 노출된다.
 // props:
 //   buildings: 사이트 단건 조회의 buildings[] (floors[].areas[] 포함)
 //   value:     { buildingId, floorId, areaId }
 //   onChange:  (nextValue) => void  — 변경된 선택 전체를 전달
-const Select = styled.select`
-  margin-left: 10px;
-  max-height: 30px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  border: 1px solid #cbd5e1;
-  font-size: 1.3rem;
-  color: #334155;
-  background: #fff;
-  cursor: pointer;
-`
 
 const LocationSelector = ({ buildings = [], value = {}, onChange, areaCounts = {} }) => {
   const { t } = useTranslation('robot')
@@ -46,51 +41,51 @@ const LocationSelector = ({ buildings = [], value = {}, onChange, areaCounts = {
 
   if (!buildings.length) return null
 
+  const buildingOptions = buildings.map((b) => ({
+    name: `${b.buildingName}${suffix(cntBuilding(b))}`,
+    value: b.buildingId
+  }))
+
+  const floorOptions = floors.map((f) => ({
+    name: `${f.floorName}${suffix(cntFloor(f))}`,
+    value: f.floorId
+  }))
+
+  const areaOptions = areas.map((a) => ({
+    name: `${a.areaName}${suffix(cntArea(a))}`,
+    value: a.areaId
+  }))
+
   return (
-    <>
-      <Select value={buildingId} onChange={(e) => onChange?.({ buildingId: e.target.value, floorId: '', areaId: '' })}>
-        <option value="" disabled>
-          {t('building')}
-        </option>
-        {buildings.map((b) => (
-          <option key={b.buildingId} value={b.buildingId}>
-            {b.buildingName}
-            {suffix(cntBuilding(b))}
-          </option>
-        ))}
-      </Select>
+    <Wrapper>
+      <Dropdown
+        size="sm"
+        placeholder={t('building')}
+        value={buildingId}
+        options={buildingOptions}
+        onChange={(val) => onChange?.({ buildingId: val, floorId: '', areaId: '' })}
+      />
 
       {floors.length > 0 && (
-        <Select
+        <Dropdown
+          size="sm"
+          placeholder={t('floor')}
           value={floorId}
-          onChange={(e) => onChange?.({ buildingId, floorId: e.target.value, areaId: firstAreaOf(e.target.value) })}
-        >
-          <option value="" disabled>
-            {t('floor')}
-          </option>
-          {floors.map((f) => (
-            <option key={f.floorId} value={f.floorId}>
-              {f.floorName}
-              {suffix(cntFloor(f))}
-            </option>
-          ))}
-        </Select>
+          options={floorOptions}
+          onChange={(val) => onChange?.({ buildingId, floorId: val, areaId: firstAreaOf(val) })}
+        />
       )}
 
       {areas.length > 0 && (
-        <Select value={areaId} onChange={(e) => onChange?.({ buildingId, floorId, areaId: e.target.value })}>
-          <option value="" disabled>
-            {t('area')}
-          </option>
-          {areas.map((a) => (
-            <option key={a.areaId} value={a.areaId}>
-              {a.areaName}
-              {suffix(cntArea(a))}
-            </option>
-          ))}
-        </Select>
+        <Dropdown
+          size="sm"
+          placeholder={t('area')}
+          value={areaId}
+          options={areaOptions}
+          onChange={(val) => onChange?.({ buildingId, floorId, areaId: val })}
+        />
       )}
-    </>
+    </Wrapper>
   )
 }
 

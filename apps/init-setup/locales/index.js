@@ -6,24 +6,18 @@ import koMap from './ko-KR/map.json'
 import enMap from './en-US/map.json'
 import jaMap from './ja-JP/map.json'
 
-import koLogin from './ko-KR/login.json'
-import enLogin from './en-US/login.json'
-import jaLogin from './ja-JP/login.json'
-
+// login 네임스페이스는 여러 앱이 공유하므로 @repo/locales로 이동했다.
 export const translations = {
   'ko-KR': {
     route: koRoute,
-    map: koMap,
-    login: koLogin
+    map: koMap
   },
   'en-US': {
     route: enRoute,
-    map: enMap,
-    login: enLogin
+    map: enMap
   },
   'ja-JP': {
     route: jaRoute,
-    map: jaMap,
-    login: jaLogin
+    map: jaMap
   }
 }

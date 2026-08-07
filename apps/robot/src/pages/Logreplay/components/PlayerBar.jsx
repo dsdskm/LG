@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { S } from '../styles'
 
 function PlayerBar({
@@ -27,6 +28,7 @@ function PlayerBar({
   hoverRatio,
   hoverAbsLabel
 }) {
+  const { t } = useTranslation('robot')
   const stepEnabled = typeof canStep === 'boolean' ? canStep : !!canPlay
 
   const leftTimeLabel =
@@ -103,7 +105,7 @@ function PlayerBar({
         <div
           ref={progressBarRef}
           style={{ ...S.progressWrapFull, position: 'relative', overflow: 'visible' }} // tooltip이 잘리지 않도록
-          aria-label="재생 진행도"
+          aria-label={t('logreplay.playback.progressAriaLabel')}
           role="slider"
           aria-valuemin={0}
           aria-valuemax={100}
@@ -158,7 +160,7 @@ function PlayerBar({
             type="button"
             style={{ ...S.playerButton, ...(stepEnabled ? {} : S.disabledButton) }}
             onClick={onPrevClick}
-            title="이전"
+            title={t('logreplay.playback.prev')}
             disabled={!stepEnabled}
             aria-disabled={!stepEnabled}
           >
@@ -168,7 +170,7 @@ function PlayerBar({
             type="button"
             style={{ ...S.playerButton, ...(canPlay ? {} : S.disabledButton) }}
             onClick={onToggleClick}
-            title={isPlaying ? '일시정지' : '재생'}
+            title={isPlaying ? t('logreplay.playback.pause') : t('logreplay.playback.play')}
             disabled={!canPlay}
             aria-disabled={!canPlay}
           >
@@ -178,7 +180,7 @@ function PlayerBar({
             type="button"
             style={{ ...S.playerButton, ...(stepEnabled ? {} : S.disabledButton) }}
             onClick={onNextClick}
-            title="다음"
+            title={t('logreplay.playback.next')}
             disabled={!stepEnabled}
             aria-disabled={!stepEnabled}
           >
@@ -194,7 +196,7 @@ function PlayerBar({
             onClick={toggleSpeedMenu}
             aria-haspopup="listbox"
             aria-expanded={speedOpen}
-            title="재생 속도"
+            title={t('logreplay.playback.speedTitle')}
           >
             <span style={{ opacity: canPlay ? 1 : 0.6 }}>{`${playbackRate}×`}</span>
             <span style={{ ...S.speedMenu.caret, ...(speedOpen ? S.speedMenu.caretOpen : null) }} />
@@ -204,7 +206,7 @@ function PlayerBar({
             <div
               ref={speedMenuRef}
               role="listbox"
-              aria-label="재생 속도 선택"
+              aria-label={t('logreplay.playback.speedSelectAriaLabel')}
               style={S.speedMenu.dropdown}
               tabIndex={-1}
             >

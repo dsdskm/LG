@@ -51,7 +51,9 @@ const COLOR_MODES = {
     qEmphFill: 'url(#qCrimson)',
     qBaseFill: '#cbc8c2',
     segFill: 'linear-gradient(335deg, #cd7b94 11.32%, #bf2d59 44.35%, #b91c4c 77.37%)',
-    segEmpty: '#cbc8c2'
+    segEmpty: '#cbc8c2',
+    // 일간 목표량 면적: #D2CFC8(위) → #FFFFFF(아래) 그라데이션
+    accentAreaGrad: 'url(#accentAreaGrad)'
   },
   // Solid: 최초 taupe 그라데이션 헤더 + 따뜻한 오프화이트 바디(Figma rgba(226,224,218,0.6))
   solid: {
@@ -71,7 +73,8 @@ const COLOR_MODES = {
     qEmphFill: 'url(#qGold)',
     qBaseFill: 'url(#qGold)',
     segFill: 'linear-gradient(180deg, #b5a98f 0%, rgba(197, 161, 82, 0.4) 100%)',
-    segEmpty: '#e6e1d6'
+    segEmpty: '#e6e1d6',
+    accentAreaGrad: 'url(#dayActualGrad)' // Solid는 기존 areaColor 기반 유지
   }
 }
 
@@ -275,7 +278,7 @@ const BottomCard = styled.div`
   gap: 20px;
   background: ${BODY_BG};
   border-radius: 8px;
-  padding: 20px 20px 12px;
+  padding: 20px 20px 20px;
   box-shadow: 4px 4px 10px rgba(0, 0, 0, 0.1);
 `
 
@@ -386,7 +389,14 @@ const MapWrap = styled.div`
 `
 
 const RefreshIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <path d="M21 12a9 9 0 1 1-3-6.7" />
     <path d="M21 3v6h-6" />
   </svg>
@@ -451,7 +461,7 @@ const TVDashboard = () => {
   const [searchParams] = useSearchParams()
 
   const paramGroup = searchParams.get('group') ?? 'all'
-  const paramSite  = searchParams.get('site')  ?? 'all'
+  const paramSite = searchParams.get('site') ?? 'all'
   const hasSite = paramSite !== 'all' && paramSite !== 'none'
 
   const [scale, setScale] = useState(1)
@@ -496,13 +506,19 @@ const TVDashboard = () => {
     try {
       const params = { groupId, siteId, buildingId: area.buildingId, floorId: area.floorId, areaId: area.areaId }
       const data = await mapApis.getMapViewFind(params)
-      let type = 'png', url = ''
+      let type = 'png',
+        url = ''
       if (data.mapServer?.navi?.svgDownloadUrl) {
-        type = 'svg'; url = data.mapServer.navi.svgDownloadUrl
+        type = 'svg'
+        url = data.mapServer.navi.svgDownloadUrl
       } else {
         url = data.mapServer?.navi?.pngDownloadUrl
       }
-      if (!url) { setMapData({}); setMapServer({}); return }
+      if (!url) {
+        setMapData({})
+        setMapServer({})
+        return
+      }
       setMapData({ type, url })
       setMapServer(data.mapServer)
     } catch (err) {
@@ -537,15 +553,23 @@ const TVDashboard = () => {
 
   // 사이트 계층(빌딩/층/영역) 조회
   useEffect(() => {
-    if (!hasSite) { setBuildings([]); return }
+    if (!hasSite) {
+      setBuildings([])
+      return
+    }
     siteApis
       .getSiteById(paramSite)
       .then((d) => setBuildings(d?.buildings ?? []))
-      .catch((err) => { console.error('TVDashboard getSiteById:', err); setBuildings([]) })
+      .catch((err) => {
+        console.error('TVDashboard getSiteById:', err)
+        setBuildings([])
+      })
   }, [hasSite, paramSite])
 
   // 영역 시퀀스가 바뀌면 인덱스 초기화
-  useEffect(() => { setCurrentAreaIdx(0) }, [seq.length])
+  useEffect(() => {
+    setCurrentAreaIdx(0)
+  }, [seq.length])
 
   // 1분마다 영역 순환 (마지막 → 처음)
   useEffect(() => {
@@ -560,10 +584,42 @@ const TVDashboard = () => {
     loadMap(paramGroup, paramSite, areaMode ? currentArea : null)
   }, [hasSite, areaMode, currentArea?.areaId, paramGroup, paramSite, loadMap])
 
-  // 자동 새로고침 (헤더는 상시 연동 상태 — 항상 라이브)
+  // Auto-refresh only when page is visible and window is focused
   useEffect(() => {
-    intervalRef.current = setInterval(loadData, REFRESH_INTERVAL)
-    return () => clearInterval(intervalRef.current)
+    const startPolling = () => {
+      if (document.visibilityState === 'visible' && document.hasFocus() && !intervalRef.current) {
+        intervalRef.current = setInterval(loadData, REFRESH_INTERVAL)
+      }
+    }
+
+    const stopPolling = () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && document.hasFocus()) {
+        startPolling()
+      } else {
+        stopPolling()
+      }
+    }
+
+    const handleBlur = () => stopPolling()
+    const handleFocus = () => startPolling()
+
+    startPolling()
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('blur', handleBlur)
+    window.addEventListener('focus', handleFocus)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('blur', handleBlur)
+      window.removeEventListener('focus', handleFocus)
+      stopPolling()
+    }
   }, [loadData])
 
   useEffect(() => {
@@ -578,17 +634,28 @@ const TVDashboard = () => {
 
     devices.forEach((d) => {
       switch (d.deviceState) {
-        case 'OPERATION': count.opr++; break
-        case 'LEARNING':  count.lrn++; break
-        case 'STANDBY':   count.sta++; break
-        case 'CHARGE':    count.chr++; break
-        case 'ERROR':     count.err++; break
-        case 'OFFLINE':   count.off++; break
+        case 'OPERATION':
+          count.opr++
+          break
+        case 'LEARNING':
+          count.lrn++
+          break
+        case 'STANDBY':
+          count.sta++
+          break
+        case 'CHARGE':
+          count.chr++
+          break
+        case 'ERROR':
+          count.err++
+          break
+        case 'OFFLINE':
+          count.off++
+          break
       }
 
       if (!hasSite) {
-        const siteId = d.provision?.isDefaultSite !== true && d.provision?.siteName
-          ? d.provision.siteId : null
+        const siteId = d.provision?.isDefaultSite !== true && d.provision?.siteName ? d.provision.siteId : null
         if (!siteId) return
         const site = sites.find((s) => s.siteId === siteId)
         if (!site?.siteLatitude || !site?.siteLongitude) return
@@ -601,20 +668,20 @@ const TVDashboard = () => {
 
     setDeviceCount(count)
     if (!hasSite) {
-      setMarkers(Array.from(siteMap.values()).map((m) => ({
-        title: `${m.name} - ${m.count}${t('unit')}`,
-        lat: m.lat,
-        lng: m.lng
-      })))
+      setMarkers(
+        Array.from(siteMap.values()).map((m) => ({
+          title: `${m.name} - ${m.count}${t('unit')}`,
+          lat: m.lat,
+          lng: m.lng
+        }))
+      )
     }
   }, [devices, sites, hasSite, t])
 
   // 현재 영역에 위치한 로봇 (sitePosition.areaId 기준)
   const areaRobotDatas = useMemo(() => {
     if (!areaMode || !currentArea) return []
-    return devices
-      .filter((d) => d.state?.sitePosition?.areaId === currentArea.areaId)
-      .map(parseRobotData)
+    return devices.filter((d) => d.state?.sitePosition?.areaId === currentArea.areaId).map(parseRobotData)
   }, [devices, areaMode, currentArea?.areaId])
 
   // 사이트 지도 모드(영역 정보 없음)일 때는 전체 로봇 표시
@@ -623,8 +690,7 @@ const TVDashboard = () => {
     [devices, hasSite, areaMode]
   )
 
-  const timeLabel =
-    `${t('collection.today')} ${t('collection.updated')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} UTC+9`
+  const timeLabel = `${t('collection.today')} ${t('collection.updated')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} UTC+9`
 
   const mapTitle = t('robotPlacementStatus', '로봇 배치 현황 및 위치 정보')
   const totalRobots =
@@ -693,6 +759,7 @@ const TVDashboard = () => {
               qBaseFill={theme.qBaseFill}
               segFill={theme.segFill}
               segEmpty={theme.segEmpty}
+              accentAreaGrad={theme.accentAreaGrad}
             />
           </CollectionWrap>
 
@@ -701,13 +768,11 @@ const TVDashboard = () => {
             <StatePanel>
               <SectionHead>
                 <SectionTitle>{t('robotStateStatus', '로봇 상태 현황')}</SectionTitle>
-                <TotalRobots>
-                  {t('totalRobots', '총 로봇')} <strong>{totalRobots}</strong>{t('unit')}
-                </TotalRobots>
               </SectionHead>
-              {/* 상태별 아이콘/상태/총 로봇수 + 현재 3개 영역별 로봇 수(각 상태) */}
+              {/* 전체(총 로봇 수) 카드 + 상태별 카드 + 현재 3개 영역별 로봇 수 */}
               <RobotStateCards
                 deviceCount={deviceCount}
+                total={totalRobots}
                 compact
                 areaColumns={
                   areaMode && currentPage

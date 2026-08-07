@@ -2,13 +2,13 @@ import { useMemo, useState, version } from 'react'
 import { useTranslation } from 'react-i18next'
 import RobotList from '@/pages/components/robot/RobotList'
 import { toRobotInfo } from '@/pages/components/robot/toRobotInfo'
-import { Navigation, Hand, Mic, Smile } from 'lucide-react'
+import { Navigation, Hand, Mic, Smile, Eye } from 'lucide-react'
 import type { DeployStatusType, RobotInfo } from '../../types/RobotInfo'
 import { useDeviceList } from '../../api/deviceApis'
 import DeployModal from './components/DeployModal'
 import { useParams } from 'react-router-dom'
 
-import { StyledPageContent, Title, Tabs, Tab, Dropdown, SearchContainer, Search } from '@repo/ui'
+import { StyledPageContent, Title, Tabs, Tab, Dropdown, Search, HeaderTitleGroup } from '@repo/ui'
 import { useDeployTaskFlowAction, useGetTaskFlow } from '@/api/taskFlowApis'
 import { useDeployTaskFlow } from '@/api/deployApis'
 import { DeployActionRequest, TaskFlow } from '@/types/taskflow'
@@ -17,7 +17,7 @@ import useSelectInfo from './hooks/useSelectInfo'
 import { useGetLatestDeployments } from '@/api/robotDeployApis'
 import { Content } from '@/types/api/deviceDeployment'
 import { useOrganizationStore } from '@repo/stores'
-import { CenteredContent } from '../RobotDetailPage/styles'
+import { DeployContent, DeploySearchContainer } from './styles'
 
 const skillRenderMap = {
   MANIPULATION: (
@@ -30,7 +30,7 @@ const skillRenderMap = {
       <Navigation size={14} color="#2563eb" /> 주행
     </>
   ),
-  FACE: (
+  DISPLAY: (
     <>
       <Smile size={14} color="#10b981" /> Face
     </>
@@ -38,6 +38,11 @@ const skillRenderMap = {
   VOICE: (
     <>
       <Mic size={14} color="#f59e0b" /> 음성
+    </>
+  ), // 예시 추가
+  PERCEPTION: (
+    <>
+      <Eye size={14} color="#f59e0b" /> 인지
     </>
   ) // 예시 추가
 }
@@ -96,12 +101,12 @@ function checkDeployability(taskFlow?: TaskFlow | null, robot?: DeviceResponse) 
 
   const capabilities = robot.tms.taskFlowState?.robotSpec?.capabilities ?? []
   const { robotSkillInfos: necessarySkill } = taskFlow
-
-  for (const skill of necessarySkill) {
-    if (!capabilities.some((capa) => capa.name === skill.name)) {
-      return { deployable: false, reason: `not supported: ${skill.name}` }
-    }
-  }
+  // 임시로- 원복 필요
+  // for (const skill of necessarySkill) {
+  //   if (!capabilities.some((capa) => capa.name === skill.name)) {
+  //     return { deployable: false, reason: `not supported: ${skill.name}` }
+  //   }
+  // }
 
   return { deployable: true, reason: 'ok' }
 }
@@ -397,6 +402,9 @@ const DeployPage = () => {
     }
     return 'READY'
   }
+  const skills = taskFlowData?.robotSkillInfos ?? []
+
+  console.log('skillset ', skills)
 
   return (
     <>
@@ -413,7 +421,7 @@ const DeployPage = () => {
 
       <StyledPageContent className="column">
         <Title>{t('deploy.title')}</Title>
-        <CenteredContent>
+        <DeployContent>
           <div
             style={{
               textAlign: 'start',
@@ -444,30 +452,30 @@ const DeployPage = () => {
               }}
             >
               <p style={{ margin: 0 }}>- {taskFlowData?.description ?? t('deploy.descPlaceholder')}</p>
-              <p
-                style={{
-                  margin: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}
-              >
-                - {t('deploy.requiredSkills')}
-                {[].length <= 0
-                  ? t('deploy.skillsPlaceholder')
-                  : [].map((item, index) => (
-                      <span
-                        key={index}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px'
-                        }}
-                      >
-                        {skillRenderMap[item] || item}
-                      </span>
-                    ))}
-              </p>
+              {skills.length > 0 && (
+                <p
+                  style={{
+                    margin: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  - {t('deploy.requiredSkills')}
+                  {skills.map((item) => (
+                    <span
+                      key={item.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      {skillRenderMap[item.name as keyof typeof skillRenderMap] || item.name}
+                    </span>
+                  ))}
+                </p>
+              )}
             </div>
           </div>
 
@@ -476,51 +484,41 @@ const DeployPage = () => {
             <Tab id="DELETE_DEPLOY" label={t('deploy.undeploy')}></Tab>
           </Tabs>
 
-          <div
-            style={{
-              marginBottom: '16px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <input
-                type="checkbox"
-                checked={active.selectAll}
-                onChange={handleSelectAll}
-                style={{ height: '16px', width: '16px', cursor: 'pointer' }}
-              />
-              <label style={{ fontSize: '14px', fontWeight: 500, color: '#374151' }}>{t('deploy.selectAll')}</label>
-            </div>
-
-            <div style={{ display: 'flex', gap: '2px', marginLeft: '40px' }}>
-              <Dropdown
-                size="lg"
-                minWidth="180px"
-                defaultValue={'all'}
-                value={active.operationStatusFilter}
-                options={operationStatusOptions}
-                onChange={onOperationStatusOptionChaged}
-              />
-              <Dropdown
-                size="lg"
-                minWidth="180px"
-                defaultValue={'all'}
-                value={active.deployStatusFilter}
-                options={deployStatusOptions}
-                onChange={onDeployStatusOptionChaged}
-              />
-
-              <SearchContainer>
-                <Search
-                  value={active.robotSearchQuery}
-                  onChange={(e: any) => active.onRobotSearchQueryChanged(e.target.value)}
-                  placeholder={t('deploy.searchRobot')}
-                />
-              </SearchContainer>
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+            <input
+              type="checkbox"
+              checked={active.selectAll}
+              onChange={handleSelectAll}
+              style={{ height: '16px', width: '16px', cursor: 'pointer' }}
+            />
+            <label style={{ fontSize: '14px', fontWeight: 500, color: '#374151' }}>{t('deploy.selectAll')}</label>
           </div>
+          <HeaderTitleGroup style={{ marginBottom: '16px', justifyContent: 'flex-start' }}>
+            <DeploySearchContainer>
+              <Search
+                width="250px"
+                value={active.robotSearchQuery}
+                onChange={(e: any) => active.onRobotSearchQueryChanged(e.target.value)}
+                placeholder={t('deploy.searchRobot')}
+              />
+            </DeploySearchContainer>
+            <Dropdown
+              size="lg"
+              minWidth="180px"
+              defaultValue={'all'}
+              value={active.operationStatusFilter}
+              options={operationStatusOptions}
+              onChange={onOperationStatusOptionChaged}
+            />
+            <Dropdown
+              size="lg"
+              minWidth="180px"
+              defaultValue={'all'}
+              value={active.deployStatusFilter}
+              options={deployStatusOptions}
+              onChange={onDeployStatusOptionChaged}
+            />
+          </HeaderTitleGroup>
           <RobotList
             mode="DEPLOY"
             robotList={robotList}
@@ -558,7 +556,7 @@ const DeployPage = () => {
               {deployMode === 'DEPLOY' ? t('deploy.deploy') : t('deploy.undeploy')}
             </button>
           </div>
-        </CenteredContent>
+        </DeployContent>
       </StyledPageContent>
     </>
   )

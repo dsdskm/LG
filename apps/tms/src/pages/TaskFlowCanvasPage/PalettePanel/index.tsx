@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   PanelRoot,
@@ -27,12 +27,30 @@ import { ContentApiPayload, TaskApiPayload } from '@/types/api/taskPayload'
 import { DND_FALLBACK_TEXT, DND_MIME, TASK_PANEL, TASK_TYPE_CONTROL } from '@/common/constants'
 import { TaskType } from '@/types/task'
 
+const PALETTE_COMPACT_RATIO = 0.5
+
+const getMaxVisibleGridItems = (compact: boolean) => {
+  return compact ? 4 : 6
+}
+
 function makePaletteLabel(kind: PaletteItem['kind'], task: TaskApiPayload, content?: ContentApiPayload) {
   if (kind === 'controlTaskNode') return task.name
   return content?.name ?? task.name
 }
 
+// 태스크 패널의 모든 목록(컨트롤/액션/컨텐츠)은 name 오름차순으로 보여준다.
+function sortByNameAsc<T extends { name?: string | null }>(items: T[]): T[] {
+  return [...items].sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? '')))
+}
+
 export default function PalettePanel({ groupId, siteId }: { groupId: string | null; siteId: string | null }) {
+  const panelRef = useRef<HTMLDivElement | null>(null)
+
+  const [paletteMeasure, setPaletteMeasure] = useState({
+    width: 0,
+    maxWidth: 0
+  })
+
   const loading = useFlowEditorStore((s) => s.loadingTasks)
   const tasks = useFlowEditorStore((s) => s.tasks)
   const loadTasks = useFlowEditorStore((s) => s.loadTasks)
@@ -42,6 +60,11 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
   const addNodeFromPalette = useFlowEditorStore((s) => s.addNodeFromPalette)
   const addControlNodeFromTask = useFlowEditorStore((s) => s.addControlNodeFromTask)
   const nodes = useFlowEditorStore((s) => s.nodes)
+
+  const paletteGridCompact =
+    paletteMeasure.maxWidth > 0 && paletteMeasure.width <= paletteMeasure.maxWidth * PALETTE_COMPACT_RATIO
+
+  const maxVisibleGridItems = getMaxVisibleGridItems(paletteGridCompact)
 
   const getNextCanvasPosition = () => {
     const index = nodes.length
@@ -58,19 +81,57 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
     loadTasks(groupId, siteId)
   }, [loadTasks, groupId, siteId])
 
-  const controlTasks = useMemo(() => tasks.filter((t) => t.taskType === TASK_TYPE_CONTROL), [tasks])
+  useEffect(() => {
+    const el = panelRef.current
+
+    if (!el || typeof ResizeObserver === 'undefined') {
+      return
+    }
+
+    const updateWidth = (width: number) => {
+      setPaletteMeasure((prev) => ({
+        width,
+        maxWidth: Math.max(prev.maxWidth, width)
+      }))
+    }
+
+    updateWidth(el.getBoundingClientRect().width)
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (!entry) return
+
+      updateWidth(entry.contentRect.width)
+    })
+
+    observer.observe(el)
+
+    return () => {
+      observer.disconnect()
+    }
+  }, [])
+
+  const controlTasks = useMemo(() => sortByNameAsc(tasks.filter((t) => t.taskType === TASK_TYPE_CONTROL)), [tasks])
 
   const otherTasks = useMemo(() => tasks.filter((t) => t.taskType !== TASK_TYPE_CONTROL), [tasks])
 
-  // contents 가 비어 있는 ACTION task 는 펼침(content 단위) 대신
-  // CONTROL task 처럼 task 자체를 직접 노드화해서 보여준다.
+  const hasContentReference = (t: TaskApiPayload) =>
+    Object.values(t.propertySchema?.properties ?? {}).some((p) => p?.type === 'content_reference')
+
+  // propertySchema.properties 중 type === 'content_reference' 가 없으면 Default,
+  // 하나라도 있으면 펼침(content 단위)으로 보여준다.
   const directActionTasks = useMemo(
-    () => otherTasks.filter((t) => t.taskType === TaskType.ACTION && (t.contents?.length ?? 0) === 0),
+    () => sortByNameAsc(otherTasks.filter((t) => t.taskType === TaskType.ACTION && !hasContentReference(t))),
     [otherTasks]
   )
 
   const expandableTasks = useMemo(
-    () => otherTasks.filter((t) => t.taskType !== TaskType.ROOT && (t.contents?.length ?? 0) > 0),
+    () =>
+      sortByNameAsc(
+        otherTasks.filter(
+          (t) => t.taskType !== TaskType.ROOT && hasContentReference(t) && t.name !== 'PickUp' && t.name !== 'PutDown'
+        )
+      ),
     [otherTasks]
   )
 
@@ -85,17 +146,32 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
       actionTaskCount: otherTasks.length,
       directActionTaskCount: directActionTasks.length,
       expandableTaskCount: expandableTasks.length,
+      paletteWidth: paletteMeasure.width,
+      paletteMaxWidth: paletteMeasure.maxWidth,
+      paletteGridCompact,
+      maxVisibleGridItems,
       visibleTasks: tasks.map((task) => ({
         id: task.id,
         name: task.name,
         taskType: task.taskType,
-        contentsCount: Array.isArray(task.contents) ? task.contents.length : 0,
-      })),
+        contentsCount: Array.isArray(task.contents) ? task.contents.length : 0
+      }))
     })
-  }, [loading, tasks, controlTasks.length, otherTasks.length, directActionTasks.length, expandableTasks.length])
+  }, [
+    loading,
+    tasks,
+    controlTasks.length,
+    otherTasks.length,
+    directActionTasks.length,
+    expandableTasks.length,
+    paletteMeasure.width,
+    paletteMeasure.maxWidth,
+    paletteGridCompact,
+    maxVisibleGridItems
+  ])
 
   return (
-    <PanelRoot>
+    <PanelRoot ref={panelRef}>
       <HeaderRow>
         <div>
           <Subtitle>{TASK_PANEL.SUBTITLE}</Subtitle>
@@ -110,7 +186,7 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
           </SectionHeader>
 
           <SectionBodyPadded>
-            <ControlGrid>
+            <ControlGrid $compact={paletteGridCompact}>
               {controlTasks.map((task) => (
                 <ControlTaskNodeCard
                   key={task.id}
@@ -140,7 +216,7 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
 
                   {defaultOpen ? (
                     <ContentBlock>
-                      <ContentGrid>
+                      <ContentGrid $compact={paletteGridCompact}>
                         {directActionTasks.map((task) => (
                           <ControlTaskNodeCard
                             key={task.id}
@@ -157,7 +233,7 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
               ) : null}
 
               {expandableTasks.map((task) => {
-                const contents = task.contents ?? []
+                const contents = sortByNameAsc(task.contents ?? [])
                 const open = openMap[task.id] ?? false
 
                 return (
@@ -173,7 +249,7 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
 
                     {open ? (
                       <ContentBlock>
-                        <ContentGrid>
+                        <ContentGrid $compact={paletteGridCompact}>
                           {contents.map((content) => (
                             <ContentNodeCard
                               key={content.id}

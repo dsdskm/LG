@@ -14,6 +14,7 @@ import {
   MainNodeBadge,
   BreakpointDot,
   ForcedResultMark,
+  TickCountBadge,
   execStyle
 } from './styles.node'
 import { RFTaskNode } from '../types'
@@ -80,7 +81,7 @@ export default function TaskNode({ id, data, selected }: Props) {
         ) : null}
       </TaskRunningCountBadge>
 
-      <TaskTitle style={{ color: execStyle[data.taskStatus ?? 'IDLE'].text, fontSize: titleFontSize }}>
+      <TaskTitle style={{ color: execStyle[data.taskStatus ?? 'IDLE'].text, fontSize: titleFontSize, lineHeight: 1.4 }}>
         {title}
       </TaskTitle>
 
@@ -88,6 +89,7 @@ export default function TaskNode({ id, data, selected }: Props) {
 
       {data?.breakpoint && <BreakpointDot />}
       {data?.forcedResult && <ForcedResultMark $result={data.forcedResult} />}
+      {(data?.tickCount ?? 0) > 0 && <TickCountBadge>{data.tickCount}</TickCountBadge>}
     </TaskNodeRoot>
   )
 }

@@ -62,8 +62,9 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm config set store-dir /pnpm/store \
  && pnpm install --frozen-lockfile
 
-# 기존 빌드 결과 정리
+# 기존 빌드 결과 정리 (캐시 포함)
 RUN rm -rf apps-dist
+RUN rm -rf apps/robot/node_modules/.vite apps/ota/node_modules/.vite apps/cms/node_modules/.vite apps/learn/node_modules/.vite apps/tms/node_modules/.vite
 
 # DEPLOY_ENV에 따라 빌드 스크립트 분기
 # - dev  -> pnpm build:dev

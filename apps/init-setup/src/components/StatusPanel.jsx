@@ -1,11 +1,13 @@
 import React from 'react'
 import { Checkbox } from '@repo/ui'
+import { SPATIAL_TOPICS, STATUS_TOPICS, subscribedTopicOf } from '@/constants/topics'
 
 /**
  * StatusPanel
  *
- * 우측 사이드바: 연결 정보, /odom 로봇 위치, /scan 통계,
- * /map 메타데이터를 표시하는 컴포넌트.
+ * 우측 사이드바: 연결 정보, 로봇 위치(Odometry), 라이다 통계,
+ * 지도(OccupancyGrid) 메타데이터, 매핑 상태를 표시하는 컴포넌트.
+ * 토픽 이름은 로봇 구성에 따라 다르므로(@/constants/topics) 역할로 판단한다.
  */
 function StatusPanel({
   status,
@@ -27,21 +29,11 @@ function StatusPanel({
     return (yaw * 180) / Math.PI
   }
 
-  const SPATIAL_TOPICS = [
-    '/map',
-    '/odom',
-    '/lidar_points',
-    '/tf',
-    '/tf_static',
-    '/scan_matched_points2',
-    '/trajectory_node_list',
-    '/constraint_list',
-    '/landmark_poses_list',
-    '/map_updates',
-    '/initialpose',
-    '/goal_pose',
-    '/clicked_point'
-  ]
+  // 현재 구독 중인 역할별 토픽 이름 (LIO / Cartographer 등 구성에 따라 달라진다)
+  const mapTopic = subscribedTopicOf(subscribedTopics, 'map')
+  const odomTopic = subscribedTopicOf(subscribedTopics, 'odom')
+  const scanTopic = subscribedTopicOf(subscribedTopics, 'scan')
+  const statusTopic = STATUS_TOPICS.find((topic) => subscribedTopics.includes(topic)) ?? null
 
   const availableSpatial = topics.filter((t) => SPATIAL_TOPICS.includes(t))
   const availableText = topics.filter((t) => !SPATIAL_TOPICS.includes(t))
@@ -73,9 +65,9 @@ function StatusPanel({
       <div style={styles.scrollArea}>
         {/* ── 기하 정보 요약 카드 ────────────────────────────────── */}
 
-        {/* 1) 지도 정보 (/map) */}
-        {subscribedTopics.includes('/map') && (
-          <Section title={`/map — ${t('mapInfo')}`}>
+        {/* 1) 지도 정보 (OccupancyGrid) */}
+        {mapTopic && (
+          <Section title={`${mapTopic} — ${t('mapInfo')}`}>
             {mapData ? (
               <>
                 <Row label={t('resolution')} value={`${mapData.info.resolution.toFixed(2)} m/cell`} />
@@ -95,9 +87,9 @@ function StatusPanel({
           </Section>
         )}
 
-        {/* 2) 로봇 위치 (/odom) */}
-        {subscribedTopics.includes('/odom') && (
-          <Section title={`/odom — ${t('robotPosition')}`}>
+        {/* 2) 로봇 위치 (Odometry) */}
+        {odomTopic && (
+          <Section title={`${odomTopic} — ${t('robotPosition')}`}>
             {odomData ? (
               (() => {
                 const pos = odomData.pose?.pose?.position
@@ -118,9 +110,9 @@ function StatusPanel({
           </Section>
         )}
 
-        {/* 3) 라이다 정보 (/lidar_points) */}
-        {subscribedTopics.includes('/lidar_points') && (
-          <Section title={`/scan — ${t('lidarInfo')}`}>
+        {/* 3) 라이다 정보 (PointCloud2 / LaserScan) */}
+        {scanTopic && (
+          <Section title={`${scanTopic} — ${t('lidarInfo')}`}>
             {scanData ? (
               (() => {
                 if (Array.isArray(scanData.points)) {
@@ -156,6 +148,17 @@ function StatusPanel({
             ) : (
               <Empty text={t('waitingForData')} />
             )}
+          </Section>
+        )}
+
+        {/* 3-1) 매핑/측위 진행 상태 (std_msgs/String) */}
+        {statusTopic && (
+          <Section title={`${statusTopic} — ${t('mappingStatus')}`}>
+            {(() => {
+              const value = customTopicsData[statusTopic]?.data
+              if (!value) return <Empty text={t('waitingForData')} />
+              return <Row label={t('status')} value={value} mono />
+            })()}
           </Section>
         )}
 
@@ -295,24 +298,7 @@ function StatusPanel({
                 <span style={styles.categoryTitle}>{t('spatialInfo')}</span>
               </label>
               <div style={{ ...styles.topicContainer, marginBottom: 12 }}>
-                {topics
-                  .filter((t) =>
-                    [
-                      '/map',
-                      '/odom',
-                      '/lidar_points',
-                      '/tf',
-                      '/tf_static',
-                      '/scan_matched_points2',
-                      '/trajectory_node_list',
-                      '/constraint_list',
-                      '/landmark_poses_list',
-                      '/map_updates',
-                      '/initialpose',
-                      '/goal_pose',
-                      '/clicked_point'
-                    ].includes(t)
-                  )
+                {availableSpatial
                   .map((topic) => {
                     const isSubscribed = subscribedTopics.includes(topic)
                     return (
@@ -338,25 +324,7 @@ function StatusPanel({
                 <span style={styles.categoryTitle}>{t('textInfo')}</span>
               </label>
               <div style={styles.topicContainer}>
-                {topics
-                  .filter(
-                    (t) =>
-                      ![
-                        '/map',
-                        '/odom',
-                        '/lidar_points',
-                        '/tf',
-                        '/tf_static',
-                        '/scan_matched_points2',
-                        '/trajectory_node_list',
-                        '/constraint_list',
-                        '/landmark_poses_list',
-                        '/map_updates',
-                        '/initialpose',
-                        '/goal_pose',
-                        '/clicked_point'
-                      ].includes(t)
-                  )
+                {availableText
                   .map((topic) => {
                     const isSubscribed = subscribedTopics.includes(topic)
                     return (

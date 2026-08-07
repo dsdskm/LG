@@ -22,9 +22,6 @@ export const PageHeadWrap = styled.div`
   ${ButtonWrap} {
     margin: 0;
   }
-  @media all and (min-width: 1580px) {
-    width: 90%;
-  }
 `
 
 export const DropdownContainer = styled.div`
@@ -265,6 +262,57 @@ export const PreviewBox = styled.div`
   & .placeholder {
     color: var(--color-neutral-40);
     font-size: 1.3rem;
+  }
+`
+
+// 수정 모드 읽기전용 분류 요약 카드 (서비스/카테고리/콘텐츠 타입)
+export const InfoCard = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2.4rem;
+  padding: 1.6rem 2rem;
+  margin-bottom: 2rem;
+  background: var(--color-neutral-05);
+  border: 1px solid var(--color-neutral-20);
+  border-radius: 1.2rem;
+`
+
+export const InfoField = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+
+  & > .label {
+    font-size: var(--font-size-body-6);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--color-neutral-50);
+    text-transform: uppercase;
+  }
+`
+
+export const InfoChip = styled.span`
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 1.1rem;
+  border-radius: 0.8rem;
+  background: #fff;
+  border: 1px solid var(--color-neutral-20);
+  font-size: var(--font-size-body-5);
+  font-weight: 600;
+  color: var(--color-neutral-90);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+`
+
+export const Breadcrumb = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+
+  & > .sep {
+    color: var(--color-neutral-40);
+    font-weight: 600;
   }
 `
 

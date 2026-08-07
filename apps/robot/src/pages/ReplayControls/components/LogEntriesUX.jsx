@@ -1,5 +1,6 @@
 // /components/LogEntriesUX.jsx
 import React, { useMemo, useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { UX, theme } from '../styles'
 import { tSecToKstHms } from '@/utils/dateUtils'
 
@@ -94,6 +95,7 @@ export default function LogEntriesUX({
   currentTime = 0,
   timeRange = null
 }) {
+  const { t } = useTranslation('robot')
   // 절대 KST 시계. timeRange(absStartSec)가 있으면 절대시각, 없으면 상대 mm:ss로 폴백.
   const fmtClock = (tSec) => {
     const abs = tSecToKstHms(tSec, timeRange)
@@ -245,19 +247,25 @@ export default function LogEntriesUX({
       }}
     >
       <div style={UX.logTopBar}>
-        <div style={{ fontWeight: 800 }}>Log</div>
+        <div style={{ fontWeight: 800 }}>{t('replayControls.logEntries.panelTitle')}</div>
         <div style={{ marginLeft: 'auto', color: theme.colors.textMuted, fontSize: 12 }}>
-          {mcapParseError ? 'ERROR' : isParsingMcap ? 'LOADING...' : systemRows.length ? 'live' : 'no data'}
+          {mcapParseError
+            ? 'ERROR'
+            : isParsingMcap
+              ? t('replayControls.logEntries.statusLoading')
+              : systemRows.length
+                ? t('replayControls.logEntries.statusLive')
+                : t('replayControls.logEntries.statusNoData')}
         </div>
       </div>
 
       {/* ✅ Tabs 컴포넌트 우회: 로컬 탭 바 */}
       <div style={tabBarStyle}>
         <button style={tabBtnStyle(activeTab === 'system')} onClick={() => setActiveTab('system')}>
-          System / Event
+          {t('replayControls.logEntries.tabSystemEvent')}
         </button>
         <button style={tabBtnStyle(activeTab === 'text')} onClick={() => setActiveTab('text')}>
-          Text
+          {t('replayControls.logEntries.tabText')}
         </button>
       </div>
 
@@ -266,10 +274,10 @@ export default function LogEntriesUX({
         {activeTab === 'system' ? (
           <>
             <div style={UX.logTableHead4 || head4Fallback}>
-              <div>Time</div>
-              <div>Level</div>
-              <div>Source</div>
-              <div>Message</div>
+              <div>{t('replayControls.common.time')}</div>
+              <div>{t('replayControls.common.level')}</div>
+              <div>{t('replayControls.common.source')}</div>
+              <div>{t('replayControls.common.message')}</div>
             </div>
 
             <div ref={scrollBodyRef} style={bodyScrollStyle}>
@@ -298,7 +306,7 @@ export default function LogEntriesUX({
                           }
                         : undefined
                     }
-                    title={seekable ? `${r.timeText} 위치로 이동` : undefined}
+                    title={seekable ? t('replayControls.logEntries.moveTo', { time: r.timeText }) : undefined}
                   >
                     <div style={{ color: theme.colors.textSecondary, fontFamily: 'Consolas, monospace' }}>
                       {r.timeText}
@@ -313,10 +321,12 @@ export default function LogEntriesUX({
               {!systemRows.length && (
                 <div style={{ padding: 10, color: theme.colors.textMuted, fontSize: 12 }}>
                   {mcapParseError
-                    ? `MCAP 파싱 오류: ${mcapParseError?.message || String(mcapParseError)}`
+                    ? t('replayControls.logEntries.parseError', {
+                        message: mcapParseError?.message || String(mcapParseError)
+                      })
                     : isParsingMcap
-                      ? 'MCAP 로딩 중...'
-                      : '표시할 System/Event 로그가 없습니다.'}
+                      ? t('replayControls.logEntries.loadingMcap')
+                      : t('replayControls.logEntries.noSystemLogs')}
                 </div>
               )}
             </div>
@@ -324,9 +334,9 @@ export default function LogEntriesUX({
         ) : (
           <>
             <div style={head3}>
-              <div>Time</div>
-              <div>Level</div>
-              <div>Message</div>
+              <div>{t('replayControls.common.time')}</div>
+              <div>{t('replayControls.common.level')}</div>
+              <div>{t('replayControls.common.message')}</div>
             </div>
 
             <div ref={textScrollRef} style={bodyScrollStyle}>
@@ -346,7 +356,7 @@ export default function LogEntriesUX({
                       ...(highlighted ? { background: theme.colors.highlight || 'rgba(59,130,246,0.16)' } : null)
                     }}
                     onClick={seekable ? () => onSeek(r.tSec) : undefined}
-                    title={seekable ? `${r.timeText} 위치로 이동` : undefined}
+                    title={seekable ? t('replayControls.logEntries.moveTo', { time: r.timeText }) : undefined}
                   >
                     <div style={{ color: theme.colors.textSecondary, fontFamily: 'Consolas, monospace' }}>
                       {r.timeText}
@@ -374,10 +384,12 @@ export default function LogEntriesUX({
               {!textRows.length && (
                 <div style={{ padding: 10, color: theme.colors.textMuted, fontSize: 12 }}>
                   {mcapParseError
-                    ? `MCAP 파싱 오류: ${mcapParseError?.message || String(mcapParseError)}`
+                    ? t('replayControls.logEntries.parseError', {
+                        message: mcapParseError?.message || String(mcapParseError)
+                      })
                     : isParsingMcap
-                      ? 'MCAP 로딩 중...'
-                      : '표시할 텍스트 로그가 없습니다.'}
+                      ? t('replayControls.logEntries.loadingMcap')
+                      : t('replayControls.logEntries.noTextLogs')}
                 </div>
               )}
             </div>

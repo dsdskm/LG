@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Drawer } from 'vaul'
 import { SheetBody, SheetHandle, SheetTitle, StyledContent, StyledOverlay } from '../FlowCanvasViewer/styles'
 
@@ -11,7 +11,7 @@ export function MobilePropertySheet({
   onClose: () => void
   children: React.ReactNode
 }) {
-  const snapPoints = ['25px', '355px', 1]
+  const snapPoints = useMemo(() => ['80px', '355px', 1], [])
   const [snap, setSnap] = useState<number | string | null>(snapPoints[1])
 
   useEffect(() => {

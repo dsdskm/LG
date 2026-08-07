@@ -1,7 +1,9 @@
 import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button, Input, Checkbox } from '@repo/ui'
 import { List } from 'react-window'
 import { S } from '../styles'
+import { parseSlashRegex } from '../logReplayRender.js'
 
 const ROW_HEIGHT = 20
 const VIRTUAL_THRESHOLD = 1800
@@ -14,14 +16,10 @@ function useHighlighter(keyword) {
   return useMemo(() => {
     const raw = (keyword ?? '').trim()
     if (!raw) return (text) => text
-    let rgx
-    const m = raw.match(/^\/(.+)\/([a-z]*)$/i)
-    if (m) {
-      try {
-        rgx = new RegExp(m[1], m[2])
-      } catch {
-        rgx = null
-      }
+    // ✅ 필터(useLogReplayData.compileKeywordMatcher)와 동일한 파싱 규칙 사용(parseSlashRegex 공유)
+    let rgx = parseSlashRegex(raw)
+    if (rgx && !rgx.flags.includes('g')) {
+      rgx = new RegExp(rgx.source, rgx.flags + 'g')
     }
     if (!rgx) {
       try {
@@ -88,6 +86,7 @@ function scrollToBottom(el) {
 }
 
 function PlainLogList({ lines, detectLevel, highlight, containerRefExternal, isLoading, sessionKey }) {
+  const { t } = useTranslation('robot')
   const hostRef = useRef(null)
   const scrollRef = useRef(null)
   const [rowHeight, setRowHeight] = useState(ROW_HEIGHT)
@@ -160,7 +159,7 @@ function PlainLogList({ lines, detectLevel, highlight, containerRefExternal, isL
   return (
     <div ref={setHostRef} style={{ ...S.logBody, ...S.logBodyPlain }} role="log" aria-live="polite">
       {/* 로딩 중 */}
-      {isLoading && <div style={S.logLine}>로그 로딩 중..</div>}
+      {isLoading && <div style={S.logLine}>{t('logreplay.logs.loading')}</div>}
 
       {displayLines.map((line, idx) => {
         const text = String(line ?? '').replace(/\r?\n/g, ' ⏎')
@@ -312,6 +311,7 @@ function LogsSection({
   emptyLogMessage,
   loadPhase
 }) {
+  const { t } = useTranslation('robot')
   const highlight = useHighlighter(appliedKeyword)
   const sessionKey = `${selectedLabel || ''}||${selectedDate || ''}`
 
@@ -371,7 +371,7 @@ function LogsSection({
     <div style={S.bottomPane}>
       <div style={S.logArea}>
         <div style={S.logHeader}>
-          <span>로그</span>
+          <span>{t('logreplay.logs.panelTitle')}</span>
           <span style={S.logMeta}>
             {selectedLabel} · {formatDate(selectedDate)}
           </span>
@@ -390,7 +390,7 @@ function LogsSection({
             <Input
               type="text"
               size="sm"
-              placeholder="메시지 검색 (키워드)"
+              placeholder={t('logreplay.logs.searchPlaceholder')}
               value={pendingKeyword}
               onChange={(e) => setPendingKeyword(e.target.value)}
               onKeyDown={(e) => {
@@ -398,7 +398,7 @@ function LogsSection({
               }}
             />
             <Button size="md" theme="tertiary" onClick={handleKeywordSearchClick}>
-              조회
+              {t('logreplay.logs.query')}
             </Button>
           </div>
         </div>
@@ -407,7 +407,7 @@ function LogsSection({
         {(showInit || showEmpty) && (
           <div style={{ ...S.logBody, ...S.logBodyPlain }} role="log" aria-live="polite">
             <div style={S.logLine}>
-              {showInit ? '표시할 로그가 없습니다.' : emptyLogMessage || '표시할 로그가 없습니다.'}
+              {showInit ? t('logreplay.logs.empty') : emptyLogMessage || t('logreplay.logs.empty')}
             </div>
           </div>
         )}
@@ -433,7 +433,9 @@ function LogsSection({
           />
         )}
 
-        {logError && <div style={{ ...S.logLine, ...S.logLineError }}>에러: {logError}</div>}
+        {logError && (
+          <div style={{ ...S.logLine, ...S.logLineError }}>{t('logreplay.logs.error', { message: logError })}</div>
+        )}
       </div>
     </div>
   )

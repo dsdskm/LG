@@ -4,11 +4,6 @@ import { SegmentedButton } from '../TaskFlowCanvasPage/FlowCanvasViewer/styles'
 // 아래 Section(캔버스)과 좌우 범위 정렬
 export const CenteredContent = styled.div`
   width: 100%;
-
-  @media all and (min-width: 1580px) {
-    width: 90%;
-    margin: 0 auto;
-  }
 `
 
 export const RunningBadge = styled.span`

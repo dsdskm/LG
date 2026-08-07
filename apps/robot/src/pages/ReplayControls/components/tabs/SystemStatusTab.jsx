@@ -1,5 +1,6 @@
 // components/tabs/SystemStatusTab.jsx
 import React, { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { UX, theme } from '../../styles'
 import { rosStampToKstHms, tSecToKstHms } from '@/utils/dateUtils'
 import { selectSampleAtTime } from '../../utils/sampleSelect'
@@ -99,6 +100,7 @@ export default function SystemStatusTab({
   isParsingMcap = false,
   mcapParseError = null
 }) {
+  const { t } = useTranslation('robot')
   const samples = mcapSummary?.samples || {}
   const timeRange = mcapSummary?.timeRange || null
 
@@ -159,9 +161,11 @@ export default function SystemStatusTab({
   // ── gating ──────────────────────────────
   if (mcapParseError)
     return (
-      <div style={UX.noticePill('error')}>❌ MCAP parse error: {mcapParseError?.message ?? String(mcapParseError)}</div>
+      <div style={UX.noticePill('error')}>
+        {t('replayControls.common.mcapParseError', { message: mcapParseError?.message ?? String(mcapParseError) })}
+      </div>
     )
-  if (isParsingMcap) return <div style={UX.noticePill('info')}>MCAP parsing...</div>
+  if (isParsingMcap) return <div style={UX.noticePill('info')}>{t('replayControls.common.mcapParsing')}</div>
 
   const hasDiag = Array.isArray(diagWrapped) && diagWrapped.length > 0
   const hasAct = Array.isArray(actWrapped) && actWrapped.length > 0
@@ -170,14 +174,16 @@ export default function SystemStatusTab({
     <div style={UX.grid2}>
       {/* ── Diagnostics ── */}
       <div style={UX.card}>
-        <div style={UX.sectionTitle}>진단 상태 ({diagKey || '/diagnostic'})</div>
+        <div style={UX.sectionTitle}>
+          {t('replayControls.tabs.systemStatus.diagnosticTitle', { topic: diagKey || '/diagnostic' })}
+        </div>
 
         {!hasDiag ? (
-          <div style={UX.noticePill('warn')}>⚠️ diagnostic 토픽 샘플이 없습니다.</div>
+          <div style={UX.noticePill('warn')}>{t('replayControls.tabs.systemStatus.noDiagnosticSample')}</div>
         ) : (
           <>
             <div style={UX.kvRow}>
-              <span style={UX.kvLabel}>Time</span>
+              <span style={UX.kvLabel}>{t('replayControls.common.time')}</span>
               <span style={UX.badge({ ok: true })}>{diagSummary.stamp}</span>
               <span style={UX.kvSub}>t={Number(currentTime || 0).toFixed(2)}s</span>
             </div>
@@ -191,7 +197,9 @@ export default function SystemStatusTab({
 
             <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
               {diagSummary.hot.length === 0 ? (
-                <div style={{ fontSize: 12, color: theme.colors.textMuted }}>WARN/ERROR 항목이 없습니다.</div>
+                <div style={{ fontSize: 12, color: theme.colors.textMuted }}>
+                  {t('replayControls.tabs.systemStatus.noWarnErrorItems')}
+                </div>
               ) : (
                 diagSummary.hot.map((it, i) => (
                   <div
@@ -211,16 +219,18 @@ export default function SystemStatusTab({
 
       {/* ── Actuator States ── */}
       <div style={UX.card}>
-        <div style={UX.sectionTitle}>구동기 상태 ({actKey || '/actuator_states'})</div>
+        <div style={UX.sectionTitle}>
+          {t('replayControls.tabs.systemStatus.actuatorTitle', { topic: actKey || '/actuator_states' })}
+        </div>
 
         {!hasAct ? (
-          <div style={UX.noticePill('warn')}>⚠️ actuator_states 토픽 샘플이 없습니다.</div>
+          <div style={UX.noticePill('warn')}>{t('replayControls.tabs.systemStatus.noActuatorSample')}</div>
         ) : !actSummary ? (
-          <div style={UX.noticePill('warn')}>⚠️ actuator_states 메시지를 해석할 수 없습니다.</div>
+          <div style={UX.noticePill('warn')}>{t('replayControls.tabs.systemStatus.actuatorParseFail')}</div>
         ) : (
           <>
             <div style={UX.kvRow}>
-              <span style={UX.kvLabel}>Time</span>
+              <span style={UX.kvLabel}>{t('replayControls.common.time')}</span>
               <span style={UX.badge({ ok: true })}>{actSummary.stamp}</span>
               <span style={UX.kvSub}>total {actSummary.total}</span>
             </div>
@@ -236,8 +246,7 @@ export default function SystemStatusTab({
             </div>
 
             <div style={{ marginTop: 10, fontSize: 11, color: theme.colors.textMuted }}>
-              * status_word/drive_mode/error_code는 하드웨어 상태 기반(팩트)이며, joint_states 기반 휴리스틱보다 우선
-              신뢰할 수 있습니다.
+              {t('replayControls.tabs.systemStatus.footnoteHardwareStatus')}
             </div>
           </>
         )}

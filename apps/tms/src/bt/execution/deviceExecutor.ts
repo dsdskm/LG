@@ -46,14 +46,16 @@ function normalizeStatus(raw: string): ExecStatus | null {
 
 export function nodeStatusesToSnapshot(nodes: NodeStatus[], finished: boolean): ExecSnapshot {
   const statusById: Record<string, ExecStatus> = {}
+  const runningCountById: Record<string, number> = {}
   let currentNodeId: string | null = null
   for (const n of nodes) {
     const st = normalizeStatus(n.status)
     if (!st) continue
     statusById[n.nodeId] = st
+    if (typeof n.runningCount === 'number') runningCountById[n.nodeId] = n.runningCount
     if (st === 'RUNNING') currentNodeId = n.nodeId
   }
-  return { statusById, currentNodeId, finished }
+  return { statusById, currentNodeId, finished, runningCountById }
 }
 
 export class DeviceExecutor implements FlowExecutor {

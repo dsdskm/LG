@@ -21,7 +21,7 @@ const gnbButtonStyles = css`
   &.active {
     font-weight: 700;
     letter-spacing: -0.05em;
-    background: #e9e7e1;
+    background: var(--t-sidebar-press-bg);
     color: var(--color-neutral-90);
   }
 

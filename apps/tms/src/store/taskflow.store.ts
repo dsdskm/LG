@@ -1,5 +1,4 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
 import { TaskFlowStatus, ReactFlowObject, TaskFlow } from '../types/taskflow'
 import { ensureStartNode } from '@/utils/node.util'
 
@@ -24,6 +23,9 @@ type TaskFlowState = {
 
   /** Flow의 이름/설명 수정 */
   updateFlowInfo: (id: number, patch: Pick<Partial<TaskFlow>, 'name' | 'description'>) => Promise<TaskFlow | null>
+
+  /** Flow 통째로 복사 (id 만 새로 발급되고 나머지 값은 원본과 동일) */
+  copyFlow: (id: number) => Promise<TaskFlow>
 }
 
 /**
@@ -33,6 +35,40 @@ type TaskFlowState = {
  *
  * ⚠️ 만약 "DRAFT로 되돌리기"도 원치 않으면 이 함수 + 호출부 제거하면 됨.
  */
+// "이름 (복사본1)" 처럼 뒤에 붙은 복사본 표기를 떼어낸 원본 이름
+// (괄호 없는 예전 표기 "복사본N"/"복제N" 도 같은 기준 이름으로 묶어, 복사본이 중첩되지 않게 한다)
+const NAME_COPY_SUFFIX = /\s*\(?(?:복사본|복제)(\d+)\)?\s*$/
+
+function getNameBase(name: string): string {
+  return String(name ?? '')
+    .trim()
+    .replace(NAME_COPY_SUFFIX, '')
+    .trim()
+}
+
+/**
+ * 복사본 이름을 "원본이름 (복사본1)", 이미 있으면 (복사본2), (복사본3) ... 으로 만든다.
+ * 원본이 이미 "이름 (복사본1)" 이라면 같은 기준 이름의 다음 번호를 이어서 쓴다.
+ */
+function buildCopyName(sourceName: string, existingNames: string[]): string {
+  const base = getNameBase(sourceName)
+  if (!base) return sourceName
+
+  const baseKey = base.toLowerCase()
+  let maxCopyNo = 0
+
+  for (const name of existingNames) {
+    const trimmed = String(name ?? '').trim()
+    if (getNameBase(trimmed).toLowerCase() !== baseKey) continue
+
+    const matched = trimmed.match(NAME_COPY_SUFFIX)
+    const copyNo = matched ? Number(matched[1]) : 0
+    if (Number.isFinite(copyNo) && copyNo > maxCopyNo) maxCopyNo = copyNo
+  }
+
+  return `${base} (복사본${maxCopyNo + 1})`
+}
+
 function withDraftStatusIfEdited(current: TaskFlow | undefined, patch: Partial<TaskFlow>): Partial<TaskFlow> {
   if (!patch || Object.keys(patch).length === 0) return patch
   if (patch.status != null) return patch
@@ -43,149 +79,177 @@ function withDraftStatusIfEdited(current: TaskFlow | undefined, patch: Partial<T
   return { ...patch, status: TaskFlowStatus.DRAFT }
 }
 
-export const useTaskFlowStore = create<TaskFlowState>()(
-  persist(
-    (set, get) => ({
-      flows: [],
-      selectedFlowId: null,
+// 목록/선택 상태는 메모리 전용이다. 브라우저 저장소에 남기면 다른 세션에서 바뀐 내용이
+// 오래된 캐시로 덮여 상세 화면과 캔버스가 서로 다른 플로우를 보여주게 된다.
+export const useTaskFlowStore = create<TaskFlowState>()((set, get) => ({
+  flows: [],
+  selectedFlowId: null,
 
-      refreshFlows: async (groupId: string | null, siteId: string | null) => {
-        try {
-          const data = await listTaskFlows(groupId, siteId)
-          const flows = Array.isArray(data) ? data : []
+  refreshFlows: async (groupId: string | null, siteId: string | null) => {
+    try {
+      const data = await listTaskFlows(groupId, siteId)
+      const flows = Array.isArray(data) ? data : []
 
-          const prevSelected = get().selectedFlowId
-          const selectedStillExists = prevSelected == null ? false : flows.some((f) => f.id === prevSelected)
+      const prevSelected = get().selectedFlowId
+      const selectedStillExists = prevSelected == null ? false : flows.some((f) => f.id === prevSelected)
 
-          set({
-            flows,
-            selectedFlowId: selectedStillExists ? prevSelected : null
-          })
-        } catch (e) {
-          console.error('[refreshFlows] failed:', e)
-        }
-      },
-
-      selectFlow: (id) => {
-        set({ selectedFlowId: id })
-      },
-
-      refreshSelectedFlow: async () => {
-        const id = get().selectedFlowId
-        if (id == null) return
-
-        try {
-          const tf = await getTaskFlow(id)
-          if (!tf) return
-
-          set((state) => ({
-            flows: state.flows.map((f) => (f.id === id ? tf : f))
-          }))
-        } catch (e) {
-          console.error('[refreshSelectedFlow] failed:', e)
-        }
-      },
-
-      newFlow: async (name: string, description?: string) => {
-        try {
-          const trimmedName = (name ?? '').trim()
-          const trimmedDescription = (description ?? '').trim()
-          if (!trimmedName) return null
-
-          const data: TaskFlow = {
-            id: 0,
-            siteId: '',
-            name: trimmedName,
-            description: trimmedDescription || undefined,
-            flowDefinition: ensureStartNode({ nodes: [], edges: [] }),
-            version: 0,
-            status: TaskFlowStatus.DRAFT,
-            createdAt: '',
-            updatedAt: '',
-            groupId: null,
-            flowDefinitionDraft: {},
-            robotSkillIds: [],
-            robotSkillInfos: [],
-            behaviorTree: ''
-          }
-
-          const created = await createTaskFlow(data)
-
-          if (!created || typeof (created as any).id !== 'number') {
-            console.error('[newFlow] invalid response:', created)
-            return null
-          }
-
-          set((state) => ({
-            flows: [created, ...state.flows],
-            selectedFlowId: created.id
-          }))
-
-          return created
-        } catch (e) {
-          console.error('[newFlow] failed:', e)
-          return null
-        }
-      },
-
-      updateFlowInfo: async (id, patch) => {
-        try {
-          const name = patch.name?.trim()
-          if (!name) return null
-
-          const description = (patch.description ?? '').trim()
-          const current = get().flows.find((f) => f.id === id)
-
-          const basePatch: Partial<TaskFlow> = {
-            name,
-            description: description || undefined
-          }
-
-          const optimisticPatch = withDraftStatusIfEdited(current, basePatch)
-
-          // 1) optimistic 반영(로컬)
-          set((state) => ({
-            flows: state.flows.map((f) => (f.id === id ? { ...f, ...optimisticPatch } : f))
-          }))
-
-          // 2) 서버 저장(명시적)
-          const updated = await updateTaskFlow(id, optimisticPatch)
-
-          // 3) 최신 객체로 확정
-          set((state) => ({
-            flows: state.flows.map((f) => (f.id === id ? updated : f))
-          }))
-
-          return updated
-        } catch (e) {
-          console.error('[updateFlowMeta] failed:', e)
-          return null
-        }
-      },
-
-      removeSelectedFlow: async () => {
-        const id = get().selectedFlowId
-        if (id == null) return
-
-        try {
-          await deleteTaskFlow(id)
-
-          set((state) => ({
-            flows: state.flows.filter((f) => f.id !== id),
-            selectedFlowId: null
-          }))
-        } catch (e) {
-          console.error('[removeSelectedFlow] failed:', e)
-        }
-      }
-    }),
-    {
-      name: 'taskflow-ui',
-      version: 1,
-      partialize: (state) => ({
-        flows: state.flows,
-        selectedFlowId: state.selectedFlowId
+      set({
+        flows,
+        selectedFlowId: selectedStillExists ? prevSelected : null
       })
+    } catch (e) {
+      console.error('[refreshFlows] failed:', e)
     }
-  )
-)
+  },
+
+  selectFlow: (id) => {
+    set({ selectedFlowId: id })
+  },
+
+  refreshSelectedFlow: async () => {
+    const id = get().selectedFlowId
+    if (id == null) return
+
+    try {
+      const tf = await getTaskFlow(id)
+      if (!tf) return
+
+      set((state) => ({
+        flows: state.flows.map((f) => (f.id === id ? tf : f))
+      }))
+    } catch (e) {
+      console.error('[refreshSelectedFlow] failed:', e)
+    }
+  },
+
+  newFlow: async (name: string, description?: string) => {
+    try {
+      const trimmedName = (name ?? '').trim()
+      const trimmedDescription = (description ?? '').trim()
+      if (!trimmedName) return null
+
+      const data: TaskFlow = {
+        id: 0,
+        siteId: '',
+        name: trimmedName,
+        description: trimmedDescription || undefined,
+        flowDefinition: ensureStartNode({ nodes: [], edges: [] }),
+        version: 0,
+        status: TaskFlowStatus.DRAFT,
+        createdAt: '',
+        updatedAt: '',
+        groupId: null,
+        flowDefinitionDraft: {},
+        robotSkillIds: [],
+        robotSkillInfos: [],
+        behaviorTree: ''
+      }
+
+      const created = await createTaskFlow(data)
+
+      if (!created || typeof (created as any).id !== 'number') {
+        console.error('[newFlow] invalid response:', created)
+        return null
+      }
+
+      set((state) => ({
+        flows: [created, ...state.flows],
+        selectedFlowId: created.id
+      }))
+
+      return created
+    } catch (e) {
+      console.error('[newFlow] failed:', e)
+      return null
+    }
+  },
+
+  copyFlow: async (id) => {
+    // 목록 응답에는 flowDefinition 등이 빠져 있을 수 있으므로 원본을 단건 조회해서 그대로 복사한다.
+    const source = await getTaskFlow(id)
+    if (!source) throw new Error('원본 Task Flow 를 불러오지 못했습니다.')
+
+    // id 는 신규 발급(0), 생성/수정 시각은 서버가 채운다. version 은 새 흐름이므로 0 으로 초기화하고,
+    // status 등 나머지는 원본과 동일하게 보낸다.
+    //
+    // 배포 이력은 taskFlowId 기준으로 따로 관리되므로 새 id 를 받은 복사본은 자연히 "미배포" 상태다.
+    // 다만 조회 응답에 배포/스냅샷 정보가 함께 실려 올 수 있어, 복사 payload 에서는 명시적으로 제외한다.
+    const {
+      id: _originId,
+      createdAt,
+      updatedAt,
+      deployment: _deployment,
+      deployments: _deployments,
+      lastDeployment: _lastDeployment,
+      taskFlowSnapshotId: _taskFlowSnapshotId,
+      ...rest
+    } = source as TaskFlow & Record<string, unknown>
+
+    // 목록에 같은 이름이 겹치지 않게 "원본이름 (복사본1), (복사본2) ..." 로 붙인다.
+    const name = buildCopyName(
+      source.name,
+      get().flows.map((flow) => flow.name)
+    )
+
+    const created = await createTaskFlow({ ...(rest as TaskFlow), id: 0, name, version: 0 })
+
+    if (!created || typeof created.id !== 'number') {
+      throw new Error('복사된 Task Flow 응답이 올바르지 않습니다.')
+    }
+
+    set((state) => ({ flows: [created, ...state.flows] }))
+
+    return created
+  },
+
+  updateFlowInfo: async (id, patch) => {
+    try {
+      const name = patch.name?.trim()
+      if (!name) return null
+
+      const description = (patch.description ?? '').trim()
+      const current = get().flows.find((f) => f.id === id)
+
+      const basePatch: Partial<TaskFlow> = {
+        name,
+        description: description || undefined
+      }
+
+      const optimisticPatch = withDraftStatusIfEdited(current, basePatch)
+
+      // 1) optimistic 반영(로컬)
+      set((state) => ({
+        flows: state.flows.map((f) => (f.id === id ? { ...f, ...optimisticPatch } : f))
+      }))
+
+      // 2) 서버 저장(명시적)
+      const updated = await updateTaskFlow(id, optimisticPatch)
+
+      // 3) 최신 객체로 확정
+      set((state) => ({
+        flows: state.flows.map((f) => (f.id === id ? updated : f))
+      }))
+
+      return updated
+    } catch (e) {
+      console.error('[updateFlowMeta] failed:', e)
+      return null
+    }
+  },
+
+  removeSelectedFlow: async () => {
+    const id = get().selectedFlowId
+    if (id == null) return
+
+    try {
+      await deleteTaskFlow(id)
+
+      set((state) => ({
+        flows: state.flows.filter((f) => f.id !== id),
+        selectedFlowId: null
+      }))
+    } catch (e) {
+      console.error('[removeSelectedFlow] failed:', e)
+    }
+  }
+}))

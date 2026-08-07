@@ -1,7 +1,8 @@
-import { Icon, Button } from '@repo/ui'
+import { Icon, Button, Checkbox } from '@repo/ui'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import {
+  SelectCheckWrap,
   Card,
   CardLeft,
   CardRight,
@@ -23,6 +24,7 @@ import {
 import { TaskFlowWithDeployment, TaskFlowStatus, DeploymentStatus } from '@/types/taskflow'
 import { getTaskFlowStatusLabel } from '@/utils/taskflowStatus'
 import { convertDateToString } from '@repo/utils'
+import { TextAlignStart } from 'lucide-react'
 function EmptyValue() {
   return <>-</>
 }
@@ -134,24 +136,41 @@ interface TaskFlowListRowProps {
   flow: TaskFlowWithDeployment
   onClickCanvas: (flowId: number) => void
   onClickDetail: (flowId: number) => void
+  /** 선택 모드 여부. 켜지면 체크박스가 보이고 카드 전체가 선택 토글이 된다. */
+  selectMode?: boolean
+  selected?: boolean
+  onToggleSelect?: (flowId: number) => void
 }
 
-export default function TaskFlowListRow({ flow, onClickCanvas, onClickDetail }: TaskFlowListRowProps) {
+export default function TaskFlowListRow({
+  flow,
+  onClickCanvas,
+  onClickDetail,
+  selectMode = false,
+  selected = false,
+  onToggleSelect
+}: TaskFlowListRowProps) {
   const { t } = useTranslation(['tms', 'common'])
+
+  const isSelectable = selectMode && flow.id > 0
+
+  const handleToggle = () => {
+    if (!isSelectable) return
+    onToggleSelect?.(flow.id)
+  }
+
   return (
-    <Card>
+    <Card $selectable={isSelectable} $selected={selected} onClick={handleToggle}>
+      {selectMode && (
+        <SelectCheckWrap>
+          <Checkbox checked={selected} disabled={!isSelectable} onChange={handleToggle} />
+        </SelectCheckWrap>
+      )}
+
       <CardLeft>
         <FlowMain>
           <FlowTitleRow>
-            <Button
-              theme="text"
-              size="lg"
-              type="button"
-              style={{ padding: 0, justifyContent: 'flex-start' }}
-              onClick={() => flow.id > 0 && onClickCanvas(flow.id)}
-            >
-              {flow.name || <EmptyValue />}
-            </Button>
+            <span style={{ lineHeight: 1.4 }}>{flow.name || <EmptyValue />}</span>
 
             <FlowVersionBadge>{getVersionText(flow)}</FlowVersionBadge>
             {renderFlowStatusBadge(flow, t)}
@@ -170,10 +189,12 @@ export default function TaskFlowListRow({ flow, onClickCanvas, onClickDetail }: 
           </RightBottomRow>
         </RightInfoColumn>
 
-        <Button theme="tertiary" size="md" type="button" onClick={() => flow.id > 0 && onClickDetail(flow.id)}>
-          {t('common:detail')}
-          <Icon name="arrow_right" size={18} />
-        </Button>
+        {!selectMode && (
+          <Button theme="tertiary" size="md" type="button" onClick={() => flow.id > 0 && onClickDetail(flow.id)}>
+            {t('common:detail')}
+            <Icon name="arrow_right" size={18} />
+          </Button>
+        )}
       </CardRight>
     </Card>
   )

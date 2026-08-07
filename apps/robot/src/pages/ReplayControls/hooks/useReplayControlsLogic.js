@@ -1,5 +1,6 @@
 // ReplayControls/hooks/useReplayControlsLogic.js
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { fileApis } from '@/apis'
 import { toUtcFromLocalDateTime } from '@/utils/dateUtils'
 import { format } from 'date-fns'
@@ -12,7 +13,7 @@ import { DIAGNOSTIC_TOPICS, DIAGNOSTIC_FALLBACK, resolveTopicSamples } from '../
 
 const lichtblickURL = import.meta.env.VITE_LICHTBLICK_BASE_URL
 
-const EMPTY_OPTION = { id: '__empty__', label: '파일 없음' }
+const EMPTY_OPTION = { id: '__empty__', labelKey: 'replayControls.header.noFile' }
 const ROSOUT_TOPIC = '/rosout'
 const SYSTEM_STATE_TOPIC = '/safety/system_state'
 
@@ -306,6 +307,7 @@ function mergeSamplesByTSec(baseArr, patchArr) {
  */
 
 export default function useReplayControlsLogic({ deviceId, currentTime = 0, isPlaying = false } = {}) {
+  const { t } = useTranslation('robot')
   // ─────────────────────────────────────────────
   // 상태
   const todayStr = format(new Date(), 'yyyy-MM-dd')
@@ -910,7 +912,7 @@ export default function useReplayControlsLogic({ deviceId, currentTime = 0, isPl
 
     const downloadUrl = await getPresignedUrl(selectedLogId)
     if (!downloadUrl) {
-      alert('Logfile URL not found')
+      alert(t('replayControls.header.lichtblickUrlNotFound'))
       return
     }
     const ds = 'remote-file'
@@ -937,7 +939,7 @@ export default function useReplayControlsLogic({ deviceId, currentTime = 0, isPl
     const downloadUrl = await getPresignedUrl(selectedLogId)
     if (!downloadUrl) {
       setIsPreparingDownload(false)
-      alert('다운로드 URL이 설정되지 않았습니다.')
+      alert(t('replayControls.header.downloadUrlMissing'))
       return
     }
 

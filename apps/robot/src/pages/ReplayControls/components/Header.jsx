@@ -1,5 +1,6 @@
 // /components/Header.jsx
 import { React, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Dropdown, Button, Calendar } from '@repo/ui'
 import { S } from '../styles'
 import { format } from 'date-fns'
@@ -25,6 +26,7 @@ export default function Header({
 
   allowedDateKeys
 }) {
+  const { t } = useTranslation('robot')
   const handleQueryDate = () => onQuery?.({ source: 'date' })
   const handleQueryLog = () => onQuery?.({ source: 'log' })
 
@@ -50,7 +52,7 @@ export default function Header({
       {/* 상단 타이틀 */}
       <div style={S.topRow1}>
         <div style={S.title}>
-          로봇 관리 | 조작 로그 리플레이{' '}
+          {t('replayControls.header.title')}{' '}
           <span style={{ color: '#6B7280', fontWeight: 600 }}>
             {robotName} ( {deviceId} )
           </span>
@@ -61,7 +63,7 @@ export default function Header({
       <div style={S.topRow2}>
         {/* 날짜 */}
         <div style={S.rowGroup}>
-          <label style={{ fontSize: 13 }}>날짜</label>
+          <label style={{ fontSize: 13 }}>{t('replayControls.header.dateLabel')}</label>
           <div style={{ paddingLeft: 12 }}>
             <Calendar
               startDate={selectedDate}
@@ -74,28 +76,28 @@ export default function Header({
             />
           </div>
           <Button size="sm" onClick={handleQueryDate}>
-            조회
+            {t('replayControls.header.query')}
           </Button>
         </div>
 
         {/* 로그 */}
         <div style={S.rowGroup}>
-          <label style={{ fontSize: 13 }}>로그</label>
+          <label style={{ fontSize: 13 }}>{t('replayControls.header.logLabel')}</label>
           <Dropdown
             value={selectedLogId}
             size="sm"
-            title="로그 선택"
+            title={t('replayControls.header.logSelectTitle')}
             options={logOptions.map((log) => ({
-              name: log.label,
+              name: log.labelKey ? t(log.labelKey) : log.label,
               value: log.id
             }))}
             onChange={(value) => onLogChange(value)}
           />
           <Button size="sm" onClick={handleQueryLog}>
-            조회
+            {t('replayControls.header.query')}
           </Button>
           <Button size="sm" disabled={isPreparingDownload} onClick={onDownload}>
-            다운로드
+            {t('replayControls.header.download')}
           </Button>
 
           <Button size="sm" onClick={handleOpenLichtblick} disabled={isPreparingDownload}>
@@ -105,11 +107,11 @@ export default function Header({
 
         {/* 선택 날짜 표시 + (result 화면에서) 처음 버튼 */}
         <div style={S.selectedInfoBox}>
-          <span>선택 날짜: {selectedDate}</span>
+          <span>{t('replayControls.header.selectedDate', { date: selectedDate })}</span>
 
           {mode === 'result' && (
             <Button size="sm" onClick={onBack} style={{ marginLeft: 10 }}>
-              ← 처음
+              {t('replayControls.header.backToStart')}
             </Button>
           )}
         </div>

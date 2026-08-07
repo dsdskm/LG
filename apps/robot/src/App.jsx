@@ -26,13 +26,22 @@ import MapHistory from './pages/MapManagement/MapHistory'
 import AiLogManagement from './pages/AiLogManagement'
 import AiEventSummaryPanel from './pages/Dashboard/components/AiEventSummaryPanel'
 import TVDashboard from './pages/TVDashboard'
+import TermManagement from './pages/TermManagement'
+
+import SvgGnbDashboard from '@repo/ui/assets/svgs/gnb_dashboard.svg'
+import SvgGnbRobotList from '@repo/ui/assets/svgs/gnb_robot_list.svg'
+import SvgGnbGroup from '@repo/ui/assets/svgs/gnb_group.svg'
+import SvgGnbSupport from '@repo/ui/assets/svgs/gnb_support.svg'
+import SvgGnbUser from '@repo/ui/assets/svgs/gnb_user.svg'
+import SvgGnbMap from '@repo/ui/assets/svgs/gnb_map.svg'
+import SvgGnbSettings from '@repo/ui/assets/svgs/gnb_settings.svg'
 
 const appRoutes = [
   {
     name: 'dashboard',
     path: '/robot/dashboard',
     prefix: 'robot',
-    icon: 'dashboard',
+    icon: SvgGnbDashboard,
     element: <Dashboard />,
     accessLevel: [0, 1, 2, 3]
   },
@@ -40,7 +49,7 @@ const appRoutes = [
     name: 'robotList',
     path: '/robot/management',
     prefix: 'robot',
-    icon: 'category',
+    icon: SvgGnbRobotList,
     element: <Management />,
     accessLevel: [0, 1, 2, 3],
     depth: [
@@ -58,7 +67,7 @@ const appRoutes = [
     name: 'mapManagement',
     path: '/robot/maps',
     prefix: 'robot',
-    icon: 'map',
+    icon: SvgGnbMap,
     element: <MapManagement />,
     accessLevel: [0, 1, 2, 3],
     depth: [
@@ -83,9 +92,9 @@ const appRoutes = [
 
   {
     name: 'aiLogManagement',
-    path: '/robot/ailog/event',
+    path: '/robot/ailog',
     prefix: 'robot',
-    icon: 'support',
+    icon: SvgGnbSupport,
     element: <AiLogManagement />,
     accessLevel: [1, 2, 3],
     depth: [
@@ -102,7 +111,7 @@ const appRoutes = [
     name: 'groupManagement',
     path: '/robot/groups',
     prefix: 'robot',
-    icon: 'group',
+    icon: SvgGnbGroup,
     element: <GroupManagement />,
     accessLevel: [1, 2, 3],
     depth: [
@@ -120,9 +129,24 @@ const appRoutes = [
     name: 'userManagement',
     path: '/robot/users',
     prefix: 'robot',
-    icon: 'user',
+    icon: SvgGnbUser,
     element: <UserManagement />,
     accessLevel: [2, 3]
+  },
+  {
+    name: 'settings',
+    prefix: 'settings',
+    icon: SvgGnbSettings,
+    accessLevel: [3, 4],
+    depth: [
+      {
+        name: 'termManagement',
+        path: '/robot/terms',
+        prefix: 'settings',
+        icon: 'terms',
+        element: <TermManagement />
+      }
+    ]
   }
 ]
 
@@ -178,7 +202,12 @@ const App = () => {
                 key={item.name}
                 path={item.path}
                 element={
-                  <MainLayout currentApp={appPrefix} appRoutes={appRoutes} t={appT} aiGreetingExtra={<AiEventSummaryPanel />}>
+                  <MainLayout
+                    currentApp={appPrefix}
+                    appRoutes={appRoutes}
+                    t={appT}
+                    aiGreetingExtra={<AiEventSummaryPanel />}
+                  >
                     {item.element}
                   </MainLayout>
                 }

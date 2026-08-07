@@ -332,7 +332,7 @@ export default function useLogReplayPlayer2D({
         sensitivity: 0.0015
       })
       viewRef.current = roundView(next)
-      smoothRef.current.setTarget(viewRef.current)
+      smoothRef.current.snapTo(viewRef.current) // 휠도 즉시 반영(드래그와 일관)
       renderNow()
 
       // 휠 종료 후 120ms 지나면 커밋 + 스무딩 재개
@@ -377,7 +377,7 @@ export default function useLogReplayPlayer2D({
           panX: viewRef.current.panX + dPanX,
           panY: viewRef.current.panY + dPanY
         })
-        smoothRef.current.setTarget(viewRef.current)
+        smoothRef.current.snapTo(viewRef.current)
         renderNow()
       }
       const onUp = () => {

@@ -50,11 +50,12 @@ const Management = () => {
   function setTableList(tList) {
     let loopList = []
     for (var i = 0; i < tList.length; i++) {
-      if (!tList[i].updatedAt) {
-        tList[i].registeredAt = toYmdHmKST(tList[i].registeredAt)
+      if (!tList[i].deviceStateUpdatedAt) {
+        tList[i].deviceStateUpdatedAt = toYmdHmKST(tList[i].registeredAt)
       } else {
-        tList[i].updatedAt = toYmdHmKST(tList[i].updatedAt)
+        tList[i].deviceStateUpdatedAt = toYmdHmKST(tList[i].deviceStateUpdatedAt)
       }
+      tList[i].registeredAt = toYmdHmKST(tList[i].registeredAt)
       loopList.push(tList[i])
     }
 
@@ -123,6 +124,7 @@ const Management = () => {
       columns: [
         {
           name: t('robotName'),
+          width: '13%',
           selector: (row) =>
             row.deviceRegStatus === 'DELETED' ? (
               row.deviceName
@@ -135,11 +137,13 @@ const Management = () => {
         },
         {
           name: t('model'),
+          width: '9%',
           selector: (row) => <P>{row.deviceModelName ?? 'no model'}</P>,
           sortable: true
         },
         {
           name: t('registerStatus'),
+          width: '8%',
           selector: (row) => row.deviceRegStatus ?? '', // 정렬용 원시값
           cell: (row) => {
             const { className, textKey } = getStatusInfo(row.deviceRegStatus ?? '')
@@ -149,6 +153,7 @@ const Management = () => {
         },
         {
           name: t('operateStatus'),
+          width: '8%',
           selector: (row) => row.deviceState ?? '', // 정렬용 원시값
           cell: (row) => {
             const { className, textKey } = getStatusInfo(row.deviceState ?? '')
@@ -158,6 +163,7 @@ const Management = () => {
         },
         {
           name: t('group'),
+          width: '10%',
           selector: (row) =>
             row.provision?.isDefaultSite != true && row.provision?.groupName ? (
               row.provision.groupName
@@ -168,6 +174,7 @@ const Management = () => {
         },
         {
           name: t('site'),
+          width: '12%',
           selector: (row) =>
             row.provision?.isDefaultSite != true && row.provision?.siteName ? (
               row.provision.siteName
@@ -178,17 +185,26 @@ const Management = () => {
         },
         {
           name: t('serialNumber'),
+          width: '11%',
           selector: (row) => (row.deviceSerialNumber ? row.deviceSerialNumber : <P>{'SN-00000000'}</P>),
           sortable: true
         },
         {
           name: t('macAddress'),
+          width: '11%',
           selector: (row) => (row.deviceMacAddress ? row.deviceMacAddress : <P>{'00:00:00:00:00:00'}</P>),
           sortable: true
         },
         {
           name: t('finalUpdate'),
-          selector: (row) => (!row.updatedAt ? row.registeredAt : row.updatedAt),
+          width: '9%',
+          selector: (row) => row.deviceStateUpdatedAt,
+          sortable: true
+        },
+        {
+          name: t('registerDate'),
+          width: '9%',
+          selector: (row) => row.registeredAt,
           sortable: true
         }
       ],
@@ -297,7 +313,6 @@ const Management = () => {
           onChange={handleSelectOrg}
           // supportAlls={[true, true]}
           supportNone={[false, false]}
-          disableCenter
         />
         <SectionRobot>
           <HeaderTitleGroup>

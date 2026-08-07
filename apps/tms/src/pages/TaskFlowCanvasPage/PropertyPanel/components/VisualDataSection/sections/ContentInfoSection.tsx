@@ -81,10 +81,7 @@ export default function ContentInfoSection({ selectedData }: ContentInfoSectionP
     ]
   }, [selectedData])
 
-  const parsedContentValue = useMemo(
-    () => parseContentValue(selectedData?.contentValue ?? ''),
-    [selectedData]
-  )
+  const parsedContentValue = useMemo(() => parseContentValue(selectedData?.contentValue ?? ''), [selectedData])
 
   if (!selectedData) {
     return <InfoBox>{t('canvas.property.noContentInfo')}</InfoBox>
@@ -114,13 +111,7 @@ export default function ContentInfoSection({ selectedData }: ContentInfoSectionP
   )
 }
 
-function Field({
-  label,
-  children
-}: {
-  label: string
-  children: ReactNode
-}) {
+function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <FieldCard>
       <FieldLabel>{label}</FieldLabel>

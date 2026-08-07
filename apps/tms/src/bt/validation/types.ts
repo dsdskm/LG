@@ -9,7 +9,7 @@
 // AST(model)를 만든 뒤, 그 AST 를 기준으로 수행하는 의미 검증의 공용 타입이다.
 // 규칙(SemanticRule)을 배열로 등록해 두고 validateSemantics() 가 순서대로 실행한다.
 
-import type { BtSequenceNode } from '../types'
+import type { BtSequenceNode } from '../nodes/btSequenceNode'
 
 export type ValidationSeverity = 'error' | 'warning'
 

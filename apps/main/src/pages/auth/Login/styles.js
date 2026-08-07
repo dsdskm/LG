@@ -1,79 +1,21 @@
 import styled from 'styled-components'
 
-export const LoginContainer = styled.div`
-  width: 100vw;
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  background-color: var(--color-secondary-10);
-  background: linear-gradient(136deg, #80c3e2 0%, #95c2dc 95.46%);
-  overflow-y: auto;
-`
+// 로그인/인증 화면 공통 레이아웃 스타일은 @repo/ui의 LoginPage와 공유한다.
+// main의 다른 auth 페이지(Invitations, ResetPassword, SetPassword)들이 이 경로로
+// 계속 참조하고 있으므로 여기서 재노출한다.
+export {
+  LoginContainer,
+  LoginBox,
+  LogoWrapper,
+  Title,
+  FormGroup,
+  ErrorMessage,
+  LanguageSelectWrapper,
+  ButtonWrapper,
+  Footer
+} from '@repo/ui/components/pages/LoginPage/styles'
 
-export const LoginBox = styled.div`
-  width: 100%;
-  max-width: 55rem;
-  padding: 4.8rem 4rem;
-  background: var(--color-neutral-10);
-  border-radius: 1.6rem;
-  box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.05);
-  display: flex;
-  flex-direction: column;
-`
-
-export const LogoWrapper = styled.div`
-  align-items: center;
-  flex-direction: column;
-  display: flex;
-  margin-bottom: 3em;
-  font-size: initial !important;
-
-  .logo-root svg text {
-    font-size: 42px !important; /* 필요시 !important로 전역 규칙을 이김 */
-  }
-
-  .logo-root svg text[data-part='tm'] {
-    font-size: 12px !important;
-  }
-`
-
-export const Title = styled.h2`
-  margin-bottom: 4rem;
-  color: var(--color-neutral-80);
-`
-
-export const FormGroup = styled.div`
-  margin-bottom: 1.6rem;
-`
-
-export const ErrorMessage = styled.p`
-  color: var(--color-error-70);
-  margin: 0.8rem 0 2rem;
-  font-weight: 500;
-`
-
-export const LanguageSelectWrapper = styled.div`
-  align-self: flex-end;
-  display: flex;
-  align-items: center;
-  gap: 0.8rem;
-`
-
-export const ButtonWrapper = styled.div`
-  margin-top: 3.2rem;
-  display: flex;
-  gap: 1.6rem;
-`
-
-export const Footer = styled.div`
-  position: absolute;
-  bottom: 2.4rem;
-  right: 2.4rem;
-  color: var(--color-neutral-80);
-`
-
+// 아래 안내 박스 스타일은 main 앱 전용이다.
 export const BlueDescBox = styled.div`
   padding: 1.6rem;
   background-color: oklch(97% 0.014 254.604);

@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useFoxglove } from '@/hooks/useFoxglove'
 import ConnectionBar from '@/components/ConnectionBar'
+import LocationBar from '@/components/LocationBar'
 import MapCanvas from '@/components/MapCanvas'
 import StatusPanel from '@/components/StatusPanel'
 
@@ -15,6 +16,8 @@ import StatusPanel from '@/components/StatusPanel'
  *
  * 레이아웃:
  * ┌─────────────────────────────────────────┐
+ * │ LocationBar (Building/Floor/Area 선택)   │
+ * ├─────────────────────────────────────────┤
  * │ ConnectionBar (상단 바)                  │
  * ├──────────────────────────┬──────────────┤
  * │                          │              │
@@ -23,10 +26,27 @@ import StatusPanel from '@/components/StatusPanel'
  * │                          │              │
  * └──────────────────────────┴──────────────┘
  */
+/**
+ * WebSocket URL의 host(IP) 부분을 현재 접속한 페이지의 hostname으로 교체한다.
+ * 프로토콜(ws/wss)과 포트, 경로는 환경변수 값을 그대로 유지한다.
+ */
+function resolveWsUrl() {
+  const envUrl = import.meta.env.VITE_WEBSOCKET_URL
+  try {
+    const url = new URL(envUrl)
+    url.hostname = window.location.hostname
+    console.log('url', url.toString())
+    return url.toString()
+  } catch {
+    return envUrl
+  }
+}
+
 export default function Map() {
   const { t } = useTranslation('map')
-  const [wsUrl, setWsUrl] = useState(import.meta.env.VITE_WEBSOCKET_URL)
+  const [wsUrl, setWsUrl] = useState(resolveWsUrl)
   const [fps, setFps] = useState(10) // 기본 10 FPS 업데이트 주기
+  const [location, setLocation] = useState({ buildingId: '', floorId: '', areaId: '' })
 
   const {
     status,
@@ -45,6 +65,9 @@ export default function Map() {
 
   return (
     <div style={styles.app}>
+      {/* 위치 계층 선택 바 (Building > Floor > Area) */}
+      <LocationBar value={location} onChange={setLocation} />
+
       {/* 상단 연결 바 */}
       <ConnectionBar
         url={wsUrl}

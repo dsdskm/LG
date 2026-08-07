@@ -2,6 +2,7 @@ import React, { useCallback, useMemo } from 'react'
 import { Dropdown, Button, Input, Calendar } from '@repo/ui'
 import { format } from 'date-fns'
 import { S } from '../styles'
+import { useTranslation } from 'react-i18next'
 
 export default function HeaderControls({
   robotName,
@@ -41,7 +42,7 @@ export default function HeaderControls({
   //   'isEmptyOption:',
   //   isEmptyOption
   // )
-
+  const { t } = useTranslation('robot')
   const filterDate = useMemo(() => {
     if (allowedDateKeys === null) {
       return () => true
@@ -65,7 +66,7 @@ export default function HeaderControls({
     <div id="headerWrap" style={S.headerWrap}>
       <div style={S.topRow1}>
         <div style={S.title}>
-          로봇 관리 | 주행 로그 리플레이{' '}
+          {t('logreplay.header.title')}{' '}
           <span style={{ color: '#6B7280', fontWeight: 600 }}>
             {' '}
             {robotName} ( {deviceId} )
@@ -84,13 +85,13 @@ export default function HeaderControls({
           onMouseEnter={settingsDisabled ? undefined : openSettingsPopover}
           onMouseLeave={settingsDisabled ? undefined : scheduleCloseSettingsPopover}
         >
-          <Button size="sm" theme="tertiary" title="설정" disabled={settingsDisabled}>
-            ⚙️ 설정
+          <Button size="sm" theme="tertiary" title={t('logreplay.header.settingsTitle')} disabled={settingsDisabled}>
+            {t('logreplay.header.settingsButton')}
           </Button>
 
           {showSettings && !settingsDisabled && (
             <div style={S.popover} onMouseEnter={openSettingsPopover} onMouseLeave={scheduleCloseSettingsPopover}>
-              <div style={S.popoverHeader}>표시 옵션</div>
+              <div style={S.popoverHeader}>{t('logreplay.settings.popoverTitle')}</div>
 
               <label style={S.checkboxRow}>
                 <input
@@ -98,7 +99,7 @@ export default function HeaderControls({
                   checked={settings.value.showTrajectory}
                   onChange={(e) => settings.set({ ...settings.value, showTrajectory: e.target.checked })}
                 />
-                Trajectory
+                {t('logreplay.settings.trajectory')}
               </label>
 
               <label style={S.checkboxRow}>
@@ -107,7 +108,7 @@ export default function HeaderControls({
                   checked={settings.value.showGoalAndHeading}
                   onChange={(e) => settings.set({ ...settings.value, showGoalAndHeading: e.target.checked })}
                 />
-                Goal & Heading
+                {t('logreplay.settings.goalAndHeading')}
               </label>
 
               <label style={S.checkboxRow}>
@@ -116,7 +117,7 @@ export default function HeaderControls({
                   checked={settings.value.showCostmap}
                   onChange={(e) => settings.set({ ...settings.value, showCostmap: e.target.checked })}
                 />
-                Costmap
+                {t('logreplay.settings.costmap')}
               </label>
 
               <label style={S.checkboxRow}>
@@ -125,7 +126,7 @@ export default function HeaderControls({
                   checked={settings.value.showPlannedPath}
                   onChange={(e) => settings.set({ ...settings.value, showPlannedPath: e.target.checked })}
                 />
-                Planned Path
+                {t('logreplay.settings.plannedPath')}
               </label>
             </div>
           )}
@@ -133,7 +134,7 @@ export default function HeaderControls({
 
         {/* 날짜 + 조회(목록 조회) */}
         <div style={S.rowGroup}>
-          <label style={{ fontSize: 13, color: '#374151' }}>날짜</label>
+          <label style={{ fontSize: 13, color: '#374151' }}>{t('logreplay.header.dateLabel')}</label>
           <Calendar
             startDate={selectedDate}
             onChangeStartDate={(date) => {
@@ -148,23 +149,23 @@ export default function HeaderControls({
             size="sm"
             theme="default"
             onClick={handleFetchListClick}
-            title="선택 날짜의 파일 목록 조회"
+            title={t('logreplay.header.dateQueryTitle')}
             disabled={headerLocked}
           >
-            조회
+            {t('logreplay.header.query')}
           </Button>
         </div>
 
         {/* 로그 드롭다운 + 조회/다운로드 */}
         <div style={S.rowGroup}>
-          <label style={{ fontSize: 13, color: '#374151' }}>로그</label>
+          <label style={{ fontSize: 13, color: '#374151' }}>{t('logreplay.header.logLabel')}</label>
           <div style={headerLocked ? { pointerEvents: 'none', opacity: 0.6 } : undefined}>
             <Dropdown
               size="sm"
-              title="로그 선택"
+              title={t('logreplay.header.logSelectTitle')}
               value={selectedLogId}
               options={logOptions.map((log) => ({
-                name: log.label,
+                name: log.labelKey ? t(log.labelKey) : log.label,
                 value: log.id
               }))}
               onChange={(value) => onLogChange(value)}
@@ -174,14 +175,14 @@ export default function HeaderControls({
             size="sm"
             theme="default"
             onClick={handleViewLog}
-            title="로그 조회"
+            title={t('logreplay.header.logQueryTitle')}
             disabled={headerLocked || isEmptyOption}
           >
-            조회
+            {t('logreplay.header.query')}
           </Button>
 
           <Button size="sm" onClick={handleDownloadLog} disabled={headerLocked || isPreparingDownload}>
-            {isPreparingDownload ? '준비 중...' : '다운로드'}
+            {isPreparingDownload ? t('logreplay.header.preparingDownload') : t('logreplay.header.download')}
           </Button>
 
           <Button
@@ -204,9 +205,9 @@ export default function HeaderControls({
             border: '1px solid #E5E7EB',
             borderRadius: 8
           }}
-          title="선택한 날짜"
+          title={t('logreplay.header.selectedDateTitle')}
         >
-          선택 날짜: {formatDate(selectedDate)}
+          {t('logreplay.header.selectedDate', { date: formatDate(selectedDate) })}
         </div>
       </div>
     </div>

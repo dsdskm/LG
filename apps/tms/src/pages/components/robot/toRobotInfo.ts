@@ -5,8 +5,8 @@ export function toRobotInfo(device: DeviceResponse): RobotInfo {
   return {
     id: device.deviceId,
     name: device.deviceName,
-    group: device.assign.groupName,
-    site: device.assign.siteName,
+    group: device.provision.isDefaultSite ? '' : device.provision.groupName,
+    site: device.provision.isDefaultSite ? '' : device.provision.siteName,
     groupId: device.provision.groupId!,
     siteId: device.provision.siteId!,
     status: device.deviceState as RobotStatus,

@@ -214,15 +214,19 @@ const RobotItem = ({
               <div
                 style={{ display: 'flex', flexWrap: 'wrap', flexDirection: 'row', alignItems: 'center', gap: '10px' }}
               >
-                <div style={{ display: 'flex', flexDirection: 'row' }}>
-                  <span>{t('common:group')}:</span>
-                  <span style={{ color: '#9ca3af' }}>
+                <div style={{ display: 'flex', flexDirection: 'row', minWidth: 0, flex: '0 1 auto' }}>
+                  <span style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>{t('common:group')}:</span>
+                  <span
+                    style={{ color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  >
                     {robot.group?.length > 0 ? robot.group : t('deploy.robot.unassigned')}
                   </span>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'row' }}>
-                  <span>{t('common:site')}:</span>
-                  <span style={{ color: '#9ca3af' }}>
+                <div style={{ display: 'flex', flexDirection: 'row', minWidth: 0, flex: '0 1 auto' }}>
+                  <span style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>{t('common:site')}:</span>
+                  <span
+                    style={{ color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  >
                     {robot.site?.length > 0 ? robot.site : t('deploy.robot.unassigned')}
                   </span>
                 </div>

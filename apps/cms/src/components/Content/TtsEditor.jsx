@@ -3,6 +3,7 @@ import { Button, Textarea, Dropdown } from '@repo/ui'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'react-toastify'
 import { googleVoiceApis, fileContentApis } from '@/apis'
+import { guardAction } from '@/utils/actionGuard'
 
 const MAX_SCRIPT = 1000
 
@@ -130,8 +131,11 @@ const TtsEditor = ({ langCode, voices, files, texts, onChange }) => {
               />
               <Button
                 size="md"
-                onClick={() => handleGenerate(i)}
-                disabled={!script.trim() || !voiceCode || generatingIdx === i}
+                onClick={guardAction(() => handleGenerate(i), [
+                  { when: !script.trim(), message: t('enterScript', '스크립트를 입력하세요.') },
+                  { when: !voiceCode, message: t('selectVoice', '목소리 선택') }
+                ])}
+                disabled={generatingIdx === i}
               >
                 {generatingIdx === i ? t('generating', '생성 중...') : t('generate', '생성')}
               </Button>

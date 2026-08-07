@@ -497,13 +497,23 @@ export const StyledContent = styled(Drawer.Content)`
   border-radius: 16px 16px 0 0;
   background: white;
 `
-
 export const SheetHandle = styled.div`
+  position: relative;
   width: 40px;
   height: 6px;
   margin: 12px auto 8px;
   border-radius: 999px;
   background: #d1d1d1;
+  touch-action: none;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: -19px;
+    bottom: -19px;
+    left: -30px;
+    right: -30px;
+  }
 `
 
 export const SheetTitle = styled(Drawer.Title)`

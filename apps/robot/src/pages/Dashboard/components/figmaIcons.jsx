@@ -8,13 +8,14 @@ import cumulativeRaw from '@/assets/icons/figma/card_cumulative.svg?raw'
 import targetRaw from '@/assets/icons/figma/card_target.svg?raw'
 import inboxRaw from '@/assets/icons/figma/card_inbox.svg?raw'
 
-// 상태 아이콘: Figma export SVG(원형 배지 배경 + 글리프 포함)를 URL 로 로드해 그대로 <img> 렌더
+// 상태 아이콘: Figma export SVG(원형 링 배지 + 글리프 포함)를 URL 로 로드해 그대로 <img> 렌더
 import operationUrl from '@/assets/icons/figma/state_operation.svg?url'
 import learningUrl from '@/assets/icons/figma/state_learning.svg?url'
 import standbyUrl from '@/assets/icons/figma/state_standby.svg?url'
 import chargeUrl from '@/assets/icons/figma/state_charge.svg?url'
 import networkUrl from '@/assets/icons/figma/state_network.svg?url'
 import errorUrl from '@/assets/icons/figma/state_error.svg?url'
+import cumulativeStateUrl from '@/assets/icons/figma/state_cumulative.svg?url' // 전체(총 로봇 수)
 
 // ── 카드 제목 아이콘: 어두운 칩 + 흰색 아이콘 (Figma: #454749 / rounded 2 / 24px) ──
 const CardChip = styled.span`
@@ -64,3 +65,4 @@ export const StandbyIcon = ({ size, ...p }) => <StateImg src={standbyUrl} $size=
 export const ChargeIcon = ({ size, ...p }) => <StateImg src={chargeUrl} $size={size} alt="" {...p} />
 export const NetworkIcon = ({ size, ...p }) => <StateImg src={networkUrl} $size={size} alt="" {...p} />
 export const ErrorIcon = ({ size, ...p }) => <StateImg src={errorUrl} $size={size} alt="" {...p} />
+export const TotalIcon = ({ size, ...p }) => <StateImg src={cumulativeStateUrl} $size={size} alt="" {...p} />

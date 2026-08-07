@@ -12,21 +12,27 @@ export const StyledHeader = styled.header`
     &,
     .content {
       display: flex;
-      justify-content: space-between;
       align-items: center;
 
       &.left {
         gap: 1.4rem;
+        flex: 0 1 auto;
       }
 
       &.right {
         gap: 1.6rem;
+        margin-left: auto;
       }
+    }
+
+    .content {
+      justify-content: flex-start;
     }
   }
 
   .logo {
     padding-top: 0.4rem;
+    flex-shrink: 0;
 
     /* 브랜드 로고는 테마 공통으로 항상 흰색 */
     & svg path {
@@ -36,15 +42,21 @@ export const StyledHeader = styled.header`
 
   @media all and (max-width: 767px) {
     .containerHeader {
-      padding: 0 0.5rem 0 0;
+      padding: 0 0.3rem 0 0.3rem;
 
       .content.left {
-        gap: 0rem;
+        gap: 0.1rem;
+        flex: 0 1 auto;
       }
-    }
 
-    .logout {
-      font-size: 12px;
+      .content.right {
+        gap: 0.15rem;
+        margin-left: auto;
+      }
+
+      .logout {
+        font-size: 12px;
+      }
     }
   }
 `
@@ -64,21 +76,15 @@ export const StyledHeaderButton = styled.button`
     }
   }
 
+  &.menuToggle {
+    color: var(--color-neutral-10);
+  }
+
   &.hideOnMobile {
     @media all and (max-width: 767px) {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-
-      width: 44px;
-      height: 44px;
-      padding: 0;
-      flex-shrink: 0;
-
-      & svg {
-        width: 24px;
-        height: 24px;
-      }
     }
   }
 
@@ -90,33 +96,28 @@ export const StyledHeaderButton = styled.button`
     gap: 0.2rem;
     color: var(--color-neutral-10);
 
-    /* 언어 지구본 아이콘은 테마 공통으로 항상 흰색 라인아트 */
-    & .icon svg circle,
-    & .icon svg path {
-      stroke: var(--color-neutral-10);
-    }
+    @media all and (max-width: 767px) {
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 50%;
 
-    & .icon svg circle {
-      fill: none;
+      & .icon {
+        border-radius: 50%;
+      }
     }
   }
 
   @media all and (max-width: 767px) {
-    &.notification {
-      ${mobileHeaderButtonStyle};
-      bottom: 2.4rem;
-    }
-
     & .icon {
-      border-radius: 50%;
-      background: var(--alpha-black-30);
+      border-radius: var(--radius-xs);
+      display: inline-flex;
+      padding: 0.4rem;
 
       &:hover {
-        background: var(--alpha-black-45);
+        background: var(--alpha-black-20);
       }
 
       &:active {
-        background: var(--alpha-black-55);
+        background: var(--alpha-black-40);
       }
     }
   }
@@ -169,6 +170,13 @@ export const StyledProfileDropdown = styled.div`
     &:hover {
       background: var(--color-secondary-15);
     }
+  }
+
+  @media all and (max-width: 767px) {
+    right: 0.5rem;
+    left: auto;
+    min-width: auto;
+    max-width: calc(100vw - 2rem);
   }
 `
 

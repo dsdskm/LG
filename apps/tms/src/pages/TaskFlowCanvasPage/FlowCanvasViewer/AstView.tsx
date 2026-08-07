@@ -7,6 +7,20 @@ import styled from 'styled-components'
 import type { BtAstNode } from '@/bt/types'
 import type { SimStatus } from '@/bt/execution/simulate'
 import { PropertyPanelWrap, PropertyPanelHeader } from './styles'
+import { parallelNodeType } from '@/bt/nodes/btParallelNode'
+import { forceFailureNodeType } from '@/bt/nodes/btForceFailureNode'
+import { forceSuccessNodeType } from '@/bt/nodes/btForceSuccessNode'
+import { orNodeType } from '@/bt/nodes/btOrNode'
+import { andNodeType } from '@/bt/nodes/btAndNode'
+import { fallbackOnFailureNodeType } from '@/bt/nodes/btFallbackOnFailureNode'
+import { ifThenElseNodeType } from '@/bt/nodes/btIfThenElseNode'
+import { repeatNodeType } from '@/bt/nodes/btRepeatNode'
+import { sequenceNodeType } from '@/bt/nodes/btSequenceNode'
+import { actionNodeType } from '@/bt/nodes/btActionNode'
+import { reactiveOrNodeType } from '@/bt/nodes/btReactiveOrNode'
+import { reactiveAndNodeType } from '@/bt/nodes/btReactiveAndNode'
+import { retryUntilSuccessfulNodeType } from '@/bt/nodes/btRetryUntilSuccessfulNode'
+import { btPreconditionNodeType } from '@/bt/nodes/btPreconditionNode'
 
 // 로컬 개발용: buildBehaviorTree 결과(BtAst)를 텍스트 트리로 보여주고,
 // tick 진행에 따라 각 노드의 RUNNING/SUCCESS/FAILURE 를 함께 표시한다.
@@ -33,14 +47,20 @@ function getNodeId(node: any): string | null {
 
 function childrenOf(node: BtAstNode): BtAstNode[] {
   switch (node.kind) {
-    case 'sequence':
-    case 'ifThenElse':
-    case 'or':
-    case 'fallbackOnFailure':
-    case 'parallel':
+    case sequenceNodeType:
+    case ifThenElseNodeType:
+    case orNodeType:
+    case andNodeType:
+    case reactiveOrNodeType:
+    case reactiveAndNodeType:
+    case fallbackOnFailureNodeType:
+    case parallelNodeType:
       return node.children ?? []
-    case 'repeat':
-    case 'forceSuccess':
+    case repeatNodeType:
+    case retryUntilSuccessfulNodeType:
+    case forceSuccessNodeType:
+    case forceFailureNodeType:
+    case btPreconditionNodeType:
       return node.child ? [node.child] : []
     default:
       return []
@@ -49,22 +69,34 @@ function childrenOf(node: BtAstNode): BtAstNode[] {
 
 function labelOf(node: BtAstNode): string {
   switch (node.kind) {
-    case 'action':
+    case actionNodeType:
       return `${node.tag}${node.name ? ` "${node.name}"` : ''}`
-    case 'sequence':
+    case sequenceNodeType:
       return `Sequence${node.name ? ` (${node.name})` : ''}`
-    case 'ifThenElse':
+    case ifThenElseNodeType:
       return 'IfThenElse'
-    case 'or':
+    case orNodeType:
       return 'Or'
-    case 'fallbackOnFailure':
+    case andNodeType:
+      return 'And'
+    case reactiveOrNodeType:
+      return 'ReactiveOr'
+    case reactiveAndNodeType:
+      return 'ReactiveAnd'
+    case fallbackOnFailureNodeType:
       return 'Fallback'
-    case 'parallel':
+    case parallelNodeType:
       return `Parallel (success≥${node.successCount})`
-    case 'repeat':
+    case repeatNodeType:
       return `Repeat (x${node.numCycles})`
-    case 'forceSuccess':
+    case retryUntilSuccessfulNodeType:
+      return `RetryUntilSuccessful (x${node.numAttempts})`
+    case forceSuccessNodeType:
       return 'ForceSuccess'
+    case forceFailureNodeType:
+      return 'ForceFailure'
+    case btPreconditionNodeType:
+      return 'PreCondition'
     default:
       return (node as any).kind
   }

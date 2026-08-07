@@ -173,6 +173,8 @@ const GroupManagement = () => {
             tempSite.siteAddressState = dataSites[j].siteAddressState
             tempSite.siteCode = dataSites[j].siteCode
             tempSite.siteAddressPostalCode = dataSites[j].siteAddressPostalCode
+            tempSite.siteLatitude = dataSites[j].siteLatitude
+            tempSite.siteLongitude = dataSites[j].siteLongitude
             tempSite.createdAt = dataSites[j].createdAt
             tempSite.updatedAt = dataSites[j].updatedAt
             tempSite.groupId = dataGroups[i].groupId
@@ -259,7 +261,9 @@ const GroupManagement = () => {
                     siteAddressState: site.siteAddressState,
                     siteAddressCity: site.siteAddressCity,
                     siteAddressOne: site.siteAddressOne,
-                    siteAddressTwo: site.siteAddressTwo
+                    siteAddressTwo: site.siteAddressTwo,
+                    siteLatitude: site.siteLatitude,
+                    siteLongitude: site.siteLongitude
                   })
                 }
               >

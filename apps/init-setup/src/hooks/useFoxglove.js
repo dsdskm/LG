@@ -1,4 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import {
+  MAP_TOPICS,
+  ODOM_TOPICS,
+  SCAN_TOPICS,
+  STATUS_TOPICS,
+  encodingFor,
+  resolveTopic,
+  topicCategory
+} from '@/constants/topics'
 
 /**
  * useFoxglove
@@ -7,6 +16,9 @@ import { useEffect, useRef, useState, useCallback } from 'react'
  * 구독 제어 및 CDR 바이너리 파싱을 백그라운드로 오프로드하고,
  * 메인 스레드에서는 지정한 throttleFps 주기에 맞춰 상태를 동기화하여
  * 렌더링 부하와 메모리 부족(OOM) 현상을 방지하는 React 훅.
+ *
+ * 토픽 이름을 직접 비교하지 않고 @/constants/topics의 역할(category)로 판단하므로,
+ * LIO(/lio/grid_map, /lio/odom)와 Cartographer(/map, /odom) 양쪽에서 동작한다.
  */
 export function useFoxglove(wsUrl, throttleFps = 10) {
   const [status, setStatus] = useState('disconnected')
@@ -32,6 +44,28 @@ export function useFoxglove(wsUrl, throttleFps = 10) {
   useEffect(() => {
     subscribedTopicsRef.current = subscribedTopics
   }, [subscribedTopics])
+
+  // 구독 해제된 토픽의 잔여 데이터 정리 (역할별 state / customTopicsData)
+  const clearTopicData = useCallback((topicName) => {
+    switch (topicCategory(topicName)) {
+      case 'map':
+        setMapData(null)
+        mapDataRef.current = null
+        break
+      case 'odom':
+        setOdomData(null)
+        odomDataRef.current = null
+        break
+      case 'scan':
+        setScanData(null)
+        scanDataRef.current = null
+        break
+      default:
+        delete customTopicsDataRef.current[topicName]
+        setCustomTopicsData({ ...customTopicsDataRef.current })
+        break
+    }
+  }, [])
 
   // 주기적으로 React 상태 동기화 (프레임 레이트 조절)
   useEffect(() => {
@@ -77,7 +111,15 @@ export function useFoxglove(wsUrl, throttleFps = 10) {
           const allTopicsList = channels.map((ch) => ch.topic)
           setTopics(allTopicsList)
 
-          const defaultSubscribes = ['/map', '/odom', '/lidar_points']
+          // 역할별로 실제 advertise된 토픽 하나씩만 자동 구독한다.
+          // (LIO와 Cartographer가 동시에 떠 있어도 중복 구독하지 않는다)
+          const defaultSubscribes = [
+            resolveTopic(MAP_TOPICS, allTopicsList),
+            resolveTopic(ODOM_TOPICS, allTopicsList),
+            resolveTopic(SCAN_TOPICS, allTopicsList),
+            resolveTopic(STATUS_TOPICS, allTopicsList)
+          ].filter(Boolean)
+
           const newSubscribes = []
           channels.forEach((ch) => {
             if (!defaultSubscribes.includes(ch.topic)) return
@@ -87,8 +129,7 @@ export function useFoxglove(wsUrl, throttleFps = 10) {
             if (alreadySubscribed) return
 
             const subId = nextSubIdRef.current++
-            const isCore = ['/map', '/odom', '/lidar_points', '/scan_matched_points2'].includes(ch.topic)
-            const encoding = isCore ? 'cdr' : 'json'
+            const encoding = encodingFor(ch.schemaName)
 
             subMapRef.current[subId] = { topic: ch.topic, schemaName: ch.schemaName, encoding }
             newSubscribes.push({ id: subId, channelId: ch.id, topic: ch.topic, schemaName: ch.schemaName, encoding })
@@ -109,14 +150,14 @@ export function useFoxglove(wsUrl, throttleFps = 10) {
         case 'message':
           if (parsed) {
             hasNewDataRef.current = true
-            switch (topic) {
-              case '/map':
+            switch (topicCategory(topic)) {
+              case 'map':
                 mapDataRef.current = parsed
                 break
-              case '/odom':
+              case 'odom':
                 odomDataRef.current = parsed
                 break
-              case '/lidar_points':
+              case 'scan':
                 scanDataRef.current = parsed
                 break
               default:
@@ -206,19 +247,7 @@ export function useFoxglove(wsUrl, throttleFps = 10) {
 
         setSubscribedTopics((prev) => prev.filter((t) => t !== topicName))
 
-        if (topicName === '/map') {
-          setMapData(null)
-          mapDataRef.current = null
-        } else if (topicName === '/odom') {
-          setOdomData(null)
-          odomDataRef.current = null
-        } else if (topicName === '/lidar_points') {
-          setScanData(null)
-          scanDataRef.current = null
-        } else {
-          delete customTopicsDataRef.current[topicName]
-          setCustomTopicsData({ ...customTopicsDataRef.current })
-        }
+        clearTopicData(topicName)
       }
     } else {
       // 구독 신청
@@ -226,8 +255,7 @@ export function useFoxglove(wsUrl, throttleFps = 10) {
       if (!ch) return
 
       const subId = nextSubIdRef.current++
-      const isCore = ['/map', '/odom', '/lidar_points', '/scan_matched_points2'].includes(topicName)
-      const encoding = isCore ? 'cdr' : 'json'
+      const encoding = encodingFor(ch.schemaName)
 
       subMapRef.current[subId] = { topic: topicName, schemaName: ch.schemaName, encoding }
 
@@ -242,7 +270,7 @@ export function useFoxglove(wsUrl, throttleFps = 10) {
 
       setSubscribedTopics((prev) => [...prev, topicName])
     }
-  }, [])
+  }, [clearTopicData])
 
   const subscribeTopics = useCallback((topicNames) => {
     if (!workerRef.current) return
@@ -258,8 +286,7 @@ export function useFoxglove(wsUrl, throttleFps = 10) {
       if (!ch) return
 
       const subId = nextSubIdRef.current++
-      const isCore = ['/map', '/odom', '/lidar_points', '/scan_matched_points2'].includes(topicName)
-      const encoding = isCore ? 'cdr' : 'json'
+      const encoding = encodingFor(ch.schemaName)
 
       subMapRef.current[subId] = { topic: topicName, schemaName: ch.schemaName, encoding }
       newSubs.push({ id: subId, channelId: ch.id, topic: topicName, schemaName: ch.schemaName, encoding })
@@ -290,27 +317,14 @@ export function useFoxglove(wsUrl, throttleFps = 10) {
       subscriptionIdsToUnsub.forEach((id) => {
         const sub = subMapRef.current[id]
         if (sub) {
-          const topicName = sub.topic
-          if (topicName === '/map') {
-            setMapData(null)
-            mapDataRef.current = null
-          } else if (topicName === '/odom') {
-            setOdomData(null)
-            odomDataRef.current = null
-          } else if (topicName === '/lidar_points') {
-            setScanData(null)
-            scanDataRef.current = null
-          } else {
-            delete customTopicsDataRef.current[topicName]
-            setCustomTopicsData({ ...customTopicsDataRef.current })
-          }
+          clearTopicData(sub.topic)
         }
         delete subMapRef.current[id]
       })
 
       setSubscribedTopics((prev) => prev.filter((t) => !topicNames.includes(t)))
     }
-  }, [])
+  }, [clearTopicData])
 
   const subscribeAll = useCallback(() => {
     const allTopics = channelsRef.current.map((c) => c.topic)

@@ -10,6 +10,7 @@ import {
   NoData
 } from '@repo/ui'
 import { toast } from 'react-toastify'
+import { guardAction } from '@/utils/actionGuard'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useOrganizationStore } from '@repo/stores'
@@ -296,8 +297,11 @@ const EmbeddingTest = () => {
           )}
           <Button
             variant="contained"
-            onClick={handleSend}
-            disabled={loading || !question.trim() || audioIncomplete}
+            onClick={guardAction(handleSend, [
+              { when: !question.trim(), message: t('enterQuestion', '질문을 입력하세요.') },
+              { when: audioIncomplete, message: t('selectVoiceHint', '음성 포함 시 언어와 보이스를 선택하세요') }
+            ])}
+            disabled={loading}
           >
             {loading ? t('asking', '질의 중...') : t('ask', '질의')}
           </Button>

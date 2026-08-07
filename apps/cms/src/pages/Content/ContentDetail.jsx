@@ -10,7 +10,8 @@ import {
   Modal,
   Checkbox,
   Icon,
-  ProgressBar
+  ProgressBar,
+  Loading
 } from '@repo/ui'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -26,11 +27,12 @@ import {
 } from '@/apis'
 import { useOrganizationStore } from '@repo/stores'
 import { useS3Upload } from '@repo/hooks'
-import { buildLangCodeMap, buildCategorySelectorTree } from '@/components/common/CategorySelector/categoryNodeAdapter'
+import { buildLangCodeMap, buildCategorySelectorTree, pickLocalizedName } from '@/components/common/CategorySelector/categoryNodeAdapter'
 import { resolveOrgIds } from '@/utils/org'
+import { guardAction } from '@/utils/actionGuard'
 import { toast } from 'react-toastify'
 import { ButtonWrap, PageHeadWrap } from '@/components/common/styles'
-import { DropdownContainer, ContentTypeBadge } from './styles'
+import { DropdownContainer, ContentTypeBadge, InfoCard, InfoField, InfoChip, Breadcrumb } from './styles'
 import CategorySelector from '@/components/common/CategorySelector'
 import ContentSubEditor from '@/components/Content/ContentSubEditor'
 import LabelManager from '@/components/Content/LabelManager'
@@ -38,10 +40,36 @@ import { CONTENT_TYPE_MAP } from './contentTypeMeta'
 
 const LATEST_LABEL = 'LATEST'
 
+const MAX_TITLE_LENGTH = 100 // content.displayName VARCHAR(100)
+const MAX_MEMO_LENGTH = 500 // content.memo VARCHAR(500)
+
 const genUid = () =>
   typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
     : `row-${Math.random().toString(36).slice(2)}-${Date.now()}`
+
+// 수정 모드 변경 여부 판정용 정규화 직렬화 — 저장에 반영되는 유효 값만 비교(카테고리/타입/서비스는 편집 불가라 제외)
+const serializeForm = ({ displayName, memo, latestVersion, labels, subsByLang }) => {
+  const subs = Object.entries(subsByLang || {})
+    .map(([langId, d]) => {
+      const files = (d?.files || [])
+        .filter((f) => f.file || f.id)
+        .map((f) => ({ id: f.id ?? null, sig: f.file ? `${f.file.name}:${f.file.size}` : null, name: f.fileName ?? null }))
+      const texts = (d?.texts || [])
+        .filter((x) => x.id || (x.textScript || '').trim())
+        .map((x) => ({ id: x.id ?? null, s: x.textScript ?? '' }))
+      return { langId: Number(langId), files, texts }
+    })
+    .filter((s) => s.files.length || s.texts.length)
+    .sort((a, b) => a.langId - b.langId)
+  return JSON.stringify({
+    displayName: displayName || '',
+    memo: memo || '',
+    latestVersion: !!latestVersion,
+    labels: [...(labels || [])].sort(),
+    subs
+  })
+}
 
 const SUPPORTED_TYPE_LIST = {
   audio: ['audio/wav', 'audio/mp3', 'audio/ogg', 'audio/aac', 'audio/flac', 'audio/m4a', 'audio/webm', 'audio/opus'],
@@ -61,6 +89,8 @@ const ContentDetail = () => {
   const [displayName, setDisplayName] = useState('')
   const [memo, setMemo] = useState('')
   const [isLoading, setIsLoading] = useState(true)
+  const [detailLoading, setDetailLoading] = useState(!!id) // 편집 모드 콘텐츠 상세 로딩
+  const [categoryReady, setCategoryReady] = useState(false) // 편집 모드 카테고리 트리 fetch settle
   const [saving, setSaving] = useState(false)
 
   const [serviceOptions, setServiceOptions] = useState([])
@@ -87,6 +117,7 @@ const ContentDetail = () => {
 
   const [loadedContent, setLoadedContent] = useState(null) // 수정 모드 원본
   const categoryPrefilledRef = useRef(false)
+  const baselineRef = useRef(null) // 수정 모드 로드 시점 폼 스냅샷(변경 여부 비교용)
   const isEdit = !!id
 
   // 파일 업로드: 범용 useS3Upload 훅 + file-content 어댑터 (청킹/멀티파트/진행률/중단 내장)
@@ -158,7 +189,10 @@ const ContentDetail = () => {
       try {
         const res = await contentApis.getContentDetail(id)
         const c = res?.results
-        if (!c) return
+        if (!c) {
+          setCategoryReady(true) // 카테고리 fetch가 안 도므로 게이트 해제
+          return
+        }
         setLoadedContent(c)
         setDisplayName(c.displayName || '')
         setMemo(c.memo || '')
@@ -194,32 +228,50 @@ const ContentDetail = () => {
           }
         })
         setSubsByLang(next)
+        // 변경 여부 비교 기준(baseline) 저장 — 로드된 값 기준
+        baselineRef.current = serializeForm({
+          displayName: c.displayName || '',
+          memo: c.memo || '',
+          latestVersion: names.includes(LATEST_LABEL),
+          labels: names.filter((n) => n !== LATEST_LABEL),
+          subsByLang: next
+        })
         if (firstLang != null) setSelectedLanguageId(firstLang)
         setSelectedServiceId(c.externalServiceId) // 카테고리 로드 effect 트리거
+        if (!c.externalServiceId) setCategoryReady(true) // 서비스 없으면 카테고리 fetch가 안 도므로 게이트 해제
       } catch (error) {
         console.error('Error loading content detail:', error)
+        setCategoryReady(true) // 실패해도 스피너 무한 지속 방지
+      } finally {
+        setDetailLoading(false)
       }
     }
     load()
   }, [id])
 
-  // 카테고리 트리 로드 후 수정 모드 카테고리/타입 1회 prefill
+  // 수정 모드 콘텐츠 타입 prefill — 카테고리 트리와 무관하게 로드된 콘텐츠에서 직접 해석
+  // (트리 로드/매칭 실패와 상관없이 편집기 노출·저장이 가능하도록 분리)
+  useEffect(() => {
+    if (!loadedContent) return
+    const ctId = loadedContent.contentTypeId ?? null
+    const ctName = ctId != null ? contentTypeById[ctId] : null
+    setSelectedContentTypeId(ctId)
+    setSelectedContentType(ctName ? ctName.toLowerCase() : null)
+  }, [loadedContent, contentTypeById])
+
+  // 카테고리 트리 로드 후 수정 모드 카테고리 1회 prefill
   useEffect(() => {
     if (!loadedContent || categoryPrefilledRef.current) return
     if (!categoryTree || categoryTree.length === 0) return
     const c = loadedContent
-    const c1 = c.category1Code ?? null
-    const c2 = c.category2Code ?? null
+    const c1 = c.category1?.categoryCode ?? null
+    const c2 = c.category2?.categoryCode ?? null
     setSelectedLevelCategories([c1, c2])
     const firstCat = categoryTree.find((n) => n.value === c1)
     const secondCat = c2 ? firstCat?.tree?.find((n) => n.value === c2) : null
     setSelectedNode(secondCat || firstCat || null)
-    const ctId = c.contentTypeId ?? null
-    const ctName = ctId != null ? contentTypeById[ctId] : null
-    setSelectedContentTypeId(ctId)
-    setSelectedContentType(ctName ? ctName.toLowerCase() : null)
     categoryPrefilledRef.current = true
-  }, [categoryTree, loadedContent, contentTypeById])
+  }, [categoryTree, loadedContent])
 
   // ---- 서비스 선택 시 카테고리(categoryNode) 로드 ----
   useEffect(() => {
@@ -236,6 +288,8 @@ const ContentDetail = () => {
         setCategoryTree(buildCategorySelectorTree(roots, { langCodeById, currentLanguage: i18n.language }))
       } catch (error) {
         console.error('Error retrieving category nodes:', error)
+      } finally {
+        setCategoryReady(true) // 성공/빈결과/에러 무관 — 편집 렌더 게이트 해제
       }
     }
     fetchCategories()
@@ -303,7 +357,19 @@ const ContentDetail = () => {
     [subsByLang]
   )
 
-  const isDisabled = () => !displayName || !selectedServiceId || !selectedContentTypeId || !hasAnyContent
+  // 수정 모드 변경 여부 — 현재 폼을 baseline 과 동일 방식으로 직렬화해 비교
+  const currentSerialized = useMemo(
+    () => serializeForm({ displayName, memo, latestVersion, labels, subsByLang }),
+    [displayName, memo, latestVersion, labels, subsByLang]
+  )
+  const noChanges = isEdit && baselineRef.current !== null && currentSerialized === baselineRef.current
+
+  // 입력 길이 제한 (BE content 모델 displayName VARCHAR(100), memo VARCHAR(500)와 일치)
+  const titleTooLong = displayName.length > MAX_TITLE_LENGTH
+  const memoTooLong = memo.length > MAX_MEMO_LENGTH
+
+  const isDisabled = () =>
+    !displayName || !selectedServiceId || !selectedContentTypeId || !hasAnyContent || titleTooLong || memoTooLong
 
   // 언어별 유효 파일/텍스트 행 (기존 id 보유 or 신규 입력)
   const validFiles = (data) => (data?.files || []).filter((f) => f.file || f.id)
@@ -338,9 +404,18 @@ const ContentDetail = () => {
     return result
   }
 
-  const handleSave = () => {
-    setIsConfirmModalOpen(true)
-  }
+  const handleSave = () => setIsConfirmModalOpen(true)
+
+  // 저장/수정 불가 사유 (항상 활성 버튼 클릭 시 첫 번째 사유를 토스트로 안내)
+  const saveRules = [
+    { when: !displayName, message: t('enterTitle', '제목을 입력하세요.') },
+    { when: titleTooLong, message: t('titleTooLong') },
+    { when: memoTooLong, message: t('memoTooLong') },
+    { when: !selectedServiceId, message: t('selectService', '서비스를 선택하세요.') },
+    { when: !selectedContentTypeId, message: '카테고리/콘텐츠 타입을 선택하세요.' },
+    { when: !hasAnyContent, message: '콘텐츠(파일 또는 텍스트)를 입력하세요.' },
+    { when: noChanges, message: '변경된 내용이 없습니다.' }
+  ]
 
   const confirmSave = async () => {
     setIsConfirmModalOpen(false)
@@ -414,7 +489,22 @@ const ContentDetail = () => {
 
   const handleCancel = () => navigate('/cms/content')
 
-  const showEditor = selectedLevelCategories[1] && selectedContentType
+  // 수정 모드: 카테고리(읽기전용)와 무관하게 로드된 타입 기준으로 타입 뱃지·편집기 노출.
+  // 생성 모드: 기존대로 카테고리2(리프) 선택 후 노출.
+  const showContentType = selectedContentType && (isEdit || selectedLevelCategories[1])
+  const showEditor = showContentType
+
+  // 필요한 데이터 로딩 동안 스피너 → 완료 후 폼 렌더 (편집: 초기데이터+상세+카테고리 트리 settle)
+  const pageLoading = isLoading || (isEdit && (detailLoading || !categoryReady))
+  if (pageLoading) {
+    return (
+      <StyledPageContent className="column">
+        <div style={{ display: 'flex', flex: 1, minHeight: '40vh', justifyContent: 'center', alignItems: 'center' }}>
+          <Loading size={40} />
+        </div>
+      </StyledPageContent>
+    )
+  }
 
   return (
     <StyledPageContent className="column">
@@ -426,8 +516,8 @@ const ContentDetail = () => {
         <ButtonWrap className="alignRight">
           <Button
             variant="contained"
-            onClick={handleSave}
-            disabled={isLoading || saving || isUploading || isDisabled()}
+            onClick={guardAction(handleSave, saveRules)}
+            disabled={isLoading || saving || isUploading}
           >
             {t(isEdit ? 'modify' : 'save')}
           </Button>
@@ -446,6 +536,8 @@ const ContentDetail = () => {
             placeholder={t('enterTitle')}
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
+            isError={titleTooLong}
+            message={titleTooLong ? t('titleTooLong') : ''}
           />
           <Textarea
             label={t('memo')}
@@ -453,56 +545,100 @@ const ContentDetail = () => {
             placeholder={t('enterMemo')}
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
+            isError={memoTooLong}
+            message={memoTooLong ? t('memoTooLong') : ''}
           />
         </Section>
 
         {/* 분류 및 파일 */}
         <Section gap="0.5rem">
-          <DropdownContainer>
-            <Dropdown
-              label={t('service')}
-              size="lg"
-              value={selectedServiceId}
-              placeholder={t('selectService')}
-              options={serviceOptions}
-              onChange={handleServiceChange}
-              disabled={isEdit}
-            />
-            {selectedServiceId && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'flex-end' }}>
-                <CategorySelector
-                  categoryTree={categoryTree}
-                  selectedLevelCategories={selectedLevelCategories}
-                  handleValueChange={handleCategoryChange}
-                  isDisabled={(info, index) => isEdit || (index === 1 && !selectedLevelCategories[0])}
-                  style={{ display: 'flex', gap: '1rem' }}
-                />
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                  <span className="label typographyBody6" style={{ color: 'var(--color-neutral-70)' }}>
-                    {t('contentType')}
-                  </span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', height: '3.6rem' }}>
-                    {selectedLevelCategories[1] &&
-                      selectedContentType &&
-                      (() => {
-                        const typeConfig = CONTENT_TYPE_MAP[selectedContentType] || {
-                          icon: 'file',
-                          color: 'var(--color-neutral-80)',
-                          bg: 'var(--color-neutral-10)',
-                          border: 'var(--color-secondary-20)'
-                        }
-                        return (
-                          <ContentTypeBadge $color={typeConfig.color} $bg={typeConfig.bg} $border={typeConfig.border}>
-                            <Icon name={typeConfig.icon} size={16} color={typeConfig.color} />
-                            <span>{t(selectedContentType)}</span>
-                          </ContentTypeBadge>
-                        )
-                      })()}
+          {isEdit ? (
+            // 수정 모드: 변경 불가 분류 정보를 읽기전용 요약 카드로 표시
+            <InfoCard>
+              <InfoField>
+                <span className="label">{t('service')}</span>
+                <InfoChip>
+                  {loadedContent?.externalService?.displayName ||
+                    serviceOptions.find((o) => o.value === selectedServiceId)?.name ||
+                    '-'}
+                </InfoChip>
+              </InfoField>
+              <InfoField>
+                <span className="label">{t('category', '카테고리')}</span>
+                <Breadcrumb>
+                  <InfoChip>{pickLocalizedName(loadedContent?.category1?.displayName, i18n.language) || '-'}</InfoChip>
+                  {loadedContent?.category2 && (
+                    <>
+                      <span className="sep">›</span>
+                      <InfoChip>{pickLocalizedName(loadedContent.category2.displayName, i18n.language) || '-'}</InfoChip>
+                    </>
+                  )}
+                </Breadcrumb>
+              </InfoField>
+              <InfoField>
+                <span className="label">{t('contentType')}</span>
+                {showContentType &&
+                  (() => {
+                    const typeConfig = CONTENT_TYPE_MAP[selectedContentType] || {
+                      icon: 'file',
+                      color: 'var(--color-neutral-80)',
+                      bg: 'var(--color-neutral-10)',
+                      border: 'var(--color-secondary-20)'
+                    }
+                    return (
+                      <ContentTypeBadge $color={typeConfig.color} $bg={typeConfig.bg} $border={typeConfig.border}>
+                        <Icon name={typeConfig.icon} size={16} color={typeConfig.color} />
+                        <span>{t(selectedContentType)}</span>
+                      </ContentTypeBadge>
+                    )
+                  })()}
+              </InfoField>
+            </InfoCard>
+          ) : (
+            <DropdownContainer>
+              <Dropdown
+                label={t('service')}
+                size="lg"
+                value={selectedServiceId}
+                placeholder={t('selectService')}
+                options={serviceOptions}
+                onChange={handleServiceChange}
+              />
+              {selectedServiceId && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'flex-end' }}>
+                  <CategorySelector
+                    categoryTree={categoryTree}
+                    selectedLevelCategories={selectedLevelCategories}
+                    handleValueChange={handleCategoryChange}
+                    isDisabled={(info, index) => index === 1 && !selectedLevelCategories[0]}
+                    style={{ display: 'flex', gap: '1rem' }}
+                  />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                    <span className="label typographyBody6" style={{ color: 'var(--color-neutral-70)' }}>
+                      {t('contentType')}
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', height: '3.6rem' }}>
+                      {showContentType &&
+                        (() => {
+                          const typeConfig = CONTENT_TYPE_MAP[selectedContentType] || {
+                            icon: 'file',
+                            color: 'var(--color-neutral-80)',
+                            bg: 'var(--color-neutral-10)',
+                            border: 'var(--color-secondary-20)'
+                          }
+                          return (
+                            <ContentTypeBadge $color={typeConfig.color} $bg={typeConfig.bg} $border={typeConfig.border}>
+                              <Icon name={typeConfig.icon} size={16} color={typeConfig.color} />
+                              <span>{t(selectedContentType)}</span>
+                            </ContentTypeBadge>
+                          )
+                        })()}
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </DropdownContainer>
+              )}
+            </DropdownContainer>
+          )}
 
           {showEditor && (
             <ContentSubEditor

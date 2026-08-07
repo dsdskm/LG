@@ -21,6 +21,7 @@
   "maxDistance": "最大距離",
   "angleRange": "角度範囲",
   "lidarInfo": "ライダー情報",
+  "mappingStatus": "マッピング状態",
   "legend": "凡例",
   "unknown": "未探査領域",
   "freeSpace": "空き空間（通行可能）",
@@ -38,5 +39,11 @@
   "save": "保存",
   "reset": "再起動",
   "cancel": "キャンセル",
-  "topicInfo": "トピック情報"
+  "topicInfo": "トピック情報",
+  "building": "建物",
+  "floor": "階",
+  "area": "エリア",
+  "selectBuilding": "建物を選択",
+  "selectFloor": "階を選択",
+  "selectArea": "エリアを選択"
 }
