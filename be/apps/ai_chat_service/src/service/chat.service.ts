@@ -466,15 +466,17 @@ export class ChatService {
 
   private buildOrchestratorPipelineTrace(meta: unknown): string {
     if (!meta || typeof meta !== 'object') {
-      return 'llm(공통 프롬프트+앱별 프롬프트)=>분기(action|info)=>응답조립'
+      return 'rule(미매칭)=>llm(공통 프롬프트+앱별 프롬프트)=>분기(action|info)=>응답조립'
     }
 
     const row = meta as Record<string, unknown>
     const pipelineIntent = String(row.pipelineIntent ?? '').trim().toLowerCase()
     const confidence = this.formatPipelineConfidence(this.extractPipelineConfidence(meta))
+    const ruleMatched = Boolean(row.ruleMatched)
+    const ruleStep = `rule(${ruleMatched ? '매칭' : '미매칭'})`
 
     if (pipelineIntent === 'action') {
-      return `llm(공통 프롬프트+앱별 프롬프트)=>분기(action, 신뢰도 ${confidence})=>llm(액션 프롬프트)=>tool/응답조립`
+      return `${ruleStep}=>llm(공통 프롬프트+앱별 프롬프트)=>분기(action, 신뢰도 ${confidence})=>llm(액션 프롬프트)=>tool/응답조립`
     }
 
     if (pipelineIntent === 'info') {
@@ -490,22 +492,22 @@ export class ChatService {
       // 실제로 조회에 성공한 컬렉션 기준으로 파이프라인 트레이스를 표기한다.
       // ragCollections 에 common 이 포함되어도 usedCollection 이 화면 컬렉션이면 화면 RAG로 기록한다.
       if (usedCollection === 'common') {
-        return `rag(공통, 신뢰도 ${confidence})${llmStep}=>응답조립`
+        return `${ruleStep}=>rag(공통, 신뢰도 ${confidence})${llmStep}=>응답조립`
       }
 
       if (usedCollection) {
         const usedLabel = usedCollection === 'common' ? '공통' : '화면'
-        return `rag(${usedLabel}, 신뢰도 ${confidence})${llmStep}=>응답조립`
+        return `${ruleStep}=>rag(${usedLabel}, 신뢰도 ${confidence})${llmStep}=>응답조립`
       }
 
       if (hasCommonCollection) {
-        return `rag(화면, 신뢰도 ${confidence})=>rag(공통)=>llm(정보 프롬프트)=>응답조립`
+        return `${ruleStep}=>rag(화면, 신뢰도 ${confidence})=>rag(공통)=>llm(정보 프롬프트)=>응답조립`
       }
 
-      return `rag(화면, 신뢰도 ${confidence})=>llm(정보 프롬프트)=>응답조립`
+      return `${ruleStep}=>rag(화면, 신뢰도 ${confidence})=>llm(정보 프롬프트)=>응답조립`
     }
 
-    return `llm(공통 프롬프트+앱별 프롬프트)=>분기(action|info, 신뢰도 ${confidence})=>응답조립`
+    return `${ruleStep}=>llm(공통 프롬프트+앱별 프롬프트)=>분기(action|info, 신뢰도 ${confidence})=>응답조립`
   }
 
   private normalizeRouteLike(value: string): string {
@@ -595,7 +597,7 @@ export class ChatService {
 
   private isTmsCanvasRoute(routeKey: string): boolean {
     const normalized = this.normalizeRouteLike(routeKey)
-    return /^tms\/taskflows\/[^/]+\/canvas(?:\/|$)/.test(normalized)
+    return /^(?:tms\/)?taskflows\/(?:[^/]+|:taskFlowId|:id)\/canvas(?:\/|$)/.test(normalized)
   }
 
   private hasClassifierPhrase(text: string, phrases: string[]): boolean {
@@ -605,6 +607,11 @@ export class ChatService {
   private looksLikeTaskflowComposeMessage(message: string, rules: TaskflowClassifierRules): boolean {
     const text = this.normalize(message)
     if (!text) return false
+
+    const hasArrowSequenceByRule =
+      Boolean(rules.arrowSequenceEnabled)
+      && this.hasClassifierPhrase(text, rules.composeMoveHintKeywords)
+    if (hasArrowSequenceByRule) return true
 
     const asksCompose = this.hasClassifierPhrase(text, rules.composeRequestKeywords)
     if (!asksCompose) return false
@@ -758,7 +765,8 @@ export class ChatService {
     ctx: ChatContext,
     reply: ChatReply,
   ): Promise<ChatReply | null> {
-    if (!this.isTmsCanvasRoute(ctx.key)) return null
+    const matchedRouteKey = this.findNearestRegisteredRouteKey(ctx.key, ctx.reqId) ?? ctx.key
+    if (!this.isTmsCanvasRoute(matchedRouteKey)) return null
     if (!this.looksLikeTaskflowComposeMessage(ctx.message, ctx.taskflowClassifierRules)) return null
     if (this.hasCanvasDraftParam(reply)) return null
 
@@ -772,7 +780,7 @@ export class ChatService {
         : ''
     if (directClarification || nestedClarification) return null
 
-    const screen = getScreenConfig(ctx.key, ctx.reqId)
+    const screen = getScreenConfig(matchedRouteKey, ctx.reqId)
     const composeTool = screen?.actionTools?.find(
       (tool) => tool?.declaration?.name === 'compose_linear_taskflow',
     )

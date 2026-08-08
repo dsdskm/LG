@@ -591,6 +591,40 @@ export class ChatOrchestrator {
         break
     }
 
+    const ruleMatched = Boolean(ruleFirstIntentResult || shouldForceTaskflowAction)
+    const ruleReason = ruleFirstIntentResult
+      ? String(ruleFirstIntentResult.reason ?? '').trim()
+      : shouldForceTaskflowAction
+        ? 'forced: compose_linear_taskflow taskflow-action heuristic'
+        : 'rule-first:no-match'
+
+    output.meta = {
+      ...(output.meta && typeof output.meta === 'object' ? output.meta : {}),
+      ruleEvaluated: true,
+      ruleMatched,
+      ruleReason: ruleReason || undefined,
+      ruleStage: 'orchestrator',
+    }
+
+    if ((ruleFirstIntentResult || shouldForceTaskflowAction) && output.reply) {
+      const matchedReason = ruleFirstIntentResult
+        ? String(ruleFirstIntentResult.reason ?? '').trim()
+        : 'forced: compose_linear_taskflow taskflow-action heuristic'
+      const matchedConfidence = ruleFirstIntentResult
+        ? (Number.isFinite(Number(ruleFirstIntentResult.confidence))
+          ? Number(ruleFirstIntentResult.confidence)
+          : undefined)
+        : undefined
+
+      output.reply.matchedRule = {
+        source: 'orchestrator',
+        ruleType: ruleFirstIntentResult ? 'rule-first-intent' : 'taskflow-action-heuristic',
+        ruleKey: matchedReason || 'orchestrator-rule-match',
+        reason: matchedReason || undefined,
+        confidence: matchedConfidence,
+      }
+    }
+
     const chatAction = String(output?.reply?.chat_action ?? '-')
     const hasParam = Boolean(output?.reply?.chat_action_param)
     const hasDraft = Boolean(
@@ -714,8 +748,10 @@ export class ChatOrchestrator {
       return false
     }
 
-    const hasArrowSequence = /[^\s]+\s*(?:->|→)\s*[^\s]+/.test(text)
-    if (rules.arrowSequenceEnabled && hasArrowSequence) return true
+    const hasArrowSequenceByRule =
+      Boolean(rules.arrowSequenceEnabled)
+      && this.hasClassifierPhrase(text, rules.composeMoveHintKeywords)
+    if (hasArrowSequenceByRule) return true
 
     if (!this.hasClassifierPhrase(text, rules.editSubjectKeywords)) return false
 
