@@ -180,10 +180,10 @@ function toFlowContextSummary(input: unknown): FlowContextSummary | null {
 
       acc.push({
         id: String(node.id ?? '').trim() || undefined,
-        label: normalizeNameToken(data.label ?? data.contentName ?? data.taskName) || undefined,
-        nodeType: normalizeNameToken(node.type),
-        taskName: normalizeNameToken(data.taskName) || undefined,
-        contentName: normalizeNameToken(data.contentName) || undefined,
+        label: normalizeNameToken(node.label ?? data.label ?? node.contentName ?? data.contentName ?? node.taskName ?? data.taskName) || undefined,
+        nodeType: normalizeNameToken(node.nodeType ?? node.type),
+        taskName: normalizeNameToken(node.taskName ?? data.taskName) || undefined,
+        contentName: normalizeNameToken(node.contentName ?? data.contentName) || undefined,
       })
       return acc
     }, [])

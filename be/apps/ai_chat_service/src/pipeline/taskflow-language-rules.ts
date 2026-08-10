@@ -26,6 +26,7 @@ export type TaskflowLanguageRules = {
   docentHintPhrases: string[]
   connectIntentPhrases: string[]
   connectPairSeparatorPhrases: string[]
+  connectLeftPairSeparatorPhrases: string[]
 }
 
 export type TaskflowClassifierRules = {
@@ -227,6 +228,7 @@ async function readRules(routeKey: string): Promise<TaskflowLanguageRules> {
     docentHintPhrases: readMergedList(ruleMaps, 'docentHintPhrases'),
     connectIntentPhrases: readMergedList(ruleMaps, 'connectIntentPhrases'),
     connectPairSeparatorPhrases: readMergedList(ruleMaps, 'connectPairSeparatorPhrases'),
+    connectLeftPairSeparatorPhrases: readMergedList(ruleMaps, 'connectLeftPairSeparatorPhrases'),
   }
 }
 

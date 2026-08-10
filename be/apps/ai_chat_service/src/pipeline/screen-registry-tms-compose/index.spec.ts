@@ -40,7 +40,7 @@ describe('createComposeLinearTaskflowTool', () => {
     jest.restoreAllMocks()
   })
 
-  it('recovers docent intent from provided steps even when __userMessage is missing', async () => {
+  it('asks for arrow chain format when message is missing', async () => {
     const tool = createComposeLinearTaskflowTool({
       logger: { log: () => {}, error: () => {} } as any,
     })
@@ -87,11 +87,12 @@ describe('createComposeLinearTaskflowTool', () => {
     )
 
     expect(result).toBeTruthy()
-    expect((result as Record<string, unknown>).clarification).toBeUndefined()
-    expect((result as Record<string, unknown>).canvasDraft).toBeTruthy()
+    expect(String((result as Record<string, unknown>).clarification ?? '')).toContain('A->B')
+    expect((result as Record<string, unknown>).needUserInput).toBe(true)
+    expect((result as Record<string, unknown>).canvasDraft).toBeUndefined()
   })
 
-  it('asks for valid move node names when requested names are missing', async () => {
+  it('asks for arrow chain format when message has no chain', async () => {
     const tool = createComposeLinearTaskflowTool({
       logger: { log: () => {}, error: () => {} } as any,
     })
@@ -132,10 +133,10 @@ describe('createComposeLinearTaskflowTool', () => {
 
     expect((result as Record<string, unknown>).canvasDraft).toBeUndefined()
     expect((result as Record<string, unknown>).needUserInput).toBe(true)
-    expect(String((result as Record<string, unknown>).clarification ?? '')).toContain('MoveTo 노드 이름으로 다시 알려주세요')
+    expect(String((result as Record<string, unknown>).clarification ?? '')).toContain('A->B')
   })
 
-  it('builds a linear draft when arrow steps match direct action task names', async () => {
+  it('builds edit plan when arrow chain matches known task contents', async () => {
     const tool = createComposeLinearTaskflowTool({
       logger: { log: () => {}, error: () => {} } as any,
     })
@@ -146,7 +147,7 @@ describe('createComposeLinearTaskflowTool', () => {
       },
       {
         context: {
-          __userMessage: 'PlayMotion -> Tts 태스크플로우 만들어줘',
+          __userMessage: 'PlayMotion->Tts 연결해줘',
           taskflow: {
             fullFlow: {
               nodes: [
@@ -177,5 +178,100 @@ describe('createComposeLinearTaskflowTool', () => {
 
     expect((result as Record<string, unknown>).clarification).toBeUndefined()
     expect((result as Record<string, unknown>).canvasDraft).toBeTruthy()
+  })
+
+  it('returns edit remove plan for "A 노드 제거" message', async () => {
+    const tool = createComposeLinearTaskflowTool({
+      logger: { log: () => {}, error: () => {} } as any,
+    })
+
+    const result = await tool.execute(
+      { steps: [] },
+      {
+        context: {
+          __userMessage: '회의실 A 노드 제거해줘',
+          taskflow: {
+            nodes: [
+              { id: 'start', label: 'Start' },
+              { id: 'n1', label: '회의실 A', taskName: 'MoveTo', contentName: '회의실 A' },
+            ],
+            taskContents: [
+              { taskId: 29, taskName: 'MoveTo', kind: 'contentNode', contentId: 30, contentName: '회의실 A', label: '회의실 A' },
+            ],
+          },
+        },
+        log: { log: () => {}, error: () => {} },
+      } as any,
+    )
+
+    const canvasDraft = (result as Record<string, any>)?.canvasDraft
+    expect(canvasDraft).toBeTruthy()
+    expect(canvasDraft.mode).toBe('edit')
+    expect(canvasDraft.removeByName).toEqual(['회의실 A'])
+  })
+
+  it('returns edit insert plan for "B 노드 추가" message', async () => {
+    const tool = createComposeLinearTaskflowTool({
+      logger: { log: () => {}, error: () => {} } as any,
+    })
+
+    const result = await tool.execute(
+      { steps: [] },
+      {
+        context: {
+          __userMessage: '회의실 B 노드 추가해줘',
+          taskflow: {
+            nodes: [
+              { id: 'start', label: 'Start' },
+            ],
+            taskContents: [
+              { taskId: 29, taskName: 'MoveTo', kind: 'contentNode', contentId: 31, contentName: '회의실 B', label: '회의실 B' },
+            ],
+          },
+        },
+        log: { log: () => {}, error: () => {} },
+      } as any,
+    )
+
+    const canvasDraft = (result as Record<string, any>)?.canvasDraft
+    expect(canvasDraft).toBeTruthy()
+    expect(canvasDraft.mode).toBe('edit')
+    expect(Array.isArray(canvasDraft.insertAfter)).toBe(true)
+    expect(canvasDraft.insertAfter[0]?.after).toBe('')
+    expect(String(canvasDraft.insertAfter[0]?.step?.label ?? '')).toBe('회의실 B')
+  })
+
+  it('returns edit insert plan for "A->B" chain with Korean labels', async () => {
+    const tool = createComposeLinearTaskflowTool({
+      logger: { log: () => {}, error: () => {} } as any,
+    })
+
+    const result = await tool.execute(
+      { steps: [] },
+      {
+        context: {
+          __userMessage: '대회의실->사무공간 연결해줘',
+          taskflow: {
+            nodes: [
+              { id: 'start', label: 'Start' },
+              { id: 'n1', label: '대회의실', taskName: 'MoveTo', contentName: '대회의실' },
+            ],
+            taskContents: [
+              { taskId: 29, taskName: 'MoveTo', kind: 'contentNode', contentId: 301, contentName: '대회의실', label: '대회의실' },
+              { taskId: 29, taskName: 'MoveTo', kind: 'contentNode', contentId: 302, contentName: '사무공간', label: '사무공간' },
+            ],
+          },
+        },
+        log: { log: () => {}, error: () => {} },
+      } as any,
+    )
+
+    const canvasDraft = (result as Record<string, any>)?.canvasDraft
+    expect(canvasDraft).toBeTruthy()
+    expect(canvasDraft.mode).toBe('edit')
+    expect(Array.isArray(canvasDraft.insertAfter)).toBe(true)
+    expect(canvasDraft.insertAfter.length).toBe(1)
+    expect(String(canvasDraft.insertAfter[0]?.after ?? '')).toBe('대회의실')
+    expect(String(canvasDraft.insertAfter[0]?.step?.label ?? '')).toBe('사무공간')
   })
 })

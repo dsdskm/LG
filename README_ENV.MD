@@ -1,8 +1,3 @@
-VITE_AUTH_API_BASE_URL=https://dm.qa.hcrsp.com
-VITE_CMS_API_BASE_URL=https://cms.qa.hcrsp.com
-VITE_OTA_API_BASE_URL=https://ota.qa.hcrsp.com
-VITE_AUTO_REFRESH_TOKEN=Y
-
 VITE_EVENT_RECEIVER_URL=https://cautious-space-eureka-7rrj5pg9qrr3rxpp-3001.app.github.dev
 VITE_EVENT_ANALYZER_URL=https://cautious-space-eureka-7rrj5pg9qrr3rxpp-3002.app.github.dev
 VITE_ACTION_RUNNER_URL=https://cautious-space-eureka-7rrj5pg9qrr3rxpp-3004.app.github.dev

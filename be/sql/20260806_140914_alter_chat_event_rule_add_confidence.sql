@@ -1,6 +1,0 @@
-BEGIN;
-
-ALTER TABLE public.chat_event_rule
-  ADD COLUMN IF NOT EXISTS confidence NUMERIC(5,4) NOT NULL DEFAULT 0.95;
-
-COMMIT;

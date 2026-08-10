@@ -31,40 +31,10 @@ VALUES
   (
     'classifier',
     'tms/taskflows/:taskFlowId/canvas',
-    'arrowSequenceEnabled',
-    'true'::jsonb,
+    'composeMoveHintKeywords',
+    '["->", "→", "=>", "⇒", "연결", "이어", "이어서"]'::jsonb,
     true,
-    220,
-    NOW(),
-    NOW()
-  ),
-  (
-    'classifier',
-    'tms/taskflows/:taskFlowId/canvas',
-    'editSubjectKeywords',
-    '["노드", "연결", "태스크", "태스크플로우", "태스크플로", "taskflow", "canvas"]'::jsonb,
-    true,
-    220,
-    NOW(),
-    NOW()
-  ),
-  (
-    'classifier',
-    'tms/taskflows/:taskFlowId/canvas',
-    'editVerbKeywords',
-    '["연결", "이어", "추가", "삭제", "수정", "변경", "구성", "만들", "생성"]'::jsonb,
-    true,
-    220,
-    NOW(),
-    NOW()
-  ),
-  (
-    'language',
-    'tms/taskflows/:taskFlowId/canvas',
-    'connectNodeTailTrimPhrases',
-    '["로", "으로", "까지", "했는데", "해줘", "해주세요", "연결", "연결해줘"]'::jsonb,
-    true,
-    220,
+    230,
     NOW(),
     NOW()
   )

@@ -79,6 +79,10 @@ type AssistantDraft = {
   insertAfter?: Array<{
     after?: string
     step?: string | AssistantStep
+    sourceHandle?: 'left' | 'right'
+    targetHandle?: 'left' | 'right'
+    reverseDirection?: boolean
+    appendOnly?: boolean
   }>
   nodes?: RFNode[]
   edges?: RFEdge[]
@@ -524,19 +528,28 @@ function resolveTailNodeName(currentNodes: RFNode[], currentEdges: RFEdge[]): st
   return tail.label
 }
 
-function buildDraftEdge(source: string, target: string, seed: string): RFEdge {
+function buildDraftEdge(
+  source: string,
+  target: string,
+  seed: string,
+  sourceHandle: 'left' | 'right' = 'right',
+  targetHandle: 'left' | 'right' = 'left'
+): RFEdge {
+  const edgeType: 'straight' | 'step' =
+    sourceHandle === 'left' && targetHandle === 'left' ? 'step' : 'straight'
+
   return {
     id: `ai-edge-${seed}`,
     source,
     target,
-    sourceHandle: 'right',
-    targetHandle: 'left',
+    sourceHandle,
+    targetHandle,
     data: {
       sourceNodeId: source,
       targetNodeId: target,
-      sourceHandleId: 'right',
-      targetHandleId: 'left',
-      edgeType: 'straight'
+      sourceHandleId: sourceHandle,
+      targetHandleId: targetHandle,
+      edgeType
     },
     markerEnd: {
       type: MarkerType.ArrowClosed,
@@ -625,6 +638,10 @@ function applyEditDraftToFlowDefinition(
   for (const insert of inserts) {
     let after = String(insert?.after ?? '').trim()
     const normalized = normalizeStepInput(insert?.step as string | AssistantStep)
+    const sourceHandle = insert?.sourceHandle === 'left' ? 'left' : 'right'
+    const targetHandle = insert?.targetHandle === 'right' ? 'right' : 'left'
+    const reverseDirection = Boolean(insert?.reverseDirection)
+    const appendOnly = Boolean(insert?.appendOnly)
     if (!normalized) continue
 
     if (!after) {
@@ -675,7 +692,7 @@ function applyEditDraftToFlowDefinition(
     const anchorX = Number(anchorNode.position?.x ?? 0)
     const anchorY = Number(anchorNode.position?.y ?? 0)
     const outgoing = nextEdges.filter((edge) => String(edge.source) === String(anchorNode.id))
-    if (outgoing.length > 1) {
+    if (!reverseDirection && !appendOnly && outgoing.length > 1) {
       return {
         next: null,
         clarification: `${after} 이후 경로가 여러 개라 추가 위치를 정할 수 없습니다.`
@@ -684,14 +701,86 @@ function applyEditDraftToFlowDefinition(
 
     const nextTargetId = String(outgoing[0]?.target ?? '')
     const nextTargetNode = nextNodes.find((node) => String(node.id) === nextTargetId)
-    const basePosX = nextTargetNode
-      ? Math.round((anchorX + Number(nextTargetNode.position?.x ?? anchorX + 160)) / 2)
-      : anchorX + 140
+
+    const HORIZONTAL_GAP = 140
+    const VERTICAL_GAP = 120
+
+    const basePosX = reverseDirection
+      ? (sourceHandle === 'left' ? anchorX - HORIZONTAL_GAP : anchorX + HORIZONTAL_GAP)
+      : appendOnly
+        ? (sourceHandle === 'left' && targetHandle === 'left' ? anchorX : anchorX + HORIZONTAL_GAP)
+      : (sourceHandle === 'left'
+        ? (nextTargetNode
+          ? Math.round((anchorX + Number(nextTargetNode.position?.x ?? anchorX - 160)) / 2)
+          : anchorX - HORIZONTAL_GAP)
+        : (nextTargetNode
+          ? Math.round((anchorX + Number(nextTargetNode.position?.x ?? anchorX + 160)) / 2)
+          : anchorX + HORIZONTAL_GAP))
+
+    const basePosY = reverseDirection
+      ? anchorY
+      : appendOnly
+        ? (sourceHandle === 'left' && targetHandle === 'left' ? anchorY + VERTICAL_GAP : anchorY)
+        : anchorY
+
+    const findNonOverlappingPosition = (
+      desiredX: number,
+      desiredY: number,
+      preferVerticalOffset: boolean
+    ): { x: number; y: number } => {
+      const OCCUPY_X_THRESHOLD = 96
+      const OCCUPY_Y_THRESHOLD = 72
+      const MAX_LEVEL = 8
+      const SECONDARY_STEP = 36
+
+      const isOccupied = (x: number, y: number) =>
+        nextNodes.some((node) => {
+          const nx = Number(node.position?.x ?? 0)
+          const ny = Number(node.position?.y ?? 0)
+          return Math.abs(nx - x) < OCCUPY_X_THRESHOLD && Math.abs(ny - y) < OCCUPY_Y_THRESHOLD
+        })
+
+      if (!isOccupied(desiredX, desiredY)) {
+        return { x: desiredX, y: desiredY }
+      }
+
+      for (let level = 1; level <= MAX_LEVEL; level += 1) {
+        const primary = level * (preferVerticalOffset ? VERTICAL_GAP : HORIZONTAL_GAP)
+        const secondary = level * SECONDARY_STEP
+
+        const candidates = preferVerticalOffset
+          ? [
+              { x: desiredX, y: desiredY + primary },
+              { x: desiredX + secondary, y: desiredY + primary },
+              { x: desiredX - secondary, y: desiredY + primary },
+              { x: desiredX + secondary, y: desiredY - primary },
+              { x: desiredX - secondary, y: desiredY - primary },
+            ]
+          : [
+              { x: desiredX + primary, y: desiredY },
+              { x: desiredX + primary, y: desiredY + secondary },
+              { x: desiredX + primary, y: desiredY - secondary },
+              { x: desiredX - primary, y: desiredY + secondary },
+              { x: desiredX - primary, y: desiredY - secondary },
+            ]
+
+        for (const candidate of candidates) {
+          if (!isOccupied(candidate.x, candidate.y)) {
+            return candidate
+          }
+        }
+      }
+
+      return { x: desiredX, y: desiredY }
+    }
+
+    const preferVerticalOffset = appendOnly && sourceHandle === 'left' && targetHandle === 'left'
+    const resolvedPos = findNonOverlappingPosition(basePosX, basePosY, preferVerticalOffset)
 
     const newNode: RFNode = {
       id: newNodeId,
       type: 'taskNode',
-      position: { x: basePosX, y: anchorY },
+      position: { x: resolvedPos.x, y: resolvedPos.y },
       data: {
         label: item.kind === 'contentNode' ? item.content.name : item.task.name,
         taskId: item.task.id,
@@ -736,14 +825,26 @@ function applyEditDraftToFlowDefinition(
       }
     })
 
-    if (outgoing.length === 1) {
+    if (appendOnly) {
+      nextEdges.push(buildDraftEdge(String(anchorNode.id), newNodeId, `${Date.now()}-append-${newNodeId}`, sourceHandle, targetHandle))
+    } else if (reverseDirection) {
+      const incoming = nextEdges.filter((edge) => String(edge.target) === String(anchorNode.id))
+      if (incoming.length === 1) {
+        const prevSource = String(incoming[0]?.source ?? '')
+        nextEdges = nextEdges.filter((edge) => String(edge.id) !== String(incoming[0].id))
+        if (prevSource && prevSource !== newNodeId) {
+          nextEdges.push(buildDraftEdge(prevSource, newNodeId, `${Date.now()}-r-prev-${newNodeId}`))
+        }
+      }
+      nextEdges.push(buildDraftEdge(newNodeId, String(anchorNode.id), `${Date.now()}-r-anchor-${newNodeId}`, sourceHandle, targetHandle))
+    } else if (outgoing.length === 1) {
       nextEdges = nextEdges.filter((edge) => String(edge.id) !== String(outgoing[0].id))
-      nextEdges.push(buildDraftEdge(String(anchorNode.id), newNodeId, `${Date.now()}-a-${newNodeId}`))
+      nextEdges.push(buildDraftEdge(String(anchorNode.id), newNodeId, `${Date.now()}-a-${newNodeId}`, sourceHandle, targetHandle))
       if (nextTargetId) {
         nextEdges.push(buildDraftEdge(newNodeId, nextTargetId, `${Date.now()}-b-${newNodeId}`))
       }
     } else {
-      nextEdges.push(buildDraftEdge(String(anchorNode.id), newNodeId, `${Date.now()}-c-${newNodeId}`))
+      nextEdges.push(buildDraftEdge(String(anchorNode.id), newNodeId, `${Date.now()}-c-${newNodeId}`, sourceHandle, targetHandle))
     }
 
     nextNodes.push(newNode)

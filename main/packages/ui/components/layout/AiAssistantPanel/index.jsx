@@ -469,9 +469,12 @@ const buildTaskflowFlowContext = (pathname) => {
 const buildTaskflowRequestContext = (flowContext) => {
   if (!flowContext || typeof flowContext !== 'object') return undefined
 
+  const flowForEdges = flowContext?.fullFlow ?? flowContext?.flowDefinition
+  const flowModeSource = flowContext?.fullFlow ?? flowContext?.flowDefinition ?? flowContext
+
   return {
     taskFlowId: Number(flowContext?.taskFlowId ?? 0) || undefined,
-    flowMode: String(flowContext?.flowDefinition?.flowMode ?? flowContext?.flowMode ?? 'default'),
+    flowMode: String(flowModeSource?.flowMode ?? 'default'),
     nodeCount: Number(flowContext?.nodeCount ?? 0),
     edgeCount: Number(flowContext?.edgeCount ?? 0),
     branchingCount: Number(flowContext?.branchingCount ?? 0),
@@ -481,8 +484,8 @@ const buildTaskflowRequestContext = (flowContext) => {
     taskList: Array.isArray(flowContext?.taskList) ? flowContext.taskList : [],
     taskContents: Array.isArray(flowContext?.taskContents) ? flowContext.taskContents : [],
     currentNodeList: Array.isArray(flowContext?.nodes) ? flowContext.nodes : [],
-    currentEdgeList: Array.isArray(flowContext?.flowDefinition?.edges)
-      ? flowContext.flowDefinition.edges.map((edge) => ({
+    currentEdgeList: Array.isArray(flowForEdges?.edges)
+      ? flowForEdges.edges.map((edge) => ({
           id: String(edge?.id ?? ''),
           source: String(edge?.source ?? ''),
           target: String(edge?.target ?? ''),
@@ -490,12 +493,6 @@ const buildTaskflowRequestContext = (flowContext) => {
           targetHandle: String(edge?.targetHandle ?? ''),
         }))
       : [],
-    nodes: Array.isArray(flowContext?.nodes) ? flowContext.nodes : [],
-    edges: Array.isArray(flowContext?.flowDefinition?.edges) ? flowContext.flowDefinition.edges : [],
-    flowDefinition:
-      flowContext?.flowDefinition && typeof flowContext.flowDefinition === 'object'
-        ? flowContext.flowDefinition
-        : undefined,
     fullFlow:
       flowContext?.fullFlow && typeof flowContext.fullFlow === 'object'
         ? flowContext.fullFlow
@@ -1422,15 +1419,15 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
 
       console.log('[AI_TASKFLOW][2단계:요청페이로드_검증]', {
         hasTaskflowContext: Boolean(taskflowContext),
-        hasFlowDefinition: Boolean(taskflowContext?.flowDefinition),
+        hasFlowDefinition: false,
         hasFullFlow: Boolean(taskflowContext?.fullFlow),
-        taskflowNodeCount: Array.isArray(taskflowContext?.flowDefinition?.nodes)
-          ? taskflowContext.flowDefinition.nodes.length
+        taskflowNodeCount: Array.isArray(taskflowContext?.fullFlow?.nodes)
+          ? taskflowContext.fullFlow.nodes.length
           : 0,
-        taskflowEdgeCount: Array.isArray(taskflowContext?.flowDefinition?.edges)
-          ? taskflowContext.flowDefinition.edges.length
+        taskflowEdgeCount: Array.isArray(taskflowContext?.fullFlow?.edges)
+          ? taskflowContext.fullFlow.edges.length
           : 0,
-        taskflowFlowDefinition: taskflowContext?.flowDefinition,
+        taskflowFlowDefinition: undefined,
       })
 
       const result = await postSiteAssistantChat({
@@ -1459,7 +1456,6 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
               ? currentEventFilters
               : undefined,
           taskflow: taskflowContext,
-          flowContext,
         },
         signal: controller.signal,
       })

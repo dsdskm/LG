@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { Logger } from "@nestjs/common";
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import { json, urlencoded } from 'express';
 import { join } from 'path';
 import { AppModule } from "./app.module";
 
@@ -17,6 +18,10 @@ async function bootstrap() {
       'verbose',
     ],
   });
+
+  // taskflow canvas context can be larger than body-parser defaults(100kb).
+  app.use(json({ limit: process.env.REQUEST_BODY_LIMIT ?? '2mb' }));
+  app.use(urlencoded({ extended: true, limit: process.env.REQUEST_BODY_LIMIT ?? '2mb' }));
 
   app.useStaticAssets(join(process.cwd(), 'apps/ai_chat_service/assets'), {
     prefix: '/assets/',
