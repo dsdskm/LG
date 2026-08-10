@@ -58,6 +58,7 @@ const LeftMapCard = memo(function LeftMapCard({
   leftPlayable,
   leftInteractiveReady,
   leftOverlayText,
+  leftNoData,
 
   gridData,
   pathPoints,
@@ -164,7 +165,7 @@ const LeftMapCard = memo(function LeftMapCard({
                   gap: 8
                 }}
               >
-                {loadPhase !== 'init' && loadPhase !== 'error' && leftOverlayText ? (
+                {loadPhase !== 'init' && loadPhase !== 'error' && !leftNoData && leftOverlayText ? (
                   <>
                     <span
                       aria-hidden
@@ -250,7 +251,11 @@ function MapPanels({
 
   odomChart1,
   odomChart2,
-  chartLoading
+  chartLoading,
+
+  // ✅ [ADD] "이 로그엔 데이터가 없다"가 확정된 상태(로딩 중과 구분)
+  poseUnavailable,
+  gridUnavailable
 }) {
   const { t } = useTranslation('robot')
   // ===============================
@@ -302,19 +307,28 @@ function MapPanels({
   // ✅ 로그 로딩과 지도/플레이는 분리: 지도는 ready면 인터랙션 허용
   const leftInteractiveReady = loadPhase === 'ready' && (leftReadyByData || leftHasGrid)
 
+  // ✅ grid/pose 둘 다 "이 로그엔 없음"이 확정된 경우 — 계속 기다리는 스피너 대신 안내 문구로 전환
+  const leftNoData = loadPhase === 'ready' && !!gridUnavailable && !!poseUnavailable
+
   const leftOverlayText = useMemo(() => {
     if (loadPhase === 'error') return t('logreplay.map.loadFailed')
     if (loadPhase === 'init') return t('logreplay.map.initialHint')
+    if (leftNoData) return t('logreplay.map.noMapData')
     if (!leftHasPts && !leftHasGrid) return t('logreplay.map.waitingPathCollection')
     if (loadPhase !== 'ready') return t('logreplay.map.mcapLoading')
     if (!leftReadyByData) return t('logreplay.map.waitingDataStabilize')
     return ''
-  }, [loadPhase, leftHasPts, leftHasGrid, leftReadyByData, t])
+  }, [loadPhase, leftNoData, leftHasPts, leftHasGrid, leftReadyByData, t])
 
   // ===============================
   // 우측 센서 차트 게이팅(좌측과 동일한 로딩 Sync)
   // ===============================
   const rightInteractiveReady = loadPhase === 'ready'
+
+  // ✅ 센서 차트는 pose/odom에서 파생되므로, pose가 "없음" 확정이면 차트도 영원히 비어있다.
+  //    차트 1개짜리 오버레이 대신, 각 SensorChart 박스 안에 개별적으로 안내를 표시한다.
+  const rightNoData = loadPhase === 'ready' && !!poseUnavailable
+  const noSensorMsg = rightNoData ? t('logreplay.map.noSensorData') : null
 
   const rightOverlayText = useMemo(() => {
     if (loadPhase === 'error') return t('logreplay.map.loadFailed')
@@ -323,6 +337,7 @@ function MapPanels({
     return ''
   }, [loadPhase, t])
 
+  // ✅ "센서 데이터 없음"은 오버레이 1개로 두 차트를 덮지 않고, 차트마다 개별 안내(SensorChart emptyMessage)로 표시
   const showRightOverlay = loadPhase === 'error' || loadPhase === 'init' || !rightInteractiveReady
 
   // 시간 라벨(우측 헤더 DOM 반영)
@@ -360,6 +375,7 @@ function MapPanels({
         leftPlayable={leftPlayable}
         leftInteractiveReady={leftInteractiveReady}
         leftOverlayText={leftOverlayText}
+        leftNoData={leftNoData}
         // ▼ 3D용
         gridData={gridData}
         pathPoints={pathPoints}
@@ -430,6 +446,7 @@ function MapPanels({
                     playheadSec={playheadSec}
                     t0EpochMs={t0EpochMs}
                     xRange={chartXRange}
+                    emptyMessage={noSensorMsg}
                   />
                   <SensorChart
                     sampleMode={false}
@@ -440,6 +457,7 @@ function MapPanels({
                     playheadSec={playheadSec}
                     t0EpochMs={t0EpochMs}
                     xRange={chartXRange}
+                    emptyMessage={noSensorMsg}
                   />
                 </div>
               )

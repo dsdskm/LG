@@ -129,6 +129,7 @@ export default function useLogReplayData({
   const requestPoseWindowRef = useRef(null)
   const activePoseWindowRef = useRef({ startSec: null, endSec: null })
   const poseInflightRef = useRef(false) // pose 윈도우 로드 in-flight 가드(중복/파일업 방지 — finally에서 반드시 해제)
+  const poseTopicUnavailableRef = useRef(false) // ✅ 이 mcap엔 pose 토픽이 없음(또는 메시지 0개)이 확정되면 true — 이후 requestPoseWindow 호출 자체를 차단
   const poseWindowSeqRef = useRef(0)
   const lastPollCenterRef = useRef(null) // ✅ 폴링 게이트: 사용자 seek 감지용
   // ✅ [ADD][Option A] pose window 결과 캐시(플레이바 이동 시 네트워크 없이 여기서 선택)
@@ -144,6 +145,11 @@ export default function useLogReplayData({
   const [odomChart1, setOdomChart1] = useState(null) // vx/vy/speed
   const [odomChart2, setOdomChart2] = useState(null) // x/y/yaw
   const [chartLoading, setChartLoading] = useState(false)
+
+  // ✅ [ADD] 이 mcap 파일에 pose/grid 토픽이 없음(또는 메시지 0개)이 "확정"됐는지(로딩 중이 아니라 진짜 없음).
+  //    UI가 "계속 기다리는 중" 스피너 대신 "이 로그엔 데이터가 없다" 안내를 보여줄 수 있도록 별도 state로 노출.
+  const [poseUnavailable, setPoseUnavailable] = useState(false)
+  const [gridUnavailable, setGridUnavailable] = useState(false)
 
   // ✅ [ADD] pose window -> chart data 변환 유틸
   const buildOdomChartsFromPoses = useCallback((poses) => {
@@ -1027,6 +1033,9 @@ export default function useLogReplayData({
     currentMcapUrlRef.current = downloadUrl
     activePoseWindowRef.current = { startSec: null, endSec: null }
     poseInflightRef.current = false
+    poseTopicUnavailableRef.current = false
+    setPoseUnavailable(false)
+    setGridUnavailable(false)
     poseWindowSeqRef.current = 0
     poseWindowCacheRef.current = []
     lastPoseApplyIdxRef.current = -1
@@ -1071,6 +1080,10 @@ export default function useLogReplayData({
     const requestPoseWindow = async (centerSec, reason = 'unknown') => {
       const url = currentMcapUrlRef.current
       if (!url) return
+
+      // ✅ 이 mcap엔 pose 토픽이 없음(또는 메시지 0개)이 이미 확정됨 — 더 이상 요청하지 않음
+      //    (파일 전체 요약 통계 기준 판정이라 재생 위치와 무관하게 항상 유효하다)
+      if (poseTopicUnavailableRef.current) return
 
       const exp = Number(expectedDurationSecRef.current) || 0
       if (!Number.isFinite(centerSec)) return
@@ -1132,6 +1145,14 @@ export default function useLogReplayData({
         })
 
         if (!currentMcapUrlRef.current) return
+
+        // ✅ raw === null → "이 파일엔 pose 토픽이 없다(또는 메시지 0개)"가 확정된 것(mcapLoader.js).
+        //    시간창과 무관한 파일 전체 판정이므로, 이후 requestPoseWindow 호출 자체를 영구 차단한다.
+        if (raw === null) {
+          poseTopicUnavailableRef.current = true
+          setPoseUnavailable(true)
+          return
+        }
 
         // ✅ raw는 이미 playback-relative tSec이므로 그대로 정규화
         let norm = []
@@ -1418,7 +1439,12 @@ export default function useLogReplayData({
         })
       })()
         .then((grid) => {
-          if (grid) setGridData?.(grid)
+          if (grid) {
+            setGridData?.(grid)
+          } else {
+            // ✅ readMessages가 정상 종료됐는데도 유효 grid가 없음 = 이 로그엔 grid 토픽/데이터가 없다(확정)
+            setGridUnavailable(true)
+          }
 
           renderNow?.()
           gridDoneRef.current.v = true
@@ -1444,6 +1470,7 @@ export default function useLogReplayData({
         .catch((e) => {
           console.warn('[Logreplay] grid 로드 실패:', e)
           gridDoneRef.current.v = true
+          setGridUnavailable(true)
           // ✅ Step1(맵만 확인)에서는 grid가 들어오면 로딩 종료로 간주
           posesDoneRef.current.v = true
           setIsLoadingLogs(false)
@@ -1535,6 +1562,10 @@ export default function useLogReplayData({
     odomChart1,
     odomChart2,
     chartLoading,
+
+    // ✅ [ADD] "이 로그엔 데이터가 없다"가 확정된 상태(로딩 중과 구분)
+    poseUnavailable,
+    gridUnavailable,
 
     clearReplaySession
   }

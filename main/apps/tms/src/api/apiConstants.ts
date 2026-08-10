@@ -14,7 +14,8 @@ export const ENDPOINTS = {
     TASKS: `${API_CONFIG.PREFIX_TMS}/tasks`,
     TASKFLOWS: `${API_CONFIG.PREFIX_TMS}/taskflows`,
     DEPLOY: `${API_CONFIG.PREFIX_TMS}/deployments`,
-    ROBOT_DEPLOY: `${API_CONFIG.PREFIX_TMS}/robot-deployments`
+    ROBOT_DEPLOY: `${API_CONFIG.PREFIX_TMS}/robot-deployments`,
+    CONTENTS: `${API_CONFIG.PREFIX_TMS}/contents`
   },
   CMS: {
     FILE: `${API_CONFIG.PREFIX_CMS}/file-content/request-download-url-id`

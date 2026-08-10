@@ -54,7 +54,8 @@ class HttpRangeReadable {
 
   _releaseFetchSlot() {
     const next = this._fetchWaiters.shift()
-    if (next) next() // 슬롯을 대기자에게 그대로 이양(active 카운트 유지)
+    if (next)
+      next() // 슬롯을 대기자에게 그대로 이양(active 카운트 유지)
     else this._activeFetches = Math.max(0, this._activeFetches - 1)
   }
 
@@ -387,12 +388,17 @@ function listAllChannels(reader) {
 function pickOccupancyGridTopic(reader) {
   // 대표 Grid: 정적 지도
   const candidates = ['/map', '/carto_service/occupancygrid']
-  const chosen = findTopicByCandidates(reader, candidates)
+  const chosen = findTopicWithMessages(reader, candidates)
 
   if (!chosen) {
     const topics = listAllChannels(reader).map((c) => c.topic)
     // preferredLower가 있으면 거기에 더 근접한 것 먼저
-    console.warn('[Logreplay] OccupancyGrid 토픽을 찾지 못함. candidates=', candidates, 'available=', topics)
+    console.warn(
+      '[Logreplay] OccupancyGrid 토픽을 찾지 못함(또는 메시지 0개). candidates=',
+      candidates,
+      'available=',
+      topics
+    )
     // 2) 토픽 이름 키워드로 추려내기
     return null
   }
@@ -515,6 +521,18 @@ function findTopicByCandidates(reader, candidatesLower) {
   }
 
   return null
+}
+
+// 토픽 존재 여부 + 메시지 카운트(요약 통계, 청크 스캔 없음)로 "읽을 데이터가 있는지" 판별
+// - reader.statistics.channelMessageCounts는 mcap 파일을 열 때 이미 파싱된 요약 정보라 추가 스캔이 없다.
+function findTopicWithMessages(reader, candidatesLower) {
+  const topic = findTopicByCandidates(reader, candidatesLower)
+  if (!topic) return null
+  const channelsById = reader.channelsById || new Map()
+  const ch = [...channelsById.values()].find((c) => c.topic === topic)
+  const count = ch ? reader.statistics?.channelMessageCounts?.get(ch.id) : undefined
+  if (count != null && count <= 0n) return null // 채널은 있지만 메시지 0개
+  return topic
 }
 
 function wrapHandler(name, fn) {
@@ -829,7 +847,7 @@ export async function loadPosesSparseFromMcapUrl(url, options = {}) {
     '/odom',
     '/lio_odom'
   ]
-  const chosen = findTopicByCandidates(reader, candidates)
+  const chosen = findTopicWithMessages(reader, candidates)
   if (!chosen) return []
 
   const channelsById = reader.channelsById || new Map()
@@ -978,10 +996,13 @@ export async function loadPosesFromMcapUrl(url, options = {}) {
     '/odom',
     '/lio_odom'
   ]
-  const chosen = findTopicByCandidates(reader, candidates)
+
+  const chosen = findTopicWithMessages(reader, candidates)
   if (!chosen) {
-    console.warn('[Logreplay] pose 토픽을 찾지 못함. candidates=', candidates)
-    return []
+    console.warn('[Logreplay] pose 토픽을 찾지 못함(또는 메시지 0개). candidates=', candidates)
+    // ✅ 파일 전체 기준(요약 통계) 판정이라 시간창과 무관하게 확정적이다.
+    //    빈 배열([])이 아니라 null을 반환해 "이 파일엔 pose가 없다"를 호출자가 구분할 수 있게 한다.
+    return null
   }
 
   const channelsById = reader.channelsById || new Map()
@@ -1004,7 +1025,7 @@ export async function loadPosesFromMcapUrl(url, options = {}) {
   if (typeof onExtraMessage === 'function' && Array.isArray(extraTopics)) {
     for (const ex of extraTopics) {
       if (!ex?.kind || !Array.isArray(ex.candidates)) continue
-      const t = findTopicByCandidates(
+      const t = findTopicWithMessages(
         reader,
         ex.candidates.map((c) => String(c).toLowerCase())
       )
@@ -1017,7 +1038,12 @@ export async function loadPosesFromMcapUrl(url, options = {}) {
       } catch {
         /* generic decode fallback */
       }
-      extraByTopic.set(t, { kind: ex.kind, decoder: dec, downsampleMs: Number(ex.downsampleMs) || 0, lastKept: -Infinity })
+      extraByTopic.set(t, {
+        kind: ex.kind,
+        decoder: dec,
+        downsampleMs: Number(ex.downsampleMs) || 0,
+        lastKept: -Infinity
+      })
     }
   }
 
@@ -1268,7 +1294,7 @@ export async function loadRosoutFromMcapUrl(url, options = {}) {
   })
 
   const candidates = [String(logTopic).toLowerCase(), '/rosout', '/rosout_agg']
-  const chosen = findTopicByCandidates(reader, candidates)
+  const chosen = findTopicWithMessages(reader, candidates)
   if (!chosen) return { found: false, entries: [], topic: null }
 
   const channelsById = reader.channelsById || new Map()

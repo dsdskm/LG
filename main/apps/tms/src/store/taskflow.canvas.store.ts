@@ -21,6 +21,8 @@ import {
 } from '../common/constants'
 import { ensureStartNode, isStartNodeId, START_NODE_ID } from '../utils/node.util'
 import type { FlowMode } from '../utils/node.util'
+import { fetchAvailableContents } from '../utils/fetchAvailableContents'
+import { refreshContentNodes, type ContentChange, type MissingContent } from '../utils/refreshTaskflowContents'
 import { getHelperLines } from '../utils/helperLines'
 
 export type NodeData = {
@@ -743,6 +745,10 @@ type FlowEditorState = {
   palette: PaletteItem[]
   contentsList: ContentApiPayload[]
 
+  // 현재 편집 중인 taskflow 의 조직 정보(콘텐츠 갱신 시 최신 목록 조회에 사용). loadTasks 에서 세팅.
+  groupId: string | null
+  siteId: string | null
+
   nodes: RFNode[]
   edges: RFEdge[]
   canvasNotes: CanvasNote[]
@@ -776,6 +782,10 @@ type FlowEditorState = {
   selectedPalette: NodeData | null
 
   loadTasks: (groupId: string | null, siteId: string | null) => Promise<void>
+
+  // 현재 조직(groupId/siteId)의 최신 콘텐츠로 캔버스 노드의 content* 필드를 갱신한다.
+  // 버전이 바뀐 것만 갱신(changed), 최신 목록에 없는 건 갱신 못함(missing)으로 보고한다.
+  refreshContents: () => Promise<{ changed: ContentChange[]; missing: MissingContent[] }>
 
   addNodeFromPalette: (item: Extract<PaletteItem, { kind: 'contentNode' }>, position: XYPosition) => void
 
@@ -863,6 +873,9 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
   palette: [],
   contentsList: [],
 
+  groupId: null,
+  siteId: null,
+
   nodes: [],
   edges: [],
   canvasNotes: [],
@@ -889,7 +902,7 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
   selectedPalette: null,
 
   loadTasks: async (groupId: string | null, siteId: string | null) => {
-    set({ loadingTasks: true })
+    set({ loadingTasks: true, groupId, siteId })
     try {
       console.log('[TASK_PANEL][LOAD_START]', {
         groupId,
@@ -936,6 +949,25 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
         siteId
       })
     }
+  },
+
+  refreshContents: async () => {
+    const { groupId, siteId, nodes, edges, viewport, flowMode } = get()
+
+    // 최신 콘텐츠 목록 조회 → 노드 content* 필드 갱신
+    const available = await fetchAvailableContents(groupId, siteId)
+    const { nodes: nextNodes, changed, missing } = refreshContentNodes(nodes, available)
+
+    // 실제 바뀐 게 있을 때만 커밋(히스토리/undo + dirty)
+    if (changed.length > 0) {
+      const prev = makeSnapshot(nodes, edges, viewport, flowMode)
+      set((state) => ({
+        nodes: nextNodes,
+        ...pushHistory(state.historyPast, prev)
+      }))
+    }
+
+    return { changed, missing }
   },
 
   addNodeFromPalette: (item, position) => {

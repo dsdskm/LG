@@ -12,7 +12,9 @@ export default React.memo(function SensorChart({
   playheadSec = null,
   t0EpochMs = null,
   // [min,max] 절대 초. 여러 차트의 x축을 동일 범위로 고정 → 재생 커서가 모든 차트에서 일관되게 보임
-  xRange = null
+  xRange = null,
+  // ✅ 데이터가 "확정적으로 없음"일 때만 채워주는 안내 문구(로딩 중엔 null로 비워 기존처럼 빈 박스 유지)
+  emptyMessage = null
 }) {
   const chartRef = useRef(null)
   const plotRef = useRef(null)
@@ -185,7 +187,26 @@ export default React.memo(function SensorChart({
         boxSizing: 'border-box',
         position: 'relative'
       }}
-    />
+    >
+      {!hasData && emptyMessage && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#374151',
+            fontWeight: 600,
+            fontSize: 13,
+            textAlign: 'center',
+            padding: '0 12px'
+          }}
+        >
+          {emptyMessage}
+        </div>
+      )}
+    </div>
   )
 })
 

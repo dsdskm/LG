@@ -6,6 +6,7 @@ import { MediaFallbackText, MediaStage, PreviewCard, PreviewHeaderTitle } from '
 import { PreviewProps } from './types.preview'
 import { type MapData, type MapPoi, useGetMap } from '@/api/mapApi'
 import { useContentTaskStore } from '@/pages/TaskFlowCanvasPage/store/useContentTaskStore'
+import PreviewHeader from './PreviewHeader'
 
 const Viewport = styled.div`
   position: relative;
@@ -190,6 +191,7 @@ export default function PoiPreview({ node, nodeId }: PreviewProps) {
   const [imgSize, setImgSize] = useState<ImageSize | null>(null)
   const [scale, setScale] = useState(1)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
+  const [contentOpen, setContentOpen] = useState(true)
 
   const [dragging, setDragging] = useState(false)
   const lastPosRef = useRef({ x: 0, y: 0 })
@@ -416,103 +418,104 @@ export default function PoiPreview({ node, nodeId }: PreviewProps) {
     return null
   }
   return (
-    <PreviewCard>
-      <PreviewHeaderTitle title={data.label}>{data.label}</PreviewHeaderTitle>
-
-      <MediaStage>
-        {mapImageUrl ? (
-          <Viewport
-            onWheel={handleWheel}
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={handlePointerCancel}
-            onPointerLeave={handlePointerCancel}
-            style={{
-              cursor: scale > MIN_SCALE ? (dragging ? 'grabbing' : 'grab') : 'default'
-            }}
-          >
-            <ZoomContent
+    <>
+      <PreviewHeader label={data.label} open={contentOpen} onToggle={() => setContentOpen((prev) => !prev)} />
+      <PreviewCard $hidden={!contentOpen}>
+        <MediaStage>
+          {mapImageUrl ? (
+            <Viewport
+              onWheel={handleWheel}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerCancel}
+              onPointerLeave={handlePointerCancel}
               style={{
-                transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`
+                cursor: scale > MIN_SCALE ? (dragging ? 'grabbing' : 'grab') : 'default'
               }}
             >
-              <MapImage alt={data.contentName} src={mapImageUrl} onLoad={handleImageLoad} />
-              <PoiLayer>
-                {mapPois.map((poi) => {
-                  const pos = toPercentByXY(poi.x, poi.y)
-                  if (!pos) return null
-                  const isActive = targetPoiId === poi.poiId
-                  const label = getPoiLabel(poi)
-                  return (
-                    <PoiDot
-                      key={`map-poi-${poi.poiId}`}
-                      $active={isActive}
-                      title={`${label} / ${poi.poiId}`}
+              <ZoomContent
+                style={{
+                  transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`
+                }}
+              >
+                <MapImage alt={data.contentName} src={mapImageUrl} onLoad={handleImageLoad} />
+                <PoiLayer>
+                  {mapPois.map((poi) => {
+                    const pos = toPercentByXY(poi.x, poi.y)
+                    if (!pos) return null
+                    const isActive = targetPoiId === poi.poiId
+                    const label = getPoiLabel(poi)
+                    return (
+                      <PoiDot
+                        key={`map-poi-${poi.poiId}`}
+                        $active={isActive}
+                        title={`${label} / ${poi.poiId}`}
+                        style={{
+                          left: `${pos.left}%`,
+                          top: `${pos.top}%`
+                        }}
+                      />
+                    )
+                  })}
+                  {contentPoiPercent ? (
+                    <ContentPoiDot
+                      title={`contentValue: ${contentPoiLabel}`}
                       style={{
-                        left: `${pos.left}%`,
-                        top: `${pos.top}%`
+                        left: `${contentPoiPercent.left}%`,
+                        top: `${contentPoiPercent.top}%`
                       }}
                     />
-                  )
-                })}
-                {contentPoiPercent ? (
-                  <ContentPoiDot
-                    title={`contentValue: ${contentPoiLabel}`}
-                    style={{
-                      left: `${contentPoiPercent.left}%`,
-                      top: `${contentPoiPercent.top}%`
-                    }}
-                  />
-                ) : null}
-              </PoiLayer>
-            </ZoomContent>
+                  ) : null}
+                </PoiLayer>
+              </ZoomContent>
 
-            <ZoomControls>
-              <ZoomButton
-                type="button"
-                title="축소"
-                onClick={() => {
-                  setScale((prev) => {
-                    const next = clampScale(prev - SCALE_STEP)
+              <ZoomControls>
+                <ZoomButton
+                  type="button"
+                  title="축소"
+                  onClick={() => {
+                    setScale((prev) => {
+                      const next = clampScale(prev - SCALE_STEP)
 
-                    if (next <= MIN_SCALE) {
-                      setOffset({ x: 0, y: 0 })
-                    }
+                      if (next <= MIN_SCALE) {
+                        setOffset({ x: 0, y: 0 })
+                      }
 
-                    return next
-                  })
-                }}
-              >
-                -
-              </ZoomButton>
+                      return next
+                    })
+                  }}
+                >
+                  -
+                </ZoomButton>
 
-              <ZoomButton
-                type="button"
-                title="원본"
-                onClick={() => {
-                  setScale(1)
-                  setOffset({ x: 0, y: 0 })
-                }}
-              >
-                ⟲
-              </ZoomButton>
+                <ZoomButton
+                  type="button"
+                  title="원본"
+                  onClick={() => {
+                    setScale(1)
+                    setOffset({ x: 0, y: 0 })
+                  }}
+                >
+                  ⟲
+                </ZoomButton>
 
-              <ZoomButton
-                type="button"
-                title="확대"
-                onClick={() => {
-                  setScale((prev) => clampScale(prev + SCALE_STEP))
-                }}
-              >
-                +
-              </ZoomButton>
-            </ZoomControls>
-          </Viewport>
-        ) : (
-          <MediaFallbackText>MAP 정보가 없습니다.</MediaFallbackText>
-        )}
-      </MediaStage>
-    </PreviewCard>
+                <ZoomButton
+                  type="button"
+                  title="확대"
+                  onClick={() => {
+                    setScale((prev) => clampScale(prev + SCALE_STEP))
+                  }}
+                >
+                  +
+                </ZoomButton>
+              </ZoomControls>
+            </Viewport>
+          ) : (
+            <MediaFallbackText>MAP 정보가 없습니다.</MediaFallbackText>
+          )}
+        </MediaStage>
+      </PreviewCard>
+    </>
   )
 }
