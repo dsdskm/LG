@@ -1,4 +1,5 @@
 {
+  "pageTitle": "Map Scan Viewer",
   "disconnected": "Disconnected",
   "connecting": "Connecting...",
   "connected": "Connected",
@@ -40,10 +41,8 @@
   "reset": "Reset",
   "cancel": "Cancel",
   "topicInfo": "Topic Info",
-  "building": "Building",
-  "floor": "Floor",
-  "area": "Area",
-  "selectBuilding": "Select Building",
-  "selectFloor": "Select Floor",
-  "selectArea": "Select Area"
+  "selectLocationForMapping": "Select building, floor and area to start mapping",
+  "semanticPageTitle": "Semantic (POI)",
+  "selectLocationForSemantic": "Select building, floor and area to save new POIs",
+  "noPoiLoaded": "No POI to display"
 }

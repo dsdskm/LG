@@ -7,11 +7,16 @@ export type PreviewNodeLike = {
   data?: SelectedData
 } | null
 
-export type PlayStatus = 'NONE' | 'READY' | 'PLAYING' | 'FINISHED'
 export type PreviewProps = {
   node?: PreviewNodeLike
   selectedData?: SelectedData | null
   nodeId?: string
+  /**
+   * 진행바를 단독 표시한다(트랙 폭 100%).
+   * 점검 모드는 여러 콘텐츠 길이를 maxDuration 기준으로 비교해 보여주지만,
+   * 속성 패널은 항목이 하나뿐이라 비교 기준이 없다.
+   */
+  standaloneProgress?: boolean
 }
 
 export interface BVHMesh extends Mesh {

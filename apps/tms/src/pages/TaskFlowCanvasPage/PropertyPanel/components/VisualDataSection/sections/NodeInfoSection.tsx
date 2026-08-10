@@ -19,6 +19,8 @@ type NodeInfoSectionProps = {
   setInfoTab: Dispatch<SetStateAction<InfoTab>>
   // 읽기 전용 캔버스에서 재사용할 때 편집 입력을 비활성화한다.
   readOnly?: boolean
+  // 콘텐츠 재생 진행바의 store 키로 쓰인다(팔레트 선택 시에는 없음).
+  nodeId?: string
 }
 
 export default function NodeInfoSection({
@@ -26,7 +28,8 @@ export default function NodeInfoSection({
   selectedData,
   infoTab,
   setInfoTab,
-  readOnly = false
+  readOnly = false,
+  nodeId
 }: NodeInfoSectionProps) {
   const { t } = useTranslation('tms')
   return (
@@ -34,6 +37,7 @@ export default function NodeInfoSection({
       <VisualDataSection
         viewMode={viewMode}
         selectedData={selectedData}
+        nodeId={nodeId}
       />
 
       <SectionDivider />

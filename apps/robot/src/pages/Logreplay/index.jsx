@@ -135,6 +135,8 @@ const BodyContainer = React.memo(
       odomChart1,
       odomChart2,
       chartLoading,
+      poseUnavailable,
+      gridUnavailable,
 
       // 플레이어 바
       progressBarRef,
@@ -205,6 +207,8 @@ const BodyContainer = React.memo(
             odomChart1={odomChart1}
             odomChart2={odomChart2}
             chartLoading={chartLoading}
+            poseUnavailable={poseUnavailable}
+            gridUnavailable={gridUnavailable}
           />
 
           {/* 공통 플레이어 바 (두 맵 하단 전체 폭) */}
@@ -380,6 +384,8 @@ export default function Logreplay({ robotName = '로봇 명', initialDate }) {
     odomChart1,
     odomChart2,
     chartLoading,
+    poseUnavailable,
+    gridUnavailable,
 
     // 배속 (훅에서 제공)
     playbackRate,
@@ -510,6 +516,8 @@ export default function Logreplay({ robotName = '로봇 명', initialDate }) {
           odomChart1={odomChart1}
           odomChart2={odomChart2}
           chartLoading={chartLoading}
+          poseUnavailable={poseUnavailable}
+          gridUnavailable={gridUnavailable}
           // 플레이어 바
           progressBarRef={progressBarRef}
           handleProgressPointerDown={handleProgressPointerDown}

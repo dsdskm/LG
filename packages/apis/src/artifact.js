@@ -6,8 +6,8 @@ const mockUpData = false // import.meta.env.VITE_MODE !== 'local'
 const packageTypeOptions = ['docker', 'xml', 'package']
 
 const retrieveArtifacts = async (orgIds, id) => {
-  const params = { orgIds }
-  if (id) params.id = String(id)
+  const data = { orgIds }
+  if (id) data.id = String(id)
 
   if (mockUpData) {
     return new Promise((resolve, reject) => {
@@ -43,7 +43,7 @@ const retrieveArtifacts = async (orgIds, id) => {
       }, 500)
     })
   } else {
-    const response = await axiosOta.get(ENDPOINTS.ARTIFACT, { params })
+    const response = await axiosOta.post(ENDPOINTS.ARTIFACT, data)
     return response
   }
 }

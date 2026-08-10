@@ -35,6 +35,9 @@ export { default as GlobalErrorModal } from './common/GlobalErrorModal'
 export { default as ExpandableSection } from './common/ExpandableSection'
 export { default as StyledTag } from './common/StyledTag'
 export { default as StateStatusCard } from './common/StateStatusCard'
+export { default as LocationBar } from './common/LocationBar'
+// 위치 다국어 name 해석기 — 선택된 위치로 문자열을 만드는 화면(예: 매핑 맵 이름)에서 쓴다.
+export { resolveLocationName } from './common/LocationBar'
 // layout
 export { default as Footer } from './layout/Footer'
 export { default as GnbButton } from './layout/GnbButton'

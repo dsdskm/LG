@@ -1,4 +1,5 @@
 {
+  "pageTitle": "マップスキャンビューア",
   "disconnected": "切断",
   "connecting": "接続中",
   "connected": "接続完了",
@@ -40,10 +41,5 @@
   "reset": "再起動",
   "cancel": "キャンセル",
   "topicInfo": "トピック情報",
-  "building": "建物",
-  "floor": "階",
-  "area": "エリア",
-  "selectBuilding": "建物を選択",
-  "selectFloor": "階を選択",
-  "selectArea": "エリアを選択"
+  "selectLocationForMapping": "マッピングを開始するには建物・階・エリアをすべて選択してください"
 }

@@ -30,8 +30,7 @@ const retrieveUsers = async (orgIds) => {
     })
   } else {
     try {
-      const params = { orgIds }
-      const response = await axiosOta.get(ENDPOINTS.ORGANIZATION.BASE, { params })
+      const response = await axiosOta.post(ENDPOINTS.ORGANIZATION.BASE, { orgIds })
       return response
     } catch (error) {
       console.error('Failed to retrieve users:', error)

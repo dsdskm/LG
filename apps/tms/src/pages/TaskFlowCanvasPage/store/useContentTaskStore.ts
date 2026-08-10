@@ -22,7 +22,10 @@ interface ContentTaskState {
   updatePlayStatus: (id: string | undefined, status: PlayStatus) => void
   updateDuration: (id: string | undefined, duration: number) => void
   updateCurrent: (id: string | undefined, current: number) => void
-  getPlayStatusById: (id: string | undefined) => PlayStatus | undefined
+  // 구독이 걸리지 않는 스냅샷 조회다(get 기반). 렌더에서 쓰면 갱신되지 않으므로
+  // 이벤트 핸들러/실행 판정처럼 "그 순간 값"이 필요한 곳에서만 쓴다.
+  // 등록되지 않은 id 는 'NONE' 을 돌려준다(undefined 아님).
+  getPlayStatusById: (id: string | undefined) => PlayStatus
   // 등록된 모든 콘텐츠 task 의 재생 상태를 READY 로 되돌린다(재-run 시 처음부터 다시 재생/평가).
   // 등록 목록과 duration 은 유지 → 같은 flow 재생 시 길이를 다시 측정하지 않는다.
   resetAllPlayStatus: () => void

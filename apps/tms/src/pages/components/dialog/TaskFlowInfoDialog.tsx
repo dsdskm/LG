@@ -42,7 +42,7 @@ export default function TaskFlowInfoDialog({
   const validateName = (value: string) => {
     const trimmed = value.trim()
     if (!trimmed) return t('infoDialog.nameRequired')
-    if (trimmed.length > 40) return t('infoDialog.nameTooLong')
+    if (trimmed.length > 100) return t('infoDialog.nameTooLong')
     return null
   }
 

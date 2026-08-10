@@ -4,9 +4,9 @@ import { ENDPOINTS } from './constants'
 const axiosOta = client(import.meta.env.VITE_OTA_API_BASE_URL)
 
 const retrieveTargetGroup = async (orgIds, id = null) => {
-  const params = { orgIds }
-  if (id) params.id = String(id)
-  const response = await axiosOta.get(`${ENDPOINTS.TARGETGROUP}`, { params })
+  const data = { orgIds }
+  if (id) data.id = String(id)
+  const response = await axiosOta.post(`${ENDPOINTS.TARGETGROUP}`, data)
   return response
 }
 

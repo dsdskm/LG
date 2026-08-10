@@ -85,7 +85,6 @@ import PoiPreview from '../PropertyPanel/components/VisualDataSection/previews/P
 import MotionPreview from '../PropertyPanel/components/VisualDataSection/previews/MotionPreview'
 import FacePreview from '../PropertyPanel/components/VisualDataSection/previews/FacePreview'
 import SoundPreview from '../PropertyPanel/components/VisualDataSection/previews/SoundPreview'
-import { PlayStatus } from '../PropertyPanel/components/VisualDataSection/previews/types.preview'
 import { useContentTaskStore } from '../store/useContentTaskStore'
 import { useResponsiveStore } from '@repo/stores'
 import { MobilePropertySheet } from '../components/MobilePropertySheet'
@@ -174,6 +173,7 @@ function PropertyPanel({
             infoTab={tab}
             setInfoTab={onChangeTab}
             readOnly
+            nodeId={String(selectedNode.id)}
           />
         </div>
       )}
@@ -250,7 +250,6 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
 
   const wrapperRef = useRef<HTMLDivElement | null>(null)
   const rfRef = useRef<ReactFlowInstance<any, any> | null>(null)
-  const refContentsStatus = useRef(new Map<string, PlayStatus>())
   const updateNodeInternals = useUpdateNodeInternals()
 
   const [mode, setMode] = useState<CanvasMode>('view')
@@ -531,7 +530,7 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
         rfRef.current?.fitView({ padding: 0.2, duration: 0 })
       })
     })
-  }, [nodes, edges, readonlyFlowMode, updateNodeInternals])
+  }, [flowRenderKey, updateNodeInternals])
 
   const renderedEdges = useMemo(() => {
     return edges.map((edge: any) => ({

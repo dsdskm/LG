@@ -1,10 +1,16 @@
-import React, { useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useFoxglove } from '@/hooks/useFoxglove'
 import ConnectionBar from '@/components/ConnectionBar'
-import LocationBar from '@/components/LocationBar'
+import { LocationBar, resolveLocationName, Section, Title } from '@repo/ui'
 import MapCanvas from '@/components/MapCanvas'
 import StatusPanel from '@/components/StatusPanel'
+import { list as listBuildings } from '@/apis/buildingApis'
+import { list as listFloors } from '@/apis/floorApis'
+import { list as listAreas } from '@/apis/areaApis'
+import { STATUS_TOPICS } from '@/constants/topics'
+import { resolveWsUrl } from '@/utils/wsUrl'
+import { StyledMapPageContent, MapWorkspace, LocationRow, MappingStatusBadge } from './styles'
 
 /**
  * Map
@@ -12,41 +18,108 @@ import StatusPanel from '@/components/StatusPanel'
  * 메인 페이지.
  * - wsUrl 상태 관리
  * - useFoxglove 훅으로 데이터 수신
+ * - 위치 계층(Building/Floor/Area) 목록 조회 및 선택 상태 관리 (LocationBar 는 표현만 담당)
  * - ConnectionBar + MapCanvas + StatusPanel 조합
  *
- * 레이아웃:
- * ┌─────────────────────────────────────────┐
- * │ LocationBar (Building/Floor/Area 선택)   │
- * ├─────────────────────────────────────────┤
- * │ ConnectionBar (상단 바)                  │
- * ├──────────────────────────┬──────────────┤
- * │                          │              │
- * │  MapCanvas               │ StatusPanel  │
- * │  (지도 + 라이다 + 로봇)   │ (정보 패널)  │
- * │                          │              │
- * └──────────────────────────┴──────────────┘
+ * 레이아웃은 cms 콘텐츠 페이지와 동일한 구성이다
+ * (StyledPageContent > Title / 위치 선택 / Section):
+ * ┌────────────────────────────────────────────┐
+ * │ Title (페이지 제목)                          │
+ * │ LocationBar (위치 선택)      [매핑 상태 배지] │
+ * │ ┌─ Section ───────────────┐ ┌─ Section ──┐ │
+ * │ │ ConnectionBar (툴바)     │ │ StatusPanel│ │
+ * │ │ MapCanvas               │ │ (정보 패널) │ │
+ * │ │ (지도 + 라이다 + 로봇)    │ │            │ │
+ * │ └─────────────────────────┘ └────────────┘ │
+ * └────────────────────────────────────────────┘
  */
+/** 맵 이름은 단일 경로 세그먼트여야 한다(BE resolveSavePath 가 하위 경로 표기를 400 으로 거부). */
+const sanitizeSegment = (value) =>
+  String(value)
+    .trim()
+    .replace(/[/\\]+/g, '_')
+
 /**
- * WebSocket URL의 host(IP) 부분을 현재 접속한 페이지의 hostname으로 교체한다.
- * 프로토콜(ws/wss)과 포트, 경로는 환경변수 값을 그대로 유지한다.
+ * 선택된 위치 계층으로 저장할 맵 이름과 매핑 시작 가능 여부를 계산한다.
+ *
+ * 건물 정보를 못 받아온 경우(목록이 비어 있음)는 고를 위치가 없으므로 이름을 'Default' 로 두고
+ * 매핑 시작을 허용한다 — 위치 계층 없이 쓰는 로봇도 매핑은 해야 한다.
+ * 건물 정보가 있으면 목록을 받아온 계층이 모두 선택돼야 시작할 수 있고(Floor/Area 도 내려오면 셋 다),
+ * 이름은 선택된 값들을 Building명-Floor명-Area명 순으로 잇는다.
  */
-function resolveWsUrl() {
-  const envUrl = import.meta.env.VITE_WEBSOCKET_URL
-  try {
-    const url = new URL(envUrl)
-    url.hostname = window.location.hostname
-    console.log('url', url.toString())
-    return url.toString()
-  } catch {
-    return envUrl
+const resolveMappingTarget = ({ buildings, floors, areas, location, language }) => {
+  if (!buildings.length) return { mapName: 'Default', canStart: true }
+
+  const levels = [
+    [buildings, location.buildingId],
+    [floors, location.floorId],
+    [areas, location.areaId]
+  ]
+
+  const parts = []
+  for (const [items, selectedId] of levels) {
+    if (!items.length) continue
+    if (!selectedId) return { mapName: '', canStart: false }
+    const selected = items.find((item) => String(item.id) === String(selectedId))
+    parts.push(sanitizeSegment(resolveLocationName(selected, language)))
   }
+
+  return { mapName: parts.filter(Boolean).join('-') || 'Default', canStart: true }
 }
 
 export default function Map() {
-  const { t } = useTranslation('map')
+  const { t, i18n } = useTranslation('map')
   const [wsUrl, setWsUrl] = useState(resolveWsUrl)
   const [fps, setFps] = useState(10) // 기본 10 FPS 업데이트 주기
   const [location, setLocation] = useState({ buildingId: '', floorId: '', areaId: '' })
+  const [buildings, setBuildings] = useState([])
+  const [floors, setFloors] = useState([])
+  const [areas, setAreas] = useState([])
+
+  // 위치 계층 목록 조회. 상위 선택이 바뀌면 하위 목록을 다시 받아온다
+  // (하위 선택 초기화는 LocationBar 의 onChange 가 넘겨주는 값으로 처리된다).
+  useEffect(() => {
+    let alive = true
+    listBuildings()
+      .then((res) => alive && setBuildings(res?.data || []))
+      .catch(() => alive && setBuildings([]))
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!location.buildingId) {
+      setFloors([])
+      return
+    }
+    let alive = true
+    listFloors({ buildingId: location.buildingId })
+      .then((res) => alive && setFloors(res?.data || []))
+      .catch(() => alive && setFloors([]))
+    return () => {
+      alive = false
+    }
+  }, [location.buildingId])
+
+  useEffect(() => {
+    if (!location.floorId) {
+      setAreas([])
+      return
+    }
+    let alive = true
+    listAreas({ floorId: location.floorId })
+      .then((res) => alive && setAreas(res?.data || []))
+      .catch(() => alive && setAreas([]))
+    return () => {
+      alive = false
+    }
+  }, [location.floorId])
+
+  const { mapName, canStart: canStartMapping } = useMemo(
+    () => resolveMappingTarget({ buildings, floors, areas, location, language: i18n.language }),
+    [buildings, floors, areas, location, i18n.language]
+  )
 
   const {
     status,
@@ -63,36 +136,54 @@ export default function Map() {
     disconnect
   } = useFoxglove(wsUrl, fps)
 
+  // 매핑 진행 상태는 폴링이 아니라 /lio_node/status 구독으로 들어온다.
+  // 상태 토픽 이름은 로봇 구성에 따라 달라서 구독 목록에서 실제로 잡힌 것을 쓴다.
+  const statusTopic = STATUS_TOPICS.find((topic) => subscribedTopics.includes(topic)) ?? null
+  const mappingStatus = statusTopic ? customTopicsData[statusTopic]?.data : null
+  const isMapping = mappingStatus === 'mapping'
+
   return (
-    <div style={styles.app}>
-      {/* 위치 계층 선택 바 (Building > Floor > Area) */}
-      <LocationBar value={location} onChange={setLocation} />
+    <StyledMapPageContent className="column">
+      <Title>{t('pageTitle')}</Title>
 
-      {/* 상단 연결 바 */}
-      <ConnectionBar
-        url={wsUrl}
-        onUrlChange={setWsUrl}
-        status={status}
-        onConnect={connect}
-        onDisconnect={disconnect}
-        fps={fps}
-        onFpsChange={setFps}
-        t={t}
-      />
+      <LocationRow>
+        {/* 위치 계층 선택 (Building > Floor > Area) */}
+        <LocationBar buildings={buildings} floors={floors} areas={areas} value={location} onChange={setLocation} />
 
-      {/* 메인 콘텐츠 영역 */}
-      <div style={styles.main}>
-        {/* 지도 + 라이다 캔버스 */}
-        <MapCanvas
-          mapData={mapData}
-          scanData={scanData}
-          odomData={odomData}
-          subscribedTopics={subscribedTopics}
-          customTopicsData={customTopicsData}
-          t={t}
-        />
+        {/* 매핑 진행 상태 (/lio_node/status) */}
+        <MappingStatusBadge $active={isMapping}>
+          <span className="label typographyBody5">{t('status')}</span>
+          <strong className="value typographyBody5">{mappingStatus || t('waitingForData')}</strong>
+        </MappingStatusBadge>
+      </LocationRow>
 
-        {/* 우측 정보 패널 */}
+      <MapWorkspace>
+        {/* 지도 Section — 연결·매핑 툴바 + 지도/라이다 캔버스 */}
+        <Section gap="1.2rem">
+          <ConnectionBar
+            url={wsUrl}
+            onUrlChange={setWsUrl}
+            status={status}
+            onConnect={connect}
+            onDisconnect={disconnect}
+            fps={fps}
+            onFpsChange={setFps}
+            mapName={mapName}
+            canStartMapping={canStartMapping}
+            t={t}
+          />
+
+          <MapCanvas
+            mapData={mapData}
+            scanData={scanData}
+            odomData={odomData}
+            subscribedTopics={subscribedTopics}
+            customTopicsData={customTopicsData}
+            t={t}
+          />
+        </Section>
+
+        {/* 정보 패널 — 토픽 정보 / 토픽 목록 / 범례를 각각 Section 으로 쌓는다 */}
         <StatusPanel
           status={status}
           wsUrl={wsUrl}
@@ -107,21 +198,7 @@ export default function Map() {
           unsubscribeTopics={unsubscribeTopics}
           t={t}
         />
-      </div>
-    </div>
+      </MapWorkspace>
+    </StyledMapPageContent>
   )
-}
-
-const styles = {
-  app: {
-    display: 'flex',
-    flexDirection: 'column',
-    height: '100%',
-    overflow: 'hidden'
-  },
-  main: {
-    display: 'flex',
-    flex: 1,
-    overflow: 'hidden'
-  }
 }

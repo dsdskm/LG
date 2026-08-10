@@ -267,6 +267,7 @@
   "motionThumbsUp": "サムズアップ",
   "motionSpeechGesture": "発話ジェスチャー",
   "motionRockPaperScissors": "じゃんけん",
+  "motionCustom": "カスタム",
   "powerEnd": "電源終了",
   "start": "スタート",
   "stop": "停止",
@@ -672,6 +673,8 @@
       "waitingPathCollection": "経路収集待ち…",
       "mcapLoading": "MCAP読み込み中…",
       "waitingDataStabilize": "データ安定化待ち…",
+      "noMapData": "このログには地図/経路データがありません",
+      "noSensorData": "このログにはセンサー(pose/odom)データがありません",
       "controlsHint": "左クリック: 回転  |  右クリック: 移動  |  ホイール: ズーム"
     },
     "logs": {

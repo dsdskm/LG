@@ -23,7 +23,7 @@ function Title({ children, onBack }) {
       <h2 className="title typographyHeading3">
         {hasBack && (
           <IconButton size="sm" onClick={() => (onBack ? onBack() : navigate(-1))}>
-            <Icon name="arrow_left" color="var(--color-neutral-80)" size={18} />
+            <Icon name="page_back" color="var(--color-neutral-80)" size={18} />
           </IconButton>
         )}
         {children || t(`Depth.${route.name}.name`, t(`SideBar.gnb.${route.name}`, route.name))}

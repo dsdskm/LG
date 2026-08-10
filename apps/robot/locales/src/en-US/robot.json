@@ -267,6 +267,7 @@
   "motionThumbsUp": "Thumbs Up",
   "motionSpeechGesture": "Speech Gesture",
   "motionRockPaperScissors": "Rock-Paper-Scissors",
+  "motionCustom": "Custom",
   "powerEnd": "Power Off",
   "start": "Start",
   "stop": "Stop",
@@ -672,6 +673,8 @@
       "waitingPathCollection": "Waiting for path data…",
       "mcapLoading": "Loading MCAP…",
       "waitingDataStabilize": "Waiting for data to stabilize…",
+      "noMapData": "This log has no map/path data",
+      "noSensorData": "This log has no sensor (pose/odom) data",
       "controlsHint": "Left-click: Rotate  |  Right-click: Move  |  Wheel: Zoom"
     },
     "logs": {

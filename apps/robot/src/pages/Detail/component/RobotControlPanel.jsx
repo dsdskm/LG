@@ -257,6 +257,24 @@ const MOTIONS = [
       { v: 'scissors2', tKey: 'optScissors2', params: { step: 'scissors2' } },
       { v: 'end', tKey: 'optEnd', params: { step: 'outro' } }
     ]
+  },
+  {
+    no: 17,
+    nameKey: 'motionCustom',
+    actionType: 'motionCustom',
+    blockingType: 'HARD',
+    opts: [
+      { v: '1', label: '1', params: { index: '1' } },
+      { v: '2', label: '2', params: { index: '2' } },
+      { v: '3', label: '3', params: { index: '3' } },
+      { v: '4', label: '4', params: { index: '4' } },
+      { v: '5', label: '5', params: { index: '5' } },
+      { v: '6', label: '6', params: { index: '6' } },
+      { v: '7', label: '7', params: { index: '7' } },
+      { v: '8', label: '8', params: { index: '8' } },
+      { v: '9', label: '9', params: { index: '9' } },
+      { v: '10', label: '10', params: { index: '10' } }
+    ]
   }
 ]
 

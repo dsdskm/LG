@@ -1,5 +1,4 @@
-import { client } from '@repo/apis'
-import { axiosApi, createCrud } from './crudFactory'
+import { axiosApi, axiosHealthApi, createCrud } from './crudFactory'
 
 // 맵 리소스 CRUD (init-setup-be: /api/v1/maps)
 export const { create, list, getById, update, remove } = createCrud('maps')
@@ -26,7 +25,7 @@ export const { create, list, getById, update, remove } = createCrud('maps')
  * @returns {Promise<object>} 헬스 상태 응답
  */
 export const healthCheck = async () => {
-  return await client('/api').get('/health')
+  return await axiosHealthApi.get('/health')
 }
 
 /**

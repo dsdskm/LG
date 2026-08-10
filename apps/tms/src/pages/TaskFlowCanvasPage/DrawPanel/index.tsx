@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'react-toastify'
+import styled from 'styled-components'
 import { Button } from '@repo/ui'
 import {
   ReactFlow,
@@ -46,6 +47,7 @@ import {
 import ConfirmModal from '@/pages/components/modal/ConfirmModal'
 import { countEditableSelectedNodes, useFlowEditorStore } from '@/store/taskflow.canvas.store'
 import type { CanvasNote, ConnectDenyReason, RFEdge } from '@/store/taskflow.canvas.store'
+import type { ContentChange, MissingContent } from '@/utils/refreshTaskflowContents'
 import { PaletteItem } from '@/types/palette'
 
 const DND_MIME = 'application/x-taskflow-palette'
@@ -248,6 +250,14 @@ function InnerCanvas() {
   const openDeleteEdgeConfirm = useFlowEditorStore((s) => s.openDeleteEdgeConfirm)
 
   const duplicateSelectedNodes = useFlowEditorStore((s) => s.duplicateSelectedNodes)
+  const refreshContents = useFlowEditorStore((s) => s.refreshContents)
+
+  // 콘텐츠 갱신 중 & 갱신 결과(갱신됨/갱신못함)를 담아 결과 팝업으로 표시
+  const [refreshingContents, setRefreshingContents] = useState(false)
+  const [refreshResult, setRefreshResult] = useState<{
+    changed: ContentChange[]
+    missing: MissingContent[]
+  } | null>(null)
 
   // 단일 선택 + 그룹 선택을 합친 편집 대상 개수 (START 제외)
   const editableSelectedCount = useFlowEditorStore(countEditableSelectedNodes)
@@ -410,6 +420,32 @@ function InnerCanvas() {
 
     openDeleteConfirm()
   }, [hasEditableSelection, openDeleteConfirm, t])
+
+  // 사용 콘텐츠를 최신 버전으로 갱신. 버전 변경분은 노드에 반영(성공 토스트), 최신 목록에 없어
+  // 갱신 못한 건 팝업으로 알린다. 버전 동일(스킵)은 알리지 않는다.
+  const onRefreshContentsClick = useCallback(async () => {
+    if (refreshingContents) return
+    setRefreshingContents(true)
+    try {
+      const { changed, missing } = await refreshContents()
+
+      // 변경·갱신불가 모두 없으면 토스트만, 하나라도 있으면 결과 팝업으로 상세 표시
+      if (changed.length === 0 && missing.length === 0) {
+        toast.info(t('canvas.nodeActions.refreshContentsNoChange'))
+        return
+      }
+
+      if (changed.length > 0) {
+        toast.success(t('canvas.nodeActions.refreshContentsDone', { count: changed.length }))
+      }
+      setRefreshResult({ changed, missing })
+    } catch (e) {
+      console.error('refreshContents failed:', e)
+      toast.error(t('canvas.nodeActions.refreshContentsError'))
+    } finally {
+      setRefreshingContents(false)
+    }
+  }, [refreshContents, refreshingContents, t])
 
   const onAlignClick = useCallback(() => {
     if (!canAlign) {
@@ -589,9 +625,23 @@ function InnerCanvas() {
             type="button"
             theme="light"
             size="sm"
+            onClick={onRefreshContentsClick}
+            aria-disabled={refreshingContents}
+            title={t('canvas.nodeActions.refreshContentsTitle')}
+          >
+            {refreshingContents
+              ? t('canvas.nodeActions.refreshContentsLoading')
+              : t('canvas.nodeActions.refreshContents')}
+          </Button>
+          <Button
+            type="button"
+            theme="light"
+            size="sm"
             onClick={onDuplicateClick}
             aria-disabled={!hasEditableSelection}
-            title={hasEditableSelection ? t('canvas.nodeActions.duplicateTitle') : t('canvas.nodeActions.duplicateEmpty')}
+            title={
+              hasEditableSelection ? t('canvas.nodeActions.duplicateTitle') : t('canvas.nodeActions.duplicateEmpty')
+            }
           >
             {editableSelectedCount > 1
               ? t('canvas.nodeActions.duplicateWithCount', { count: editableSelectedCount })
@@ -740,7 +790,58 @@ function InnerCanvas() {
         onCancel={() => setShowAlignGuideModal(false)}
         onConfirm={() => setShowAlignGuideModal(false)}
       />
-
+      {/* 콘텐츠 갱신 결과: 갱신됨(이전→이후 버전) / 갱신 못함(최신 목록에 없음) */}
+      <ConfirmModal
+        open={!!refreshResult}
+        title={t('canvas.nodeActions.refreshContentsResultTitle')}
+        showCancelButton={false}
+        closeOnOverlayClick
+        onCancel={() => setRefreshResult(null)}
+        onConfirm={() => setRefreshResult(null)}
+      >
+        {refreshResult && (
+          <ResultBox>
+            {refreshResult.changed.length > 0 && (
+              <>
+                <SectionTitle>
+                  {t('canvas.nodeActions.refreshContentsUpdatedTitle')} ({refreshResult.changed.length})
+                </SectionTitle>
+                <ResultList>
+                  {refreshResult.changed.map((c) => (
+                    <li key={`changed-${c.id}`}>
+                      <b>{c.name || t('canvas.nodeActions.refreshContentsUnnamed')}</b>
+                      <span> (id: {c.id})</span>
+                      <VersionChange>
+                        {' '}
+                        {c.fromVersion ?? '-'} → {c.toVersion ?? '-'}
+                      </VersionChange>
+                    </li>
+                  ))}
+                </ResultList>
+              </>
+            )}
+            {refreshResult.missing.length > 0 && (
+              <>
+                <SectionTitle>
+                  {t('canvas.nodeActions.refreshContentsMissingTitle')} ({refreshResult.missing.length})
+                </SectionTitle>
+                <ResultList>
+                  {refreshResult.missing.map((c) => (
+                    <li key={`missing-${c.id}`}>
+                      <b>{c.name || t('canvas.nodeActions.refreshContentsUnnamed')}</b>
+                      <span>
+                        {' '}
+                        (id: {c.id}, version: {c.version ?? '-'})
+                      </span>
+                      <em> — {t('canvas.nodeActions.refreshContentsMissingReason')}</em>
+                    </li>
+                  ))}
+                </ResultList>
+              </>
+            )}
+          </ResultBox>
+        )}
+      </ConfirmModal>
       <ConfirmModal
         open={showNoteDeleteConfirm}
         title="메모 삭제"
@@ -752,6 +853,46 @@ function InnerCanvas() {
     </>
   )
 }
+
+const ResultBox = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 320px;
+  overflow: auto;
+`
+
+const SectionTitle = styled.div`
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+`
+
+const ResultList = styled.ul`
+  margin: 2px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #334155;
+
+  li {
+    margin-bottom: 4px;
+  }
+  span {
+    color: #64748b;
+  }
+  em {
+    color: #b45309;
+    font-style: normal;
+  }
+`
+
+const VersionChange = styled.span`
+  && {
+    color: #2563eb;
+    font-weight: 600;
+  }
+`
 
 export default function DrawPanel() {
   return (

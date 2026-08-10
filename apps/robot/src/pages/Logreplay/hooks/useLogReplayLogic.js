@@ -206,6 +206,8 @@ export function useLogReplayLogic({ initialDate, deviceId }) {
     odomChart1,
     odomChart2,
     chartLoading,
+    poseUnavailable,
+    gridUnavailable,
     clearReplaySession
   } = data
   const WINDOW_SEC = 10
@@ -519,6 +521,8 @@ export function useLogReplayLogic({ initialDate, deviceId }) {
 
     odomChart1,
     odomChart2,
-    chartLoading
+    chartLoading,
+    poseUnavailable,
+    gridUnavailable
   }
 }

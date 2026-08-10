@@ -2,20 +2,28 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { PreviewProps } from './types.preview'
 import { AudioControlButton, AudioControlGroup, MediaFallbackText, MediaStage, PreviewCard } from './styles.preview'
-import PreviewProgress from './PreviewProgress'
+import ComparedProgress from './ComparedProgress'
+import PreviewProgressBar from './PreviewProgressBar'
 import PreviewHeader from './PreviewHeader'
 import { usePreviewPlayback } from '../hook/usePreviewPlayback'
+import { contentKeyOf, usePreviewProgress } from '../hook/usePreviewProgress'
 import { usePreviewContentUrl } from '../hook/usePreviewContentUrl'
 
-export default function SoundPreview({ node, nodeId }: PreviewProps) {
-  const play = usePreviewPlayback(nodeId)
+export default function SoundPreview({ node, nodeId, standaloneProgress }: PreviewProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
   const [contentOpen, setContentOpen] = useState(true)
 
   const { t } = useTranslation('tms')
 
-  const { url: mediaUrl, isSuccess } = usePreviewContentUrl(node)
+  const { url: mediaUrl, isSuccess, contentId } = usePreviewContentUrl(node)
+
+  // standaloneProgress = 속성 패널/팔레트 렌더. 그때는 store 를 거치지 않고 로컬 진행값만 쓴다.
+  // 점검 모드 렌더에서는 store 로 보고해야 실행기가 완료 판정을 할 수 있다.
+  const storePlay = usePreviewPlayback(nodeId)
+  // 로컬 진행값의 리셋 기준. 노드가 없는 팔레트 선택에서는 콘텐츠 id 로 대체한다.
+  const { play: localPlay, progress } = usePreviewProgress(nodeId ?? contentKeyOf(contentId))
+  const play = standaloneProgress ? localPlay : storePlay
 
   // nodeId 가 바뀌면 <audio> 가 remount(key)되어 ref 도 새 엘리먼트를 가리키므로,
   // 같은 콘텐츠라도 재생을 다시 시작시켜야 한다.
@@ -92,7 +100,12 @@ export default function SoundPreview({ node, nodeId }: PreviewProps) {
           onEnded={play.setCompleted}
         />
       </PreviewCard>
-      {nodeId && <PreviewProgress nodeId={nodeId} />}
+      {standaloneProgress ? (
+        // 단독 표시: store 를 거치지 않고 로컬 진행값으로 그린다.
+        <PreviewProgressBar current={progress.current} duration={progress.duration} />
+      ) : (
+        nodeId && <ComparedProgress nodeId={nodeId} />
+      )}
     </>
   )
 }

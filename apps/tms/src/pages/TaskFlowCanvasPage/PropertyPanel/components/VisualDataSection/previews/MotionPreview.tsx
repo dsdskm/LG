@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useLoader } from '@react-three/fiber'
 import { Center, OrbitControls } from '@react-three/drei'
 import URDFLoader, { URDFRobot } from 'urdf-loader'
@@ -7,13 +7,14 @@ import { PreviewProps } from './types.preview'
 import { parseMotionYaml } from '@/utils/motionParser'
 import { MotionData } from '@/types/motion'
 import { MotionCollision } from './MotionCollision'
-import PreviewProgress from './PreviewProgress'
+import ComparedProgress from './ComparedProgress'
+import PreviewProgressBar from './PreviewProgressBar'
 import PreviewHeader from './PreviewHeader'
 import { usePreviewPlayback } from '../hook/usePreviewPlayback'
+import { contentKeyOf, usePreviewProgress } from '../hook/usePreviewProgress'
 import { usePreviewContentUrl } from '../hook/usePreviewContentUrl'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
-import { useContentTaskStore } from '@/pages/TaskFlowCanvasPage/store/useContentTaskStore'
 const URDF_BASE = '/tms/urdf/cloid_description_1k'
 
 function useUrdfRobot(url: string) {
@@ -112,14 +113,21 @@ function getDuration(data: MotionData) {
     return data.frames[data.frames.length - 1].t - data.frames[0].t
   }
 }
-export default function MotionPreview({ node, nodeId }: PreviewProps) {
+export default function MotionPreview({ node, nodeId, standaloneProgress }: PreviewProps) {
   const [contentOpen, setContentOpen] = useState(true)
   const [motion, setMotion] = useState<MotionData>()
   // 재생 시작 시각(performance.now(), 0 이면 시작 전). 진행 시간은 모두 이 값에서 파생한다.
   const startedAtRef = useRef(0)
 
-  const { url: contentUrl } = usePreviewContentUrl(node)
-  const play = usePreviewPlayback(nodeId)
+  const { url: contentUrl, contentId } = usePreviewContentUrl(node)
+
+  // standaloneProgress = 속성 패널/팔레트 렌더. 그때는 store 를 거치지 않고 로컬 진행값만 쓴다.
+  // 점검 모드 렌더에서는 store 로 보고해야 실행기가 완료 판정을 할 수 있다.
+  const storePlay = usePreviewPlayback(nodeId)
+  // 로컬 진행값의 리셋 기준. 노드가 없는 팔레트 선택에서는 콘텐츠 id 로 대체한다.
+  const progressKey = nodeId ?? contentKeyOf(contentId)
+  const { play: localPlay, progress } = usePreviewProgress(progressKey)
+  const play = standaloneProgress ? localPlay : storePlay
 
   // 다운로드 링크에서 trajectory 파일 텍스트를 받아 파싱한다.
   useEffect(() => {
@@ -146,7 +154,7 @@ export default function MotionPreview({ node, nodeId }: PreviewProps) {
   // 재생 시계. 3D 렌더 루프(useFrame)와 분리해 둔다.
   //  - 카드를 접으면 Canvas 가 0x0 이 되어 r3f 가 root 를 만들지 않아 useFrame 이 멈춘다.
   //    시계가 거기 있으면 playStatus 가 READY 에 머물러 실행이 이 노드에서 멈춘다.
-  //  - nodeId 가 바뀌면(같은 콘텐츠를 쓰는 다음 태스크) 처음부터 다시 재생한다.
+  //  - 대상(progressKey: 노드 id, 팔레트면 콘텐츠 id)이 바뀌면 처음부터 다시 재생한다.
   useEffect(() => {
     startedAtRef.current = 0
     play.resetProgress()
@@ -174,7 +182,28 @@ export default function MotionPreview({ node, nodeId }: PreviewProps) {
     }, PLAY_TICK_MS)
 
     return () => window.clearInterval(timerId)
-  }, [nodeId, motion, play])
+  }, [progressKey, motion, play])
+
+  // 진행값을 로컬 state 로 들면 이 컴포넌트가 초당 20회 리렌더된다.
+  // 3D 서브트리는 motion 이 바뀔 때만 새로 만들어 r3f 쪽 리렌더를 격리한다
+  // (엘리먼트 참조가 같으면 React 가 해당 서브트리 재조정을 건너뛴다).
+  const canvas = useMemo(
+    () => (
+      <Canvas camera={{ position: [0, 0, 5], fov: 25, zoom: 1.25 }}>
+        <ambientLight intensity={0.5} />
+        <directionalLight position={[3, 3, 3]} />
+        <Suspense fallback={null}>
+          <Center>
+            <group rotation={[-Math.PI / 2, 0, -Math.PI / 2]}>
+              <Robot urdfUrl={`${URDF_BASE}/model/cloid_v1_hand.urdf`} motionData={motion} startedAtRef={startedAtRef} />
+            </group>
+          </Center>
+        </Suspense>
+        <OrbitControls target={[0, 0, 0]} />
+      </Canvas>
+    ),
+    [motion]
+  )
 
   if (!node || !node.data) {
     return <></>
@@ -185,25 +214,13 @@ export default function MotionPreview({ node, nodeId }: PreviewProps) {
   return (
     <>
       <PreviewHeader label={data.label} open={contentOpen} onToggle={() => setContentOpen((prev) => !prev)} />
-      <PreviewCard $hidden={!contentOpen}>
-        <Canvas camera={{ position: [0, 0, 5], fov: 25, zoom: 1.25 }}>
-          <ambientLight intensity={0.5} />
-          <directionalLight position={[3, 3, 3]} />
-          <Suspense fallback={null}>
-            <Center>
-              <group rotation={[-Math.PI / 2, 0, -Math.PI / 2]}>
-                <Robot
-                  urdfUrl={`${URDF_BASE}/model/cloid_v1_hand.urdf`}
-                  motionData={motion}
-                  startedAtRef={startedAtRef}
-                />
-              </group>
-            </Center>
-          </Suspense>
-          <OrbitControls target={[0, 0, 0]} />
-        </Canvas>
-      </PreviewCard>
-      {nodeId && <PreviewProgress nodeId={nodeId} />}
+      <PreviewCard $hidden={!contentOpen}>{canvas}</PreviewCard>
+      {standaloneProgress ? (
+        // 단독 표시: store 를 거치지 않고 로컬 진행값으로 그린다.
+        <PreviewProgressBar current={progress.current} duration={progress.duration} />
+      ) : (
+        nodeId && <ComparedProgress nodeId={nodeId} />
+      )}
     </>
   )
 }

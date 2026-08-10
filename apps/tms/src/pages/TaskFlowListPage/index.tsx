@@ -12,12 +12,21 @@ import {
   SearchContainer,
   HeaderTitleGroup,
   Button,
+  Dropdown,
   OrganizationSelector
 } from '@repo/ui'
-import { ButtonWrap } from './styles'
+import { ButtonWrap, ListControls } from './styles'
 import { useOrganizationStore, useResponsiveStore } from '@repo/stores'
 import { TOTAL_GROUP_ID, TOTAL_SITE_ID } from '@/common/constants'
 import ConfirmModal from '@/pages/components/modal/ConfirmModal'
+
+type TaskFlowSortOption =
+  | 'name-asc'
+  | 'name-desc'
+  | 'createdAt-asc'
+  | 'createdAt-desc'
+  | 'updatedAt-asc'
+  | 'updatedAt-desc'
 
 export default function TaskFlowListPage() {
   const { t } = useTranslation(['tms', 'common'])
@@ -55,10 +64,34 @@ export default function TaskFlowListPage() {
   }
 
   const [searchQuery, setSearchQuery] = useState('')
-  const orderedFlows = useMemo(
-    () => [...flows].sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '')),
-    [flows]
-  )
+  const [sortOption, setSortOption] = useState<TaskFlowSortOption>('updatedAt-desc')
+  const sortOptions = [
+    { value: 'name-asc', name: t('list.sort.nameAsc') },
+    { value: 'name-desc', name: t('list.sort.nameDesc') },
+    { value: 'createdAt-asc', name: t('list.sort.createdAtAsc') },
+    { value: 'createdAt-desc', name: t('list.sort.createdAtDesc') },
+    { value: 'updatedAt-asc', name: t('list.sort.updatedAtAsc') },
+    { value: 'updatedAt-desc', name: t('list.sort.updatedAtDesc') }
+  ]
+
+  const orderedFlows = useMemo(() => {
+    const [field, direction] = sortOption.split('-') as ['name' | 'createdAt' | 'updatedAt', 'asc' | 'desc']
+    const directionMultiplier = direction === 'asc' ? 1 : -1
+
+    return [...flows].sort((a, b) => {
+      const firstValue = String(a[field] ?? '')
+      const secondValue = String(b[field] ?? '')
+      const comparison = firstValue.localeCompare(secondValue, undefined, { numeric: true, sensitivity: 'base' })
+
+      if (comparison !== 0) return comparison * directionMultiplier
+
+      const nameComparison = String(a.name ?? '').localeCompare(String(b.name ?? ''), undefined, {
+        numeric: true,
+        sensitivity: 'base'
+      })
+      return nameComparison !== 0 ? nameComparison : a.id - b.id
+    })
+  }, [flows, sortOption])
 
   const filteredFlows = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
@@ -126,11 +159,10 @@ export default function TaskFlowListPage() {
 
     if (failCount > 0) {
       setCopyErrorMessage(
-        `${t('list.copyBulkPartialDesc', { successCount, failCount })}${
-          firstError
-            ? `
+        `${t('list.copyBulkPartialDesc', { successCount, failCount })}${firstError
+          ? `
 ${firstError}`
-            : ''
+          : ''
         }`
       )
     } else {
@@ -158,16 +190,27 @@ ${firstError}`
 
       <Section>
         <HeaderTitleGroup>
-          <SearchContainer>
-            <Search
-              label={t('common:searchPlaceHolder')}
-              width="250px"
-              value={searchQuery}
-              onChange={handleSearchChange}
-              onReset={handleResetSearch}
-              placeholder={t('list.searchPlaceholder')}
+          <ListControls>
+            <SearchContainer>
+              <Search
+                label={t('common:searchPlaceHolder')}
+                width="250px"
+                value={searchQuery}
+                onChange={handleSearchChange}
+                onReset={handleResetSearch}
+                placeholder={t('list.searchPlaceholder')}
+              />
+            </SearchContainer>
+            <Dropdown
+              label={t('list.sort_label')}
+              size="lg"
+              minWidth="200px"
+              value={sortOption}
+              options={sortOptions}
+              useSelectedIcon
+              onChange={(value: TaskFlowSortOption) => setSortOption(value)}
             />
-          </SearchContainer>
+          </ListControls>
 
           {!isMobile && (
             <ButtonWrap className="alignRight" style={{ marginBottom: '0' }}>

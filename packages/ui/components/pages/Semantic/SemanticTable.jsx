@@ -1,11 +1,13 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { StyledPageContent, Section, Title, Button, Modal } from '@repo/ui'
+import { useState, useEffect, useCallback, useMemo, Suspense } from 'react'
+import { StyledPageContent, Section, Title, Button, Modal, Dropdown, HeaderTitleGroup } from '@repo/ui'
 import { ButtonWrapper } from './styles'
 
 import { TableCard } from '@repo/ui'
 import { useTranslation } from 'react-i18next'
 
 const SemanticTable = ({ data, isLoading, noData, onCreate, onNameClick, onPoiDeleted, onPoiRestore }) => {
+  const SEMANTIC_TYPES = ['POI', 'ETC']
+
   const [isDeleteMode, setIsDeleteMode] = useState(false)
   const [toggleCleared, setToggleCleared] = useState(false)
   const [selectedRows, setSelectedRows] = useState([])
@@ -37,12 +39,14 @@ const SemanticTable = ({ data, isLoading, noData, onCreate, onNameClick, onPoiDe
     {
       name: 'state',
       cell: (row) =>
-        row._work?.state === 'DELETED' ? (
-          <Button size="sm" color="primary" onClick={() => onPoiRestore(row)}>
-            원복
-          </Button>
+        row._work?.softDelete ? (
+          <>
+            <Button size="sm" color="primary" onClick={() => onPoiRestore(row)}>
+              삭제 취소
+            </Button>
+          </>
         ) : (
-          row._work?.state
+          JSON.stringify(Object.keys(row._work).filter((e) => row._work[e]))
         )
     }
   ]
@@ -71,38 +75,59 @@ const SemanticTable = ({ data, isLoading, noData, onCreate, onNameClick, onPoiDe
     onPoiDeleted(ids)
   }
 
+  const handleTypeChange = (value) => {
+    setWorkObj((prev) => ({
+      ...prev,
+      type: value
+    }))
+  }
+
   return (
     <>
-      <ButtonWrapper>
-        {!isDeleteMode ? (
-          <Button theme="delete" onClick={handleDelete}>
-            {t('delete')}
-          </Button>
-        ) : (
-          <>
-            <Button theme="delete" onClick={() => setIsDeleteModalOpen(true)}>
-              선택 삭제
+      <HeaderTitleGroup>
+        <div style={{ display: 'flex', gap: '4px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <Dropdown
+            size="md"
+            value={SEMANTIC_TYPES[0]}
+            options={SEMANTIC_TYPES.map((t) => ({ name: t, value: t }))}
+            onChange={(value) => handleTypeChange(value)}
+          />
+        </div>
+        <ButtonWrapper>
+          {!isDeleteMode ? (
+            <Button theme="delete" onClick={handleDelete}>
+              {t('delete')}
             </Button>
-            <Button onClick={handleDeleteCancel}>취소</Button>
-          </>
-        )}
+          ) : (
+            <>
+              <Button theme="delete" onClick={() => setIsDeleteModalOpen(true)}>
+                선택 삭제
+              </Button>
+              <Button onClick={handleDeleteCancel}>취소</Button>
+            </>
+          )}
 
-        {!isDeleteMode && <Button onClick={onCreate}>생성</Button>}
-      </ButtonWrapper>
+          {!isDeleteMode && <Button onClick={onCreate}>생성</Button>}
+        </ButtonWrapper>
+      </HeaderTitleGroup>
+      <Suspense fallback={<div>Loading...</div>}>
+        <div style={{ margin: '16px 0', fontSize: '14px', fontWeight: 'bold' }}>
+          {tCommon('count')} : {data.length}
+        </div>
 
-      <TableCard
-        columns={columns}
-        data={data}
-        loading={isLoading}
-        noData={noData}
-        pagination
-        paginationRowsPerPageOptions={[10, 30, 50, 100]}
-        selectableRows={isDeleteMode}
-        selectableRowDisabled={(row) => row._work?.state === 'DELETED'}
-        onSelectedRowsChange={handleRowSelected}
-        clearSelectedRows={toggleCleared}
-      />
-
+        <TableCard
+          columns={columns}
+          data={data}
+          loading={isLoading}
+          noData={noData}
+          pagination
+          paginationRowsPerPageOptions={[10, 30, 50, 100]}
+          selectableRows={isDeleteMode}
+          selectableRowDisabled={(row) => row._work?.softDelete}
+          onSelectedRowsChange={handleRowSelected}
+          clearSelectedRows={toggleCleared}
+        />
+      </Suspense>
       <Modal
         isOpen={isDeleteModalOpen}
         title={t('delete', '삭제')}

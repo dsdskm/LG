@@ -1,4 +1,16 @@
 import styled from 'styled-components'
+
+export const ListControls = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  @media all and (max-width: 767px) {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+`
+
 export const ButtonWrap = styled.div`
   display: flex;
   gap: 1rem;

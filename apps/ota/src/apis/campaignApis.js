@@ -5,9 +5,9 @@ const axiosOta = client(import.meta.env.VITE_OTA_API_BASE_URL)
 
 const retrieveCampaign = async (orgIds, id = null) => {
   try {
-    const params = { orgIds: orgIds }
-    if (id) params.id = String(id)
-    const response = await axiosOta.get(ENDPOINTS.CAMPAIGN.BASE, { params })
+    const data = { orgIds: orgIds }
+    if (id) data.id = String(id)
+    const response = await axiosOta.post(ENDPOINTS.CAMPAIGN.BASE, data)
     return response
   } catch (error) {
     console.error('Failed to retrieve deployments:', error)
