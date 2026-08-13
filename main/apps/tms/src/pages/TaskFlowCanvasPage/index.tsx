@@ -39,6 +39,7 @@ type MoveToMapEntry = { nodeId: string; mapId: string }
 const AI_TASKFLOW_CANVAS_EVENT = 'ai-assistant:taskflow-canvas-draft'
 const AI_TASKFLOW_CANVAS_CLARIFY_EVENT = 'ai-assistant:taskflow-canvas-clarify'
 const AI_TASKFLOW_CANVAS_COMMAND_EVENT = 'ai-assistant:taskflow-canvas-command'
+const AI_TASKFLOW_CANVAS_RESULT_EVENT = 'ai-assistant:taskflow-canvas-result'
 
 declare global {
   interface Window {
@@ -76,13 +77,18 @@ type AssistantDraft = {
   assistantMessageId?: string
   steps?: Array<string | AssistantStep>
   removeByName?: string[]
+  replaceByName?: Array<{
+    target?: string
+    step?: string | AssistantStep
+  }>
   insertAfter?: Array<{
     after?: string
     step?: string | AssistantStep
-    sourceHandle?: 'left' | 'right'
-    targetHandle?: 'left' | 'right'
+    sourceHandle?: 'left' | 'right' | 'top' | 'bottom'
+    targetHandle?: 'left' | 'right' | 'top' | 'bottom'
     reverseDirection?: boolean
     appendOnly?: boolean
+    isolated?: boolean
   }>
   nodes?: RFNode[]
   edges?: RFEdge[]
@@ -121,6 +127,7 @@ function extractAssistantDraft(value: unknown): AssistantDraft | null {
     (mode === 'edit' || mode === 'replace') &&
     (Array.isArray(row.insertAfter) ||
       Array.isArray(row.removeByName) ||
+      Array.isArray(row.replaceByName) ||
       Array.isArray(row.steps) ||
       Array.isArray(row.nodes) ||
       Array.isArray(row.edges))
@@ -225,6 +232,25 @@ function buildDefaultPropertiesFromSchema(
   return result
 }
 
+function buildPaletteNameBuckets(palette: PaletteItem[]) {
+  const controlNames = new Map<string, PaletteItem>()
+  const contentNames = new Map<string, PaletteItem>()
+
+  for (const item of palette) {
+    if (item.kind === 'controlTaskNode') {
+      const key = normalizeNameKey(item.task.name)
+      if (key) controlNames.set(key, item)
+    }
+
+    if (item.kind === 'contentNode') {
+      const key = normalizeNameKey(item.content.name)
+      if (key) contentNames.set(key, item)
+    }
+  }
+
+  return { controlNames, contentNames }
+}
+
 function resolvePaletteItem(step: AssistantStep, palette: PaletteItem[]): PaletteItem | null {
   const contentItems = palette.filter(
     (item): item is Extract<PaletteItem, { kind: 'contentNode' }> => item.kind === 'contentNode'
@@ -232,25 +258,47 @@ function resolvePaletteItem(step: AssistantStep, palette: PaletteItem[]): Palett
   const controlItems = palette.filter(
     (item): item is Extract<PaletteItem, { kind: 'controlTaskNode' }> => item.kind === 'controlTaskNode'
   )
+  const { controlNames, contentNames } = buildPaletteNameBuckets(palette)
 
   const stepTaskType = String(step.taskType ?? '')
     .trim()
     .toLowerCase()
   const stepTaskNameKey = normalizeText(step.taskName)
   const stepLabelKey = normalizeText(step.label)
+  const looseLabelKey = normalizeLooseText(step.label || step.contentName || step.taskName)
 
-  if (stepTaskType === 'control' || stepTaskNameKey) {
-    const byTaskName = stepTaskNameKey
-      ? controlItems.find((item) => normalizeText(item.task.name) === stepTaskNameKey)
+  let byTaskName: PaletteItem | null = null
+  let byLabelControl: PaletteItem | null = null
+  let byContentName: PaletteItem | null = null
+  let byLabelContent: PaletteItem | null = null
+  let byContains: PaletteItem | null = null
+
+  if (stepTaskType === 'control' || stepTaskNameKey || looseLabelKey) {
+    const retryControl = controlItems.find((item) => {
+      const itemText = normalizeLooseText(item.task.name || item.label)
+      return itemText.includes('retry') || itemText.includes('재시도')
+    })
+    if (retryControl && (looseLabelKey.includes('retry') || looseLabelKey.includes('재시도'))) {
+      return retryControl
+    }
+
+    const controlKeyCandidates = [stepTaskNameKey, stepLabelKey, looseLabelKey].filter(Boolean)
+    for (const key of controlKeyCandidates) {
+      const directControlMatch = controlNames.get(normalizeNameKey(key)) ?? null
+      if (directControlMatch) return directControlMatch
+    }
+
+    byTaskName = stepTaskNameKey
+      ? (controlItems.find((item) => normalizeText(item.task.name) === stepTaskNameKey) ?? null)
       : null
     if (byTaskName) return byTaskName
 
-    const byLabel = stepLabelKey
-      ? controlItems.find(
+    byLabelControl = stepLabelKey
+      ? (controlItems.find(
           (item) => normalizeText(item.label) === stepLabelKey || normalizeText(item.task.name) === stepLabelKey
-        )
+        ) ?? null)
       : null
-    if (byLabel) return byLabel
+    if (byLabelControl) return byLabelControl
   }
 
   if (contentItems.length === 0) return null
@@ -272,6 +320,11 @@ function resolvePaletteItem(step: AssistantStep, palette: PaletteItem[]): Palett
   const labelKey = normalizeText(step.label)
   const contentNameKey = normalizeText(step.contentName)
   const taskNameKey = normalizeText(step.taskName)
+  const contentKeyCandidates = [contentNameKey, labelKey, taskNameKey, looseLabelKey].filter(Boolean)
+  for (const key of contentKeyCandidates) {
+    const directContentMatch = contentNames.get(normalizeNameKey(key)) ?? null
+    if (directContentMatch) return directContentMatch
+  }
 
   const strictCandidates = contentItems.filter((item) => {
     if (stepTaskId && Number(item.task.id) !== stepTaskId) return false
@@ -280,29 +333,48 @@ function resolvePaletteItem(step: AssistantStep, palette: PaletteItem[]): Palett
   })
   const candidates = strictCandidates.length > 0 ? strictCandidates : contentItems
 
-  const byContentName =
+  byContentName =
     contentNameKey || labelKey
-      ? candidates.find((item) => normalizeText(item.content.name) === (contentNameKey || labelKey))
+      ? (candidates.find((item) => normalizeText(item.content.name) === (contentNameKey || labelKey)) ?? null)
       : null
   if (byContentName) return byContentName
 
-  const byLabel = labelKey ? candidates.find((item) => normalizeText(item.label) === labelKey) : null
-  if (byLabel) return byLabel
+  byLabelContent = labelKey ? (candidates.find((item) => normalizeText(item.label) === labelKey) ?? null) : null
+  if (byLabelContent) return byLabelContent
 
   const looseNeedle = normalizeLooseText(step.contentName || step.label)
   if (looseNeedle) {
-    const byContains = candidates.find((item) => {
-      const contentKey = normalizeLooseText(item.content.name)
-      const labelLooseKey = normalizeLooseText(item.label)
-      return (
-        contentKey.includes(looseNeedle) ||
-        looseNeedle.includes(contentKey) ||
-        labelLooseKey.includes(looseNeedle) ||
-        looseNeedle.includes(labelLooseKey)
-      )
-    })
+    byContains =
+      candidates.find((item) => {
+        const contentKey = normalizeLooseText(item.content.name)
+        const labelLooseKey = normalizeLooseText(item.label)
+        return (
+          contentKey.includes(looseNeedle) ||
+          looseNeedle.includes(contentKey) ||
+          labelLooseKey.includes(looseNeedle) ||
+          looseNeedle.includes(labelLooseKey)
+        )
+      }) ?? null
     if (byContains) return byContains
   }
+
+  const matchedItem: PaletteItem | null = byContentName ?? byLabelContent ?? byContains ?? byTaskName ?? null
+  const matchedName = (() => {
+    if (!matchedItem) return null
+    const candidate = matchedItem as any
+    return candidate.content?.name ?? candidate.task?.name ?? null
+  })()
+
+  console.log('[AI_TASKFLOW][PALETTE_MATCH_RESULT]', {
+    step: {
+      label: step.label,
+      contentName: step.contentName,
+      taskName: step.taskName,
+      taskType: step.taskType
+    },
+    matched: Boolean(matchedItem),
+    matchedName
+  })
 
   return null
 }
@@ -422,7 +494,24 @@ function buildLinearFlowDefinitionFromDraft(draft: AssistantDraft, palette: Pale
       continue
     }
 
-    rejectedLabels.push(String(step.label ?? '').trim())
+    const label = String(step.label ?? step.contentName ?? step.taskName ?? '').trim()
+    const fallbackTaskType = /retry|재시도/i.test(label) ? 'CONTROL' : 'ACTION'
+    builtNodes.push({
+      id: nodeId,
+      type: 'taskNode',
+      position: { x: baseX + i * gapX, y: baseY },
+      data: {
+        label,
+        taskName: label,
+        taskType: fallbackTaskType,
+        contentName: label,
+        propertySchema: { properties: {} },
+        properties: {
+          ...(step.properties ?? {})
+        }
+      }
+    })
+    rejectedLabels.push(label)
   }
 
   if (builtNodes.length === 0) {
@@ -498,16 +587,51 @@ function matchesStepName(step: AssistantStep, target: string): boolean {
   const needle = normalizeNameKey(target)
   if (!needle) return false
 
-  const candidates = [step.label, step.contentName, step.taskName]
-    .map((value) => normalizeNameKey(value))
-    .filter(Boolean)
+  const taskType = String(step.taskType ?? '')
+    .trim()
+    .toUpperCase()
+  const comparedNames =
+    taskType === 'CONTROL'
+      ? [step.taskName, step.label]
+      : [step.contentName, step.label, step.taskName, step.taskName, step.contentName]
+
+  const candidates = comparedNames.map((value) => normalizeNameKey(value)).filter(Boolean)
 
   return candidates.includes(needle)
 }
 
-function resolveTailNodeName(currentNodes: RFNode[], currentEdges: RFEdge[]): string | null | 'ambiguous' {
-  const nodes = currentNodes.filter((node) => String(node.id) !== 'start')
-  if (nodes.length === 0) return null
+function buildStartConnectedNodeSet(currentNodes: RFNode[], currentEdges: RFEdge[]): Set<string> {
+  const hasStartNode = currentNodes.some((node) => String(node.id) === 'start')
+  if (!hasStartNode) {
+    return new Set(currentNodes.map((node) => String(node.id)))
+  }
+
+  const reachable = new Set<string>(['start'])
+  const queue = ['start']
+
+  while (queue.length > 0) {
+    const currentId = queue.shift()
+    if (!currentId) continue
+
+    for (const edge of currentEdges) {
+      const source = String(edge?.source ?? '')
+      const target = String(edge?.target ?? '')
+      if (source !== currentId || reachable.has(target)) continue
+      reachable.add(target)
+      queue.push(target)
+    }
+  }
+
+  return reachable
+}
+
+function resolveTailNodeNames(currentNodes: RFNode[], currentEdges: RFEdge[]): string[] {
+  const activeNodeIds = buildStartConnectedNodeSet(currentNodes, currentEdges)
+  const nodes = currentNodes.filter((node) => {
+    const id = String(node.id)
+    return id !== 'start' && activeNodeIds.has(id)
+  })
+  if (nodes.length === 0) return []
 
   const outgoing = new Map<string, number>()
   for (const node of nodes) {
@@ -516,27 +640,38 @@ function resolveTailNodeName(currentNodes: RFNode[], currentEdges: RFEdge[]): st
 
   for (const edge of currentEdges) {
     const source = String(edge?.source ?? '')
-    if (!outgoing.has(source)) continue
+    if (!activeNodeIds.has(source)) continue
     outgoing.set(source, Number(outgoing.get(source) ?? 0) + 1)
   }
 
-  const tailNodes = nodes.filter((node) => Number(outgoing.get(String(node.id)) ?? 0) === 0)
-  if (tailNodes.length !== 1) return 'ambiguous'
+  const tailNames = nodes
+    .filter((node) => Number(outgoing.get(String(node.id)) ?? 0) === 0)
+    .map((node) => toAssistantStepFromNode(node)?.label)
+    .filter((label): label is string => Boolean(label && String(label).trim()))
 
-  const tail = toAssistantStepFromNode(tailNodes[0])
-  if (!tail?.label) return null
-  return tail.label
+  return [...new Set(tailNames.map((label) => label.trim()))]
+}
+
+function resolveTailNodeName(currentNodes: RFNode[], currentEdges: RFEdge[]): string | null | 'ambiguous' {
+  const tailNames = resolveTailNodeNames(currentNodes, currentEdges)
+  if (tailNames.length === 0) return null
+  if (tailNames.length !== 1) return 'ambiguous'
+  return tailNames[0]
 }
 
 function buildDraftEdge(
   source: string,
   target: string,
   seed: string,
-  sourceHandle: 'left' | 'right' = 'right',
-  targetHandle: 'left' | 'right' = 'left'
+  sourceHandle: 'left' | 'right' | 'top' | 'bottom' = 'right',
+  targetHandle: 'left' | 'right' | 'top' | 'bottom' = 'left'
 ): RFEdge {
   const edgeType: 'straight' | 'step' =
-    sourceHandle === 'left' && targetHandle === 'left' ? 'step' : 'straight'
+    (sourceHandle === 'left' && targetHandle === 'left') ||
+    (sourceHandle === 'top' && targetHandle === 'top') ||
+    (sourceHandle === 'bottom' && targetHandle === 'bottom')
+      ? 'step'
+      : 'straight'
 
   return {
     id: `ai-edge-${seed}`,
@@ -564,7 +699,7 @@ function buildDraftEdge(
   }
 }
 
-function applyEditDraftToFlowDefinition(
+export function applyEditDraftToFlowDefinition(
   draft: AssistantDraft,
   currentNodes: RFNode[],
   currentEdges: RFEdge[],
@@ -584,24 +719,113 @@ function applyEditDraftToFlowDefinition(
   }))
   const rejectedLabels: string[] = []
 
+  const activeNodeIds = buildStartConnectedNodeSet(nextNodes, nextEdges)
+
   const findNodeByName = (name: string): RFNode | null => {
     const target = String(name ?? '').trim()
     if (!target) return null
     if (target === 'start' || target === '시작' || target === 'start node') {
       return nextNodes.find((node) => String(node.id) === 'start') ?? null
     }
+    const currentNodeLabels = nextNodes.map((node) =>
+      String((node?.data as any)?.label ?? (node as any)?.data?.contentName ?? (node as any)?.data?.taskName ?? node.id)
+    )
+    const controlPaletteNames = palette
+      .filter((item) => item.kind === 'controlTaskNode')
+      .map((item) => item.task.name)
+      .filter(Boolean)
+    const contentPaletteNames = palette
+      .filter((item) => item.kind === 'contentNode')
+      .map((item) => item.content.name)
+      .filter(Boolean)
     const matches = nextNodes.filter((node) => {
-      if (String(node.id) === 'start') return false
+      const id = String(node.id)
+      if (id === 'start' || !activeNodeIds.has(id)) return false
       const step = toAssistantStepFromNode(node)
       return step ? matchesStepName(step, target) : false
     })
-    if (matches.length !== 1) return null
-    return matches[0]
+    if (matches.length === 0) {
+      console.log('[AI_TASKFLOW][COMPARE_NODE_LIST]', {
+        target,
+        comparedAgainst: 'current-flow-nodes',
+        currentNodeLabels,
+        currentNodeCount: nextNodes.length,
+        controlPaletteNames,
+        contentPaletteNames,
+        controlPaletteCount: controlPaletteNames.length,
+        contentPaletteCount: contentPaletteNames.length,
+        activeNodeIds: Array.from(activeNodeIds),
+        edgeCount: nextEdges.length
+      })
+      console.log('[AI_TASKFLOW][FIND_NODE_BY_NAME_MISS]', {
+        target,
+        activeNodeIds: Array.from(activeNodeIds),
+        currentNodeLabels,
+        currentNodeCount: nextNodes.length,
+        edgeCount: nextEdges.length,
+        controlPaletteNames,
+        contentPaletteNames,
+        controlPaletteCount: controlPaletteNames.length,
+        contentPaletteCount: contentPaletteNames.length
+      })
+      return null
+    }
+    // 같은 이름이 여러 개면 가장 최근 추가된 노드를 반환한다.
+    return matches[matches.length - 1]
   }
 
   const removeNames = Array.isArray(draft.removeByName)
     ? draft.removeByName.map((value) => String(value ?? '').trim()).filter(Boolean)
     : []
+
+  const replaceNames = Array.isArray(draft.replaceByName)
+    ? draft.replaceByName
+        .map((entry) => ({
+          target: String(entry?.target ?? '').trim(),
+          step: normalizeStepInput(entry?.step as string | AssistantStep)
+        }))
+        .filter((entry) => Boolean(entry.target) && Boolean(entry.step))
+    : []
+
+  const insertSpecs = Array.isArray(draft.insertAfter) ? draft.insertAfter : []
+  const unresolvedInsertLabels = []
+  const draftCreatedNodesByLabel = new Map<string, RFNode>()
+  for (const insert of insertSpecs) {
+    const normalized = normalizeStepInput(insert?.step as string | AssistantStep)
+    if (!normalized) continue
+    const paletteMatch = resolvePaletteItem(normalized, palette)
+    const paletteCandidates = palette
+      .map((item) =>
+        item.kind === 'contentNode' ? item.content.name : item.kind === 'controlTaskNode' ? item.task.name : null
+      )
+      .filter(Boolean)
+    console.log('[AI_TASKFLOW][INSERT_CANDIDATE_COMPARE]', {
+      insertStep: normalized,
+      paletteCandidates,
+      paletteMatched: Boolean(paletteMatch),
+      matchedName: paletteMatch
+        ? paletteMatch.kind === 'contentNode'
+          ? paletteMatch.content.name
+          : paletteMatch.task.name
+        : null,
+      currentNodeLabels: nextNodes.map((node) =>
+        String(
+          (node?.data as any)?.label ?? (node as any)?.data?.contentName ?? (node as any)?.data?.taskName ?? node.id
+        )
+      )
+    })
+    if (!paletteMatch) {
+      unresolvedInsertLabels.push(
+        String(normalized.label ?? normalized.taskName ?? normalized.contentName ?? '').trim()
+      )
+    }
+  }
+  if (unresolvedInsertLabels.length > 0) {
+    return {
+      next: null,
+      clarification: `"${unresolvedInsertLabels[0]}" 노드를 찾지 못했습니다. TaskPanel의 정확한 이름으로 다시 요청해 주세요.`
+    }
+  }
 
   for (const name of removeNames) {
     const targets = nextNodes.filter((node) => {
@@ -634,22 +858,260 @@ function applyEditDraftToFlowDefinition(
     }
   }
 
+  for (const replaceSpec of replaceNames) {
+    const matchingNodes = nextNodes.filter((node) => {
+      if (String(node.id) === 'start') return false
+      const step = toAssistantStepFromNode(node)
+      return step ? matchesStepName(step, replaceSpec.target) : false
+    })
+
+    if (matchingNodes.length === 0) continue
+
+    if (!replaceSpec.step) continue
+    const item = resolvePaletteItem(replaceSpec.step, palette)
+    if (!item) {
+      rejectedLabels.push(String(replaceSpec.step?.label ?? '').trim())
+      continue
+    }
+
+    for (const targetNode of matchingNodes) {
+      const replacementNodeId = String(targetNode.id)
+      const replacementNode: RFNode = {
+        ...targetNode,
+        data: {
+          ...(targetNode.data ?? {}),
+          label: item.kind === 'contentNode' ? item.content.name : item.task.name,
+          taskId: item.task.id,
+          taskName: item.task.name,
+          taskType: item.task.taskType,
+          contentId: item.kind === 'contentNode' ? item.content.id : undefined,
+          contentName: item.kind === 'contentNode' ? item.content.name : undefined,
+          contentTypeId: item.kind === 'contentNode' ? item.content.contentTypeId : undefined,
+          contentTypeName: item.kind === 'contentNode' ? item.content.contentTypeName : undefined,
+          contentValue: item.kind === 'contentNode' ? item.content.contentValue : undefined,
+          contentVersion: item.kind === 'contentNode' ? item.content.contentVersion : undefined,
+          groupId: item.kind === 'contentNode' ? item.content.groupId : undefined,
+          siteId: item.kind === 'contentNode' ? item.content.siteId : undefined,
+          propertySchema: item.task.propertySchema,
+          properties: {
+            ...(item.kind === 'contentNode'
+              ? buildDefaultPropertiesFromSchema(
+                  item.task.propertySchema,
+                  Number(item.content.id),
+                  String(item.content.contentTypeName ?? '')
+                )
+              : buildDefaultPropertiesFromSchema(item.task.propertySchema))
+          }
+        }
+      }
+
+      const replaceIndex = nextNodes.findIndex((node) => String(node.id) === replacementNodeId)
+      if (replaceIndex >= 0) {
+        nextNodes[replaceIndex] = replacementNode
+      }
+    }
+  }
+
   const inserts = Array.isArray(draft.insertAfter) ? draft.insertAfter : []
-  for (const insert of inserts) {
+  const hasExistingNonStartNodes = nextNodes.some((node) => String(node.id) !== 'start')
+  const tailNames = resolveTailNodeNames(nextNodes, nextEdges)
+
+  for (let insertIndex = 0; insertIndex < inserts.length; insertIndex += 1) {
+    const insert = inserts[insertIndex]
     let after = String(insert?.after ?? '').trim()
     const normalized = normalizeStepInput(insert?.step as string | AssistantStep)
-    const sourceHandle = insert?.sourceHandle === 'left' ? 'left' : 'right'
-    const targetHandle = insert?.targetHandle === 'right' ? 'right' : 'left'
-    const reverseDirection = Boolean(insert?.reverseDirection)
-    const appendOnly = Boolean(insert?.appendOnly)
     if (!normalized) continue
 
-    if (!after) {
+    const sourceHandle =
+      insert?.sourceHandle === 'left'
+        ? 'left'
+        : insert?.sourceHandle === 'right'
+          ? 'right'
+          : insert?.sourceHandle === 'top'
+            ? 'top'
+            : 'bottom'
+    const targetHandle =
+      insert?.targetHandle === 'right'
+        ? 'right'
+        : insert?.targetHandle === 'left'
+          ? 'left'
+          : insert?.targetHandle === 'bottom'
+            ? 'bottom'
+            : 'top'
+    const reverseDirection = Boolean(insert?.reverseDirection)
+    const appendOnly = Boolean(insert?.appendOnly)
+    let isolated = Boolean((insert as any)?.isolated)
+    const isStartLikeAnchor = ['', 'start', '시작', 'start node'].includes(after.toLowerCase())
+
+    if (
+      !isolated &&
+      !appendOnly &&
+      !reverseDirection &&
+      hasExistingNonStartNodes &&
+      insertIndex === 0 &&
+      inserts.length > 1 &&
+      (after === '' || isStartLikeAnchor)
+    ) {
+      isolated = true
+    }
+
+    const fanoutTailAnchors = appendOnly && (!after || isStartLikeAnchor) && tailNames.length > 1 ? tailNames : []
+
+    if (fanoutTailAnchors.length > 0) {
+      for (const tailName of fanoutTailAnchors) {
+        const fanoutInsert = { ...insert, after: tailName }
+        const fanoutAfter = String(tailName ?? '').trim()
+        const fanoutNormalized = normalizeStepInput(fanoutInsert?.step as string | AssistantStep)
+        if (!fanoutAfter || !fanoutNormalized) continue
+
+        const fanoutAnchor = findNodeByName(fanoutAfter)
+        if (!fanoutAnchor) continue
+
+        const fanoutItem = resolvePaletteItem(fanoutNormalized, palette)
+        if (!fanoutItem) {
+          rejectedLabels.push(String(fanoutNormalized.label ?? '').trim())
+          continue
+        }
+
+        const fanoutDefaults =
+          fanoutItem.kind === 'contentNode'
+            ? buildDefaultPropertiesFromSchema(
+                fanoutItem.task.propertySchema,
+                Number(fanoutItem.content.id),
+                String(fanoutItem.content.contentTypeName ?? '')
+              )
+            : buildDefaultPropertiesFromSchema(fanoutItem.task.propertySchema)
+
+        const fanoutNodeId = `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        const fanoutAnchorX = Number(fanoutAnchor.position?.x ?? 0)
+        const fanoutAnchorY = Number(fanoutAnchor.position?.y ?? 0)
+        const fanoutOutgoing = nextEdges.filter((edge) => String(edge.source) === String(fanoutAnchor.id))
+        const fanoutNextTargetId = String(fanoutOutgoing[0]?.target ?? '')
+
+        const newFanoutNode: RFNode = {
+          id: fanoutNodeId,
+          type: 'taskNode',
+          position: {
+            x: fanoutAnchorX + 140,
+            y: fanoutAnchorY
+          },
+          data: {
+            label: fanoutItem.kind === 'contentNode' ? fanoutItem.content.name : fanoutItem.task.name,
+            taskId: fanoutItem.task.id,
+            taskName: fanoutItem.task.name,
+            taskType: fanoutItem.task.taskType,
+            contentId: fanoutItem.kind === 'contentNode' ? fanoutItem.content.id : undefined,
+            contentName: fanoutItem.kind === 'contentNode' ? fanoutItem.content.name : undefined,
+            contentTypeId: fanoutItem.kind === 'contentNode' ? fanoutItem.content.contentTypeId : undefined,
+            contentTypeName: fanoutItem.kind === 'contentNode' ? fanoutItem.content.contentTypeName : undefined,
+            contentValue: fanoutItem.kind === 'contentNode' ? fanoutItem.content.contentValue : undefined,
+            contentVersion: fanoutItem.kind === 'contentNode' ? fanoutItem.content.contentVersion : undefined,
+            groupId: fanoutItem.kind === 'contentNode' ? fanoutItem.content.groupId : undefined,
+            siteId: fanoutItem.kind === 'contentNode' ? fanoutItem.content.siteId : undefined,
+            propertySchema: fanoutItem.task.propertySchema,
+            properties: {
+              ...fanoutDefaults,
+              ...(fanoutNormalized.properties ?? {})
+            }
+          }
+        }
+
+        nextNodes.push(newFanoutNode)
+        nextEdges = nextEdges.filter((edge) => String(edge.id) !== String(fanoutOutgoing[0]?.id ?? ''))
+        nextEdges.push(
+          buildDraftEdge(
+            String(fanoutAnchor.id),
+            fanoutNodeId,
+            `${Date.now()}-fanout-${fanoutNodeId}`,
+            sourceHandle,
+            targetHandle
+          )
+        )
+        if (fanoutNextTargetId) {
+          nextEdges.push(buildDraftEdge(fanoutNodeId, fanoutNextTargetId, `${Date.now()}-fanout-next-${fanoutNodeId}`))
+        }
+      }
+      continue
+    }
+
+    // isolated: 기존 플로우와 무관하게 빈 공간에 노드만 배치한다.
+    if (isolated) {
+      const item = resolvePaletteItem(normalized, palette)
+      console.log('[AI_TASKFLOW][ISOLATED]', {
+        label: normalized.label,
+        taskName: normalized.taskName,
+        taskType: normalized.taskType,
+        matched: Boolean(item),
+        matchedKind: item?.kind,
+        matchedName:
+          item?.kind === 'contentNode' ? item.content.name : item?.kind === 'controlTaskNode' ? item.task.name : '-'
+      })
+      if (!item) {
+        rejectedLabels.push(String(normalized.label ?? '').trim())
+        continue
+      }
+      const defaults =
+        item.kind === 'contentNode'
+          ? buildDefaultPropertiesFromSchema(
+              item.task.propertySchema,
+              Number(item.content.id),
+              String(item.content.contentTypeName ?? '')
+            )
+          : buildDefaultPropertiesFromSchema(item.task.propertySchema)
+
+      const maxY = nextNodes.reduce((acc, n) => Math.max(acc, Number(n.position?.y ?? 0)), 0)
+      const firstX = Number(nextNodes[0]?.position?.x ?? 200)
+      let posX = firstX
+      let posY = maxY + 200
+      const OCCUPY_X = 96
+      const OCCUPY_Y = 72
+      const isOccupiedIsolated = (x: number, y: number) =>
+        nextNodes.some(
+          (n) =>
+            Math.abs(Number(n.position?.x ?? 0) - x) < OCCUPY_X && Math.abs(Number(n.position?.y ?? 0) - y) < OCCUPY_Y
+        )
+      for (let lvl = 0; isOccupiedIsolated(posX, posY) && lvl < 8; lvl += 1) {
+        posX += 140
+      }
+
+      const newNodeId = `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      nextNodes.push({
+        id: newNodeId,
+        type: 'taskNode',
+        position: { x: posX, y: posY },
+        data: {
+          label: item.kind === 'contentNode' ? item.content.name : item.task.name,
+          taskId: item.task.id,
+          taskName: item.task.name,
+          taskType: item.task.taskType,
+          contentId: item.kind === 'contentNode' ? item.content.id : undefined,
+          contentName: item.kind === 'contentNode' ? item.content.name : undefined,
+          contentTypeId: item.kind === 'contentNode' ? item.content.contentTypeId : undefined,
+          contentTypeName: item.kind === 'contentNode' ? item.content.contentTypeName : undefined,
+          contentValue: item.kind === 'contentNode' ? item.content.contentValue : undefined,
+          contentVersion: item.kind === 'contentNode' ? item.content.contentVersion : undefined,
+          groupId: item.kind === 'contentNode' ? item.content.groupId : undefined,
+          siteId: item.kind === 'contentNode' ? item.content.siteId : undefined,
+          propertySchema: item.task.propertySchema,
+          properties: { ...defaults, ...(normalized.properties ?? {}) }
+        }
+      })
+      continue
+    }
+
+    if (
+      !after ||
+      (hasExistingNonStartNodes &&
+        !isolated &&
+        !appendOnly &&
+        !reverseDirection &&
+        (after === 'start' || after === '시작' || after === 'start node'))
+    ) {
       const tailNodeName = resolveTailNodeName(nextNodes, nextEdges)
       if (tailNodeName === 'ambiguous') {
         return {
           next: null,
-          clarification: '어느 노드 뒤에 추가할까요? 예: "회의실 A 이후에 추가해줘"'
+          clarification: null
         }
       }
       after = String(tailNodeName ?? 'start').trim()
@@ -657,11 +1119,39 @@ function applyEditDraftToFlowDefinition(
 
     if (!after) continue
 
-    const anchorNode = findNodeByName(after)
+    let anchorNode = findNodeByName(after)
     if (!anchorNode) {
+      const labelKey = normalizeNameKey(after)
+      const seeded = labelKey ? (draftCreatedNodesByLabel.get(labelKey) ?? null) : null
+      if (seeded) {
+        anchorNode = seeded
+      }
+    }
+    if (!anchorNode) {
+      const fallbackTailName = resolveTailNodeName(nextNodes, nextEdges)
+      if (fallbackTailName && fallbackTailName !== 'ambiguous') {
+        const fallbackAnchor = findNodeByName(String(fallbackTailName))
+        if (fallbackAnchor) {
+          anchorNode = fallbackAnchor
+          after = String(fallbackTailName)
+        }
+      }
+    }
+
+    if (!anchorNode) {
+      console.warn('[AI_TASKFLOW][ANCHOR_MISS]', {
+        after,
+        nodes: nextNodes.map((n) => String((n as any).data?.label ?? n.id)),
+        paletteNames: palette
+          .map((item) =>
+            item.kind === 'contentNode' ? item.content.name : item.kind === 'controlTaskNode' ? item.task.name : null
+          )
+          .filter(Boolean),
+        activeNodeIds: Array.from(buildStartConnectedNodeSet(nextNodes, nextEdges))
+      })
       return {
         next: null,
-        clarification: `${after} 뒤에 추가하려면 기준 노드를 하나로 특정해 주세요.`
+        clarification: null
       }
     }
 
@@ -675,6 +1165,14 @@ function applyEditDraftToFlowDefinition(
       paletteSize: palette.length
     })
     if (!item) {
+      console.warn('[AI_TASKFLOW][PALETTE_MISS]', {
+        after,
+        label: normalized.label,
+        taskName: normalized.taskName,
+        taskType: normalized.taskType,
+        contentId: normalized.contentId,
+        controlNodes: palette.filter((p) => p.kind === 'controlTaskNode').map((p) => p.task.name)
+      })
       rejectedLabels.push(String(normalized.label ?? '').trim())
       continue
     }
@@ -702,25 +1200,44 @@ function applyEditDraftToFlowDefinition(
     const nextTargetId = String(outgoing[0]?.target ?? '')
     const nextTargetNode = nextNodes.find((node) => String(node.id) === nextTargetId)
 
-    const HORIZONTAL_GAP = 140
-    const VERTICAL_GAP = 120
+    const HORIZONTAL_GAP = 100
+    const VERTICAL_GAP = 80
+
+    const isVerticalAppend =
+      appendOnly &&
+      sourceHandle === targetHandle &&
+      (sourceHandle === 'left' || sourceHandle === 'right' || sourceHandle === 'top' || sourceHandle === 'bottom')
 
     const basePosX = reverseDirection
-      ? (sourceHandle === 'left' ? anchorX - HORIZONTAL_GAP : anchorX + HORIZONTAL_GAP)
+      ? sourceHandle === 'left'
+        ? anchorX - HORIZONTAL_GAP
+        : sourceHandle === 'right'
+          ? anchorX + HORIZONTAL_GAP
+          : anchorX
       : appendOnly
-        ? (sourceHandle === 'left' && targetHandle === 'left' ? anchorX : anchorX + HORIZONTAL_GAP)
-      : (sourceHandle === 'left'
-        ? (nextTargetNode
-          ? Math.round((anchorX + Number(nextTargetNode.position?.x ?? anchorX - 160)) / 2)
-          : anchorX - HORIZONTAL_GAP)
-        : (nextTargetNode
-          ? Math.round((anchorX + Number(nextTargetNode.position?.x ?? anchorX + 160)) / 2)
-          : anchorX + HORIZONTAL_GAP))
+        ? isVerticalAppend
+          ? anchorX
+          : sourceHandle === 'bottom' && targetHandle === 'top'
+            ? anchorX
+            : anchorX + (sourceHandle === 'left' ? -HORIZONTAL_GAP : HORIZONTAL_GAP)
+        : sourceHandle === 'left'
+          ? nextTargetNode
+            ? Math.round((anchorX + Number(nextTargetNode.position?.x ?? anchorX - 160)) / 2)
+            : anchorX - HORIZONTAL_GAP
+          : sourceHandle === 'right'
+            ? nextTargetNode
+              ? Math.round((anchorX + Number(nextTargetNode.position?.x ?? anchorX + 160)) / 2)
+              : anchorX + HORIZONTAL_GAP
+            : anchorX
 
     const basePosY = reverseDirection
       ? anchorY
       : appendOnly
-        ? (sourceHandle === 'left' && targetHandle === 'left' ? anchorY + VERTICAL_GAP : anchorY)
+        ? isVerticalAppend
+          ? anchorY + VERTICAL_GAP
+          : sourceHandle === 'bottom' && targetHandle === 'top'
+            ? anchorY + VERTICAL_GAP
+            : anchorY
         : anchorY
 
     const findNonOverlappingPosition = (
@@ -728,10 +1245,10 @@ function applyEditDraftToFlowDefinition(
       desiredY: number,
       preferVerticalOffset: boolean
     ): { x: number; y: number } => {
-      const OCCUPY_X_THRESHOLD = 96
-      const OCCUPY_Y_THRESHOLD = 72
+      const OCCUPY_X_THRESHOLD = 82
+      const OCCUPY_Y_THRESHOLD = 62
       const MAX_LEVEL = 8
-      const SECONDARY_STEP = 36
+      const SECONDARY_STEP = 24
 
       const isOccupied = (x: number, y: number) =>
         nextNodes.some((node) => {
@@ -754,14 +1271,14 @@ function applyEditDraftToFlowDefinition(
               { x: desiredX + secondary, y: desiredY + primary },
               { x: desiredX - secondary, y: desiredY + primary },
               { x: desiredX + secondary, y: desiredY - primary },
-              { x: desiredX - secondary, y: desiredY - primary },
+              { x: desiredX - secondary, y: desiredY - primary }
             ]
           : [
               { x: desiredX + primary, y: desiredY },
               { x: desiredX + primary, y: desiredY + secondary },
               { x: desiredX + primary, y: desiredY - secondary },
               { x: desiredX - primary, y: desiredY + secondary },
-              { x: desiredX - primary, y: desiredY - secondary },
+              { x: desiredX - primary, y: desiredY - secondary }
             ]
 
         for (const candidate of candidates) {
@@ -802,6 +1319,11 @@ function applyEditDraftToFlowDefinition(
       }
     }
 
+    const createdLabelKey = normalizeNameKey(newNode.data?.label ?? newNode.data?.contentName ?? newNode.data?.taskName)
+    if (createdLabelKey) {
+      draftCreatedNodesByLabel.set(createdLabelKey, newNode)
+    }
+
     console.log('[AI_TASKFLOW][NODE_CREATE]', {
       message: String((draft as any)?.message ?? ''),
       source: String(insert?.after ?? after ?? ''),
@@ -826,7 +1348,21 @@ function applyEditDraftToFlowDefinition(
     })
 
     if (appendOnly) {
-      nextEdges.push(buildDraftEdge(String(anchorNode.id), newNodeId, `${Date.now()}-append-${newNodeId}`, sourceHandle, targetHandle))
+      const existingOutgoing = nextEdges.filter((edge) => String(edge.source) === String(anchorNode.id))
+      const existingTargetId = String(existingOutgoing[0]?.target ?? '')
+      nextEdges = nextEdges.filter((edge) => String(edge.id) !== String(existingOutgoing[0]?.id ?? ''))
+      nextEdges.push(
+        buildDraftEdge(
+          String(anchorNode.id),
+          newNodeId,
+          `${Date.now()}-append-${newNodeId}`,
+          sourceHandle,
+          targetHandle
+        )
+      )
+      if (existingTargetId && existingTargetId !== newNodeId) {
+        nextEdges.push(buildDraftEdge(newNodeId, existingTargetId, `${Date.now()}-append-next-${newNodeId}`))
+      }
     } else if (reverseDirection) {
       const incoming = nextEdges.filter((edge) => String(edge.target) === String(anchorNode.id))
       if (incoming.length === 1) {
@@ -836,15 +1372,27 @@ function applyEditDraftToFlowDefinition(
           nextEdges.push(buildDraftEdge(prevSource, newNodeId, `${Date.now()}-r-prev-${newNodeId}`))
         }
       }
-      nextEdges.push(buildDraftEdge(newNodeId, String(anchorNode.id), `${Date.now()}-r-anchor-${newNodeId}`, sourceHandle, targetHandle))
+      nextEdges.push(
+        buildDraftEdge(
+          newNodeId,
+          String(anchorNode.id),
+          `${Date.now()}-r-anchor-${newNodeId}`,
+          sourceHandle,
+          targetHandle
+        )
+      )
     } else if (outgoing.length === 1) {
       nextEdges = nextEdges.filter((edge) => String(edge.id) !== String(outgoing[0].id))
-      nextEdges.push(buildDraftEdge(String(anchorNode.id), newNodeId, `${Date.now()}-a-${newNodeId}`, sourceHandle, targetHandle))
+      nextEdges.push(
+        buildDraftEdge(String(anchorNode.id), newNodeId, `${Date.now()}-a-${newNodeId}`, sourceHandle, targetHandle)
+      )
       if (nextTargetId) {
         nextEdges.push(buildDraftEdge(newNodeId, nextTargetId, `${Date.now()}-b-${newNodeId}`))
       }
     } else {
-      nextEdges.push(buildDraftEdge(String(anchorNode.id), newNodeId, `${Date.now()}-c-${newNodeId}`, sourceHandle, targetHandle))
+      nextEdges.push(
+        buildDraftEdge(String(anchorNode.id), newNodeId, `${Date.now()}-c-${newNodeId}`, sourceHandle, targetHandle)
+      )
     }
 
     nextNodes.push(newNode)
@@ -864,10 +1412,38 @@ function applyEditDraftToFlowDefinition(
 
   const nextNodeIds = new Set(nextNodes.map((node) => String(node.id)))
   const nextEdgeIds = new Set(nextEdges.map((edge) => String(edge.id)))
+  const initialNodeSignature = new Map(
+    currentNodes.map((node) => {
+      const id = String(node.id)
+      const state = JSON.stringify({
+        label: String((node as any)?.data?.label ?? ''),
+        taskName: String((node as any)?.data?.taskName ?? ''),
+        contentName: String((node as any)?.data?.contentName ?? ''),
+        taskType: String((node as any)?.data?.taskType ?? ''),
+        position: node.position
+      })
+      return [id, state]
+    })
+  )
+  const nextNodeSignature = new Map(
+    nextNodes.map((node) => {
+      const id = String(node.id)
+      const state = JSON.stringify({
+        label: String((node as any)?.data?.label ?? ''),
+        taskName: String((node as any)?.data?.taskName ?? ''),
+        contentName: String((node as any)?.data?.contentName ?? ''),
+        taskType: String((node as any)?.data?.taskType ?? ''),
+        position: node.position
+      })
+      return [id, state]
+    })
+  )
   const nodeChanged =
     nextNodeIds.size !== initialNodeIds.size ||
     Array.from(nextNodeIds).some((id) => !initialNodeIds.has(id)) ||
-    Array.from(initialNodeIds).some((id) => !nextNodeIds.has(id))
+    Array.from(initialNodeIds).some((id) => !nextNodeIds.has(id)) ||
+    Array.from(nextNodeIds).some((id) => initialNodeSignature.get(id) !== nextNodeSignature.get(id)) ||
+    Array.from(initialNodeIds).some((id) => initialNodeSignature.get(id) !== nextNodeSignature.get(id))
   const edgeChanged =
     nextEdgeIds.size !== initialEdgeIds.size ||
     Array.from(nextEdgeIds).some((id) => !initialEdgeIds.has(id)) ||
@@ -1040,14 +1616,6 @@ export default function TaskFlowCanvasPage() {
           paletteSize: palette.length
         })
         pendingDraftRef.current = draft
-        window.dispatchEvent(
-          new CustomEvent(AI_TASKFLOW_CANVAS_CLARIFY_EVENT, {
-            detail: {
-              message: 'TaskPanel 로딩 중이라 AI 편집을 잠시 보류했습니다. 로딩 완료 후 자동 적용합니다.',
-              assistantMessageId
-            }
-          })
-        )
         return
       }
 
@@ -1055,6 +1623,17 @@ export default function TaskFlowCanvasPage() {
 
       const applied =
         draft.mode === 'edit' ? applyEditDraftToFlowDefinition(draft, nodes, edges, viewport, palette) : null
+
+      console.log('[AI_TASKFLOW][APPLY_EDIT_RESULT]', {
+        mode: String(draft.mode ?? ''),
+        hasApplied: Boolean(applied),
+        hasClarification: Boolean(applied?.clarification),
+        appliedPreview: applied ? JSON.stringify(applied) : null,
+        currentNodeCount: Array.isArray((applied as any)?.next?.nodes) ? (applied as any).next.nodes.length : 0,
+        removeCount: Array.isArray(draft.removeByName) ? draft.removeByName.length : 0,
+        replaceCount: Array.isArray(draft.replaceByName) ? draft.replaceByName.length : 0,
+        insertCount: Array.isArray(draft.insertAfter) ? draft.insertAfter.length : 0
+      })
 
       if (draft.mode === 'edit' && applied && applied.clarification) {
         window.dispatchEvent(
@@ -1070,10 +1649,53 @@ export default function TaskFlowCanvasPage() {
 
       const next = draft.mode === 'edit' ? (applied?.next ?? null) : buildLinearFlowDefinitionFromDraft(draft, palette)
 
-      if (!next || !Array.isArray((next as any).nodes) || (next as any).nodes.length === 0) return
+      console.log('[AI_TASKFLOW][NEXT_FLOW]', {
+        mode: String(draft.mode ?? ''),
+        hasNext: Boolean(next),
+        nodeCount: Array.isArray((next as any)?.nodes) ? (next as any).nodes.length : 0,
+        edgeCount: Array.isArray((next as any)?.edges) ? (next as any).edges.length : 0,
+        nextPreview: next ? JSON.stringify(next) : null
+      })
+
+      if (!next || !Array.isArray((next as any).nodes) || (next as any).nodes.length === 0) {
+        window.dispatchEvent(
+          new CustomEvent(AI_TASKFLOW_CANVAS_RESULT_EVENT, {
+            detail: {
+              assistantMessageId: draft.assistantMessageId,
+              success: false,
+              didApply: false,
+              insertedNodeCount: 0,
+              message: '요청을 받았지만 실제 반영은 실패했습니다.'
+            }
+          })
+        )
+        return
+      }
 
       logAppliedAiNodes(next as Record<string, unknown>, String((draft as any)?.message ?? ''))
       applyFlowDefinitionWithHistory(next as Record<string, unknown>)
+
+      const currentIds = new Set(nodes.map((n) => String(n.id)))
+      const newNodeIds = ((next as any).nodes as any[])
+        .map((n: any) => String(n?.id ?? ''))
+        .filter((id) => id && !currentIds.has(id))
+      if (newNodeIds.length > 0) {
+        requestAnimationFrame(() => {
+          ;(window as any).__AI_TASKFLOW_FIT_NODES__?.(newNodeIds)
+        })
+      }
+
+      window.dispatchEvent(
+        new CustomEvent(AI_TASKFLOW_CANVAS_RESULT_EVENT, {
+          detail: {
+            assistantMessageId: draft.assistantMessageId,
+            success: newNodeIds.length > 0,
+            didApply: newNodeIds.length > 0,
+            insertedNodeCount: newNodeIds.length,
+            message: newNodeIds.length > 0 ? '반영 완료' : '요청을 받았지만 실제 반영은 실패했습니다.'
+          }
+        })
+      )
     }
 
     window.addEventListener(AI_TASKFLOW_CANVAS_EVENT, onTaskflowDraft)
@@ -1099,6 +1721,13 @@ export default function TaskFlowCanvasPage() {
     const applied =
       pending.mode === 'edit' ? applyEditDraftToFlowDefinition(pending, nodes, edges, viewport, palette) : null
 
+    console.log('[AI_TASKFLOW][PENDING_APPLY_EDIT_RESULT]', {
+      mode: String(pending.mode ?? ''),
+      hasApplied: Boolean(applied),
+      hasClarification: Boolean(applied?.clarification),
+      appliedPreview: applied ? JSON.stringify(applied) : null
+    })
+
     if (pending.mode === 'edit' && applied && applied.clarification) {
       window.dispatchEvent(
         new CustomEvent(AI_TASKFLOW_CANVAS_CLARIFY_EVENT, {
@@ -1113,10 +1742,49 @@ export default function TaskFlowCanvasPage() {
 
     const next =
       pending.mode === 'edit' ? (applied?.next ?? null) : buildLinearFlowDefinitionFromDraft(pending, palette)
-    if (!next || !Array.isArray((next as any).nodes) || (next as any).nodes.length === 0) return
+
+    console.log('[AI_TASKFLOW][PENDING_NEXT_FLOW]', {
+      mode: String(pending.mode ?? ''),
+      hasNext: Boolean(next),
+      nodeCount: Array.isArray((next as any)?.nodes) ? (next as any).nodes.length : 0,
+      edgeCount: Array.isArray((next as any)?.edges) ? (next as any).edges.length : 0,
+      nextPreview: next ? JSON.stringify(next) : null
+    })
+
+    if (!next || !Array.isArray((next as any).nodes) || (next as any).nodes.length === 0) {
+      window.dispatchEvent(
+        new CustomEvent(AI_TASKFLOW_CANVAS_RESULT_EVENT, {
+          detail: {
+            assistantMessageId: pending.assistantMessageId,
+            success: false,
+            didApply: false,
+            insertedNodeCount: 0,
+            message: '요청을 받았지만 실제 반영은 실패했습니다.'
+          }
+        })
+      )
+      return
+    }
 
     logAppliedAiNodes(next as Record<string, unknown>, String((pending as any)?.message ?? ''))
     applyFlowDefinitionWithHistory(next as Record<string, unknown>)
+
+    const currentIds = new Set(nodes.map((n) => String(n.id)))
+    const newNodeIds = ((next as any).nodes as any[])
+      .map((n: any) => String(n?.id ?? ''))
+      .filter((id) => id && !currentIds.has(id))
+
+    window.dispatchEvent(
+      new CustomEvent(AI_TASKFLOW_CANVAS_RESULT_EVENT, {
+        detail: {
+          assistantMessageId: pending.assistantMessageId,
+          success: newNodeIds.length > 0,
+          didApply: newNodeIds.length > 0,
+          insertedNodeCount: newNodeIds.length,
+          message: newNodeIds.length > 0 ? '반영 완료' : '요청을 받았지만 실제 반영은 실패했습니다.'
+        }
+      })
+    )
   }, [palette, nodes, edges, viewport, applyFlowDefinitionWithHistory])
 
   useEffect(() => {
@@ -1574,8 +2242,14 @@ export default function TaskFlowCanvasPage() {
       if (!type) return
 
       // 저장 방식이 하나로 통합되어, 예전 temp-save 커맨드도 같은 저장으로 처리한다.
-      if (type === 'save' || type === 'temp-save' || type === 'tempsave') {
-        void requestSave()
+      if (
+        type === 'save' ||
+        type === 'save-final' ||
+        type === 'temp-save' ||
+        type === 'save-temp' ||
+        type === 'tempsave'
+      ) {
+        void requestSave(undefined, type === 'save' || type === 'save-final')
         return
       }
 
@@ -1585,6 +2259,21 @@ export default function TaskFlowCanvasPage() {
           .toLowerCase()
         const mode = modeRaw === 'tree' || modeRaw === 'vertical' || modeRaw === '세로' ? 'tree' : 'default'
         setFlowModeFromStore(mode)
+        return
+      }
+
+      if (type === 'undo') {
+        undo()
+        return
+      }
+
+      if (type === 'redo') {
+        redo()
+        return
+      }
+
+      if (type === 'clear-all' || type === 'reset-all' || type === 'reset') {
+        clearAllNodesExceptStart()
         return
       }
 

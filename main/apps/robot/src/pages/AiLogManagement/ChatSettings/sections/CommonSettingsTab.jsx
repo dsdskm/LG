@@ -309,11 +309,6 @@ export const CommonSettingsTab = ({
     savingCommonPrompt,
     onCommonPromptChange,
     onSaveCommonPrompt,
-    commonIntentPromptItem,
-    commonIntentPromptDraft,
-    savingCommonIntentPrompt,
-    onCommonIntentPromptChange,
-    onSaveCommonIntentPrompt,
     commonInputHintPromptItem,
     commonInputHintPromptDraft,
     savingCommonInputHintPrompt,
@@ -355,14 +350,6 @@ export const CommonSettingsTab = ({
                 onSaveProvider={onSaveProvider}
             />
 
-            <CommonIntentPromptManagementCard
-                commonIntentPromptItem={commonIntentPromptItem}
-                commonIntentPromptDraft={commonIntentPromptDraft}
-                savingCommonIntentPrompt={savingCommonIntentPrompt}
-                onCommonIntentPromptChange={onCommonIntentPromptChange}
-                onSaveCommonIntentPrompt={onSaveCommonIntentPrompt}
-            />
-
             <CommonInputHintPromptManagementCard
                 commonInputHintPromptItem={commonInputHintPromptItem}
                 commonInputHintPromptDraft={commonInputHintPromptDraft}
@@ -396,99 +383,7 @@ export const CommonSettingsTab = ({
                 onDeleteCommonRag={onDeleteCommonRag}
             />
 
-            <CommonRagManagementCard
-                ragDocs={commonRagDocs}
-                ragDrafts={ragDrafts}
-                savingRagKey={savingRagKey}
-                onRagChange={onRagChange}
-                onSaveRag={onSaveRag}
-                intentType="action"
-                title="공통 action RAG 데이터"
-                description="공통 action RAG는 실행/변경/보강용 근거 청크를 모아 관리합니다."
-                newCommonRagDraft={newCommonActionRagDraft}
-                savingCreateCommonRag={savingCreateCommonActionRag}
-                deletingCommonRagKey={deletingCommonRagKey}
-                onNewCommonRagChange={onNewCommonActionRagChange}
-                onCreateCommonRag={onCreateCommonActionRag}
-                onDeleteCommonRag={onDeleteCommonRag}
-            />
-
-            <CommonToolManagementCard
-                tools={commonTools}
-                actionTypes={actionTypes}
-                savingToolKey={savingToolKey}
-                savingCreateCommonTool={savingCreateCommonTool}
-                deletingToolKey={deletingToolKey}
-                onSaveTool={onSaveTool}
-                onCreateCommonTool={onCreateCommonTool}
-                onDeleteTool={onDeleteTool}
-            />
         </ManagementGrid>
-    )
-}
-
-const CommonIntentPromptManagementCard = ({
-    commonIntentPromptItem,
-    commonIntentPromptDraft,
-    savingCommonIntentPrompt,
-    onCommonIntentPromptChange,
-    onSaveCommonIntentPrompt,
-}) => {
-    const hasPrompt = Boolean(commonIntentPromptItem?.id)
-
-    return (
-        <SettingCard>
-            <CardHeader>
-                <CardTitle>공통 분기 프롬프트</CardTitle>
-            </CardHeader>
-
-            <PageDescription>
-                모든 화면의 intent 분기에서 공통으로 쓰는 기본 규칙입니다. 화면별 분기 프롬프트는 이 규칙 위에 추가로 붙습니다.
-            </PageDescription>
-
-            <PromptCard>
-                <PromptMeta>
-                    <span>{commonIntentPromptItem?.label || commonIntentPromptDraft.label || '공통 분기 프롬프트'}</span>
-                    <span>key: common</span>
-                    <span>type: intent-hint</span>
-                    {hasPrompt ? <span>updated: {formatDateTime(commonIntentPromptItem?.updatedAt)}</span> : null}
-                </PromptMeta>
-
-                <FieldLabel>프롬프트</FieldLabel>
-                <PromptTextarea
-                    value={commonIntentPromptDraft.content}
-                    onChange={(e) => onCommonIntentPromptChange('content', e.target.value)}
-                    
-                />
-
-                <PromptFooter>
-                    <ToggleButton
-                        type="button"
-                        $active={Boolean(commonIntentPromptDraft.enabled)}
-                        onClick={() => onCommonIntentPromptChange('enabled', !commonIntentPromptDraft.enabled)}
-                    >
-                        {commonIntentPromptDraft.enabled ? '활성' : '비활성'}
-                    </ToggleButton>
-
-                    {hasPrompt ? (
-                        <SecondaryTextButton
-                            type="button"
-                            onClick={() => {
-                                onCommonIntentPromptChange('content', String(commonIntentPromptItem?.content ?? ''))
-                                onCommonIntentPromptChange('label', String(commonIntentPromptItem?.label ?? '공통 분기 프롬프트'))
-                                onCommonIntentPromptChange('enabled', commonIntentPromptItem?.enabled !== false)
-                            }}
-                        >
-                            원본 복원
-                        </SecondaryTextButton>
-                    ) : null}
-
-                    <PrimaryButton type="button" onClick={onSaveCommonIntentPrompt} disabled={savingCommonIntentPrompt}>
-                        {savingCommonIntentPrompt ? '저장 중...' : hasPrompt ? '저장' : '등록'}
-                    </PrimaryButton>
-                </PromptFooter>
-            </PromptCard>
-        </SettingCard>
     )
 }
 
@@ -499,7 +394,49 @@ const CommonInputHintPromptManagementCard = ({
     onCommonInputHintPromptChange,
     onSaveCommonInputHintPrompt,
 }) => {
+    const [newItem, setNewItem] = useState('')
+    const [editingIndex, setEditingIndex] = useState(-1)
+    const [editingValue, setEditingValue] = useState('')
+    const examples = Array.isArray(commonInputHintPromptDraft?.examples) ? commonInputHintPromptDraft.examples : []
     const hasPrompt = Boolean(commonInputHintPromptItem?.id)
+
+    const commitExamples = (nextExamples) => {
+        onCommonInputHintPromptChange('examples', nextExamples)
+    }
+
+    const addExample = () => {
+        const value = String(newItem ?? '').trim()
+        if (!value) return
+        commitExamples(Array.from(new Set([...examples, value])))
+        setNewItem('')
+    }
+
+    const startEdit = (index) => {
+        setEditingIndex(index)
+        setEditingValue(String(examples[index] ?? ''))
+    }
+
+    const saveEdit = () => {
+        const value = String(editingValue ?? '').trim()
+        if (editingIndex < 0) return
+        const next = [...examples]
+        if (!value) {
+            next.splice(editingIndex, 1)
+        } else {
+            next[editingIndex] = value
+        }
+        commitExamples(Array.from(new Set(next.filter(Boolean))))
+        setEditingIndex(-1)
+        setEditingValue('')
+    }
+
+    const deleteExample = (index) => {
+        commitExamples(examples.filter((_, idx) => idx !== index))
+        if (editingIndex === index) {
+            setEditingIndex(-1)
+            setEditingValue('')
+        }
+    }
 
     return (
         <SettingCard>
@@ -508,51 +445,136 @@ const CommonInputHintPromptManagementCard = ({
             </CardHeader>
 
             <PageDescription>
-                화면별 입력 힌트가 없을 때 AI Assistant 입력창 placeholder로 사용하는 기본 문구입니다.
+                app_key=common, screen_key=common 인 guidance.examples 배열을 그대로 사용합니다. 여기서 추가/수정/삭제한 값이 실제 화면 hint fallback에 반영됩니다.
             </PageDescription>
 
             <PromptCard>
                 <PromptMeta>
                     <span>{commonInputHintPromptItem?.label || commonInputHintPromptDraft.label || '공통 입력 힌트'}</span>
                     <span>key: common</span>
-                    <span>type: input-hint</span>
+                    <span>type: guidance.examples</span>
                     {hasPrompt ? <span>updated: {formatDateTime(commonInputHintPromptItem?.updatedAt)}</span> : null}
                 </PromptMeta>
 
-                <FieldLabel>입력 힌트 문구</FieldLabel>
-                <PromptTextarea
-                    value={commonInputHintPromptDraft.content}
-                    onChange={(e) => onCommonInputHintPromptChange('content', e.target.value)}
-                    placeholder={"예: 현재 화면에 대해 질문해 보세요.\n예: 어떤 작업을 하시려는지 입력해 주세요."}
-                    style={{ minHeight: '130px' }}
-                />
+                <FieldLabel>예시 문구 목록</FieldLabel>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
+                    {examples.length > 0 ? (
+                        examples.map((example, index) => (
+                            <button
+                                key={`hint-example-${index}`}
+                                type="button"
+                                onClick={() => startEdit(index)}
+                                style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    padding: '8px 12px',
+                                    borderRadius: '999px',
+                                    border: '1px solid #dbe3ef',
+                                    background: '#ffffff',
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                <span>{example}</span>
+                                <span
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={(e) => {
+                                        e.stopPropagation()
+                                        deleteExample(index)
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' || e.key === ' ') {
+                                            e.preventDefault()
+                                            e.stopPropagation()
+                                            deleteExample(index)
+                                        }
+                                    }}
+                                    style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        width: '18px',
+                                        height: '18px',
+                                        borderRadius: '999px',
+                                        background: '#eff6ff',
+                                        color: '#1d4ed8',
+                                        fontSize: '12px',
+                                        fontWeight: 800,
+                                    }}
+                                    aria-label={`${example} 삭제`}
+                                >
+                                    ×
+                                </span>
+                            </button>
+                        ))
+                    ) : (
+                        <div style={{ color: '#64748b', fontSize: '12px' }}>등록된 입력 힌트가 없습니다.</div>
+                    )}
+                </div>
 
-                <FieldHint>여러 문구를 줄바꿈으로 입력하면, 입력창에 랜덤하게 노출됩니다. 공백이면 화면별 힌트 또는 패널 기본 문구가 사용됩니다.</FieldHint>
+                {editingIndex >= 0 ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '8px', marginBottom: '10px' }}>
+                        <input
+                            value={editingValue}
+                            onChange={(e) => setEditingValue(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    e.preventDefault()
+                                    saveEdit()
+                                }
+                                if (e.key === 'Escape') {
+                                    e.preventDefault()
+                                    setEditingIndex(-1)
+                                    setEditingValue('')
+                                }
+                            }}
+                            style={{ width: '100%', border: '1px solid #dbe3ef', borderRadius: '10px', padding: '8px 10px', fontSize: '13px' }}
+                        />
+                        <PrimaryButton type="button" onClick={saveEdit} style={{ height: '36px' }}>
+                            저장
+                        </PrimaryButton>
+                        <SecondaryTextButton type="button" onClick={() => { setEditingIndex(-1); setEditingValue('') }}>
+                            취소
+                        </SecondaryTextButton>
+                    </div>
+                ) : null}
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px', alignItems: 'center' }}>
+                    <input
+                        value={newItem}
+                        onChange={(e) => setNewItem(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault()
+                                addExample()
+                            }
+                        }}
+                        placeholder="새 입력 힌트 추가"
+                        style={{ width: '100%', border: '1px solid #dbe3ef', borderRadius: '10px', padding: '8px 10px', fontSize: '13px' }}
+                    />
+                    <PrimaryButton type="button" onClick={addExample} style={{ height: '36px' }}>
+                        추가
+                    </PrimaryButton>
+                </div>
+
+                <FieldHint>예시 값들은 공통 입력 힌트 fallback으로 사용되며, 화면별 입력 힌트가 없을 때 랜덤으로 노출됩니다.</FieldHint>
 
                 <PromptFooter>
-                    <ToggleButton
+                    <SecondaryTextButton
                         type="button"
-                        $active={Boolean(commonInputHintPromptDraft.enabled)}
-                        onClick={() => onCommonInputHintPromptChange('enabled', !commonInputHintPromptDraft.enabled)}
+                        onClick={() => {
+                            const sourceExamples = Array.isArray(commonInputHintPromptItem?.examples)
+                                ? commonInputHintPromptItem.examples
+                                : []
+                            onCommonInputHintPromptChange('examples', sourceExamples)
+                        }}
                     >
-                        {commonInputHintPromptDraft.enabled ? '활성' : '비활성'}
-                    </ToggleButton>
-
-                    {hasPrompt ? (
-                        <SecondaryTextButton
-                            type="button"
-                            onClick={() => {
-                                onCommonInputHintPromptChange('content', String(commonInputHintPromptItem?.content ?? ''))
-                                onCommonInputHintPromptChange('label', String(commonInputHintPromptItem?.label ?? '공통 입력 힌트'))
-                                onCommonInputHintPromptChange('enabled', commonInputHintPromptItem?.enabled !== false)
-                            }}
-                        >
-                            원본 복원
-                        </SecondaryTextButton>
-                    ) : null}
+                        원본 복원
+                    </SecondaryTextButton>
 
                     <PrimaryButton type="button" onClick={onSaveCommonInputHintPrompt} disabled={savingCommonInputHintPrompt}>
-                        {savingCommonInputHintPrompt ? '저장 중...' : hasPrompt ? '저장' : '등록'}
+                        {savingCommonInputHintPrompt ? '저장 중...' : '저장'}
                     </PrimaryButton>
                 </PromptFooter>
             </PromptCard>
@@ -644,7 +666,7 @@ const PromptManagementCard = ({
                         <SecondaryTextButton
                             type="button"
                             onClick={() => {
-                                onCommonPromptChange('content', String(commonPromptItem?.content ?? ''))
+                                onCommonPromptChange('content', String(commonPromptItem?.content ?? commonPromptItem?.prompt ?? ''))
                                 onCommonPromptChange('label', String(commonPromptItem?.label ?? '공통 프롬프트'))
                                 onCommonPromptChange('enabled', commonPromptItem?.enabled !== false)
                             }}
@@ -847,33 +869,6 @@ const CommonRagManagementCard = ({
                             />
                             <FieldHint>설명 답변에 같이 노출할 이미지 URL입니다. 로컬/사설/퍼블릭 URL 모두 가능합니다.</FieldHint>
 
-                            <FieldLabel>이미지 노출 정책</FieldLabel>
-                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                {IMAGE_ATTACH_MODE_OPTIONS.map((option) => {
-                                    const active = normalizeImageAttachMode(activeRagDraft.imageAttachMode) === option.key
-                                    return (
-                                        <button
-                                            key={`edit-image-mode-${option.key}`}
-                                            type="button"
-                                            onClick={() => onRagChange(activeRagKey, 'imageAttachMode', option.key)}
-                                            style={{
-                                                height: '32px',
-                                                padding: '0 10px',
-                                                borderRadius: '999px',
-                                                border: active ? '1px solid #2563eb' : '1px solid #dbe3ef',
-                                                background: active ? '#eff6ff' : '#ffffff',
-                                                color: active ? '#1d4ed8' : '#475569',
-                                                fontSize: '12px',
-                                                fontWeight: 700,
-                                                cursor: 'pointer',
-                                            }}
-                                        >
-                                            {option.label}
-                                        </button>
-                                    )
-                                })}
-                            </div>
-
                             <PromptFooter>
                                 <ToggleButton
                                     type="button"
@@ -964,33 +959,6 @@ const CommonRagManagementCard = ({
                                 onChange={(e) => onNewCommonRagChange('imageUrl', e.target.value)}
                             />
                             <FieldHint>설명 응답에 함께 보여줄 이미지 URL입니다. 비워두면 이미지를 표시하지 않습니다.</FieldHint>
-
-                            <FieldLabel>이미지 노출 정책</FieldLabel>
-                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                {IMAGE_ATTACH_MODE_OPTIONS.map((option) => {
-                                    const active = normalizeImageAttachMode(newCommonRagDraft.imageAttachMode) === option.key
-                                    return (
-                                        <button
-                                            key={`modal-create-image-mode-${option.key}`}
-                                            type="button"
-                                            onClick={() => onNewCommonRagChange('imageAttachMode', option.key)}
-                                            style={{
-                                                height: '32px',
-                                                padding: '0 10px',
-                                                borderRadius: '999px',
-                                                border: active ? '1px solid #2563eb' : '1px solid #dbe3ef',
-                                                background: active ? '#eff6ff' : '#ffffff',
-                                                color: active ? '#1d4ed8' : '#475569',
-                                                fontSize: '12px',
-                                                fontWeight: 700,
-                                                cursor: 'pointer',
-                                            }}
-                                        >
-                                            {option.label}
-                                        </button>
-                                    )
-                                })}
-                            </div>
 
                             <FieldHint>현재 카드의 intent({getRagIntentLabel(intentType)})로 저장됩니다.</FieldHint>
                         </div>

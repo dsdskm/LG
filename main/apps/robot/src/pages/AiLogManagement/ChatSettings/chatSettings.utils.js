@@ -48,11 +48,11 @@ export const groupPrompts = (prompts) => {
 }
 
 export const getGuidanceRouteKey = (item) => {
-    return String(item?.key ?? item?.screenKey ?? item?.routeKey ?? item?.screenName ?? 'unknown')
+    return String(item?.screenKey ?? item?.key ?? item?.routeKey ?? item?.screenName ?? 'unknown')
 }
 
 export const getScreenRouteKey = (item) => {
-    return String(item?.key ?? item?.routeKey ?? 'unknown')
+    return String(item?.key ?? item?.screenKey ?? item?.routeKey ?? 'unknown')
 }
 
 export const getScreenTitle = (group) => {
@@ -189,7 +189,7 @@ export const groupScreenSettings = (screens, prompts, guidance, ragDocs, screenT
         const prev = map.get(routeKey) ?? {
             routeKey,
             routeParentKey: item?.routeKey ?? '',
-            screenName: item?.screenName ?? '',
+            screenName: item?.screenName ?? item?.screenKey ?? item?.key ?? '',
             prompts: [],
             guidance: [],
             ragDocs: [],
@@ -199,7 +199,7 @@ export const groupScreenSettings = (screens, prompts, guidance, ragDocs, screenT
         map.set(routeKey, {
             ...prev,
             routeParentKey: prev.routeParentKey || item?.routeKey || '',
-            screenName: prev.screenName || item?.screenName || routeKey,
+            screenName: prev.screenName || item?.screenName || item?.screenKey || item?.key || routeKey,
             guidance: [...prev.guidance, item],
         })
     }

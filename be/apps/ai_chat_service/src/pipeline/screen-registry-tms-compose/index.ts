@@ -107,7 +107,7 @@ function parseArrowActionChain(message: string, rules: TaskflowLanguageRules): {
   labels: string[]
   linkModes: LinkHandleMode[]
 } {
-  const normalizedMessage = String(message ?? '').trim().replace(/["'`]/g, '')
+  const normalizedMessage = String(message ?? '').trim().replace(/['"`]/g, '')
   if (!normalizedMessage) return { labels: [], linkModes: [] }
 
   const cleanArrowPart = (value: string): string =>
@@ -116,84 +116,112 @@ function parseArrowActionChain(message: string, rules: TaskflowLanguageRules): {
       .replace(/\s+/g, ' ')
       .trim()
 
-  const cleaned = replaceConfiguredPhrases(
+  const normalizeSegment = (value: string): string => {
+    const cleaned = replaceConfiguredPhrases(
+      replaceConfiguredPhrases(
+        replaceConfiguredPhrases(
+          replaceConfiguredPhrases(
+            String(value ?? ''),
+            Array.isArray(rules.composeNoisePhrases) ? rules.composeNoisePhrases : [],
+            ' ',
+          ),
+          Array.isArray(rules.requestTailPhrases) ? rules.requestTailPhrases : [],
+          ' ',
+        ),
+        Array.isArray(rules.composeVerbPhrases) ? rules.composeVerbPhrases : [],
+        ' ',
+      ),
+      Array.isArray(rules.connectIntentPhrases) ? rules.connectIntentPhrases : [],
+      ' ',
+    )
+      .replace(/\s+/g, ' ')
+      .trim()
+
+    const withoutTail = replaceConfiguredPhrases(
+      cleaned,
+      Array.isArray(rules.requestTailPhrases) ? rules.requestTailPhrases : [],
+      ' ',
+    )
+      .replace(/\s+/g, ' ')
+      .trim()
+
+    return replaceConfiguredPhrases(
+      replaceConfiguredPhrases(withoutTail, Array.isArray(rules.connectPairSeparatorPhrases) ? rules.connectPairSeparatorPhrases : [], ' '),
+      Array.isArray(rules.connectLeftPairSeparatorPhrases) ? rules.connectLeftPairSeparatorPhrases : [],
+      ' ',
+    )
+      .replace(/\s+/g, ' ')
+      .trim()
+  }
+
+  const normalized = replaceConfiguredPhrases(
     replaceConfiguredPhrases(
       replaceConfiguredPhrases(
         replaceConfiguredPhrases(
           normalizedMessage,
-          rules.composeNoisePhrases,
+          Array.isArray(rules.composeNoisePhrases) ? rules.composeNoisePhrases : [],
           ' ',
         ),
-        rules.requestTailPhrases,
+        Array.isArray(rules.requestTailPhrases) ? rules.requestTailPhrases : [],
         ' ',
       ),
-      rules.composeVerbPhrases,
+      Array.isArray(rules.composeVerbPhrases) ? rules.composeVerbPhrases : [],
       ' ',
     ),
-    rules.connectIntentPhrases,
+    Array.isArray(rules.connectIntentPhrases) ? rules.connectIntentPhrases : [],
     ' ',
   )
     .replace(/\s+/g, ' ')
     .trim()
 
-  const rightSeparators = Array.isArray(rules.connectPairSeparatorPhrases)
-    ? rules.connectPairSeparatorPhrases
-    : []
-  const leftSeparators = Array.isArray(rules.connectLeftPairSeparatorPhrases)
-    ? rules.connectLeftPairSeparatorPhrases
-    : []
-  if (rightSeparators.length === 0 && leftSeparators.length === 0) {
-    return { labels: [], linkModes: [] }
-  }
-
-  const pairSeparators = Array.isArray(rules.connectPairSeparatorPhrases)
-    ? rules.connectPairSeparatorPhrases
-    : []
-
-  const leftToken = '__SEP_LL__'
-  const rightToken = '__SEP_RL__'
-
-  const marked = replaceConfiguredPhrases(
-    replaceConfiguredPhrases(cleaned, leftSeparators, ` ${leftToken} `),
-    pairSeparators,
-    ` ${rightToken} `,
+  const normalizedWithoutTail = replaceConfiguredPhrases(
+    normalized,
+    Array.isArray(rules.requestTailPhrases) ? rules.requestTailPhrases : [],
+    ' ',
   )
     .replace(/\s+/g, ' ')
     .trim()
 
-  const parts = marked
-    .split(/(__SEP_LL__|__SEP_RL__)/)
+  const normalizedWithoutTailAndIntent = replaceConfiguredPhrases(
+    normalizedWithoutTail,
+    Array.isArray(rules.connectIntentPhrases) ? rules.connectIntentPhrases : [],
+    ' ',
+  )
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (!/[=>→-]/.test(normalizedWithoutTailAndIntent)) return { labels: [], linkModes: [] }
+
+  const parts = normalizedWithoutTailAndIntent
+    .split(/(=>|->|→|>)/)
     .map((part) => String(part ?? '').trim())
     .filter(Boolean)
 
-  if (parts.length < 3) {
-    return { labels: [], linkModes: [] }
-  }
+  if (parts.length < 3) return { labels: [], linkModes: [] }
 
   const labels: string[] = []
   const linkModes: LinkHandleMode[] = []
 
   for (let index = 0; index < parts.length; index += 1) {
     const part = parts[index]
-    if (part === leftToken || part === rightToken) {
-      if (labels.length === 0) continue
-      linkModes.push(part === leftToken ? 'left-left' : 'right-left')
+    if (part === '=>') {
+      if (labels.length > 0) linkModes.push('left-left')
       continue
     }
-    const label = cleanArrowPart(part)
+
+    if (part === '->' || part === '→' || part === '>') {
+      if (labels.length > 0) linkModes.push('right-left')
+      continue
+    }
+
+    const nextPart = parts[index + 1]
+    const labelText = part
+    const label = cleanArrowPart(normalizeSegment(labelText))
     if (!label) continue
     labels.push(label)
   }
 
-  if (labels.length < 2 || linkModes.length < 1) {
-    return { labels: [], linkModes: [] }
-  }
-
-  // 보정: 비정상 토큰 수로 mode 개수가 모자라면 마지막 모드를 반복 적용한다.
-  if (linkModes.length < labels.length - 1) {
-    const fallbackMode = linkModes[linkModes.length - 1] ?? 'right-left'
-    while (linkModes.length < labels.length - 1) linkModes.push(fallbackMode)
-  }
+  if (labels.length < 2 || linkModes.length < 1) return { labels: [], linkModes: [] }
 
   return {
     labels,
@@ -236,6 +264,7 @@ function parseMultiLineArrowActionChains(
 type NodeEditIntent =
   | { type: 'add'; label: string }
   | { type: 'remove'; label: string }
+  | { type: 'replace'; from: string; to: string }
 
 function normalizeNodeLabelToken(value: unknown): string {
   return String(value ?? '')
@@ -274,42 +303,59 @@ function extractNodeLabelByRules(
 function parseNodeEditIntent(message: string, rules: TaskflowLanguageRules): NodeEditIntent | null {
   const text = String(message ?? '').trim()
   if (!text) return null
-  if (/->|→/.test(text)) return null
+  if (/->|→|=>/.test(text)) return null
 
-  const isDeleteIntent = includesConfiguredPhrase(text, Array.isArray(rules.deleteRequestPhrases) ? rules.deleteRequestPhrases : [])
-  if (isDeleteIntent) {
-    const removeLabel = extractNodeLabelByRules(text, rules, 'remove')
-    if (removeLabel) {
-      return { type: 'remove', label: removeLabel }
+  const normalizedLines = text
+    .split(/\r?\n/)
+    .map((line) => String(line ?? '').trim())
+    .filter(Boolean)
+
+  for (const line of normalizedLines) {
+    const simpleReplaceMatch = line.match(/^(.+?)\s*=\s*(.+)$/)
+    if (simpleReplaceMatch) {
+      const from = normalizeNodeLabelToken(simpleReplaceMatch[1])
+      const to = normalizeNodeLabelToken(simpleReplaceMatch[2])
+      if (from && to) {
+        return { type: 'replace', from, to }
+      }
     }
-    return { type: 'remove', label: '' }
-  }
 
-  const isEditIntent = isNodeLevelEditMessage(text, rules)
-  if (!isEditIntent) return null
+    const removeTokens = line
+      .split(/[,;]+/)
+      .flatMap((item) => item.split(/\s+/))
+      .map((token) => String(token ?? '').trim())
+      .filter(Boolean)
+      .filter((token) => token.startsWith('!') || token.endsWith('!'))
+      .map((token) => normalizeNodeLabelToken(token.replace(/^!+|!+$/g, '')))
+      .filter(Boolean)
 
-  const addLabel = extractNodeLabelByRules(text, rules, 'add')
-  if (addLabel) {
-    return { type: 'add', label: addLabel }
+    if (removeTokens.length > 0) {
+      return { type: 'remove', label: removeTokens[0] }
+    }
+
+    const isDeleteIntent = includesConfiguredPhrase(line, Array.isArray(rules.deleteRequestPhrases) ? rules.deleteRequestPhrases : [])
+    if (isDeleteIntent) {
+      const removeLabel = extractNodeLabelByRules(line, rules, 'remove')
+      if (removeLabel) {
+        return { type: 'remove', label: removeLabel }
+      }
+      return { type: 'remove', label: '' }
+    }
+
+    const isEditIntent = isNodeLevelEditMessage(line, rules)
+    if (!isEditIntent) continue
+
+    const addLabel = extractNodeLabelByRules(line, rules, 'add')
+    if (addLabel) {
+      return { type: 'add', label: addLabel }
+    }
   }
 
   return null
 }
 
 function resolveNodeLabelAliases(label: string): string[] {
-  const base = normalizeNodeLabelToken(label)
-  if (!base) return []
-
-  const aliases = new Set<string>([base])
-  const key = normalizeNameKey(base)
-
-  if (['or', '오알', '분기', '병렬', 'parallel'].includes(key)) {
-    aliases.add('Parallel')
-    aliases.add('병렬')
-    aliases.add('OR')
-  }
-
-  return Array.from(aliases)
+  return [normalizeNodeLabelToken(label)].filter(Boolean)
 }
 
 function resolveAddStepByLabel(
@@ -352,31 +398,59 @@ function resolveArrowActionChainSteps(
     ? flowContext.taskContents
     : []
 
-  const actionCandidates = taskContents.filter((item) => isContentTaskContent(item))
+  // 팔레트에 없더라도 현재 플로우 노드에서 찾을 수 있으면 사용한다.
+  const flowNodes = Array.isArray(flowContext?.nodes) ? flowContext.nodes : []
 
   const steps: LinearTaskflowStep[] = []
   const missing: string[] = []
 
   for (const label of labels) {
-    const matched = pickTaskContentByStep(actionCandidates, {
+    const labelKey = normalizeNameKey(label)
+
+    const matched = pickTaskContentByStep(taskContents, {
       label,
       contentName: label,
+      taskName: label,
       taskType: 'ACTION',
     })
 
-    if (!matched) {
-      missing.push(label)
+    if (matched) {
+      const matchedKind = normalizeNameKey(matched.kind)
+      const inferredTaskType = matchedKind === 'controltasknode' ? 'CONTROL' : 'ACTION'
+      steps.push({
+        label: String(matched.contentName ?? matched.label ?? label).trim() || label,
+        taskName: String(matched.taskName ?? '').trim() || undefined,
+        contentName: String(matched.contentName ?? matched.label ?? '').trim() || undefined,
+        taskType: inferredTaskType,
+        taskId: Number.isFinite(Number(matched.taskId)) ? Number(matched.taskId) : undefined,
+        contentId: Number.isFinite(Number(matched.contentId)) ? Number(matched.contentId) : undefined,
+      })
       continue
     }
 
-    steps.push({
-      label: String(matched.contentName ?? matched.label ?? label).trim() || label,
-      taskName: String(matched.taskName ?? '').trim() || undefined,
-      contentName: String(matched.contentName ?? matched.label ?? '').trim() || undefined,
-      taskType: 'ACTION',
-      taskId: Number.isFinite(Number(matched.taskId)) ? Number(matched.taskId) : undefined,
-      contentId: Number.isFinite(Number(matched.contentId)) ? Number(matched.contentId) : undefined,
-    })
+    // 팔레트에 없으면 현재 플로우 노드에서 fallback 탐색한다.
+    const flowNode = flowNodes.find((node) => {
+      if (normalizeNameKey(String((node as any)?.id ?? '')) === 'start') return false
+      return (
+        normalizeNameKey((node as any)?.label) === labelKey ||
+        normalizeNameKey((node as any)?.contentName) === labelKey ||
+        normalizeNameKey((node as any)?.taskName) === labelKey
+      )
+    }) as Record<string, unknown> | undefined
+
+    if (flowNode) {
+      steps.push({
+        label: String(flowNode.contentName ?? flowNode.label ?? flowNode.taskName ?? label).trim() || label,
+        taskName: String(flowNode.taskName ?? '').trim() || undefined,
+        contentName: String(flowNode.contentName ?? flowNode.label ?? '').trim() || undefined,
+        taskType: 'ACTION',
+        taskId: Number.isFinite(Number(flowNode.taskId)) ? Number(flowNode.taskId) : undefined,
+        contentId: Number.isFinite(Number(flowNode.contentId)) ? Number(flowNode.contentId) : undefined,
+      })
+      continue
+    }
+
+    missing.push(label)
   }
 
   return { steps, missing }
@@ -550,6 +624,7 @@ function buildSequentialInsertPlanFromChains(
     sourceHandle?: 'left' | 'right'
     targetHandle?: 'left' | 'right'
     appendOnly?: boolean
+    isolated?: boolean
   }>
   missing: string[]
 } {
@@ -559,8 +634,16 @@ function buildSequentialInsertPlanFromChains(
     sourceHandle?: 'left' | 'right'
     targetHandle?: 'left' | 'right'
     appendOnly?: boolean
+    isolated?: boolean
   }> = []
   const missing: string[] = []
+
+  const existingNodeKeys = collectExistingNodeNameKeys(flowContext)
+  const flowNodes = Array.isArray(flowContext?.nodes) ? flowContext.nodes : []
+  const hasNonStartNodes = flowNodes.some((n) => normalizeNameKey(String((n as any)?.id ?? '')) !== 'start')
+
+  // 이전 체인 끝 노드 키 — 같은 이름이면 isolated 생략해 체인을 이어붙인다.
+  let lastTailKey: string | null = null
 
   for (const chain of chains) {
     const { labels, linkModes } = chain
@@ -571,6 +654,18 @@ function buildSequentialInsertPlanFromChains(
     }
 
     if (steps.length < 2) continue
+
+    const firstStep = steps[0]
+    const firstKey = normalizeNameKey(firstStep.contentName ?? firstStep.label ?? firstStep.taskName ?? '')
+    const isContinuation = lastTailKey !== null && lastTailKey === firstKey
+    if (!isContinuation) {
+      insertAfter.push({
+        after: '',
+        step: firstStep,
+        // Start만 있는 빈 플로우면 Start에 연결, 그 외엔 독립 배치
+        ...(hasNonStartNodes ? { isolated: true } : {}),
+      })
+    }
 
     for (let index = 1; index < steps.length; index += 1) {
       const after = String(steps[index - 1]?.label ?? '').trim()
@@ -585,6 +680,9 @@ function buildSequentialInsertPlanFromChains(
         appendOnly: true,
       })
     }
+
+    const lastStep = steps[steps.length - 1]
+    lastTailKey = normalizeNameKey(lastStep?.contentName ?? lastStep?.label ?? lastStep?.taskName ?? '')
   }
 
   return { insertAfter, missing }
@@ -658,87 +756,85 @@ export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefi
       const userMessage = resolveComposeUserMessage(contextRow, normalized, languageRules)
       const { flowContext } = resolveFlowContextSummary(contextRow)
 
-      const nodeEditIntent = parseNodeEditIntent(userMessage, languageRules)
-      if (nodeEditIntent?.type === 'remove') {
-        const target = normalizeNodeLabelToken(nodeEditIntent.label)
-        if (!target) {
-          return {
-            clarification: '삭제할 노드 이름을 알려주세요. 예: "A 노드 제거해줘"',
-            needUserInput: true,
-          }
+          const lines = userMessage
+        .split(/\r?\n/)
+        .map((line) => String(line ?? '').trim())
+        .filter(Boolean)
+
+      const removeByName: string[] = []
+      const replaceByName: Array<{ target: string; step: LinearTaskflowStep }> = []
+      const insertAfter: Array<{
+        after: string
+        step: LinearTaskflowStep
+        sourceHandle?: 'left' | 'right'
+        targetHandle?: 'left' | 'right'
+        reverseDirection?: boolean
+        appendOnly?: boolean
+      }> = []
+      const missing: string[] = []
+
+      const arrowChains: Array<{ labels: string[]; linkModes: LinkHandleMode[] }> = []
+
+      for (const line of lines) {
+        const arrowChain = parseArrowActionChain(line, languageRules)
+        if (arrowChain.labels.length >= 2) {
+          arrowChains.push(arrowChain)
+          continue
         }
 
-        return {
-          canvasDraft: {
-            mode: 'edit',
-            layout: 'linear',
-            flowMode: args?.flowMode === 'tree' ? 'tree' : 'default',
-            removeByName: [target],
-          },
-          assistantText: `${target} 노드를 기존 흐름에서 제거했습니다.`,
+        const intent = parseNodeEditIntent(line, languageRules)
+        if (!intent) continue
+
+        if (intent.type === 'remove') {
+          const target = normalizeNodeLabelToken(intent.label)
+          if (target) removeByName.push(target)
+          continue
+        }
+
+        if (intent.type === 'replace') {
+          const step = resolveAddStepByLabel(flowContext, intent.to)
+          if (step) {
+            replaceByName.push({ target: intent.from, step })
+          } else {
+            missing.push(intent.to)
+          }
+          continue
+        }
+
+        const step = resolveAddStepByLabel(flowContext, intent.label)
+        if (step) {
+          insertAfter.push({ after: '', step })
+        } else {
+          missing.push(intent.label)
         }
       }
 
-      if (nodeEditIntent?.type === 'add') {
-        const rawLabel = normalizeNodeLabelToken(nodeEditIntent.label)
-        if (!rawLabel || isGenericNodePlaceholder(rawLabel, languageRules)) {
-          return {
-            clarification: '추가할 노드 이름을 알려주세요. 예: "B 노드 추가해줘"',
-            needUserInput: true,
-          }
-        }
-
-        const step = resolveAddStepByLabel(flowContext, rawLabel)
-        if (!step) {
-          return {
-            clarification: `추가할 노드(${rawLabel})를 TaskPanel에서 찾지 못했습니다. TaskPanel 라벨 기준으로 다시 요청해 주세요.`,
-            needUserInput: true,
-          }
-        }
-
-        return {
-          canvasDraft: {
-            mode: 'edit',
-            layout: 'linear',
-            flowMode: args?.flowMode === 'tree' ? 'tree' : 'default',
-            insertAfter: [
-              {
-                after: '',
-                step,
-              },
-            ],
-          },
-          assistantText: `${String(step.label ?? rawLabel)} 노드를 기존 흐름에 추가했습니다.`,
-        }
+      if (arrowChains.length > 0) {
+        const plan = buildSequentialInsertPlanFromChains(arrowChains, flowContext)
+        insertAfter.push(...plan.insertAfter)
+        missing.push(...plan.missing)
       }
 
-      const arrowChains = parseMultiLineArrowActionChains(userMessage, languageRules)
-      if (arrowChains.length === 0) {
+      const hasAnyAction = insertAfter.length > 0 || removeByName.length > 0 || replaceByName.length > 0
+      if (!hasAnyAction) {
         return {
           clarification:
-            '요청 형식이 맞지 않습니다. "A->B", "A=>B", "A->B->C" 또는 여러 줄 입력(예: "A->B\nA=>C\nB->D")으로 요청해 주세요.',
+            '요청 형식이 맞지 않습니다. "A->B", "A=>B", "A->B->C", "!A", "A=C" 또는 여러 줄 입력(예: "A->B\nC!\nD=E")으로 요청해 주세요.',
           needUserInput: true,
         }
       }
 
-      const { insertAfter, missing } = buildSequentialInsertPlanFromChains(arrowChains, flowContext)
-      if (insertAfter.length === 0) {
-        const missingPreview = missing.slice(0, 5).join(', ')
-        return {
-          clarification: missingPreview
-            ? `다음 ACTION 노드는 TaskPanel에서 찾지 못했습니다: ${missingPreview}. TaskPanel(contentName) 기준으로 다시 요청해 주세요.`
-            : '요청하신 ACTION 노드를 TaskPanel에서 찾지 못했습니다. TaskPanel(contentName) 기준으로 다시 요청해 주세요.',
-          needUserInput: true,
-        }
-      }
-      const chainText = arrowChains
-        .map((chain) => chain.labels.join(' -> '))
-        .join(' | ')
+      const chainText = lines.join(' | ')
       const missingUnique = Array.from(new Set(missing.map((item) => String(item ?? '').trim()).filter(Boolean)))
       const partialNote =
         missingUnique.length > 0
           ? ` 찾지 못한 노드는 제외했습니다: ${missingUnique.slice(0, 5).join(', ')}${missingUnique.length > 5 ? ' 외' : ''}.`
           : ''
+
+      const insertedLabels = insertAfter.map((item) => String(item.step?.label ?? '').trim()).filter(Boolean)
+      const actionLabel = insertedLabels.length > 0
+        ? insertedLabels.join(', ')
+        : chainText
 
       return {
         canvasDraft: {
@@ -746,8 +842,10 @@ export function createComposeLinearTaskflowTool(deps: ComposeToolDeps): ToolDefi
           layout: 'linear',
           flowMode: args?.flowMode === 'tree' ? 'tree' : 'default',
           insertAfter,
+          removeByName,
+          replaceByName,
         },
-        assistantText: `요청하신 ACTION 연결(${chainText})을 순차적으로 반영했습니다.${partialNote}`,
+        assistantText: `요청하신 작업(${chainText})을 반영했습니다.${partialNote} 처리된 노드: ${actionLabel}`,
       }
     },
   }

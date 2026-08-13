@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
 import { Repository } from 'typeorm'
 
-import { ChatSettingEntity } from './chat-setting.entity'
+import { ChatSettingEntity } from '../db/chat-setting.entity'
 
 export const CHAT_SETTING_KEYS = {
   llmProvider: 'llmProvider',

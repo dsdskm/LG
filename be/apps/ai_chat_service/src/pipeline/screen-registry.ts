@@ -1,11 +1,10 @@
 import type { ToolDefinition } from './tool.type'
 import { queryEvents } from '../screens/robot/ailog-event.datatools'
 import { navigateToScreen } from '../screens/common/navigation.actiontools'
-import { getPromptStore } from '../db/prompt-store.service'
+import { getPromptStore } from '../features/chat/service/prompt-store.service'
 import { Logger } from '@nestjs/common'
-import { ChatScreenToolEntity } from '../db/chat-screen-tool.entity'
+import { ChatScreenToolEntity } from '../features/chat/db/chat-screen-tool.entity'
 import { fetchWithTimeout, safeJsonParse } from '../utils/utils'
-import { createComposeLinearTaskflowTool } from './screen-registry-tms-compose'
 
 const logger = new Logger('ScreenRegistry')
 
@@ -37,12 +36,8 @@ export type ScreenConfig = {
   fallbackText: string
 }
 
-const composeLinearTaskflowTool: ToolDefinition = createComposeLinearTaskflowTool({
-  logger,
-})
 const TOOL_REGISTRY: Record<string, ToolDefinition> = {
   query_events: queryEvents,
-  compose_linear_taskflow: composeLinearTaskflowTool,
 }
 
 const DATA_TOOL_NAMES = new Set(['query_events'])
@@ -483,12 +478,6 @@ function toChatAction(routeKey: string) {
   return normalized || 'default'
 }
 
-function isTaskflowCanvasRoute(routeKey: string): boolean {
-  const normalized = String(routeKey ?? '').trim().replace(/^\/+/, '')
-  if (!normalized) return false
-  return /^tms\/taskflows\/(?:[^/]+|:taskFlowId|:id)\/canvas(?:\/|$)/.test(normalized)
-}
-
 export function getScreenConfig(routeKey: string, reqId?: string): ScreenConfig | undefined {
   const normalizedRouteKey = String(routeKey || '').replace(/^\//, '')
   if (!normalizedRouteKey) return undefined
@@ -530,44 +519,13 @@ export function getScreenConfig(routeKey: string, reqId?: string): ScreenConfig 
   const mergedDataSystemPrompt = [commonSystem, resolvedDataSystem].filter(Boolean).join('\n\n')
   const mergedActionSystemPrompt = [commonSystem, resolvedActionSystem].filter(Boolean).join('\n\n')
 
-  const screenToolRows = store?.getScreenTools(normalizedRouteKey) ?? []
-  const resolvedTools = screenToolRows
-    .map((row) => {
-      const tool = buildToolFromRow(row)
-      if (!tool) return undefined
+  const resolvedTools: Array<{ kind: 'data' | 'action'; tool: ToolDefinition }> = []
 
-      const kind = resolveToolKind(row, tool)
-      if (!kind) return undefined
+  const dataTools: ToolDefinition[] = []
 
-      return { kind, tool }
-    })
-    .filter((item): item is { kind: 'data' | 'action'; tool: ToolDefinition } => Boolean(item))
+  let actionTools: ToolDefinition[] = []
 
-  const dataTools = resolvedTools
-    .filter((item) => item.kind === 'data')
-    .map((item) => item.tool)
-
-  let actionTools = resolvedTools
-    .filter((item) => item.kind === 'action')
-    .map((item) => item.tool)
-
-  const commonScreenToolRows = store?.getScreenTools('common', 'action') ?? []
-  const commonActionTools = commonScreenToolRows
-    .map((row) => {
-      const tool = buildToolFromRow(row)
-      if (!tool) return undefined
-
-      const kind = resolveToolKind(row, tool)
-      if (kind !== 'action') return undefined
-
-      return tool
-    })
-    .filter((item): item is ToolDefinition => Boolean(item))
-
-  const hasComposeTool = actionTools.some((tool) => String(tool?.declaration?.name ?? '').trim() === 'compose_linear_taskflow')
-  if (!hasComposeTool && isTaskflowCanvasRoute(normalizedRouteKey)) {
-    actionTools = [...actionTools, composeLinearTaskflowTool]
-  }
+  const commonActionTools: ToolDefinition[] = []
 
   const baseAction = toChatAction(normalizedRouteKey)
 

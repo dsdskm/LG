@@ -428,6 +428,14 @@ function applyEditToSteps(
     if (!step?.label) continue
 
     if (!after) {
+      if (nextSteps.length > 0) {
+        const lastStep = nextSteps[nextSteps.length - 1]
+        const anchorIndex = nextSteps.findIndex((item) => matchesStepName(item, String(lastStep.label ?? '').trim()))
+        if (anchorIndex >= 0) {
+          nextSteps.splice(anchorIndex + 1, 0, step)
+          continue
+        }
+      }
       nextSteps.push(step)
       continue
     }
@@ -435,6 +443,9 @@ function applyEditToSteps(
     const anchorIndex = nextSteps.findIndex((item) => matchesStepName(item, after))
     if (anchorIndex >= 0) {
       nextSteps.splice(anchorIndex + 1, 0, step)
+    } else if (nextSteps.length > 0) {
+      const fallbackIndex = nextSteps.length - 1
+      nextSteps.splice(fallbackIndex + 1, 0, step)
     } else {
       nextSteps.push(step)
     }
@@ -448,18 +459,21 @@ function pickTaskContentByStep(
   step: LinearTaskflowStep,
 ): FlowContextTaskContentSummary | null {
   const labelKey = normalizeNameKey(step.label)
-  if (!labelKey) return null
+  const taskNameKey = step.taskName ? normalizeNameKey(step.taskName) : ''
+  if (!labelKey && !taskNameKey) return null
 
   let candidates = taskContents.filter((item) => {
     const itemLabel = normalizeNameKey(item.label)
     const itemContentName = normalizeNameKey(item.contentName)
-    return itemLabel === labelKey || itemContentName === labelKey
+    const itemTaskName = normalizeNameKey(item.taskName)
+    const labelMatches = Boolean(labelKey) && (itemLabel === labelKey || itemContentName === labelKey || itemTaskName === labelKey)
+    const taskMatches = Boolean(taskNameKey) && (itemTaskName === taskNameKey || itemLabel === taskNameKey || itemContentName === taskNameKey)
+    return labelMatches || taskMatches
   })
 
   if (candidates.length === 0) return null
 
-  if (step.taskName) {
-    const taskNameKey = normalizeNameKey(step.taskName)
+  if (step.taskName && taskNameKey) {
     const narrowed = candidates.filter((item) => normalizeNameKey(item.taskName) === taskNameKey)
     if (narrowed.length > 0) candidates = narrowed
   }
@@ -467,17 +481,17 @@ function pickTaskContentByStep(
   const contentFirst = candidates
     .slice()
     .sort((a, b) => {
-      const ak = normalizeNameKey(a.kind)
-      const bk = normalizeNameKey(b.kind)
-      const aScore = ak === 'contentnode' ? 0 : 1
-      const bScore = bk === 'contentnode' ? 0 : 1
-      if (aScore !== bScore) return aScore - bScore
-      const at = Number(a.taskId ?? 0)
-      const bt = Number(b.taskId ?? 0)
-      if (at !== bt) return at - bt
-      const ac = Number(a.contentId ?? 0)
-      const bc = Number(b.contentId ?? 0)
-      return ac - bc
+      const al = normalizeNameKey(a.label)
+      const bl = normalizeNameKey(b.label)
+      const at = normalizeNameKey(a.taskName)
+      const bt = normalizeNameKey(b.taskName)
+      const ac = normalizeNameKey(a.contentName)
+      const bc = normalizeNameKey(b.contentName)
+      // 검색 키워드와 taskName이 정확히 일치하면 우선 반환한다.
+      const aExact = at === labelKey ? 0 : ac === labelKey ? 1 : al === labelKey ? 2 : 3
+      const bExact = bt === labelKey ? 0 : bc === labelKey ? 1 : bl === labelKey ? 2 : 3
+      if (aExact !== bExact) return aExact - bExact
+      return Number(a.taskId ?? 0) - Number(b.taskId ?? 0)
     })
 
   return contentFirst[0] ?? null

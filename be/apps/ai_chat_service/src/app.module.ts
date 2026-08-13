@@ -1,21 +1,18 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ChatController } from './controller/chat.controller';
-import { ChatService } from './service/chat.service';
-import { HealthController } from './controller/health.controller';
-import { HealthService } from './service/health.service';
-import { ChatLogEntity } from './db/chat-log.entity';
-import { ChatLogService } from './db/chat-log.service';
-import { ChatGuidanceEntity } from './db/chat-guidance.entity';
-import { ChatPromptEntity } from './db/chat-prompt.entity';
-import { ChatScreenEntity } from './db/chat-screen.entity';
-import { ChatSettingEntity } from './db/chat-setting.entity';
-import { ChatSettingService } from './db/chat-setting.service';
-import { ChatRagDocEntity } from './db/chat-rag-doc.entity';
-import { ChatScreenToolEntity } from './db/chat-screen-tool.entity';
-import { ChatActionTypeEntity } from './db/chat-action-type.entity';
-import { PromptStoreService } from './db/prompt-store.service';
-import { ChatSettingController } from './controller/chat-setting.controller';
+import { ChatController, ChatService } from './features/chat';
+import { HealthController, HealthService } from './features/health';
+import { ChatLogEntity } from './features/chat-settings/db/chat-log.entity';
+import { ChatLogService } from './features/chat-settings/db/chat-log.service';
+import { ChatSettingEntity } from './features/chat-settings/db/chat-setting.entity';
+import { ChatSettingService } from './features/chat-settings/service/chat-setting.service';
+import { ChatSettingController, ChatGuidanceController, ChatPromptController, ChatRagController } from './features/chat-settings';
+import { Prompt } from './features/chat/db/chat-prompt.entity';
+import { Rag } from './features/chat/db/chat-rag-doc.entity';
+import { Screen } from './features/chat/db/chat-screen.entity';
+import { ScreenGuidanceEntity } from './features/chat/db/chat-guidance.entity';
+import { ChatActionTypeEntity } from './features/chat/db/chat-action-type.entity';
+import { PromptStoreService } from './features/chat/service/prompt-store.service';
 
 @Module({
   imports: [
@@ -25,28 +22,26 @@ import { ChatSettingController } from './controller/chat-setting.controller';
       entities: [
         ChatLogEntity,
         ChatSettingEntity,
-        ChatScreenEntity,
-        ChatPromptEntity,
-        ChatGuidanceEntity,
-        ChatRagDocEntity,
-        ChatScreenToolEntity,
+        Prompt,
+        Rag,
+        Screen,
+        ScreenGuidanceEntity,
         ChatActionTypeEntity,
       ],
-      synchronize: true,
+      synchronize: false,
       logging: false,
     }),
     TypeOrmModule.forFeature([
       ChatLogEntity,
       ChatSettingEntity,
-      ChatScreenEntity,
-      ChatPromptEntity,
-      ChatGuidanceEntity,
-      ChatRagDocEntity,
-      ChatScreenToolEntity,
+      Prompt,
+      Rag,
+      Screen,
+      ScreenGuidanceEntity,
       ChatActionTypeEntity,
     ]),
   ],
-  controllers: [ChatController, HealthController, ChatSettingController],
+  controllers: [ChatController, HealthController, ChatSettingController, ChatGuidanceController, ChatPromptController, ChatRagController],
   providers: [ChatService, HealthService, ChatLogService, ChatSettingService, PromptStoreService],
 })
 export class AppModule { }

@@ -1,4 +1,4 @@
-import { listEventRules, type EventRuleRow } from '../../db/event-rule.repo'
+import { listEventRules, type EventRuleRow } from '../../features/chat-settings/db/event-rule.repo'
 
 export type FrontRuleIntent = 'info' | 'action'
 

@@ -1,5 +1,11 @@
 import { createComposeLinearTaskflowTool } from './index'
-import * as chatSettingServiceModule from '../../db/chat-setting.service'
+import * as taskflowRuleRepo from '../../features/taskflow/db/taskflow-rule.repo'
+import {
+  clearTaskflowRulesCache,
+  loadTaskflowClassifierRules,
+  loadTaskflowLanguageRules,
+  loadTaskflowOrchestratorRules,
+} from '../taskflow-language-rules'
 
 const mockLanguageRules: Record<string, unknown> = {
   'taskflowLanguageRules.common.composeNoisePhrases': ['태스크 플로우', '태스크플로우', 'taskflow', '캔버스', 'canvas'],
@@ -30,13 +36,49 @@ const mockLanguageRules: Record<string, unknown> = {
 }
 
 describe('createComposeLinearTaskflowTool', () => {
+  const routeScope = 'tms/taskflows/:taskFlowId/canvas'
+
   beforeEach(() => {
-    jest.spyOn(chatSettingServiceModule, 'getChatSettingService').mockReturnValue({
-      get: async (key: string) => mockLanguageRules[key],
-    } as any)
+    clearTaskflowRulesCache(routeScope)
+    jest.spyOn(taskflowRuleRepo, 'listTaskflowRuleRows').mockImplementation(async (_ruleType, scopes) => {
+      const requestedScopes = Array.isArray(scopes) ? scopes : []
+      return Object.entries(mockLanguageRules)
+        .map(([key, value]) => {
+          const parsed = taskflowRuleRepo.parseLegacyTaskflowSettingKey(key)
+          if (!parsed) return null
+          if (!requestedScopes.includes(routeScope) && !requestedScopes.includes(parsed.scopeKey)) return null
+          if (parsed.scopeKey !== routeScope && parsed.scopeKey !== 'common') return null
+          return {
+            ruleType: parsed.ruleType,
+            scopeKey: parsed.scopeKey === 'common' ? routeScope : parsed.scopeKey,
+            ruleKey: parsed.ruleKey,
+            valueJson: value,
+            enabled: true,
+            priority: 200,
+          }
+        })
+        .filter(Boolean) as any[]
+    })
+  })
+
+  it('returns empty backend defaults when no taskflow rules are configured in the DB', async () => {
+    jest.spyOn(taskflowRuleRepo, 'listTaskflowRuleRows').mockResolvedValue([])
+
+    const languageRules = await loadTaskflowLanguageRules('tms/taskflows/:taskFlowId/canvas')
+    const classifierRules = await loadTaskflowClassifierRules('tms/taskflows/:taskFlowId/canvas')
+    const orchestratorRules = await loadTaskflowOrchestratorRules('tms/taskflows/:taskFlowId/canvas')
+
+    expect(languageRules.composeNoisePhrases).toEqual([])
+    expect(languageRules.taskflowKeywordPhrases).toEqual([])
+    expect(classifierRules.arrowSequenceEnabled).toBe(false)
+    expect(classifierRules.explanationImageMinScore).toBe(0)
+    expect(orchestratorRules.nodeNameOnlyMaxLength).toBe(0)
+    expect(orchestratorRules.ruleFirstIntentConfidence).toBe(0)
+    expect(orchestratorRules.actionRetryComposeExample).toBe('')
   })
 
   afterEach(() => {
+    clearTaskflowRulesCache(routeScope)
     jest.restoreAllMocks()
   })
 
@@ -273,5 +315,107 @@ describe('createComposeLinearTaskflowTool', () => {
     expect(canvasDraft.insertAfter.length).toBe(1)
     expect(String(canvasDraft.insertAfter[0]?.after ?? '')).toBe('대회의실')
     expect(String(canvasDraft.insertAfter[0]?.step?.label ?? '')).toBe('사무공간')
+  })
+
+  it('supports arrow chains that resolve control nodes as well as action nodes', async () => {
+    const tool = createComposeLinearTaskflowTool({
+      logger: { log: () => {}, error: () => {} } as any,
+    })
+
+    const result = await tool.execute(
+      { steps: [] },
+      {
+        context: {
+          __userMessage: 'Parallel->MoveTo 연결해줘',
+          taskflow: {
+            nodes: [
+              { id: 'start', label: 'Start' },
+            ],
+            taskContents: [
+              { taskId: 1, taskName: 'Parallel', kind: 'controlTaskNode', contentId: 1001, contentName: 'Parallel', label: 'Parallel' },
+              { taskId: 2, taskName: 'MoveTo', kind: 'contentNode', contentId: 1002, contentName: '회의실 A', label: '회의실 A' },
+            ],
+          },
+        },
+        log: { log: () => {}, error: () => {} },
+      } as any,
+    )
+
+    const canvasDraft = (result as Record<string, any>)?.canvasDraft
+    expect(canvasDraft).toBeTruthy()
+    expect(canvasDraft.mode).toBe('edit')
+    expect(Array.isArray(canvasDraft.insertAfter)).toBe(true)
+    expect(canvasDraft.insertAfter.length).toBe(1)
+    expect(String(canvasDraft.insertAfter[0]?.step?.taskType ?? '')).toBe('CONTROL')
+    expect(String(canvasDraft.insertAfter[0]?.step?.label ?? '')).toBe('Parallel')
+  })
+
+  it('adds only the trailing node when the first chain node already exists', async () => {
+    const tool = createComposeLinearTaskflowTool({
+      logger: { log: () => {}, error: () => {} } as any,
+    })
+
+    const result = await tool.execute(
+      { steps: [] },
+      {
+        context: {
+          __userMessage: 'And->Delay 연결해줘',
+          taskflow: {
+            nodes: [
+              { id: 'start', label: 'Start' },
+              { id: 'n1', label: 'And', taskName: 'And', contentName: 'And' },
+            ],
+            taskContents: [
+              { taskId: 10, taskName: 'And', kind: 'contentNode', contentId: 1001, contentName: 'And', label: 'And' },
+              { taskId: 11, taskName: 'Delay', kind: 'contentNode', contentId: 1002, contentName: 'Delay', label: 'Delay' },
+            ],
+          },
+        },
+        log: { log: () => {}, error: () => {} },
+      } as any,
+    )
+
+    const canvasDraft = (result as Record<string, any>)?.canvasDraft
+    expect(canvasDraft).toBeTruthy()
+    expect(Array.isArray(canvasDraft.insertAfter)).toBe(true)
+    expect(canvasDraft.insertAfter.length).toBe(1)
+    expect(String(canvasDraft.insertAfter[0]?.after ?? '')).toBe('And')
+    expect(String(canvasDraft.insertAfter[0]?.step?.label ?? '')).toBe('Delay')
+    expect(String((result as Record<string, any>)?.assistantText ?? '')).toContain('Delay')
+    expect(String((result as Record<string, any>)?.assistantText ?? '')).not.toContain(' 처리된 노드: And')
+  })
+
+  it('falls back to appending after the existing tail when the anchor node is missing', async () => {
+    const tool = createComposeLinearTaskflowTool({
+      logger: { log: () => {}, error: () => {} } as any,
+    })
+
+    const result = await tool.execute(
+      { steps: [] },
+      {
+        context: {
+          __userMessage: 'Idle->Joy 연결해줘',
+          taskflow: {
+            nodes: [
+              { id: 'start', label: 'Start' },
+              { id: 'n1', label: 'Idle', taskName: 'Idle', contentName: 'Idle' },
+            ],
+            taskContents: [
+              { taskId: 10, taskName: 'Idle', kind: 'contentNode', contentId: 1001, contentName: 'Idle', label: 'Idle' },
+              { taskId: 11, taskName: 'Joy', kind: 'contentNode', contentId: 1002, contentName: 'Joy', label: 'Joy' },
+            ],
+          },
+        },
+        log: { log: () => {}, error: () => {} },
+      } as any,
+    )
+
+    const canvasDraft = (result as Record<string, any>)?.canvasDraft
+    expect(canvasDraft).toBeTruthy()
+    expect(Array.isArray(canvasDraft.insertAfter)).toBe(true)
+    expect(canvasDraft.insertAfter.length).toBe(1)
+    expect(String(canvasDraft.insertAfter[0]?.after ?? '')).toBe('Idle')
+    expect(String(canvasDraft.insertAfter[0]?.step?.label ?? '')).toBe('Joy')
+    expect(String((result as Record<string, any>)?.assistantText ?? '')).toContain('Joy')
   })
 })

@@ -1,4 +1,4 @@
-import { listTaskflowRuleRows, type TaskflowRuleType } from '../db/taskflow-rule.repo'
+import { listTaskflowRuleRows, type TaskflowRuleType } from '../features/taskflow/db/taskflow-rule.repo'
 
 export type TaskflowLanguageRules = {
   composeNoisePhrases: string[]
@@ -39,6 +39,8 @@ export type TaskflowClassifierRules = {
   arrowSequenceEnabled: boolean
   explanationImageMinScore: number
   explanationImageMinScoreAlways: number
+  nodeEditDeletePrefixes: string[]
+  arrowChainSeparators: string[]
 }
 
 export type TaskflowOrchestratorRules = {
@@ -81,6 +83,20 @@ type ScopeRuleMaps = {
 const rulesCache = new Map<string, CachedRules>()
 const classifierRulesCache = new Map<string, { at: number; data: TaskflowClassifierRules }>()
 const orchestratorRulesCache = new Map<string, { at: number; data: TaskflowOrchestratorRules }>()
+
+export function clearTaskflowRulesCache(routeKey?: string): void {
+  if (routeKey) {
+    const scopeKey = keyFor(routeKey)
+    rulesCache.delete(scopeKey)
+    classifierRulesCache.delete(`classifier:${scopeKey}`)
+    orchestratorRulesCache.delete(`orchestrator:${scopeKey}`)
+    return
+  }
+
+  rulesCache.clear()
+  classifierRulesCache.clear()
+  orchestratorRulesCache.clear()
+}
 
 function normalizePhraseList(value: unknown): string[] {
   if (!Array.isArray(value)) return []
@@ -133,6 +149,11 @@ export function normalizeForSignalMatch(value: unknown): string {
 
 function keyFor(routeKey: string): string {
   return String(routeKey ?? '').trim() || '__common__'
+}
+
+function normalizeScopeKey(value: unknown): string {
+  const normalized = String(value ?? '').trim()
+  return normalized || 'common'
 }
 
 function scopeForRules(routeKey: string): string {
@@ -255,8 +276,10 @@ async function readClassifierRules(routeKey: string): Promise<TaskflowClassifier
     editVerbKeywords: readMergedList(ruleMaps, 'editVerbKeywords'),
     explanationBlockKeywords: readMergedList(ruleMaps, 'explanationBlockKeywords'),
     arrowSequenceEnabled: readMergedBoolean(ruleMaps, 'arrowSequenceEnabled', false),
-    explanationImageMinScore: readMergedNumber(ruleMaps, 'explanationImageMinScore', 5),
-    explanationImageMinScoreAlways: readMergedNumber(ruleMaps, 'explanationImageMinScoreAlways', 1),
+    explanationImageMinScore: readMergedNumber(ruleMaps, 'explanationImageMinScore', 0),
+    explanationImageMinScoreAlways: readMergedNumber(ruleMaps, 'explanationImageMinScoreAlways', 0),
+    nodeEditDeletePrefixes: readMergedList(ruleMaps, 'nodeEditDeletePrefixes'),
+    arrowChainSeparators: readMergedList(ruleMaps, 'arrowChainSeparators'),
   }
 }
 
@@ -281,7 +304,7 @@ async function readOrchestratorRules(routeKey: string): Promise<TaskflowOrchestr
     modeClarificationPhrases: readMergedList(ruleMaps, 'modeClarificationPhrases'),
     saveClarificationPhrases: readMergedList(ruleMaps, 'saveClarificationPhrases'),
     nodeNameBlockedPhrases: readMergedList(ruleMaps, 'nodeNameBlockedPhrases'),
-    nodeNameOnlyMaxLength: readMergedNumber(ruleMaps, 'nodeNameOnlyMaxLength', 40),
+    nodeNameOnlyMaxLength: readMergedNumber(ruleMaps, 'nodeNameOnlyMaxLength', 0),
     nodeAppendSuffix: readMergedString(ruleMaps, 'nodeAppendSuffix'),
     nodeAppendWithNodeSuffix: readMergedString(ruleMaps, 'nodeAppendWithNodeSuffix'),
     deleteAppendSuffix: readMergedString(ruleMaps, 'deleteAppendSuffix'),
@@ -293,12 +316,12 @@ async function readOrchestratorRules(routeKey: string): Promise<TaskflowOrchestr
     guideActionCuePhrases: readMergedList(ruleMaps, 'guideActionCuePhrases'),
     nodeGuideSubjectPhrases: readMergedList(ruleMaps, 'nodeGuideSubjectPhrases'),
     nodeGuideRequestPhrases: readMergedList(ruleMaps, 'nodeGuideRequestPhrases'),
-    ruleFirstIntentConfidence: readMergedNumber(ruleMaps, 'ruleFirstIntentConfidence', 0.97),
-    actionRetryDeleteExample: readMergedString(ruleMaps, 'actionRetryDeleteExample', '"검사" 노드 삭제해줘'),
-    actionRetryConnectExample: readMergedString(ruleMaps, 'actionRetryConnectExample', '입고 -> 검사 -> 적재 연결해줘'),
-    actionRetryComposeExample: readMergedString(ruleMaps, 'actionRetryComposeExample', 'Start -> PickUp(창고) -> MoveTo(검사장) -> PutDown 구성해줘'),
-    actionRetryDefaultExample: readMergedString(ruleMaps, 'actionRetryDefaultExample', '입고 -> 검사 -> 적재 구성해줘'),
-    actionRetryRunActionExample: readMergedString(ruleMaps, 'actionRetryRunActionExample', '대상과 작업을 함께 적어주세요. 예: "로봇 A를 점검 실행해줘"'),
+    ruleFirstIntentConfidence: readMergedNumber(ruleMaps, 'ruleFirstIntentConfidence', 0),
+    actionRetryDeleteExample: readMergedString(ruleMaps, 'actionRetryDeleteExample'),
+    actionRetryConnectExample: readMergedString(ruleMaps, 'actionRetryConnectExample'),
+    actionRetryComposeExample: readMergedString(ruleMaps, 'actionRetryComposeExample'),
+    actionRetryDefaultExample: readMergedString(ruleMaps, 'actionRetryDefaultExample'),
+    actionRetryRunActionExample: readMergedString(ruleMaps, 'actionRetryRunActionExample'),
   }
 }
 

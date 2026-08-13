@@ -20,9 +20,10 @@ export async function getChatSettings() {
   console.info('[chat-settings] GET /chat/settings', {
     status: response.status,
     ok: response.ok,
-    screens: Array.isArray(json?.data?.management?.screens) ? json.data.management.screens.length : 0,
-    screenTools: Array.isArray(json?.data?.management?.screenTools) ? json.data.management.screenTools.length : 0,
-    actionTypes: Array.isArray(json?.data?.management?.actionTypes) ? json.data.management.actionTypes.length : 0,
+    hasManagement: Boolean(json?.data?.management),
+    managementKeys: Object.keys(json?.data?.management ?? {}),
+    history: Array.isArray(json?.data?.management?.history) ? json.data.management.history.length : 0,
+    guidance: Array.isArray(json?.data?.management?.guidance) ? json.data.management.guidance.length : 0,
   })
   return json
 }
@@ -77,6 +78,35 @@ export async function updateChatPrompt(id, payload) {
   return response.json()
 }
 
+export async function listPrompts({ appKey, screenKey, system, type } = {}) {
+  const query = new URLSearchParams()
+  if (appKey) query.set('app_key', String(appKey))
+  if (screenKey) query.set('screen_key', String(screenKey))
+  if (system !== undefined && system !== null && system !== '') query.set('system', String(system))
+  if (type) query.set('type', String(type))
+
+  const endpoint = query.toString() ? `${BASE_URL}/chat/settings/prompts?${query.toString()}` : `${BASE_URL}/chat/settings/prompts`
+  console.info('[chat-settings] GET /chat/settings/prompts', {
+    appKey: appKey ?? null,
+    screenKey: screenKey ?? null,
+    system: system ?? null,
+    type: type ?? null,
+    endpoint,
+  })
+
+  const response = await fetch(endpoint, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  const json = await response.json()
+  console.info('[chat-settings] GET /chat/settings/prompts response', {
+    status: response.status,
+    ok: response.ok,
+    items: Array.isArray(json?.data?.items) ? json.data.items : Array.isArray(json?.items) ? json.items : [],
+  })
+  return json
+}
+
 export async function createChatPrompt(payload) {
   const response = await fetch(`${BASE_URL}/chat/settings/prompts`, {
     method: 'POST',
@@ -93,6 +123,54 @@ export async function upsertCommonChatPrompt(payload) {
     body: JSON.stringify(payload),
   })
   return response.json()
+}
+
+export async function getGuidanceList({ appKey, screenKey, id } = {}) {
+  const query = new URLSearchParams()
+  if (appKey) query.set('app_key', String(appKey))
+  if (screenKey) query.set('screen_key', String(screenKey))
+  if (id !== undefined && id !== null && id !== '') query.set('id', String(id))
+
+  const endpoint = query.toString() ? `${BASE_URL}/chat/settings/guidance?${query.toString()}` : `${BASE_URL}/chat/settings/guidance`
+  console.info('[chat-settings] GET /chat/settings/guidance', {
+    appKey: appKey ?? null,
+    screenKey: screenKey ?? null,
+    id: id ?? null,
+    endpoint,
+  })
+
+  const response = await fetch(endpoint, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  return response.json()
+}
+
+export async function getRagList({ appKey, screenKey, id } = {}) {
+  const query = new URLSearchParams()
+  if (appKey) query.set('app_key', String(appKey))
+  if (screenKey) query.set('screen_key', String(screenKey))
+  if (id !== undefined && id !== null && id !== '') query.set('id', String(id))
+
+  const endpoint = query.toString() ? `${BASE_URL}/chat/settings/rag-docs?${query.toString()}` : `${BASE_URL}/chat/settings/rag-docs`
+  console.info('[chat-settings] GET /chat/settings/rag-docs', {
+    appKey: appKey ?? null,
+    screenKey: screenKey ?? null,
+    id: id ?? null,
+    endpoint,
+  })
+
+  const response = await fetch(endpoint, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  const json = await response.json()
+  console.info('[chat-settings] GET /chat/settings/rag-docs response', {
+    status: response.status,
+    ok: response.ok,
+    items: Array.isArray(json?.data?.items) ? json.data.items : Array.isArray(json?.items) ? json.items : [],
+  })
+  return json
 }
 
 export async function updateChatGuidance(id, payload) {

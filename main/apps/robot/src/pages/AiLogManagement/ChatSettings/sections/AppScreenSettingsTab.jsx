@@ -65,21 +65,6 @@ const ONE_LINE_INPUT_STYLE = {
 
 const PROMPT_FLOW_MODAL_STYLE = LARGE_MODAL_STYLE
 
-const INTENT_HINT_PROMPT_TEMPLATE = `너는 화면 기반 챗봇의 분기 분류기다.
-사용자 발화를 intent 하나로만 분류한다: info | data | action.
-
-판단 규칙:
-1) 설명, 정책, 사용법, 비교, 요약 같은 정보 질문은 info.
-2) 목록 조회, 검색, 필터 확인 같은 읽기성 요청은 data.
-3) 추가/생성/수정/삭제/실행/이동/저장/정렬/모드변경 같은 동작 요청은 action.
-4) 태스크플로우/노드/연결/parallel/ifthenelse/repeat/or/병렬/반복 관련 요청은 action 우선.
-5) 직전 질문이 명확화(예: 어떤 노드 추가?)이고 짧은 후속 답변이면 action.
-
-출력 형식:
-JSON 한 줄만 반환한다.
-{"intent":"info|data|action","reason":"짧은 근거","confidence":0.0}
-`
-
 const parseJsonArray = (value, fallback = []) => {
     try {
         const parsed = JSON.parse(String(value ?? '[]'))
@@ -152,6 +137,14 @@ const normalizeCommonRagKey = (value) => {
 }
 
 const resolveCommonRagScopeKey = (item) => {
+    const appKey = String(item?.appKey ?? item?.app_key ?? '').trim().toLowerCase()
+    const screenKey = String(item?.screenKey ?? item?.screen_key ?? item?.key ?? '').trim().toLowerCase()
+
+    if (appKey === 'common') {
+        if (screenKey === 'common' || screenKey === 'common_info' || screenKey === 'common_action') return screenKey || 'common'
+        return 'common'
+    }
+
     const candidates = [
         item?.key,
         item?.routeKey,
@@ -681,7 +674,11 @@ const ScreenSettingGroup = ({
                                     emptyText="등록된 화면 입력 힌트가 없습니다. 공통 입력 힌트가 fallback으로 적용됩니다."
                                     expandedView
                                     singleOnly
-                                    commonFallbackHint={String(commonInputHintPromptDraft?.content ?? commonInputHintPromptItem?.content ?? '').trim()}
+                                    commonFallbackHint={Array.isArray(commonInputHintPromptDraft?.examples)
+                                        ? commonInputHintPromptDraft.examples.join('\n')
+                                        : Array.isArray(commonInputHintPromptItem?.examples)
+                                            ? commonInputHintPromptItem.examples.join('\n')
+                                            : ''}
                                 />
                             ) : null}
 
@@ -1407,7 +1404,7 @@ const ActionUnifiedPromptSection = ({
 const ScreenPromptSection = ({ appKey, routeKey, routeParentKey, prompts, allPrompts, commonIntentPromptItem, commonIntentPromptDraft, promptDrafts, savingPromptKey, creatingPromptRouteKey, onPromptChange, onSavePrompt, onCreatePrompt, promptType, title, description, createLabel, emptyText, expandedView = false, allowCreate = true, singleOnly = false, commonFallbackHint = '' }) => {
     const getInitialCreateDraft = () => ({
         label: title,
-        content: promptType === 'intent-hint' ? INTENT_HINT_PROMPT_TEMPLATE : '',
+        content: '',
         enabled: true,
     })
 
@@ -1435,7 +1432,7 @@ const ScreenPromptSection = ({ appKey, routeKey, routeParentKey, prompts, allPro
         }
 
         setSingleDraft({
-            content: String(createDraft.content ?? '') || (promptType === 'intent-hint' ? INTENT_HINT_PROMPT_TEMPLATE : ''),
+            content: String(createDraft.content ?? ''),
             enabled: createDraft.enabled !== false,
         })
     }, [singleOnly, singlePrompt, promptDrafts, createDraft.content, createDraft.enabled, promptType])

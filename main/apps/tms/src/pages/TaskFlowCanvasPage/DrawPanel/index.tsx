@@ -215,6 +215,22 @@ function InnerCanvas() {
   const rfRef = useRef<ReactFlowInstance<any, any> | null>(null)
   const didRestoreViewportRef = useRef(false)
 
+  // AI 노드 추가 후 해당 노드들이 보이도록 fitView를 호출하는 전역 핸들러
+  useEffect(() => {
+    (window as any).__AI_TASKFLOW_FIT_NODES__ = (nodeIds: string[]) => {
+      if (!rfRef.current || nodeIds.length === 0) return
+      requestAnimationFrame(() => {
+        rfRef.current?.fitView({
+          nodes: nodeIds.map((id) => ({ id })),
+          padding: 0.25,
+          duration: 350,
+          maxZoom: 1.2,
+        })
+      })
+    }
+    return () => { delete (window as any).__AI_TASKFLOW_FIT_NODES__ }
+  }, [])
+
   const [selectedNodeCount, setSelectedNodeCount] = useState(0)
   const [showAlignGuideModal, setShowAlignGuideModal] = useState(false)
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)

@@ -29,8 +29,8 @@ import { ToolAgent, type ExecutedCall } from './agent/tool-agent'
 import { getScreenConfig, type ScreenConfig } from './screen-registry'
 import type { ChatIntent, ChatReply, ChatTurn } from './pipeline.types'
 import type { ChatPipelineConfig } from './pipeline.config'
-import { getPromptStore } from '../db/prompt-store.service'
-import { getChatSettingService } from '../db/chat-setting.service'
+import { getPromptStore } from '../features/chat/service/prompt-store.service'
+import { getChatSettingService } from '../features/chat-settings/service/chat-setting.service'
 import { buildToolContextFromBody } from './tool-context.util'
 
 const COMMON_COLLECTION = 'common'
@@ -715,7 +715,7 @@ export class ChatOrchestrator {
         if (!normalizedMessage.includes(normalizedScreenName)) return undefined
 
         return {
-          key: screen.key,
+          key: screen.screenKey,
           appKey: screen.appKey,
           screenName: screen.screenName,
           nameLen: normalizedScreenName.length,
@@ -747,6 +747,18 @@ export class ChatOrchestrator {
     if (this.hasClassifierPhrase(text, rules.explanationBlockKeywords)) {
       return false
     }
+
+    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+
+    const deletePrefixes = Array.isArray(rules.nodeEditDeletePrefixes) ? rules.nodeEditDeletePrefixes : []
+    const arrowSeps = Array.isArray(rules.arrowChainSeparators) ? rules.arrowChainSeparators : []
+
+    const hasSyntaxPattern = lines.some((line) => {
+      if (deletePrefixes.some((p) => new RegExp(`(?:^|[\\s,;])${p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\w가-힣]`).test(line))) return true
+      if (arrowSeps.some((s) => line.includes(s))) return true
+      return false
+    })
+    if (hasSyntaxPattern) return true
 
     const hasArrowSequenceByRule =
       Boolean(rules.arrowSequenceEnabled)

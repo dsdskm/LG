@@ -1,6 +1,8 @@
 import { Logger } from '@nestjs/common'
 import { Pool } from 'pg'
 
+import { clearTaskflowRulesCache } from '../../../pipeline/taskflow-language-rules'
+
 const logger = new Logger('TaskflowRuleRepo')
 
 let pool: Pool | null = null
@@ -191,6 +193,7 @@ export async function upsertTaskflowRuleFromLegacyKey(key: string, value: unknow
       `,
       [parsed.ruleType, parsed.scopeKey, parsed.ruleKey, JSON.stringify(value ?? null)],
     )
+    clearTaskflowRulesCache(parsed.scopeKey)
     return true
   } catch (e: any) {
     logger.warn(`[taskflow-rule] upsert failed key=${key}: ${e?.message ?? String(e)}`)

@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm'
 import { Repository } from 'typeorm'
 
 import { ChatLogEntity } from './chat-log.entity'
-import type { ChatTurn } from '../pipeline/pipeline.types'
+import type { ChatTurn } from '../../../pipeline/pipeline.types'
 
 export type ChatLogInput = {
   author?: string

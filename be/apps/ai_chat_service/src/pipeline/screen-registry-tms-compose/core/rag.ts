@@ -1,4 +1,4 @@
-import { getPromptStore } from '../../../db/prompt-store.service'
+import { getPromptStore } from '../../../features/chat/service/prompt-store.service'
 import { safeJsonParse } from '../../../utils/utils'
 import {
   type FlowContextSummary,

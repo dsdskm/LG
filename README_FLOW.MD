@@ -1,109 +1,131 @@
-# AI Chat Runtime Flow
+# Backend Flow Summary
 
-이 문서는 현재 코드 기준 AI Chat 처리 흐름을 요약합니다.
+현재 백엔드에서는 두 가지 흐름이 분리되어 동작합니다.
 
-## 1. 요청 진입
+1. AI Log Event Analysis: 이벤트/로그 데이터를 조회하고 요약하는 흐름
+2. AI Assistant Chat Analysis: 일반 대화, 화면 안내, 액션 실행을 처리하는 흐름
 
-1. 프론트에서 채팅 payload를 전송합니다.
-2. 백엔드는 reqId, routeKey, 대화 히스토리 컨텍스트를 구성합니다.
-3. 이후 rule-first와 orchestrator 순서로 처리합니다.
+공통 진입점은 AI Chat Service이며, 요청은 chat service에서 reqId, routeKey, 대화 컨텍스트를 구성한 뒤 규칙 기반 처리와 오케스트레이터를 거칩니다.
 
-주요 코드
-- be/apps/ai_chat_service/src/service/chat.service.ts
+## 1. AI Log Event Analysis
 
-## 2. 처리 우선순위
+### 목적
+사용자가 "오늘 이슈 보여줘", "high severity 이벤트", "주행 관련 오류" 같은 질문을 하면, 이벤트 로그를 조회해 요약된 결과를 반환합니다.
 
-요청 1건은 아래 순서로 처리됩니다.
+### 처리 흐름
+1. 사용자의 메시지를 chat service가 수신합니다.
+2. event-rule-first 단계에서 phrase-map 또는 DB event-rule로 질문을 먼저 매칭합니다.
+3. 매칭된 규칙의 filtersTemplate를 기반으로 toolArgs를 생성합니다.
+4. query_events tool이 실행됩니다.
+   - 기간/심각도/기능/상태/키워드 정규화
+   - alias 변환 및 기간 해석
+   - event_analyzer의 /query/logs 조회
+5. 조회 결과를 summary, sampleItems, resolvedFilters 형태로 정리해 응답합니다.
+6. 최종 텍스트와 메타데이터를 프론트로 반환합니다.
 
-1. front-rule 우선 처리
-2. event-rule-first 직접 조회 처리
-3. 화면 파이프라인(orchestrator) 처리
-4. guidance 기본 안내 폴백
-
-주요 코드
-- be/apps/ai_chat_service/src/service/chat.service.ts
-
-## 3. front-rule
-
-1. routeKey별 DB 룰 매칭을 시도합니다.
-2. info 룰이면 즉시 텍스트 응답을 생성합니다.
-3. action 룰이면 지정 tool을 실행해 결과를 조립합니다.
-
-특징
-- 운영 중 룰 수정 반영이 빠릅니다.
-- 성공하면 orchestrator를 타지 않고 즉시 응답합니다.
-
-주요 코드
-- be/apps/ai_chat_service/src/service/chat.service.ts
-
-## 4. event-rule-first
-
-1. AI Log 이벤트 질의를 phrase-map + event-rule로 먼저 매칭합니다.
-2. 매칭되면 query_events tool을 직접 실행합니다.
-3. 성공 시 ailog/event/filter 응답으로 종료합니다.
-
-특징
-- 오늘 이슈 보여줘 같은 질의를 LLM 이전에 처리합니다.
-- 기간/필터/검색어 파라미터를 룰 데이터로 결정합니다.
-
-주요 코드
+### 핵심 모듈
 - be/apps/ai_chat_service/src/service/chat.service.ts
 - be/apps/ai_chat_service/src/domains/ai-log-event/event-rule-first.ts
 - be/apps/ai_chat_service/src/db/query-phrase-map.repo.ts
 - be/apps/ai_chat_service/src/db/event-rule.repo.ts
+- be/apps/ai_chat_service/src/screens/robot/ailog-event.datatools.ts
+- be/apps/event_analyzer/src/controller/query.controller.ts
+- be/apps/event_analyzer/src/service/query.service.ts
 
-## 5. Orchestrator 화면 파이프라인
+### 주요 포인트
+- phrase-map: 정규화된 고정 문구 매칭에 강함
+- event-rule: 정규식 패턴으로 다양한 표현 변형 처리에 강함
+- query_events는 event_analyzer와 직접 연동되어 로그 조회 결과를 반환합니다.
 
-1. ScreenConfig를 로드합니다.
-2. 필요 시 후속 발화를 continuation 문장으로 보정합니다.
-3. intent를 info 또는 action으로 결정합니다.
-4. info는 RAG 경로, action은 tool agent 경로로 처리합니다.
-5. info에서 RAG 미충족이면 기본 LLM 폴백을 사용합니다.
+### 간단 흐름도
+```mermaid
+flowchart LR
+    U[User Message] --> S[Chat Service]
+    S --> E[event-rule-first]
+    E --> Q[query_events tool]
+    Q --> A[event_analyzer /query/logs]
+    A --> S
+    S --> F[Frontend Response]
+```
 
-주요 코드
+## 2. AI Assistant Chat Analysis
+
+### 목적
+일반적인 AI Assistant 대화, 화면별 안내, 액션 실행, RAG 기반 응답 생성을 처리합니다.
+
+### 처리 흐름
+1. 사용자의 메시지를 chat service가 수신합니다.
+2. routeKey를 기준으로 현재 화면/컨텍스트를 결정합니다.
+3. front-rule가 먼저 적용됩니다.
+4. AI Log 이벤트 질문이면 event-rule-first가 우선 처리됩니다.
+5. 그 외 요청은 orchestrator가 화면 설정과 intent를 분석합니다.
+6. intent에 따라 분기합니다.
+   - info: RAG 조회 또는 기본 LLM 응답
+   - action: tool 실행 및 액션 결과 조합
+7. 최종적으로 chat_action, chat_action_param, text를 반환합니다.
+8. 결과는 chat_log에 저장됩니다.
+
+### TMS/TaskFlow Canvas 연계 흐름
+TMS 쪽에서는 AI Assistant가 단순한 텍스트 응답이 아니라 Canvas의 flow draft를 직접 생성하는 역할까지 수행합니다.
+
+1. 프론트에서 Canvas 컨텍스트를 수집해 flowContext, taskflow, taskContents, fullFlow를 요청 payload에 담습니다.
+2. 백엔드는 해당 컨텍스트를 기반으로 intent를 분류하고, TMS 전용 compose 모듈로 진입합니다.
+3. compose_linear_taskflow가 요청 의도를 해석합니다.
+   - 모드 전환, 저장, 삭제, 정렬 요청은 clarification 또는 draft 재구성으로 처리합니다.
+   - PickUp, PlayMotion, Move 같은 도메인 요청은 각각 전용 노드 조합을 생성합니다.
+4. 생성된 draft는 Canvas에 바로 반영할 수 있는 chat_action + chat_action_param 형태로 반환됩니다.
+5. 프론트는 assistant 메시지와 함께 draft를 적용해 사용자에게 시각적으로 보여줍니다.
+
+### TMS 흐름도
+```mermaid
+flowchart LR
+    U[User Message on TMS Canvas] --> C[Frontend builds flowContext/taskflow]
+    C --> S[Chat Service]
+    S --> O[Orchestrator]
+    O --> T[screen-registry / TMS compose]
+    T --> D[compose_linear_taskflow]
+    D --> B{Intent Type}
+    B -->|PickUp| P[PickUp -> DoesObjectExist -> PutDown]
+    B -->|PlayMotion| M[Parallel(PlayMotion + Tts)]
+    B -->|Move| V[Parallel(MoveTo + PlayFace/PlaySound)]
+    B -->|General| G[Linear task flow draft]
+    P --> A[Return chat_action + draft]
+    M --> A
+    V --> A
+    G --> A
+    A --> F[Frontend applies draft to Canvas]
+```
+
+### 핵심 모듈
+- be/apps/ai_chat_service/src/service/chat.service.ts
+- be/apps/ai_chat_service/src/domains/front-rule/front-rule-engine.ts
 - be/apps/ai_chat_service/src/pipeline/chat.orchestrator.ts
-- be/apps/ai_chat_service/src/pipeline/intent.classifier.ts
+- be/apps/ai_chat_service/src/pipeline/screen-registry.ts
+- be/apps/ai_chat_service/src/db/chat-log.service.ts
+- be/apps/ai_chat_service/src/db/prompt-store.service.ts
 
-## 6. Tool Context 및 외부 연동 URL
+### 처리 우선순위
+1. front-rule
+2. event-rule-first
+3. orchestrator
+4. guidance fallback
 
-1. tool 실행 컨텍스트는 요청 body 값을 우선 사용합니다.
-2. 누락 시 서버 환경변수 fallback 값을 사용합니다.
-3. eventAnalyzerUrl이 최종 누락되면 query_events 실행 시 실패합니다.
+### 간단 흐름도
+```mermaid
+flowchart LR
+    U[User Message] --> S[Chat Service]
+    S --> F[Front Rule]
+    S --> E[event-rule-first]
+    F --> O[Orchestrator]
+    E --> O
+    O --> R[Info/Action Processing]
+    R --> L[chat_log 저장]
+    L --> Fd[Frontend Response]
+```
 
-주요 코드
-- be/apps/ai_chat_service/src/pipeline/tool-context.util.ts
-- be/apps/ai_chat_service/src/integrations/robot-api.client.ts
+## 3. 운영 포인트
 
-## 7. phrase-map과 event-rule 차이
-
-1. phrase-map
-- 정규화 문구 exact/contains 매칭
-- 고정 문장 처리에 강함
-
-2. event-rule
-- 정규식 패턴 매칭
-- 다양한 발화 변형 처리에 강함
-
-권장 사용
-- 고정 표현은 phrase-map
-- 확장 표현은 event-rule
-
-## 8. 응답 형식
-
-백엔드는 아래 정보를 반환합니다.
-
-1. chat_action
-2. chat_action_param
-3. text
-4. pipelineTrace, pipelineConfidence, matchedRule 등 디버그 메타
-
-프론트는 chat_action 기준으로 화면 반영(필터 적용, 이동, 액션 실행 등)을 수행합니다.
-
-주요 코드
-- main/packages/ui/components/layout/AiAssistantPanel/index.jsx
-
-## 9. 운영 포인트
-
-1. reqId 기준으로 단계 로그를 추적합니다.
-2. rule-first와 orchestrator 로그를 분리해 진단합니다.
-3. 정책은 코드 상수보다 DB 룰 데이터 중심으로 관리합니다.
+- reqId 기준으로 단계별 로그를 추적할 수 있습니다.
+- 이벤트 분석은 event_analyzer 쪽 조회 결과를 중심으로 동작합니다.
+- 채팅 분석은 화면별 룰과 오케스트레이터를 중심으로 동작합니다.
+- 룰은 코드보다 DB 기반으로 유연하게 관리되는 구조입니다.

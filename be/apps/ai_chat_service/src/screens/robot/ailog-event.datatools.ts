@@ -8,13 +8,13 @@
 import type { ToolContext, ToolDefinition } from '../../pipeline/tool.type'
 import { fetchQueryLogs, fetchFuncs, type FuncCatalogItem } from '../../integrations/robot-api.client'
 import { buildEventSummary } from '../../integrations/event-summary.util'
-import { listEventFilterAliases, type EventFilterAliasRow } from '../../db/event-filter-alias.repo'
+import { listEventFilterAliases, type EventFilterAliasRow } from '../../features/chat-settings/db/event-filter-alias.repo'
 import {
   buildEventQueryCacheKey,
   getEventQueryCache,
   setEventQueryCache,
-} from '../../db/event-query-cache.repo'
-import { findPhraseMapMatch } from '../../db/query-phrase-map.repo'
+} from '../../features/chat-settings/db/event-query-cache.repo'
+import { findPhraseMapMatch } from '../../features/chat-settings/db/query-phrase-map.repo'
 
 const normKey = (s: unknown) => String(s ?? '').trim().toLowerCase().replace(/\s+/g, '')
 const toObject = (value: unknown): Record<string, unknown> =>

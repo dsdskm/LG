@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAiAssistantStore, useUserStore, useOrganizationStore, useAiLogEventStore } from '@repo/stores'
 import { getAppPrefix } from '@repo/utils'
-import { getChatSettings } from '@repo/apis/ai/chatSettings.js'
+import { getChatSettings, getGuidanceList } from '@repo/apis/ai/chatSettings.js'
 import Icon from '../../common/Icon'
 import {
   StyledAiAssistantComposer,
@@ -44,16 +44,20 @@ import {
   StyledAiActionCard,
   StyledAiActionCardTitle,
   StyledAiActionCardKeyword,
-  StyledAiStopButton,
+  StyledAiStopButton
 } from './styles'
 import { postSiteAssistantChat } from '@repo/apis/ai/chat.js'
+import { TMS_LOCAL_FAST_RULES } from '../../../../../../ai/rules/tms/taskflow-local-fast-rules.js'
 
 const ENABLE_QUICK_COMMANDS = true
 const ENABLE_MESSAGE_SUGGESTED_ACTIONS = false
 const AI_TASKFLOW_CANVAS_EVENT = 'ai-assistant:taskflow-canvas-draft'
 const AI_TASKFLOW_CANVAS_CLARIFY_EVENT = 'ai-assistant:taskflow-canvas-clarify'
 const AI_TASKFLOW_CANVAS_COMMAND_EVENT = 'ai-assistant:taskflow-canvas-command'
-const AI_CHAT_SERVICE_URL = String(import.meta.env.VITE_AI_CHAT_SERVICE_URL ?? '').trim().replace(/\/$/, '')
+const AI_TASKFLOW_CANVAS_RESULT_EVENT = 'ai-assistant:taskflow-canvas-result'
+const AI_CHAT_SERVICE_URL = String(import.meta.env.VITE_AI_CHAT_SERVICE_URL ?? '')
+  .trim()
+  .replace(/\/$/, '')
 
 const SENDING_STAGE = {
   IDLE: 'idle',
@@ -65,6 +69,7 @@ const SENDING_STAGE = {
   TOOL: 'tool',
   ASSEMBLING: 'assembling',
   COMPLETED: 'completed',
+  NODE_WORKING: 'node-working'
 }
 
 const SENDING_STAGE_LABEL = {
@@ -76,13 +81,18 @@ const SENDING_STAGE_LABEL = {
   [SENDING_STAGE.TOOL]: '공통 action 툴 확인중...',
   [SENDING_STAGE.ASSEMBLING]: '응답 조립중...',
   [SENDING_STAGE.COMPLETED]: '응답완료',
+  [SENDING_STAGE.NODE_WORKING]: '노드 작업을 진행중입니다.'
 }
 
 const inferSendingMode = (message) => {
   const text = String(message ?? '').trim()
   if (!text) return 'info'
 
-  if (/\b(taskflow|parallel|ifthenelse|repeat|move|navigate|node|노드|이동|연결|병렬|반복|추가|생성|수정|삭제|저장|실행|바꿔|변경)\b/i.test(text)) {
+  if (
+    /\b(taskflow|parallel|ifthenelse|repeat|move|navigate|node|노드|이동|연결|병렬|반복|추가|생성|수정|삭제|저장|실행|바꿔|변경)\b/i.test(
+      text
+    )
+  ) {
     return 'action'
   }
 
@@ -100,7 +110,7 @@ const buildSendingStagePlan = (message) => {
       SENDING_STAGE.INFO_RAG,
       SENDING_STAGE.COMMON_RAG,
       SENDING_STAGE.TOOL,
-      SENDING_STAGE.ASSEMBLING,
+      SENDING_STAGE.ASSEMBLING
     ]
   }
 
@@ -110,13 +120,859 @@ const buildSendingStagePlan = (message) => {
     SENDING_STAGE.INTENT,
     SENDING_STAGE.INFO_RAG,
     SENDING_STAGE.COMMON_RAG,
-    SENDING_STAGE.ASSEMBLING,
+    SENDING_STAGE.ASSEMBLING
   ]
+}
+
+const normalizeFastRuleText = (value) =>
+  String(value ?? '')
+    .replace(/\r/g, '\n')
+    .replace(/\u00A0/g, ' ')
+    .replace(/["'`]/g, '')
+    .trim()
+
+const formatArrowReplyText = (value) => {
+  const raw = String(value ?? '').trim()
+  if (!raw) return ''
+
+  const tokens = raw
+    .split(/(=>|->|→|>)/)
+    .map((part) => String(part ?? '').trim())
+    .filter(Boolean)
+  if (tokens.length <= 1) return raw.replace(/\s+/g, ' ').trim()
+
+  const pieces = []
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index]
+    if (!token) continue
+    if (/^(=>|->|→|>)$/.test(token)) {
+      pieces.push(token === '=>' ? ' => ' : ' → ')
+      continue
+    }
+    pieces.push(token)
+  }
+
+  return pieces.join('').replace(/\s+/g, ' ').trim()
+}
+
+const escapeRegExp = (value) => String(value ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const normalizeRulePhraseText = (value) =>
+  String(value ?? '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+
+const taskflowRuleListFromValue = (value) =>
+  Array.isArray(value) ? value.map((item) => String(item ?? '').trim()).filter(Boolean) : []
+
+const buildFastTaskflowRouteScopes = (pathname) => {
+  const normalized = String(pathname ?? '')
+    .trim()
+    .replace(/^\/+|\/+$/g, '')
+  if (!normalized) return ['common']
+
+  const segments = normalized.split('/').filter(Boolean)
+  const scopeSet = new Set(['common'])
+
+  if (segments[0] === 'tms' && segments[1] === 'taskflows' && segments[3] === 'canvas') {
+    scopeSet.add('tms/taskflows/:taskFlowId/canvas')
+    scopeSet.add('tms/taskflows')
+  }
+
+  const routeKey = segments.join('/')
+  scopeSet.add(routeKey)
+
+  for (let index = segments.length - 1; index >= 1; index -= 1) {
+    const parent = segments.slice(0, index).join('/')
+    if (parent) scopeSet.add(parent)
+  }
+
+  return Array.from(scopeSet)
+}
+
+const parseTaskflowRuleSettingKey = (rawKey) => {
+  const key = String(rawKey ?? '').trim()
+  if (!key) return null
+
+  const tokens = key.split('.')
+  if (tokens.length < 3) return null
+  if (tokens[0] !== 'taskflowLanguageRules') return null
+
+  const scopeKey = tokens.slice(1, -1).join('.')
+  const ruleKey = tokens[tokens.length - 1]
+  if (!scopeKey || !ruleKey) return null
+
+  return { scopeKey, ruleKey }
+}
+
+const localFastRuleCache = new Map()
+
+const loadLocalTaskflowLanguageRules = async (pathname) => {
+  if (!isTmsCanvasPath(pathname)) return {}
+
+  const routeKey = String(pathname ?? '').trim()
+  const cached = localFastRuleCache.get(routeKey)
+  if (cached) {
+    console.log('[AI_CHAT][LOCAL_RULE_CACHE]', {
+      routeKey,
+      cacheHit: true,
+      scopeCount: Array.from(buildFastTaskflowRouteScopes(routeKey)).length
+    })
+    return cached.data
+  }
+
+  console.log('[AI_CHAT][LOCAL_RULE_CACHE]', {
+    routeKey,
+    cacheHit: false,
+    scopeCount: Array.from(buildFastTaskflowRouteScopes(routeKey)).length
+  })
+
+  try {
+    const response = await getChatSettings()
+    const values = response?.data?.values ?? {}
+    const routeScopes = buildFastTaskflowRouteScopes(routeKey)
+    const merged = {}
+
+    for (const [settingKey, settingValue] of Object.entries(values)) {
+      const parsed = parseTaskflowRuleSettingKey(settingKey)
+      if (!parsed) continue
+      if (!routeScopes.includes(parsed.scopeKey)) continue
+      merged[parsed.ruleKey] = settingValue
+    }
+
+    const resolved = {
+      composeNoisePhrases: taskflowRuleListFromValue(merged.composeNoisePhrases),
+      requestTailPhrases: taskflowRuleListFromValue(merged.requestTailPhrases),
+      composeVerbPhrases: taskflowRuleListFromValue(merged.composeVerbPhrases),
+      taskflowKeywordPhrases: taskflowRuleListFromValue(merged.taskflowKeywordPhrases),
+      composeSignalPhrases: taskflowRuleListFromValue(merged.composeSignalPhrases),
+      nodeLevelEditPhrases: taskflowRuleListFromValue(merged.nodeLevelEditPhrases),
+      nodePlaceholderPhrases: taskflowRuleListFromValue(merged.nodePlaceholderPhrases),
+      nodePlaceholderPrefixPhrases: taskflowRuleListFromValue(merged.nodePlaceholderPrefixPhrases),
+      modeRequestPhrases: taskflowRuleListFromValue(merged.modeRequestPhrases),
+      modeDirectionTreePhrases: taskflowRuleListFromValue(merged.modeDirectionTreePhrases),
+      modeDirectionDefaultPhrases: taskflowRuleListFromValue(merged.modeDirectionDefaultPhrases),
+      saveRequestPhrases: taskflowRuleListFromValue(merged.saveRequestPhrases),
+      saveDecisionHintPhrases: taskflowRuleListFromValue(merged.saveDecisionHintPhrases),
+      saveTypeTempPhrases: taskflowRuleListFromValue(merged.saveTypeTempPhrases),
+      saveTypeFinalPhrases: taskflowRuleListFromValue(merged.saveTypeFinalPhrases),
+      resetAllPhrases: taskflowRuleListFromValue(merged.resetAllPhrases),
+      deleteRequestPhrases: taskflowRuleListFromValue(merged.deleteRequestPhrases),
+      deleteAllScopePhrases: taskflowRuleListFromValue(merged.deleteAllScopePhrases),
+      alignRequestPhrases: taskflowRuleListFromValue(merged.alignRequestPhrases),
+      moveComposeHintPhrases: taskflowRuleListFromValue(merged.moveComposeHintPhrases),
+      pickupComposeHintPhrases: taskflowRuleListFromValue(merged.pickupComposeHintPhrases),
+      playMotionComposeHintPhrases: taskflowRuleListFromValue(merged.playMotionComposeHintPhrases),
+      docentHintPhrases: taskflowRuleListFromValue(merged.docentHintPhrases),
+      connectIntentPhrases: taskflowRuleListFromValue(merged.connectIntentPhrases),
+      connectPairSeparatorPhrases: taskflowRuleListFromValue(merged.connectPairSeparatorPhrases),
+      connectLeftPairSeparatorPhrases: taskflowRuleListFromValue(merged.connectLeftPairSeparatorPhrases)
+    }
+
+    localFastRuleCache.set(routeKey, { at: Date.now(), data: resolved })
+    return resolved
+  } catch {
+    return {}
+  }
+}
+
+const stripConfiguredRequestTailPhrases = (value, phrases = []) => {
+  const raw = String(value ?? '').trim()
+  if (!raw) return ''
+
+  let cleaned = raw
+  for (const phrase of Array.isArray(phrases) ? phrases : []) {
+    const candidate = String(phrase ?? '').trim()
+    if (!candidate) continue
+    cleaned = cleaned.replace(new RegExp(`${escapeRegExp(candidate)}\\s*$`, 'gi'), '').trim()
+  }
+
+  return cleaned
+    .replace(/[.,!?]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+const containsConfiguredPhrase = (text, phrases = []) => {
+  const value = String(text ?? '').trim()
+  if (!value) return false
+
+  const normalizedText = normalizeRulePhraseText(value)
+  for (const phrase of Array.isArray(phrases) ? phrases : []) {
+    const candidate = String(phrase ?? '').trim()
+    if (!candidate) continue
+    if (normalizedText.includes(normalizeRulePhraseText(candidate))) return true
+  }
+
+  return false
+}
+
+const splitFastRuleLines = (value) =>
+  normalizeFastRuleText(value)
+    .split(/\n+/)
+    .map((line) => String(line ?? '').trim())
+    .filter(Boolean)
+
+const extractSingleTargetLabel = (line) => {
+  const cleaned = String(line ?? '').trim()
+  if (!cleaned) return null
+
+  const arrowAction = cleaned.match(
+    /^!?\s*([A-Za-z0-9가-힣\s-]+?)\s*(?:=>|->|→|>)\s*(?:노드|node)?\s*(?:1개|한개|한 개)?\s*(?:추가|만들|생성|삽입|삭제|지워|제거)(?:해줘|해줘요|해 주세요|해주세요|해라|해봐|해보자)?\s*$/i
+  )
+  if (arrowAction) {
+    const label = String((arrowAction[1] ?? '').replace(/^!+/g, '').replace(/\s*(?:노드|node)\s*$/i, '')).trim()
+    return label || null
+  }
+
+  return null
+}
+
+export const resolveArrowHandleConfig = (operator) => {
+  if (operator === '=>') {
+    return { sourceHandle: 'left', targetHandle: 'left' }
+  }
+  return { sourceHandle: 'right', targetHandle: 'left' }
+}
+
+const parseTaskflowArrowInsertPlan = (message, requestTailPhrases = []) => {
+  const raw = normalizeFastRuleText(message)
+  if (!raw) return []
+
+  const plan = []
+  const isArrowOperator = (value) => /^(?:=>|->|→|>)$/.test(String(value ?? ''))
+
+  for (const line of splitFastRuleLines(raw)) {
+    const cleanedLine = stripConfiguredRequestTailPhrases(line, requestTailPhrases)
+    if (!cleanedLine) continue
+
+    const startsWithLeadingArrow = /^(=>|->|→|>)\s*/.test(cleanedLine)
+
+    const leadingSingleArrowMatch = cleanedLine.match(/^(=>|->|→|>)\s*([A-Za-z0-9가-힣\s-]+?)\s*$/i)
+    if (leadingSingleArrowMatch) {
+      const [, operatorToken, rawLabel] = leadingSingleArrowMatch
+      const label = stripConfiguredRequestTailPhrases(rawLabel, requestTailPhrases)
+      if (label) {
+        plan.push({
+          after: '',
+          step: { label, taskName: label, contentName: label },
+          appendOnly: true,
+          ...resolveArrowHandleConfig(operatorToken)
+        })
+      }
+      continue
+    }
+
+    const tokens = cleanedLine
+      .split(/(=>|->|→|>)/)
+      .map((part) => stripConfiguredRequestTailPhrases(part, requestTailPhrases))
+      .filter(Boolean)
+
+    if (tokens.length < 3) continue
+
+    let chainAnchor = ''
+    let firstLabelInserted = false
+
+    for (let index = 0; index < tokens.length; index += 1) {
+      const token = tokens[index]
+      if (isArrowOperator(token)) continue
+
+      const label = String(token ?? '').trim()
+      if (!label) continue
+
+      const operatorToken = isArrowOperator(tokens[index - 1])
+        ? tokens[index - 1]
+        : isArrowOperator(tokens[index + 1])
+          ? tokens[index + 1]
+          : '->'
+      const handleConfig = resolveArrowHandleConfig(operatorToken)
+
+      const targetAfter = firstLabelInserted ? chainAnchor : ''
+      plan.push({
+        after: targetAfter,
+        step: { label, taskName: label, contentName: label },
+        appendOnly: true,
+        ...(firstLabelInserted ? {} : { isolated: !startsWithLeadingArrow }),
+        ...handleConfig
+      })
+
+      chainAnchor = label
+      firstLabelInserted = true
+    }
+  }
+
+  return plan
+}
+
+const parseTaskflowArrowLabels = (message, requestTailPhrases = []) => {
+  const raw = normalizeFastRuleText(message)
+  if (!raw) return []
+
+  const lineCandidates = splitFastRuleLines(raw)
+  const labels = []
+
+  for (const line of lineCandidates) {
+    const cleanedLine = stripConfiguredRequestTailPhrases(line, requestTailPhrases)
+    if (!cleanedLine) continue
+
+    const directTarget = extractSingleTargetLabel(cleanedLine)
+    if (directTarget) {
+      labels.push(directTarget)
+      continue
+    }
+
+    const leadingSingleArrowMatch = cleanedLine.match(/^(=>|->|→|>)\s*([A-Za-z0-9가-힣\s-]+?)\s*$/i)
+    if (leadingSingleArrowMatch) {
+      const label = stripConfiguredRequestTailPhrases(leadingSingleArrowMatch[2], requestTailPhrases)
+      if (label) {
+        labels.push(label)
+      }
+      continue
+    }
+
+    const arrowTokens = cleanedLine
+      .split(/\s*(?:=>|->|→|>)\s*/)
+      .map((part) => stripConfiguredRequestTailPhrases(part, requestTailPhrases))
+      .filter(Boolean)
+
+    if (arrowTokens.length >= 2) {
+      labels.push(...arrowTokens)
+      continue
+    }
+
+    const singleLabel = stripConfiguredRequestTailPhrases(cleanedLine.replace(/^!+/g, ''), requestTailPhrases)
+    if (singleLabel) labels.push(singleLabel)
+  }
+
+  return labels
+    .filter((label) => !/^(?:저장|정렬|배치|모드|undo|redo|all|전체삭제|모두삭제|전부삭제)$/i.test(label))
+    .slice(0, 20)
+}
+
+const parseLocalFastInsertDraft = (message, pathname, requestTailPhrases = []) => {
+  if (!isTmsCanvasPath(pathname)) return null
+
+  const raw = normalizeFastRuleText(message)
+  if (!raw) return null
+
+  const lineCandidates = splitFastRuleLines(raw)
+  if (lineCandidates.length === 0) return null
+
+  const insertAfter = []
+
+  for (const line of lineCandidates) {
+    const noRequest = stripConfiguredRequestTailPhrases(line, requestTailPhrases)
+    if (!noRequest) continue
+
+    if (/^!all$|^전체삭제$|^모두삭제$|^전부삭제$/i.test(noRequest)) continue
+    if (
+      /^!/.test(noRequest) ||
+      /(?:^|\s)(?:삭제|지워|제거)(?:해줘|해 주세요|해주세요|해라|해봐|해보자)?$/i.test(noRequest)
+    )
+      continue
+    if (/^\/(undo|redo)$/i.test(noRequest)) continue
+    if (/^(?:저장|save|임시저장|최종저장)$/i.test(noRequest)) continue
+    if (/(?:정렬|배치|align)/i.test(noRequest) && !/->|=>|→|>/.test(noRequest)) continue
+
+    let lastAnchor = 'start'
+
+    const startsWithLeadingArrow = /^(=>|->|→|>)\s*/.test(noRequest)
+
+    const leadingSingleArrowMatch = noRequest.match(/^(=>|->|→|>)\s*([A-Za-z0-9가-힣\s-]+?)\s*$/i)
+    if (leadingSingleArrowMatch) {
+      const [, operatorToken, rawLabel] = leadingSingleArrowMatch
+      const label = stripConfiguredRequestTailPhrases(rawLabel, requestTailPhrases)
+      if (label) {
+        insertAfter.push({
+          after: '',
+          step: { label, taskName: label, contentName: label },
+          appendOnly: true,
+          ...resolveArrowHandleConfig(operatorToken)
+        })
+        lastAnchor = label
+      }
+      continue
+    }
+
+    const arrowTokens = noRequest
+      .split(/\s*(?:=>|->|→|>)\s*/)
+      .map((part) => stripConfiguredRequestTailPhrases(part, requestTailPhrases))
+      .filter(Boolean)
+
+    if (arrowTokens.length >= 2) {
+      const operatorTokens = Array.from(noRequest.matchAll(/(=>|->|→|>)/g), (match) => String(match[1] ?? '->'))
+      for (let index = 0; index < arrowTokens.length; index += 1) {
+        const token = arrowTokens[index]
+        const operatorToken =
+          index === 0 ? (operatorTokens[0] ?? '->') : (operatorTokens[index - 1] ?? operatorTokens[0] ?? '->')
+        const targetAfter = index === 0 ? '' : lastAnchor
+        insertAfter.push({
+          after: targetAfter,
+          step: { label: token, taskName: token, contentName: token },
+          appendOnly: true,
+          isolated: !startsWithLeadingArrow && index === 0,
+          ...resolveArrowHandleConfig(operatorToken)
+        })
+        lastAnchor = token
+      }
+      continue
+    }
+  }
+
+  return insertAfter.length > 0 ? { mode: 'edit', insertAfter } : null
+}
+
+const parseBangDeleteTargets = (text, requestTailPhrases = []) => {
+  const raw = String(text ?? '').trim()
+  if (!raw) return []
+
+  const values = Array.from(raw.matchAll(/!\s*([A-Za-z0-9가-힣\s-]+)/g), (match) => String(match[1] ?? '').trim())
+    .map((value) => stripConfiguredRequestTailPhrases(value, requestTailPhrases))
+    .filter(Boolean)
+    .filter((value) => !/^all$/i.test(value))
+
+  return [...new Set(values)]
+}
+
+const buildLocalTaskflowActualEffect = (draft) => {
+  if (!draft || typeof draft !== 'object') {
+    return { didApply: false, insertedNodeCount: 0, replacedNodeCount: 0, removedNodeCount: 0 }
+  }
+
+  const insertedNodeCount = Array.isArray(draft.insertAfter) ? draft.insertAfter.length : 0
+  const replacedNodeCount = Array.isArray(draft.replaceByName) ? draft.replaceByName.length : 0
+  const removedNodeCount = Array.isArray(draft.removeByName) ? draft.removeByName.length : 0
+  return {
+    didApply: insertedNodeCount > 0 || replacedNodeCount > 0 || removedNodeCount > 0,
+    insertedNodeCount,
+    replacedNodeCount,
+    removedNodeCount
+  }
+}
+
+const extractMissingNodeLabels = (localTaskflowAction) => {
+  const labels = []
+  const addLabel = (value) => {
+    const normalized = String(value ?? '').trim()
+    if (!normalized || labels.includes(normalized)) return
+    labels.push(normalized)
+  }
+
+  const draft = localTaskflowAction?.draft
+  if (Array.isArray(draft?.insertAfter)) {
+    for (const item of draft.insertAfter) {
+      const value = item?.step ? (item.step.label ?? item.step.taskName ?? item.step.contentName) : ''
+      addLabel(value)
+    }
+  }
+
+  if (Array.isArray(draft?.replaceByName)) {
+    for (const item of draft.replaceByName) {
+      addLabel(item?.target)
+    }
+  }
+
+  const actionLabels = Array.isArray(localTaskflowAction?.missingNodeNames) ? localTaskflowAction.missingNodeNames : []
+  for (const item of actionLabels) {
+    addLabel(item)
+  }
+
+  return labels
+}
+
+const formatLocalTaskflowReplyText = (baseText, localTaskflowAction) => {
+  if (!localTaskflowAction) return baseText
+
+  if (localTaskflowAction.kind === 'command') {
+    if (
+      localTaskflowAction.command?.type === 'save-temp' ||
+      localTaskflowAction.command?.type === 'temp-save' ||
+      localTaskflowAction.command?.type === 'tempsave'
+    ) {
+      return '임시 저장하였습니다.'
+    }
+    if (localTaskflowAction.command?.type === 'save-final') {
+      return '저장하였습니다.'
+    }
+    return `${baseText || '요청을 처리하였습니다.'}`
+  }
+
+  const actualEffect = localTaskflowAction.actualEffect ?? buildLocalTaskflowActualEffect(localTaskflowAction.draft)
+  if (actualEffect.didApply) {
+    const message = String(baseText ?? '').trim()
+    const target = message.replace(
+      /\s*(?:을|를|은|는)\s*(?:바로\s*)?(?:반영해둘게요|반영할게요|반영해둘게요\.|반영하겠습니다\.|반영하였습니다\.|반영하자\.)?\s*$/i,
+      ''
+    )
+    const normalizedTarget = target.trim() || '요청'
+    return `${normalizedTarget}을 반영하였습니다.`
+  }
+
+  const missingLabels = extractMissingNodeLabels(localTaskflowAction)
+  if (missingLabels.length > 0) {
+    return `${missingLabels.join(', ')} 노드를 찾지 못했습니다. 노드 이름을 정확히 확인해주세요.`
+  }
+
+  const fallbackMessage = String(baseText ?? '').trim()
+  if (fallbackMessage && /찾지 못했|없습니다|없는/.test(fallbackMessage)) {
+    return fallbackMessage
+  }
+
+  return '요청한 노드를 찾지 못했습니다. 어떤 노드가 없는지 확인해 주세요.'
+}
+
+export const resolveFastTaskflowCanvasAction = async (message, pathname) => {
+  if (!isTmsCanvasPath(pathname)) return null
+
+  const text = normalizeFastRuleText(message)
+  if (!text) return null
+
+  const taskflowRules = await loadLocalTaskflowLanguageRules(pathname)
+  const requestTailPhrases = taskflowRuleListFromValue(taskflowRules.requestTailPhrases)
+  const deleteRequestPhrases = taskflowRuleListFromValue(taskflowRules.deleteRequestPhrases)
+  const alignRequestPhrases = taskflowRuleListFromValue(taskflowRules.alignRequestPhrases)
+  const modeRequestPhrases = taskflowRuleListFromValue(taskflowRules.modeRequestPhrases)
+  const modeDirectionTreePhrases = taskflowRuleListFromValue(taskflowRules.modeDirectionTreePhrases)
+  const modeDirectionDefaultPhrases = taskflowRuleListFromValue(taskflowRules.modeDirectionDefaultPhrases)
+  const saveRequestPhrases = taskflowRuleListFromValue(taskflowRules.saveRequestPhrases)
+  const resetAllPhrases = taskflowRuleListFromValue(taskflowRules.resetAllPhrases)
+  const stripRequestTailPhrases = (value) => stripConfiguredRequestTailPhrases(value, requestTailPhrases)
+
+  const commandAliasPhrases = Array.from(
+    new Set([...TMS_LOCAL_FAST_RULES.commandAliasPhrases, ...saveRequestPhrases, ...resetAllPhrases])
+  )
+    .map((value) => String(value ?? '').trim())
+    .filter(Boolean)
+
+  const matchesCommandAlias = (value, phrases = commandAliasPhrases) => {
+    const candidate = normalizeRulePhraseText(value)
+    if (!candidate) return false
+
+    return phrases.some((phrase) => {
+      const normalized = normalizeRulePhraseText(phrase)
+      if (!normalized) return false
+      return candidate === normalized || candidate.includes(normalized)
+    })
+  }
+
+  const clearAll =
+    matchesCommandAlias(text, TMS_LOCAL_FAST_RULES.commandAliases.clearAll) ||
+    (resetAllPhrases.length > 0 && containsConfiguredPhrase(text, resetAllPhrases))
+
+  if (clearAll) {
+    return {
+      kind: 'command',
+      command: { type: 'clear-all' },
+      replyText: '전체 노드를 정리해둘게요.',
+      matchedRule: {
+        source: 'front-rule',
+        ruleType: 'taskflow-local-fast-rule',
+        ruleKey: TMS_LOCAL_FAST_RULES.ruleKeys.clearAll,
+        reason: 'canvas local fast rule: clear all',
+        confidence: 0.99
+      }
+    }
+  }
+
+  if (matchesCommandAlias(text, [...TMS_LOCAL_FAST_RULES.commandAliases.saveFinal, ...saveRequestPhrases])) {
+    const finalSaveSyntax = saveRequestPhrases.some((value) => normalizeRulePhraseText(value) === '최종 저장')
+    if (finalSaveSyntax && !matchesCommandAlias(text, TMS_LOCAL_FAST_RULES.commandAliases.saveFinal)) {
+      return {
+        kind: 'command',
+        command: { type: 'save-final' },
+        replyText: '최종 버전으로 저장할게요.',
+        matchedRule: {
+          source: 'front-rule',
+          ruleType: 'taskflow-local-fast-rule',
+          ruleKey: TMS_LOCAL_FAST_RULES.ruleKeys.saveFinal,
+          reason: 'canvas local fast rule: save final command',
+          confidence: 0.99
+        }
+      }
+    }
+    return {
+      kind: 'command',
+      command: { type: 'save-final' },
+      replyText: '최종 버전으로 저장할게요.',
+      matchedRule: {
+        source: 'front-rule',
+        ruleType: 'taskflow-local-fast-rule',
+        ruleKey: TMS_LOCAL_FAST_RULES.ruleKeys.saveFinal,
+        reason: 'canvas local fast rule: save final command',
+        confidence: 0.99
+      }
+    }
+  }
+
+  if (matchesCommandAlias(text, [...TMS_LOCAL_FAST_RULES.commandAliases.saveTemp, ...saveRequestPhrases])) {
+    return {
+      kind: 'command',
+      command: { type: 'save-temp' },
+      actualEffect: { didApply: true, insertedNodeCount: 0, replacedNodeCount: 0, removedNodeCount: 0 },
+      replyText: '임시 버전으로 바로 저장해둘게요.',
+      matchedRule: {
+        source: 'front-rule',
+        ruleType: 'taskflow-local-fast-rule',
+        ruleKey: TMS_LOCAL_FAST_RULES.ruleKeys.saveTemp,
+        reason: 'canvas local fast rule: save temp command',
+        confidence: 0.99
+      }
+    }
+  }
+
+  if (matchesCommandAlias(text, ['/' + 'undo', 'undo'])) {
+    return {
+      kind: 'command',
+      command: { type: 'undo' },
+      replyText: '이전 변경으로 되돌릴게요.',
+      matchedRule: {
+        source: 'front-rule',
+        ruleType: 'taskflow-local-fast-rule',
+        ruleKey: TMS_LOCAL_FAST_RULES.ruleKeys.undo,
+        reason: 'canvas local fast rule: undo command',
+        confidence: 0.99
+      }
+    }
+  }
+
+  if (matchesCommandAlias(text, ['/redo', 'redo'])) {
+    return {
+      kind: 'command',
+      command: { type: 'redo' },
+      replyText: '다시 실행해둘게요.',
+      matchedRule: {
+        source: 'front-rule',
+        ruleType: 'taskflow-local-fast-rule',
+        ruleKey: TMS_LOCAL_FAST_RULES.ruleKeys.redo,
+        reason: 'canvas local fast rule: redo command',
+        confidence: 0.99
+      }
+    }
+  }
+
+  const removeNames = []
+  const bangTargets = parseBangDeleteTargets(text, requestTailPhrases)
+  if (bangTargets.length > 0) {
+    removeNames.push(...bangTargets)
+  }
+
+  for (const line of splitFastRuleLines(text)) {
+    const trimmed = String(line ?? '').trim()
+    if (!trimmed) continue
+
+    const deleteFlag = deleteRequestPhrases.length > 0 && containsConfiguredPhrase(trimmed, deleteRequestPhrases)
+    const deleteMatch = trimmed.match(
+      /^!\s*([^\n]+?)\s*(?:노드|node)?\s*(?:삭제|지워|제거)(?:해줘|해줘요|해 주세요|해주세요|해라|해봐|해보자)?\s*$/i
+    )
+    if (deleteFlag || deleteMatch) {
+      const label = stripRequestTailPhrases(deleteMatch ? deleteMatch[1] : trimmed)
+      if (label) removeNames.push(label)
+      continue
+    }
+
+    const bangSingle = trimmed.match(/^!\s*([A-Za-z0-9가-힣\s-]+)$/i)
+    if (bangSingle) {
+      const label = stripRequestTailPhrases(bangSingle[1])
+      if (label && !/^all$/i.test(label)) removeNames.push(label)
+      continue
+    }
+
+    const verbDeleteMatch = trimmed.match(
+      /^\s*([^\n]+?)\s*(?:노드|node)?\s*(?:삭제|지워|제거)(?:해줘|해줘요|해 주세요|해주세요|해라|해봐|해보자)?\s*$/i
+    )
+    if (verbDeleteMatch) {
+      const label = stripRequestTailPhrases(verbDeleteMatch[1])
+      if (label) removeNames.push(label)
+    }
+  }
+
+  const arrowReplacementMatch = text.match(/^\s*([A-Za-z0-9가-힣\s-]+?)\s*(?:==|=)\s*([A-Za-z0-9가-힣\s-]+?)\s*$/i)
+  if (arrowReplacementMatch) {
+    const target = stripRequestTailPhrases(arrowReplacementMatch[1])
+    const replacement = stripRequestTailPhrases(arrowReplacementMatch[2])
+    if (target && replacement) {
+      return {
+        kind: 'draft',
+        draft: {
+          mode: 'edit',
+          replaceByName: [{ target, step: { label: replacement, taskName: replacement, contentName: replacement } }]
+        },
+        replyText: `${target}을(를) ${replacement}(으)로 바로 바꿔둘게요.`,
+        matchedRule: {
+          source: 'front-rule',
+          ruleType: 'taskflow-local-fast-rule',
+          ruleKey: TMS_LOCAL_FAST_RULES.ruleKeys.replaceNode,
+          reason: 'canvas local fast rule: replace node by name',
+          confidence: 0.99
+        }
+      }
+    }
+  }
+
+  const singleLeadingReplacementMatch = text.match(/^(=>|->|→|>)\s*([A-Za-z0-9가-힣\s-]+?)\s*$/i)
+  if (singleLeadingReplacementMatch) {
+    const operator = String(singleLeadingReplacementMatch[1] ?? '->')
+    const label = stripRequestTailPhrases(singleLeadingReplacementMatch[2])
+    if (label) {
+      const handleConfig = resolveArrowHandleConfig(operator)
+      return {
+        kind: 'draft',
+        draft: {
+          mode: 'edit',
+          insertAfter: [
+            {
+              after: '',
+              appendOnly: true,
+              ...handleConfig,
+              step: { label, taskName: label, contentName: label }
+            }
+          ]
+        },
+        replyText: `${label}을(를) 현재 흐름 마지막에 ${operator === '=>' ? '세로' : '가로'}로 추가해둘게요.`,
+        matchedRule: {
+          source: 'front-rule',
+          ruleType: 'taskflow-local-fast-rule',
+          ruleKey: TMS_LOCAL_FAST_RULES.ruleKeys.appendLeadingArrow,
+          reason: 'canvas local fast rule: append single node to tail',
+          confidence: 0.99
+        }
+      }
+    }
+  }
+
+  const arrowInsertPlan = parseTaskflowArrowInsertPlan(text, requestTailPhrases)
+  const arrowLabels = parseTaskflowArrowLabels(text, requestTailPhrases)
+  if (arrowInsertPlan.length > 0 || (removeNames.length > 0 && arrowLabels.length > 0)) {
+    const draft = { mode: 'edit', insertAfter: arrowInsertPlan.length > 0 ? arrowInsertPlan : [] }
+    let lastAnchor = 'start'
+
+    if (draft.insertAfter.length === 0 && arrowLabels.length >= 2) {
+      for (let index = 0; index < arrowLabels.length; index += 1) {
+        const label = arrowLabels[index]
+        draft.insertAfter.push({
+          after: index === 0 ? 'start' : lastAnchor,
+          step: { label, taskName: label, contentName: label },
+          sourceHandle: 'right',
+          targetHandle: 'left',
+          appendOnly: true,
+          ...(index === 0 ? { isolated: true } : {})
+        })
+        lastAnchor = label
+      }
+    }
+    if (removeNames.length > 0) draft.removeByName = removeNames
+
+    return {
+      kind: 'draft',
+      draft,
+      actualEffect: buildLocalTaskflowActualEffect(draft),
+      replyText: `${formatArrowReplyText(text || arrowLabels.join(' → '))}을 바로 반영해둘게요.`,
+      matchedRule: {
+        source: 'front-rule',
+        ruleType: 'taskflow-local-fast-rule',
+        ruleKey: TMS_LOCAL_FAST_RULES.ruleKeys.arrowCompose,
+        reason: 'canvas local fast rule: arrow chain or node edit',
+        confidence: 0.99
+      }
+    }
+  }
+
+  const singleInsertDraft = parseLocalFastInsertDraft(text, pathname, requestTailPhrases)
+  if (singleInsertDraft) {
+    return {
+      kind: 'draft',
+      draft: singleInsertDraft,
+      actualEffect: buildLocalTaskflowActualEffect(singleInsertDraft),
+      replyText: '요청한 노드를 바로 추가해둘게요.',
+      matchedRule: {
+        source: 'front-rule',
+        ruleType: 'taskflow-local-fast-rule',
+        ruleKey: TMS_LOCAL_FAST_RULES.ruleKeys.insertNode,
+        reason: 'canvas local fast rule: insert node',
+        confidence: 0.98
+      }
+    }
+  }
+
+  if (removeNames.length > 0) {
+    const draft = { mode: 'edit', removeByName: removeNames }
+    return {
+      kind: 'draft',
+      draft,
+      actualEffect: buildLocalTaskflowActualEffect(draft),
+      replyText: `${removeNames.join(', ')} 노드를 바로 제거해둘게요.`,
+      matchedRule: {
+        source: 'front-rule',
+        ruleType: 'taskflow-local-fast-rule',
+        ruleKey: TMS_LOCAL_FAST_RULES.ruleKeys.removeNode,
+        reason: 'canvas local fast rule: remove node',
+        confidence: 0.98
+      }
+    }
+  }
+
+  if (saveRequestPhrases.length > 0 && containsConfiguredPhrase(text, saveRequestPhrases)) {
+    return {
+      kind: 'command',
+      command: { type: 'save-final' },
+      replyText: '최종 버전으로 저장할게요.',
+      matchedRule: {
+        source: 'front-rule',
+        ruleType: 'taskflow-local-fast-rule',
+        ruleKey: TMS_LOCAL_FAST_RULES.ruleKeys.saveFinal,
+        reason: 'canvas local fast rule: save command',
+        confidence: 0.98
+      }
+    }
+  }
+
+  if (alignRequestPhrases.length > 0 && containsConfiguredPhrase(text, alignRequestPhrases)) {
+    return {
+      kind: 'command',
+      command: { type: 'align' },
+      replyText: '선택한 흐름을 정렬해둘게요.',
+      matchedRule: {
+        source: 'front-rule',
+        ruleType: 'taskflow-local-fast-rule',
+        ruleKey: TMS_LOCAL_FAST_RULES.ruleKeys.align,
+        reason: 'canvas local fast rule: align command',
+        confidence: 0.97
+      }
+    }
+  }
+
+  const modeSignal =
+    (modeRequestPhrases.length > 0 && containsConfiguredPhrase(text, modeRequestPhrases)) ||
+    (modeDirectionTreePhrases.length > 0 && containsConfiguredPhrase(text, modeDirectionTreePhrases)) ||
+    (modeDirectionDefaultPhrases.length > 0 && containsConfiguredPhrase(text, modeDirectionDefaultPhrases))
+
+  if (modeSignal && /(바꿔|변경|전환|설정)/i.test(text)) {
+    const mode =
+      modeDirectionTreePhrases.length > 0 && containsConfiguredPhrase(text, modeDirectionTreePhrases)
+        ? 'tree'
+        : 'default'
+
+    return {
+      kind: 'command',
+      command: { type: 'set-flow-mode', mode },
+      replyText: mode === 'tree' ? '세로 모드로 바꿔둘게요.' : '가로 모드로 바꿔둘게요.',
+      matchedRule: {
+        source: 'front-rule',
+        ruleType: 'taskflow-local-fast-rule',
+        ruleKey:
+          mode === 'tree' ? TMS_LOCAL_FAST_RULES.ruleKeys.flowModeTree : TMS_LOCAL_FAST_RULES.ruleKeys.flowModeDefault,
+        reason: 'canvas local fast rule: flow mode command',
+        confidence: 0.96
+      }
+    }
+  }
+
+  return null
 }
 
 const TYPEWRITER_INTERVAL_MS = 110
 const ASSISTANT_TYPEWRITER_INTERVAL_MS = 24
-const DEFAULT_CHAT_INPUT_PLACEHOLDER = '현재 화면에 대해 질문해 보세요.'
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -143,9 +999,7 @@ const parseInputHintCandidates = (value) => {
   try {
     const parsed = JSON.parse(raw)
     if (Array.isArray(parsed)) {
-      return parsed
-        .map((item) => String(item ?? '').trim())
-        .filter(Boolean)
+      return parsed.map((item) => String(item ?? '').trim()).filter(Boolean)
     }
   } catch {
     // JSON 배열이 아니면 일반 텍스트로 처리
@@ -157,12 +1011,16 @@ const parseInputHintCandidates = (value) => {
     .filter(Boolean)
 }
 
-const normalizeRouteKey = (value) => String(value ?? '').trim().replace(/^\/+/, '')
+const normalizeRouteKey = (value) =>
+  String(value ?? '')
+    .trim()
+    .replace(/^\/+/, '')
 
 const routeTemplateMatches = (templateKey, currentPath) => {
   const template = normalizeRouteKey(templateKey)
   const target = normalizeRouteKey(currentPath)
   if (!template || !target) return false
+  if (template === 'common') return true
 
   const templateSegments = template.split('/').filter(Boolean)
   const targetSegments = target.split('/').filter(Boolean)
@@ -202,19 +1060,29 @@ const findGuidanceExamplesForPath = (guidanceItems, pathname) => {
 
   const entries = (Array.isArray(guidanceItems) ? guidanceItems : [])
     .map((item) => {
-      const key = normalizeRouteKey(item?.key ?? item?.routeKey)
+      const key = normalizeRouteKey(item?.screenKey ?? item?.key ?? item?.routeKey ?? item?.screenName ?? '')
       const examples = Array.isArray(item?.examples) ? item.examples : []
-      return { key, examples }
+      return {
+        key,
+        examples,
+        appKey: String(item?.appKey ?? '').trim().toLowerCase(),
+        isCommon: String(item?.appKey ?? '').trim().toLowerCase() === 'common' || key === 'common'
+      }
     })
     .filter((item) => item.key && item.examples.length > 0)
 
-  const candidates = entries
-    .filter((item) => routeTemplateMatches(item.key, normalizedPath))
+  const scopedCandidates = entries
+    .filter((item) => item.key !== 'common' && routeTemplateMatches(item.key, normalizedPath))
     .sort((left, right) => right.key.length - left.key.length)
 
-  const matched = candidates[0]
-  if (matched) {
-    return extractExampleTexts(matched.examples)
+  for (const candidate of scopedCandidates) {
+    const texts = uniqueTexts(extractExampleTexts(candidate.examples))
+    if (texts.length > 0) return texts
+  }
+
+  const commonHint = entries.find((item) => item.isCommon)
+  if (commonHint) {
+    return uniqueTexts(extractExampleTexts(commonHint.examples))
   }
 
   // 설정 페이지에서는 추천어를 노출하지 않는다.
@@ -225,38 +1093,48 @@ const findGuidanceExamplesForPath = (guidanceItems, pathname) => {
   return []
 }
 
-const findInputHintForPath = (promptItems, pathname) => {
+const findInputHintForPath = (guidanceItems, pathname) => {
   const normalizedPath = normalizeRouteKey(pathname)
-  const list = Array.isArray(promptItems) ? promptItems : []
-
-  const hintRows = list
-    .filter((item) => {
-      const type = String(item?.promptType ?? item?.category ?? '').trim().toLowerCase()
-      return type === 'input-hint' && item?.enabled !== false
-    })
+  const entries = (Array.isArray(guidanceItems) ? guidanceItems : [])
     .map((item) => {
-      const key = normalizeRouteKey(item?.key ?? item?.routeKey)
-      const content = String(item?.content ?? '').trim()
-      return { key, content }
+      const key = normalizeRouteKey(item?.screenKey ?? item?.key ?? item?.routeKey ?? item?.screenName ?? '')
+      const examples = Array.isArray(item?.examples) ? item.examples : []
+      return {
+        key,
+        examples,
+        appKey: String(item?.appKey ?? '').trim().toLowerCase(),
+        isCommon: String(item?.appKey ?? '').trim().toLowerCase() === 'common' || key === 'common'
+      }
     })
-    .filter((item) => item.content)
+    .filter((item) => item.key && item.examples.length > 0)
 
-  const scopedCandidates = hintRows
-    .filter((item) => item.key && item.key !== 'common' && routeTemplateMatches(item.key, normalizedPath))
+  const pickExampleText = (examples) => {
+    const texts = (Array.isArray(examples) ? examples : [])
+      .map((item) => {
+        if (typeof item === 'string') return item.trim()
+        return String(item?.q ?? '').trim()
+      })
+      .filter(Boolean)
+
+    return pickRandomItem(texts) || texts[0] || ''
+  }
+
+  const scopedCandidates = entries
+    .filter((item) => item.key !== 'common' && routeTemplateMatches(item.key, normalizedPath))
     .sort((left, right) => right.key.length - left.key.length)
 
-  if (scopedCandidates[0]?.content) {
-    const picks = parseInputHintCandidates(scopedCandidates[0].content)
-    return pickRandomItem(picks) || scopedCandidates[0].content
+  if (scopedCandidates[0]) {
+    const picked = pickExampleText(scopedCandidates[0].examples)
+    if (picked) return picked
   }
 
-  const commonHint = hintRows.find((item) => item.key === 'common')
-  if (commonHint?.content) {
-    const picks = parseInputHintCandidates(commonHint.content)
-    return pickRandomItem(picks) || commonHint.content
+  const commonHint = entries.find((item) => item.isCommon)
+  if (commonHint) {
+    const picked = pickExampleText(commonHint.examples)
+    if (picked) return picked
   }
 
-  return DEFAULT_CHAT_INPUT_PLACEHOLDER
+  return ''
 }
 
 const buildMessageId = () => {
@@ -275,13 +1153,15 @@ const buildRouteContext = (location) => ({
   search: location.search,
   hash: location.hash,
   appPrefix: normalizeAppPrefix(location.pathname),
-  title: typeof document !== 'undefined' ? document.title : '',
+  title: typeof document !== 'undefined' ? document.title : ''
 })
 
 const isTmsCanvasPath = (pathname) => /^\/tms\/taskflows\/[^/]+\/canvas(?:\/|$)/.test(String(pathname ?? '').trim())
 
 const parseTaskflowIdFromPath = (pathname) => {
-  const matched = String(pathname ?? '').trim().match(/^\/tms\/taskflows\/(\d+)\/canvas(?:\/|$)/)
+  const matched = String(pathname ?? '')
+    .trim()
+    .match(/^\/tms\/taskflows\/(\d+)\/canvas(?:\/|$)/)
   if (!matched) return null
   const id = Number(matched[1])
   return Number.isFinite(id) && id > 0 ? id : null
@@ -328,7 +1208,7 @@ const buildLinearOrderLabels = (nodes, edges) => {
 const buildTaskListFromTaskPanel = (items) => {
   const uniq = new Map()
 
-  for (const item of (Array.isArray(items) ? items : [])) {
+  for (const item of Array.isArray(items) ? items : []) {
     const taskId = Number(item?.taskId)
     if (!Number.isFinite(taskId) || taskId <= 0) continue
 
@@ -340,7 +1220,7 @@ const buildTaskListFromTaskPanel = (items) => {
     uniq.set(key, {
       taskId,
       label,
-      taskName: taskName || undefined,
+      taskName: taskName || undefined
     })
   }
 
@@ -350,7 +1230,7 @@ const buildTaskListFromTaskPanel = (items) => {
 const buildTaskContentsFromTaskPanel = (items) => {
   const uniq = new Map()
 
-  for (const item of (Array.isArray(items) ? items : [])) {
+  for (const item of Array.isArray(items) ? items : []) {
     const taskId = Number(item?.taskId)
     const label = String(item?.label ?? '').trim()
     if (!Number.isFinite(taskId) || taskId <= 0 || !label) continue
@@ -370,7 +1250,7 @@ const buildTaskContentsFromTaskPanel = (items) => {
       taskName: taskName || undefined,
       label,
       contentId,
-      contentName,
+      contentName
     })
   }
 
@@ -395,9 +1275,7 @@ const buildTaskflowFlowContext = (pathname) => {
     const edges = Array.isArray(runtimeContext?.edges) ? runtimeContext.edges : []
     if (nodes.length === 0) return undefined
 
-    const addableNodes = Array.isArray(runtimeContext?.addableNodes)
-      ? runtimeContext.addableNodes
-      : []
+    const addableNodes = Array.isArray(runtimeContext?.addableNodes) ? runtimeContext.addableNodes : []
     const taskList = Array.isArray(runtimeContext?.taskList)
       ? runtimeContext.taskList
       : buildTaskListFromTaskPanel(addableNodes)
@@ -405,7 +1283,7 @@ const buildTaskflowFlowContext = (pathname) => {
       ? runtimeContext.taskContents
       : Array.isArray(runtimeContext?.taskcontents)
         ? runtimeContext.taskcontents
-      : buildTaskContentsFromTaskPanel(addableNodes)
+        : buildTaskContentsFromTaskPanel(addableNodes)
 
     const outgoingCount = new Map(nodes.map((node) => [String(node.id), 0]))
     for (const edge of edges) {
@@ -438,28 +1316,31 @@ const buildTaskflowFlowContext = (pathname) => {
           label: normalizeNodeLabel(node) || (String(node?.id ?? '') === 'start' ? 'start' : ''),
           nodeType: String(node?.type ?? '').trim(),
           taskName: String(node?.data?.taskName ?? '').trim(),
-          contentName: String(node?.data?.contentName ?? '').trim(),
+          contentName: String(node?.data?.contentName ?? '').trim()
         }))
-        .filter((node) => node.id)
-        ,
+        .filter((node) => node.id),
       flowDefinition: {
         nodes,
         edges,
         viewport:
-          runtimeContext?.viewport && typeof runtimeContext.viewport === 'object' && !Array.isArray(runtimeContext.viewport)
+          runtimeContext?.viewport &&
+          typeof runtimeContext.viewport === 'object' &&
+          !Array.isArray(runtimeContext.viewport)
             ? runtimeContext.viewport
             : { x: 0, y: 0, zoom: 1 },
-        flowMode: runtimeContext?.flowMode === 'tree' ? 'tree' : 'default',
+        flowMode: runtimeContext?.flowMode === 'tree' ? 'tree' : 'default'
       },
       fullFlow: {
         nodes,
         edges,
         viewport:
-          runtimeContext?.viewport && typeof runtimeContext.viewport === 'object' && !Array.isArray(runtimeContext.viewport)
+          runtimeContext?.viewport &&
+          typeof runtimeContext.viewport === 'object' &&
+          !Array.isArray(runtimeContext.viewport)
             ? runtimeContext.viewport
             : { x: 0, y: 0, zoom: 1 },
-        flowMode: runtimeContext?.flowMode === 'tree' ? 'tree' : 'default',
-      },
+        flowMode: runtimeContext?.flowMode === 'tree' ? 'tree' : 'default'
+      }
     }
   } catch {
     return undefined
@@ -490,14 +1371,11 @@ const buildTaskflowRequestContext = (flowContext) => {
           source: String(edge?.source ?? ''),
           target: String(edge?.target ?? ''),
           sourceHandle: String(edge?.sourceHandle ?? ''),
-          targetHandle: String(edge?.targetHandle ?? ''),
+          targetHandle: String(edge?.targetHandle ?? '')
         }))
       : [],
-    fullFlow:
-      flowContext?.fullFlow && typeof flowContext.fullFlow === 'object'
-        ? flowContext.fullFlow
-        : undefined,
-    addableNodes: Array.isArray(flowContext?.addableNodes) ? flowContext.addableNodes : [],
+    fullFlow: flowContext?.fullFlow && typeof flowContext.fullFlow === 'object' ? flowContext.fullFlow : undefined,
+    addableNodes: Array.isArray(flowContext?.addableNodes) ? flowContext.addableNodes : []
   }
 }
 
@@ -553,12 +1431,13 @@ const extractAssistantText = (result) => {
   if (typeof payload?.answer === 'string' && payload.answer.trim()) return payload.answer.trim()
 
   const chatAction = String(payload?.chat_action ?? '').trim()
-  const actionParam = payload?.chat_action_param && typeof payload.chat_action_param === 'object'
-    ? payload.chat_action_param
-    : undefined
+  const actionParam =
+    payload?.chat_action_param && typeof payload.chat_action_param === 'object' ? payload.chat_action_param : undefined
 
   if (chatAction === 'navigation') {
-    const path = String(actionParam?.path ?? '').trim().replace(/^\/+/, '')
+    const path = String(actionParam?.path ?? '')
+      .trim()
+      .replace(/^\/+/, '')
     return path ? `${path} 화면으로 이동을 준비했어요.` : '화면 이동을 준비했어요.'
   }
 
@@ -616,8 +1495,8 @@ const extractRagMatchInfo = (result) => {
       topChunkIds: Array.isArray(item?.topChunkIds)
         ? item.topChunkIds.map((chunkId) => String(chunkId ?? '').trim()).filter(Boolean)
         : [],
-      relaxed: Boolean(item?.relaxed),
-    })),
+      relaxed: Boolean(item?.relaxed)
+    }))
   }
 }
 
@@ -629,16 +1508,15 @@ const extractMatchedRuleInfo = (result) => {
       ruleKey: '',
       ruleType: '',
       reason: '',
-      confidence: undefined,
+      confidence: undefined
     }
   }
 
-  const direct = payload?.matchedRule && typeof payload.matchedRule === 'object'
-    ? payload.matchedRule
-    : undefined
-  const nested = payload?.chat_action_param?.matchedRule && typeof payload.chat_action_param.matchedRule === 'object'
-    ? payload.chat_action_param.matchedRule
-    : undefined
+  const direct = payload?.matchedRule && typeof payload.matchedRule === 'object' ? payload.matchedRule : undefined
+  const nested =
+    payload?.chat_action_param?.matchedRule && typeof payload.chat_action_param.matchedRule === 'object'
+      ? payload.chat_action_param.matchedRule
+      : undefined
   const row = direct ?? nested ?? {}
 
   const confidence = Number(row?.confidence)
@@ -647,7 +1525,7 @@ const extractMatchedRuleInfo = (result) => {
     ruleKey: String(row?.ruleKey ?? '').trim() || String(payload?.chat_action_param?.matchedRuleKey ?? '').trim(),
     ruleType: String(row?.ruleType ?? '').trim(),
     reason: String(row?.reason ?? '').trim(),
-    confidence: Number.isFinite(confidence) ? confidence : undefined,
+    confidence: Number.isFinite(confidence) ? confidence : undefined
   }
 }
 
@@ -673,7 +1551,7 @@ const extractAssistantImages = (result) => {
         src,
         alt: String(item?.alt ?? item?.title ?? 'assistant image').trim(),
         title: String(item?.title ?? '').trim(),
-        caption: String(item?.caption ?? '').trim(),
+        caption: String(item?.caption ?? '').trim()
       }
     })
     .filter(Boolean)
@@ -693,9 +1571,8 @@ const extractSuggestedActions = (result) => {
       const label = String(item?.label ?? '').trim()
       const keyword = String(item?.keyword ?? '').trim()
       const chatAction = String(item?.chat_action ?? '').trim()
-      const chatActionParam = item?.chat_action_param && typeof item.chat_action_param === 'object'
-        ? item.chat_action_param
-        : undefined
+      const chatActionParam =
+        item?.chat_action_param && typeof item.chat_action_param === 'object' ? item.chat_action_param : undefined
 
       if (!label || !chatAction) return null
 
@@ -704,7 +1581,7 @@ const extractSuggestedActions = (result) => {
         label,
         keyword,
         chatAction,
-        chatActionParam,
+        chatActionParam
       }
     })
     .filter(Boolean)
@@ -712,11 +1589,13 @@ const extractSuggestedActions = (result) => {
 }
 
 const PATH_PARAM_LABELS = {
-  robotId: '로봇 아이디',
+  robotId: '로봇 아이디'
 }
 
 const extractPathParams = (path) => {
-  const normalized = String(path ?? '').trim().replace(/^\/+/, '')
+  const normalized = String(path ?? '')
+    .trim()
+    .replace(/^\/+/, '')
   if (!normalized) return []
 
   return normalized
@@ -734,7 +1613,9 @@ const resolveParamLabel = (paramName) => {
 }
 
 const fillPathTemplate = (pathTemplate, params) => {
-  const normalized = String(pathTemplate ?? '').trim().replace(/^\/+/, '')
+  const normalized = String(pathTemplate ?? '')
+    .trim()
+    .replace(/^\/+/, '')
   if (!normalized) return ''
 
   return normalized.replace(/:([a-zA-Z0-9_]+)/g, (_, name) => {
@@ -765,7 +1646,9 @@ const parseNavigationParamInput = (text, paramNames) => {
 }
 
 const buildNavigationFallbackActions = (pathTemplate) => {
-  const normalized = String(pathTemplate ?? '').trim().replace(/^\/+/, '')
+  const normalized = String(pathTemplate ?? '')
+    .trim()
+    .replace(/^\/+/, '')
 
   if (normalized.startsWith('robot/robots/:robotId/detail')) {
     return [
@@ -774,8 +1657,8 @@ const buildNavigationFallbackActions = (pathTemplate) => {
         label: '로봇 목록 화면으로 이동',
         keyword: '로봇 상세 이동이 어려우면 목록에서 직접 선택',
         chatAction: 'navigation',
-        chatActionParam: { path: 'robot/management', app: 'robot' },
-      },
+        chatActionParam: { path: 'robot/management', app: 'robot' }
+      }
     ]
   }
 
@@ -788,7 +1671,7 @@ const getInitialY = () => {
   try {
     const saved = localStorage.getItem(STORAGE_KEY)
     if (saved) return Math.max(60, Math.min(window.innerHeight - 60, parseInt(saved, 10)))
-  } catch { }
+  } catch {}
   return Math.floor((typeof window !== 'undefined' ? window.innerHeight : 600) / 2)
 }
 
@@ -814,7 +1697,7 @@ function FloatingTrigger({ onClick }) {
     isDragging.current = false
     try {
       localStorage.setItem(STORAGE_KEY, String(posYRef.current))
-    } catch { }
+    } catch {}
     document.removeEventListener('mousemove', onMouseMove)
     document.removeEventListener('mouseup', onMouseUp)
   }, [onMouseMove])
@@ -869,7 +1752,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
   const [pageContextOn, setPageContextOn] = useState(true)
   const [pendingNavigation, setPendingNavigation] = useState(null)
   const [screenSuggestions, setScreenSuggestions] = useState([])
-  const [chatInputPlaceholder, setChatInputPlaceholder] = useState(DEFAULT_CHAT_INPUT_PLACEHOLDER)
+  const [chatInputPlaceholder, setChatInputPlaceholder] = useState('')
   const [isAssistantTyping, setIsAssistantTyping] = useState(false)
 
   const messageListRef = useRef(null)
@@ -889,6 +1772,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
   const lastFiltersRef = useRef(null)
 
   const routeContext = useMemo(() => buildRouteContext(location), [location])
+  const pendingLocalDraftResultsRef = useRef(new Map())
 
   const quickCommands = useMemo(
     () => pickRandomItems(screenSuggestions, Math.min(3, screenSuggestions.length)),
@@ -936,9 +1820,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
 
   const hasConversation = messages.some((m) => m.role === 'user')
 
-  const userName = session?.email
-    ? session.email.split('@')[0].replace(/[._-]/g, ' ')
-    : null
+  const userName = session?.email ? session.email.split('@')[0].replace(/[._-]/g, ' ') : null
 
   useEffect(() => {
     if (messageListRef.current) {
@@ -971,9 +1853,10 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
 
     const tick = () => {
       const elapsedMs = Math.max(0, Date.now() - startedAt)
-      const plan = Array.isArray(sendingStagePlanRef.current) && sendingStagePlanRef.current.length > 0
-        ? sendingStagePlanRef.current
-        : buildSendingStagePlan('')
+      const plan =
+        Array.isArray(sendingStagePlanRef.current) && sendingStagePlanRef.current.length > 0
+          ? sendingStagePlanRef.current
+          : buildSendingStagePlan('')
       const thresholds = [0, 450, 1100, 1800, 2600, 3600, 4800]
 
       let nextIndex = 0
@@ -1063,7 +1946,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
 
     setTypedAssistantMessages((prev) => ({
       ...prev,
-      [targetId]: '',
+      [targetId]: ''
     }))
     setIsAssistantTyping(true)
 
@@ -1073,7 +1956,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
       const next = fullText.slice(0, index)
       setTypedAssistantMessages((prev) => ({
         ...prev,
-        [targetId]: next,
+        [targetId]: next
       }))
 
       if (index >= fullText.length) {
@@ -1109,19 +1992,45 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
 
     const loadSuggestions = async () => {
       try {
-        const response = await getChatSettings()
+        const [settingsResponse, guidanceResponse] = await Promise.all([
+          getChatSettings(),
+          getGuidanceList(),
+        ])
         if (cancelled) return
 
-        const guidanceItems = response?.data?.management?.guidance ?? []
-        const promptItems = response?.data?.management?.prompts ?? []
+        const settingsGuidance = Array.isArray(settingsResponse?.data?.management?.guidance)
+          ? settingsResponse.data.management.guidance
+          : []
+        const guidanceItems = Array.isArray(guidanceResponse?.data?.items)
+          ? guidanceResponse.data.items
+          : settingsGuidance
+
+        console.info('[AI_CHAT][COMMON_HINT_SOURCE]', {
+          pathname: routeContext.pathname,
+          settingsGuidanceCount: settingsGuidance.length,
+          guidanceCount: guidanceItems.length,
+          guidanceSample: guidanceItems.slice(0, 5),
+        })
+
         const examples = findGuidanceExamplesForPath(guidanceItems, routeContext.pathname)
-        const inputHint = findInputHintForPath(promptItems, routeContext.pathname)
+        const inputHint = findInputHintForPath(guidanceItems, routeContext.pathname)
+        const commonHint = guidanceItems.find(
+          (item) => String(item?.appKey ?? '').trim().toLowerCase() === 'common' && String(item?.screenKey ?? item?.key ?? '').trim().toLowerCase() === 'common',
+        )
+
+        console.info('[AI_CHAT][COMMON_HINT_RESULT]', {
+          pathname: routeContext.pathname,
+          examplesCount: examples.length,
+          inputHint,
+          selectedCommonHint: commonHint,
+        })
+
         setScreenSuggestions(examples)
-        setChatInputPlaceholder(inputHint || DEFAULT_CHAT_INPUT_PLACEHOLDER)
+        setChatInputPlaceholder(inputHint || '')
       } catch {
         if (!cancelled) {
           setScreenSuggestions([])
-          setChatInputPlaceholder(DEFAULT_CHAT_INPUT_PLACEHOLDER)
+          setChatInputPlaceholder('')
         }
       }
     }
@@ -1162,7 +2071,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
         updateMessageById(replaceMessageId, {
           content: message,
           createdAt: new Date().toISOString(),
-          context: routeContext,
+          context: routeContext
         })
         return
       }
@@ -1172,13 +2081,41 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
         role: 'assistant',
         content: message,
         createdAt: new Date().toISOString(),
-        context: routeContext,
+        context: routeContext
+      })
+    }
+
+    const onTaskflowDraftResult = (event) => {
+      const custom = event
+      const result = custom?.detail ?? {}
+      const assistantMessageId = String(result?.assistantMessageId ?? '').trim()
+      const record = assistantMessageId ? pendingLocalDraftResultsRef.current.get(assistantMessageId) : null
+      if (!assistantMessageId || !record) return
+
+      pendingLocalDraftResultsRef.current.delete(assistantMessageId)
+      const baseText = String(record.replyText ?? '').trim() || '요청'
+      const actualMissing = Array.isArray(result?.missingNodeNames)
+        ? result.missingNodeNames.filter(Boolean)
+        : extractMissingNodeLabels(record.action)
+      const finalText =
+        result?.didApply === true
+          ? formatLocalTaskflowReplyText(baseText, record.action)
+          : actualMissing.length > 0
+            ? `${actualMissing.join(', ')} 노드를 찾지 못했습니다. 노드 이름을 정확히 확인해주세요.`
+            : result?.message || formatLocalTaskflowReplyText(baseText, record.action)
+
+      updateMessageById(assistantMessageId, {
+        content: finalText,
+        createdAt: new Date().toISOString(),
+        context: routeContext
       })
     }
 
     window.addEventListener(AI_TASKFLOW_CANVAS_CLARIFY_EVENT, onTaskflowClarify)
+    window.addEventListener(AI_TASKFLOW_CANVAS_RESULT_EVENT, onTaskflowDraftResult)
     return () => {
       window.removeEventListener(AI_TASKFLOW_CANVAS_CLARIFY_EVENT, onTaskflowClarify)
+      window.removeEventListener(AI_TASKFLOW_CANVAS_RESULT_EVENT, onTaskflowDraftResult)
     }
   }, [appendMessage, updateMessageById, routeContext])
 
@@ -1194,7 +2131,32 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
         hasTaskflowCommand: Boolean(taskflowCommand),
         isTmsCanvas: isTmsCanvasPath(location.pathname),
         paramKeys: param && typeof param === 'object' ? Object.keys(param) : [],
+        rawParamPreview: param && typeof param === 'object' ? JSON.stringify(param) : param,
+        taskflowDraftPreview:
+          taskflowDraft && typeof taskflowDraft === 'object' ? JSON.stringify(taskflowDraft) : taskflowDraft
       })
+      const finalMessage = String(assistantMessage ?? '').trim()
+      const finalMessageId = String(assistantMessageId ?? '').trim()
+
+      const emitFinalMessage = (message, messageId) => {
+        if (!message) return
+        if (messageId) {
+          updateMessageById(messageId, {
+            content: message,
+            createdAt: new Date().toISOString(),
+            context: routeContext
+          })
+          return
+        }
+        appendMessage({
+          id: buildMessageId(),
+          role: 'assistant',
+          content: message,
+          createdAt: new Date().toISOString(),
+          context: routeContext
+        })
+      }
+
       if (taskflowCommand && isTmsCanvasPath(location.pathname)) {
         window.dispatchEvent(
           new CustomEvent(AI_TASKFLOW_CANVAS_COMMAND_EVENT, {
@@ -1202,14 +2164,15 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
               command: taskflowCommand,
               chatAction,
               rawParam: param,
-              message: String(assistantMessage ?? '').trim(),
-              assistantMessageId: String(assistantMessageId ?? '').trim(),
-            },
+              message: finalMessage,
+              assistantMessageId: finalMessageId
+            }
           })
         )
       }
       if (taskflowDraft && isTmsCanvasPath(location.pathname)) {
         let handled = false
+        let appliedSuccessfully = false
         try {
           const applyDraft = window.__AI_TASKFLOW_CANVAS_APPLY__
           if (typeof applyDraft === 'function') {
@@ -1217,15 +2180,39 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
               chatAction,
               pathname: location.pathname,
               draftKeys: Object.keys(taskflowDraft || {}),
+              draftPayload: JSON.stringify({
+                ...taskflowDraft,
+                message: finalMessage
+              })
             })
             applyDraft({
               ...taskflowDraft,
-              message: String(assistantMessage ?? '').trim(),
+              message: finalMessage
             })
             handled = true
+            appliedSuccessfully = true
           }
         } catch (error) {
           console.warn('[AI_TASKFLOW][SETTER_DISPATCH_FAIL]', error)
+        }
+
+        if (!handled) {
+          try {
+            window.dispatchEvent(
+              new CustomEvent(AI_TASKFLOW_CANVAS_EVENT, {
+                detail: {
+                  draft: taskflowDraft,
+                  chatAction,
+                  rawParam: param,
+                  message: finalMessage,
+                  assistantMessageId: finalMessageId
+                }
+              })
+            )
+            appliedSuccessfully = true
+          } catch (error) {
+            console.warn('[AI_TASKFLOW][DRAFT_DISPATCH_FAIL]', error)
+          }
         }
 
         console.log('[AI_TASKFLOW][DISPATCH_DRAFT]', {
@@ -1233,27 +2220,33 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
           pathname: location.pathname,
           draftKeys: Object.keys(taskflowDraft || {}),
           handledBySetter: handled,
+          appliedSuccessfully,
+          draftPayload: JSON.stringify({
+            ...taskflowDraft,
+            message: finalMessage
+          })
         })
-        if (!handled) {
-          window.dispatchEvent(
-            new CustomEvent(AI_TASKFLOW_CANVAS_EVENT, {
-              detail: {
-                draft: taskflowDraft,
-                chatAction,
-                rawParam: param,
-                message: String(assistantMessage ?? '').trim(),
-                assistantMessageId: String(assistantMessageId ?? '').trim(),
-              },
-            })
-          )
+
+        if (appliedSuccessfully) {
+          emitFinalMessage(finalMessage, finalMessageId)
+        } else {
+          const failureReason = '캔버스 적용 중 오류가 발생했습니다.'
+          const failureMessage = finalMessage
+            ? `${finalMessage}\n\n실패 이유: ${failureReason}`
+            : `실패 이유: ${failureReason}`
+          emitFinalMessage(failureMessage, finalMessageId)
         }
         return
       }
 
+      emitFinalMessage(finalMessage, finalMessageId)
+
       switch (chatAction) {
         // 화면 이동
         case 'navigation': {
-          const path = String(param?.path ?? '').trim().replace(/^\/+/, '')
+          const path = String(param?.path ?? '')
+            .trim()
+            .replace(/^\/+/, '')
           if (!path) break
           const pathParams = extractPathParams(path)
 
@@ -1266,7 +2259,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
               app: String(param?.app ?? '').trim() || undefined,
               paramNames: pathParams,
               screenName: String(param?.screenName ?? '').trim() || undefined,
-              fallbackActions,
+              fallbackActions
             })
 
             appendMessage({
@@ -1275,7 +2268,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
               content: `${primaryParamLabel}를 알려주세요.`,
               suggestedActions: fallbackActions,
               createdAt: new Date().toISOString(),
-              context: routeContext,
+              context: routeContext
             })
             break
           }
@@ -1340,7 +2333,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
           content: `${primaryParamLabel}를 다시 알려주세요.`,
           suggestedActions: pendingNavigation.fallbackActions ?? [],
           createdAt: new Date().toISOString(),
-          context,
+          context
         })
         submitInFlightRef.current = false
         return
@@ -1354,7 +2347,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
           content: '상세 화면 이동이 어려워서 대체 화면을 제안드릴게요.',
           suggestedActions: pendingNavigation.fallbackActions ?? [],
           createdAt: new Date().toISOString(),
-          context,
+          context
         })
         submitInFlightRef.current = false
         return
@@ -1366,7 +2359,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
         content: '네 상세화면으로 이동하겠습니다.',
         suggestedActions: pendingNavigation.fallbackActions ?? [],
         createdAt: new Date().toISOString(),
-        context,
+        context
       })
 
       setPendingNavigation(null)
@@ -1383,14 +2376,115 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
     sendingStartedAtRef.current = Date.now()
     setSendingElapsedSec(0)
     setIsSending(true)
-    setSendingStage(SENDING_STAGE.REQUESTING)
-    sendingStagePlanRef.current = buildSendingStagePlan(content)
-    stageQueueRef.current = buildSendingStagePlan(content).slice(1)
-    displayedStageRef.current = SENDING_STAGE.IDLE
+    setSendingStage(SENDING_STAGE.NODE_WORKING)
+    sendingStagePlanRef.current = [SENDING_STAGE.NODE_WORKING]
+    stageQueueRef.current = []
+    displayedStageRef.current = SENDING_STAGE.NODE_WORKING
+    if (stageAdvanceTimerRef.current) {
+      clearTimeout(stageAdvanceTimerRef.current)
+      stageAdvanceTimerRef.current = null
+    }
+
+    const localTaskflowAction = await resolveFastTaskflowCanvasAction(content, routeContext.pathname)
+    if (localTaskflowAction) {
+      console.log('[AI_CHAT][LOCAL_RULE_MATCH]', {
+        path: routeContext.pathname,
+        message: content,
+        ruleKey: localTaskflowAction.matchedRule?.ruleKey ?? 'unknown',
+        ruleType: localTaskflowAction.matchedRule?.ruleType ?? 'taskflow-local-fast-rule',
+        reason: localTaskflowAction.matchedRule?.reason ?? 'local fast rule',
+        confidence: localTaskflowAction.matchedRule?.confidence,
+        cacheSource: 'route-scoped-local-cache',
+        skippedMainAiRequest: true,
+        historyPersistOnly: true
+      })
+
+      const assistantMessageId = buildMessageId()
+      if (localTaskflowAction.kind === 'draft') {
+        pendingLocalDraftResultsRef.current.set(assistantMessageId, {
+          replyText: localTaskflowAction.replyText,
+          action: localTaskflowAction
+        })
+        appendMessage({
+          id: assistantMessageId,
+          role: 'assistant',
+          content: '요청을 반영하고 있습니다…',
+          matchedRule: localTaskflowAction.matchedRule,
+          createdAt: new Date().toISOString(),
+          context
+        })
+      } else {
+        appendMessage({
+          id: assistantMessageId,
+          role: 'assistant',
+          content: formatLocalTaskflowReplyText(localTaskflowAction.replyText, localTaskflowAction),
+          matchedRule: localTaskflowAction.matchedRule,
+          createdAt: new Date().toISOString(),
+          context
+        })
+      }
+
+      setSendingStage(SENDING_STAGE.NODE_WORKING)
+      setIsSending(true)
+      setSendingElapsedSec(0)
+      sendingStartedAtRef.current = Date.now()
+      sendingStagePlanRef.current = [SENDING_STAGE.NODE_WORKING]
+      stageQueueRef.current = []
+      displayedStageRef.current = SENDING_STAGE.NODE_WORKING
+
       if (stageAdvanceTimerRef.current) {
         clearTimeout(stageAdvanceTimerRef.current)
         stageAdvanceTimerRef.current = null
       }
+
+      if (localTaskflowAction.kind === 'draft') {
+        window.dispatchEvent(
+          new CustomEvent(AI_TASKFLOW_CANVAS_EVENT, {
+            detail: {
+              draft: localTaskflowAction.draft,
+              rawParam: { draft: localTaskflowAction.draft },
+              message: localTaskflowAction.replyText,
+              assistantMessageId
+            }
+          })
+        )
+      } else if (localTaskflowAction.kind === 'command') {
+        window.dispatchEvent(
+          new CustomEvent(AI_TASKFLOW_CANVAS_COMMAND_EVENT, {
+            detail: {
+              command: localTaskflowAction.command,
+              rawParam: { command: localTaskflowAction.command },
+              message: localTaskflowAction.replyText,
+              assistantMessageId
+            }
+          })
+        )
+      }
+
+      window.setTimeout(() => {
+        setIsSending(false)
+        setSendingStage(SENDING_STAGE.IDLE)
+        sendingStagePlanRef.current = buildSendingStagePlan('')
+        stageQueueRef.current = []
+        displayedStageRef.current = SENDING_STAGE.IDLE
+      }, 180)
+
+      submitInFlightRef.current = false
+      return
+    }
+
+    setDraft('')
+    sendingStartedAtRef.current = Date.now()
+    setSendingElapsedSec(0)
+    setIsSending(true)
+    setSendingStage(SENDING_STAGE.REQUESTING)
+    sendingStagePlanRef.current = buildSendingStagePlan(content)
+    stageQueueRef.current = buildSendingStagePlan(content).slice(1)
+    displayedStageRef.current = SENDING_STAGE.IDLE
+    if (stageAdvanceTimerRef.current) {
+      clearTimeout(stageAdvanceTimerRef.current)
+      stageAdvanceTimerRef.current = null
+    }
 
     const controller = new AbortController()
     abortRef.current = controller
@@ -1414,26 +2508,22 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
           : 0,
         taskList: Array.isArray(flowContext?.taskList) ? flowContext.taskList : [],
         taskContents: Array.isArray(flowContext?.taskContents) ? flowContext.taskContents : [],
-        currentNodeList: Array.isArray(flowContext?.nodes) ? flowContext.nodes : [],
+        currentNodeList: Array.isArray(flowContext?.nodes) ? flowContext.nodes : []
       })
 
       console.log('[AI_TASKFLOW][2단계:요청페이로드_검증]', {
         hasTaskflowContext: Boolean(taskflowContext),
         hasFlowDefinition: false,
         hasFullFlow: Boolean(taskflowContext?.fullFlow),
-        taskflowNodeCount: Array.isArray(taskflowContext?.fullFlow?.nodes)
-          ? taskflowContext.fullFlow.nodes.length
-          : 0,
-        taskflowEdgeCount: Array.isArray(taskflowContext?.fullFlow?.edges)
-          ? taskflowContext.fullFlow.edges.length
-          : 0,
-        taskflowFlowDefinition: undefined,
+        taskflowNodeCount: Array.isArray(taskflowContext?.fullFlow?.nodes) ? taskflowContext.fullFlow.nodes.length : 0,
+        taskflowEdgeCount: Array.isArray(taskflowContext?.fullFlow?.edges) ? taskflowContext.fullFlow.edges.length : 0,
+        taskflowFlowDefinition: undefined
       })
 
       const result = await postSiteAssistantChat({
         message: content,
         currentPath: pageContextOn ? routeContext.pathname : undefined,
-        currentApp: pageContextOn ? (routeContext.appPrefix || undefined) : undefined,
+        currentApp: pageContextOn ? routeContext.appPrefix || undefined : undefined,
         conversationId,
         // 작성자(대화기록 저장용)
         author: session?.email || undefined,
@@ -1449,15 +2539,15 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
           siteId: selectedOrgs?.[1],
           // 이벤트 화면의 현재 필터(기간 포함). 백엔드가 기간 미지정 질의 처리 시 참고할 수 있다.
           eventFilters:
-            currentEventFilters
-            && typeof currentEventFilters === 'object'
-            && currentEventFilters.startDate
-            && currentEventFilters.endDate
+            currentEventFilters &&
+            typeof currentEventFilters === 'object' &&
+            currentEventFilters.startDate &&
+            currentEventFilters.endDate
               ? currentEventFilters
               : undefined,
-          taskflow: taskflowContext,
+          taskflow: taskflowContext
         },
-        signal: controller.signal,
+        signal: controller.signal
       })
 
       console.log(`result`, result)
@@ -1475,14 +2565,16 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
         console.log(`[AI_CHAT][PIPELINE_TRACE] ${pipelineTrace}`)
       }
       console.log('[AI_CHAT][RAG_MATCH]', {
-        usedCollection: ragMatchInfo.usedCollection || '-'
-        , usedChunkKeys: ragMatchInfo.usedChunkKeys,
+        usedCollection: ragMatchInfo.usedCollection || '-',
+        usedChunkKeys: ragMatchInfo.usedChunkKeys
       })
       console.log('[AI_CHAT][RAG_SCORES]', ragMatchInfo.ragScores)
       if (matchedRuleInfo.ruleKey || matchedRuleInfo.reason) {
         console.log('[AI_CHAT][MATCHED_RULE]', matchedRuleInfo)
       }
-      const navigationPath = String(chat_action_param?.path ?? '').trim().replace(/^\/+/, '')
+      const navigationPath = String(chat_action_param?.path ?? '')
+        .trim()
+        .replace(/^\/+/, '')
       const hasNavigationParams = chat_action === 'navigation' && extractPathParams(navigationPath).length > 0
       const suggestedActions = chat_action === 'ailog/event/filter' ? [] : extractSuggestedActions(result)
       const images = extractAssistantImages(result)
@@ -1502,19 +2594,13 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
           images,
           suggestedActions,
           createdAt: new Date().toISOString(),
-          context,
+          context
         })
 
-        handleChatAction(
-          chat_action,
-          chat_action_param,
-          extractAssistantText(result),
-          assistantMessageId,
-        )
+        handleChatAction(chat_action, chat_action_param, extractAssistantText(result), assistantMessageId)
       } else {
         handleChatAction(chat_action, chat_action_param, extractAssistantText(result))
       }
-
     } catch (error) {
       // 사용자가 "중지" 를 눌러 취소한 경우: 에러 메시지 대신 안내만.
       if (error?.name === 'AbortError') {
@@ -1525,7 +2611,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
           role: 'assistant',
           content: '답변 생성을 중지했습니다.',
           createdAt: new Date().toISOString(),
-          context,
+          context
         })
       } else {
         setSendingStage(SENDING_STAGE.COMPLETED)
@@ -1535,7 +2621,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
           role: 'assistant',
           content: error?.message || '답변을 가져오지 못했습니다.',
           createdAt: new Date().toISOString(),
-          context,
+          context
         })
       }
     } finally {
@@ -1604,20 +2690,12 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
 
           <StyledAiBotAvatar>✦</StyledAiBotAvatar>
 
-          {isOpen && (
-            <StyledAiAssistantPanelTitle>
-              AI Assistant
-            </StyledAiAssistantPanelTitle>
-          )}
+          {isOpen && <StyledAiAssistantPanelTitle>AI Assistant</StyledAiAssistantPanelTitle>}
         </StyledAiHeaderLeft>
 
         <StyledAiHeaderActions>
           {isOpen && (
-            <StyledAiAssistantDockToggle
-              onClick={handleOpenSettings}
-              title="채팅 설정"
-              type="button"
-            >
+            <StyledAiAssistantDockToggle onClick={handleOpenSettings} title="채팅 설정" type="button">
               <Icon name="settings" size={16} />
             </StyledAiAssistantDockToggle>
           )}
@@ -1651,15 +2729,9 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
                   )}
                 </StyledAiGreetingLine>
 
-                {greetingExtra && (
-                  <div style={{ margin: '8px 0' }}>
-                    {greetingExtra}
-                  </div>
-                )}
+                {greetingExtra && <div style={{ margin: '8px 0' }}>{greetingExtra}</div>}
 
-                <StyledAiGreetingCta>
-                  무엇을 도와드릴까요?
-                </StyledAiGreetingCta>
+                <StyledAiGreetingCta>무엇을 도와드릴까요?</StyledAiGreetingCta>
               </StyledAiGreeting>
 
               {ENABLE_QUICK_COMMANDS && quickCommands.length > 0 ? (
@@ -1670,11 +2742,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
                     </div>
                     <StyledAiActionCards>
                       {quickCommands.map((command) => (
-                        <StyledAiActionCard
-                          key={command}
-                          type="button"
-                          onClick={() => handleSubmit(command)}
-                        >
+                        <StyledAiActionCard key={command} type="button" onClick={() => handleSubmit(command)}>
                           <StyledAiActionCardTitle>{command}</StyledAiActionCardTitle>
                         </StyledAiActionCard>
                       ))}
@@ -1692,9 +2760,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
                   </StyledAiAssistantMessageMeta>
 
                   <StyledAiAssistantMessageBubble $role={m.role}>
-                    {m.role === 'assistant'
-                      ? (typedAssistantMessages[m.id] ?? m.content)
-                      : m.content}
+                    {m.role === 'assistant' ? (typedAssistantMessages[m.id] ?? m.content) : m.content}
                   </StyledAiAssistantMessageBubble>
 
                   {m.role === 'assistant' && (m?.matchedRule?.ruleKey || m?.matchedRule?.reason || m?.pipelineTrace) ? (
@@ -1708,58 +2774,62 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
                   {m.role === 'assistant' && Array.isArray(m.images) && m.images[0] ? (
                     <StyledAiAssistantImageList>
                       <StyledAiAssistantImageCard key={m.images[0].id || m.images[0].src}>
-                        <StyledAiAssistantImage src={m.images[0].src} alt={m.images[0].alt || m.images[0].title || 'assistant image'} loading="lazy" />
-                        {(m.images[0].title || m.images[0].caption) ? (
+                        <StyledAiAssistantImage
+                          src={m.images[0].src}
+                          alt={m.images[0].alt || m.images[0].title || 'assistant image'}
+                          loading="lazy"
+                        />
+                        {m.images[0].title || m.images[0].caption ? (
                           <StyledAiAssistantImageCaption>
-                            {m.images[0].title ? <StyledAiAssistantImageTitle>{m.images[0].title}</StyledAiAssistantImageTitle> : null}
-                            {m.images[0].caption ? <StyledAiAssistantImageText>{m.images[0].caption}</StyledAiAssistantImageText> : null}
+                            {m.images[0].title ? (
+                              <StyledAiAssistantImageTitle>{m.images[0].title}</StyledAiAssistantImageTitle>
+                            ) : null}
+                            {m.images[0].caption ? (
+                              <StyledAiAssistantImageText>{m.images[0].caption}</StyledAiAssistantImageText>
+                            ) : null}
                           </StyledAiAssistantImageCaption>
                         ) : null}
                       </StyledAiAssistantImageCard>
                     </StyledAiAssistantImageList>
                   ) : null}
 
-                  {ENABLE_MESSAGE_SUGGESTED_ACTIONS && m.role === 'assistant' && Array.isArray(m.suggestedActions) && m.suggestedActions.length > 0 && (
-                    <>
-                      <div style={{ marginTop: '8px', fontSize: '12px', color: '#6b7280', fontWeight: 700 }}>
-                        아래 명령어를 추천드려요.
-                      </div>
-                      <StyledAiActionCards>
-                        {m.suggestedActions.map((item) => (
-                          <StyledAiActionCard
-                            key={item.id}
-                            type="button"
-                            onClick={() => handleChatAction(item.chatAction, item.chatActionParam)}
-                          >
-                            <StyledAiActionCardTitle>{item.label}</StyledAiActionCardTitle>
-                            {item.keyword ? <StyledAiActionCardKeyword>{item.keyword}</StyledAiActionCardKeyword> : null}
-                          </StyledAiActionCard>
-                        ))}
-                      </StyledAiActionCards>
-                    </>
-                  )}
+                  {ENABLE_MESSAGE_SUGGESTED_ACTIONS &&
+                    m.role === 'assistant' &&
+                    Array.isArray(m.suggestedActions) &&
+                    m.suggestedActions.length > 0 && (
+                      <>
+                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#6b7280', fontWeight: 700 }}>
+                          아래 명령어를 추천드려요.
+                        </div>
+                        <StyledAiActionCards>
+                          {m.suggestedActions.map((item) => (
+                            <StyledAiActionCard
+                              key={item.id}
+                              type="button"
+                              onClick={() => handleChatAction(item.chatAction, item.chatActionParam)}
+                            >
+                              <StyledAiActionCardTitle>{item.label}</StyledAiActionCardTitle>
+                              {item.keyword ? (
+                                <StyledAiActionCardKeyword>{item.keyword}</StyledAiActionCardKeyword>
+                              ) : null}
+                            </StyledAiActionCard>
+                          ))}
+                        </StyledAiActionCards>
+                      </>
+                    )}
                 </StyledAiAssistantMessage>
               ))}
 
               {isSending && (
                 <StyledAiAssistantMessage $role="assistant">
-                  <StyledAiAssistantLoadingBubble
-                    $stage={sendingStage}
-                    $elapsed={sendingElapsedSec}
-                  >
+                  <StyledAiAssistantLoadingBubble $stage={sendingStage} $elapsed={sendingElapsedSec}>
                     <StyledAiAssistantLoadingRow>
-                      <StyledAiAssistantLoadingDots
-                        $stage={sendingStage}
-                        $elapsed={sendingElapsedSec}
-                      >
+                      <StyledAiAssistantLoadingDots $stage={sendingStage} $elapsed={sendingElapsedSec}>
                         <span />
                         <span />
                         <span />
                       </StyledAiAssistantLoadingDots>
-                      <StyledAiAssistantLoadingText
-                        $stage={sendingStage}
-                        $elapsed={sendingElapsedSec}
-                      >
+                      <StyledAiAssistantLoadingText $stage={sendingStage} $elapsed={sendingElapsedSec}>
                         {(typedStageLabel || '...') + ` · ${sendingElapsedSec}초`}
                       </StyledAiAssistantLoadingText>
                     </StyledAiAssistantLoadingRow>
@@ -1790,11 +2860,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
               <StyledAiComposerFooter>
                 <StyledAiContextChips>
                   {hasConversation && (
-                    <StyledAiContextChip
-                      type="button"
-                      onClick={handleBackToInitial}
-                      disabled={isSending}
-                    >
+                    <StyledAiContextChip type="button" onClick={handleBackToInitial} disabled={isSending}>
                       대화 초기화
                     </StyledAiContextChip>
                   )}
@@ -1809,11 +2875,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
                     정지
                   </StyledAiStopButton>
                 ) : (
-                  <StyledAiSendButton
-                    type="submit"
-                    disabled={!draft.trim()}
-                    title="전송"
-                  >
+                  <StyledAiSendButton type="submit" disabled={!draft.trim()} title="전송">
                     ↑
                   </StyledAiSendButton>
                 )}
@@ -1821,9 +2883,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
             </StyledAiComposerBox>
           </StyledAiAssistantComposer>
 
-          <StyledAiDisclaimer>
-            AI 답변은 오류가 포함될 수 있습니다. 내용을 확인 후 활용해 주세요.
-          </StyledAiDisclaimer>
+          <StyledAiDisclaimer>AI 답변은 오류가 포함될 수 있습니다. 내용을 확인 후 활용해 주세요.</StyledAiDisclaimer>
         </StyledAiAssistantDockBody>
       )}
     </StyledAiAssistantDock>

@@ -1,5 +1,5 @@
-import { listEventRules, type EventRuleRow } from '../../db/event-rule.repo'
-import type { PhraseMapMatch } from '../../db/query-phrase-map.repo'
+import { listEventRules, type EventRuleRow } from '../../features/chat-settings/db/event-rule.repo'
+import type { PhraseMapMatch } from '../../features/chat-settings/db/query-phrase-map.repo'
 
 export type EventRuleType =
   | 'db-rule'

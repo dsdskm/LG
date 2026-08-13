@@ -13,10 +13,10 @@ import { Injectable, Logger } from '@nestjs/common'
 
 import { getDefaultLlmProvider } from '../llm/llm.factory'
 import type { LlmProvider, LlmRuntime } from '../llm/llm.types'
-import { ChatLogService } from '../db/chat-log.service'
-import { ChatSettingService } from '../db/chat-setting.service'
-import { getPromptStore, type RagChunkData } from '../db/prompt-store.service'
-import { findPhraseMapMatch } from '../db/query-phrase-map.repo'
+import { ChatLogService } from '../features/chat-settings/db/chat-log.service'
+import { ChatSettingService } from '../features/chat-settings/service/chat-setting.service'
+import { getPromptStore, type RagChunkData } from '../features/chat/service/prompt-store.service'
+import { findPhraseMapMatch } from '../features/chat-settings/db/query-phrase-map.repo'
 import { ChatOrchestrator } from '../pipeline/chat.orchestrator'
 import { loadChatPipelineConfig } from '../pipeline/pipeline.config'
 import type { ChatReply, ChatReplyImage, ChatTurn, SuggestedAction } from '../pipeline/pipeline.types'
@@ -86,7 +86,6 @@ type ScreenSummary = {
   appKey: string
   key: string
   screenName: string
-  sortOrder: number
 }
 
 type ScreenTask =
@@ -525,9 +524,8 @@ export class ChatService {
 
     const allScreens: ScreenSummary[] = screensRaw.map((row) => ({
       appKey: String(row.appKey ?? '').trim(),
-      key: this.normalizeRouteLike(String(row.key ?? '')),
+      key: this.normalizeRouteLike(String(row.screenKey ?? '')),
       screenName: String(row.screenName ?? '').trim(),
-      sortOrder: Number(row.sortOrder ?? 0),
     })).filter((row) => row.appKey && row.key && row.screenName)
 
     if (allScreens.length === 0) {
@@ -539,7 +537,7 @@ export class ChatService {
 
     const sameApp = allScreens
       .filter((row) => row.appKey === currentApp && row.key !== currentRoute)
-      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .sort((a, b) => a.key.localeCompare(b.key))
 
     const crossAppPriorityKeys = ['robot/dashboard', 'ota/campaign', 'cms/content', 'tms']
     const crossApp: ScreenSummary[] = []
@@ -690,31 +688,14 @@ export class ChatService {
     const query = `${this.normalize(message)} ${this.normalize(reply?.text)}`.trim()
     if (!query) return null
 
-    const candidates = collection.chunks.filter((chunk) => {
-      if (!String(chunk?.imageUrl ?? '').trim()) return false
-      return String(chunk?.imageAttachMode ?? 'auto').toLowerCase() !== 'never'
-    })
+    const candidates = collection.chunks.filter((chunk) => Boolean(String(chunk?.imageUrl ?? '').trim()))
     if (candidates.length === 0) return null
 
     const scored = candidates
       .map((chunk) => ({ chunk, score: this.scoreTaskflowExplanationChunk(query, chunk) }))
-      .filter((item) => {
-        const mode = String(item.chunk.imageAttachMode ?? 'auto').toLowerCase()
-        if (mode === 'always') return item.score >= Number(rules.explanationImageMinScoreAlways ?? 1)
-        return item.score >= Number(rules.explanationImageMinScore ?? 5)
-      })
+      .filter((item) => item.score >= Number(rules.explanationImageMinScore ?? 5))
       .sort((left, right) => {
-        const leftMode = String(left.chunk.imageAttachMode ?? 'auto').toLowerCase()
-        const rightMode = String(right.chunk.imageAttachMode ?? 'auto').toLowerCase()
-        const leftPriority = leftMode === 'always' ? 0 : 1
-        const rightPriority = rightMode === 'always' ? 0 : 1
-        if (leftPriority !== rightPriority) return leftPriority - rightPriority
         if (right.score !== left.score) return right.score - left.score
-
-        const leftSortOrder = Number(left.chunk.sortOrder ?? 0)
-        const rightSortOrder = Number(right.chunk.sortOrder ?? 0)
-        if (leftSortOrder !== rightSortOrder) return leftSortOrder - rightSortOrder
-
         return String(left.chunk.id ?? '').localeCompare(String(right.chunk.id ?? ''))
       })
 
@@ -1107,7 +1088,7 @@ export class ChatService {
     const screens = store?.getEnabledScreens() ?? []
 
     const matched = screens
-      .map((screen) => String(screen.key ?? '').trim())
+      .map((screen) => String(screen.screenKey ?? '').trim())
       .filter((key) => key && key.includes('/:'))
       .filter((key) => this.matchRouteTemplate(key, normalized))
       .sort((a, b) => b.length - a.length)[0]

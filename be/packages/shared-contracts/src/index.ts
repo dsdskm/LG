@@ -1,5 +1,6 @@
 export * from "./log";
 export * from "./chat";
+export * from "./chat-settings";
 export * from "./event";
 export * from "./analyzer";
 export * from "./llm";

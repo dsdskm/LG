@@ -7,7 +7,7 @@
 import type { LlmClient } from '../../llm/llm.types'
 import type { RagChunk } from './rag.docs'
 import type { ChatTurn, RagScoreEntry } from '../pipeline.types'
-import { getPromptStore } from '../../db/prompt-store.service'
+import { getPromptStore } from '../../features/chat/service/prompt-store.service'
 
 /** 한글/영문/숫자 토큰 추출(2글자 이상). */
 function tokenize(text: string): string[] {
