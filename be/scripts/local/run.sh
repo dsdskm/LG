@@ -15,38 +15,54 @@ MODE="start"
 
 usage() {
   echo "Usage:"
-  echo "  ./scripts/local/run.sh                   # all apps, start mode"
+  echo "  ./scripts/local/run.sh                   # all apps, dev mode (default)"
   echo "  ./scripts/local/run.sh dev               # all apps, dev mode"
+  echo "  ./scripts/local/run.sh prd               # build all apps"
   echo "  ./scripts/local/run.sh <app>             # single app, dev mode (default)"
   echo "  ./scripts/local/run.sh <app> start       # single app, start mode"
   echo "  ./scripts/local/run.sh <app> dev         # single app, dev mode"
+  echo "  ./scripts/local/run.sh <app> prd         # build a single app"
 }
 
 parse_args() {
   case "$#" in
     0)
       APP="all"
-      MODE="start"
+      MODE="dev"
       ;;
     1)
-      if [[ "$1" == "dev" ]]; then
-        APP="all"
-        MODE="dev"
-      else
-        # 서비스명만 주면 기본 dev 모드(pnpm dev)
-        APP="$1"
-        MODE="dev"
-      fi
+      case "$1" in
+        dev)
+          APP="all"
+          MODE="dev"
+          ;;
+        prd)
+          APP="all"
+          MODE="prd"
+          ;;
+        *)
+          # 서비스명만 주면 기본 dev 모드(pnpm dev)
+          APP="$1"
+          MODE="dev"
+          ;;
+      esac
       ;;
     2)
-      if [[ "$2" == "dev" || "$2" == "start" ]]; then
-        APP="$1"
-        MODE="$2"
-      else
-        echo "[dev-run] ERROR: invalid arguments"
-        usage
-        exit 1
-      fi
+      case "$2" in
+        dev|start)
+          APP="$1"
+          MODE="$2"
+          ;;
+        prd)
+          APP="$1"
+          MODE="prd"
+          ;;
+        *)
+          echo "[dev-run] ERROR: invalid arguments"
+          usage
+          exit 1
+          ;;
+      esac
       ;;
     *)
       echo "[dev-run] ERROR: too many arguments"
@@ -134,9 +150,15 @@ run_health_check_once() {
   ) &
 }
 
-# (1) start 모드일 때만 build
+# (1) start / prd 는 build 수행 후 종료
 if [[ "$MODE" == "start" ]]; then
   run_build "$APP"
+fi
+
+if [[ "$MODE" == "prd" ]]; then
+  echo "[dev-run] production build requested..."
+  run_build "$APP"
+  exit 0
 fi
 
 # (2) DB 시작
