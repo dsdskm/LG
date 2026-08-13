@@ -31,7 +31,7 @@ export const PulseRing = styled.div`
   width: 80px;
   height: 80px;
   border-radius: 50%;
-  background: var(--color-primary-20, rgba(54, 215, 183, 0.2));
+  background: var(--color-neutral-20);
   animation: ${pulse} 2s infinite ease-in-out;
 `
 

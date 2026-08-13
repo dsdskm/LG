@@ -15,7 +15,10 @@ import {
   BreakpointDot,
   ForcedResultMark,
   TickCountBadge,
-  execStyle
+  execStyle,
+  TASK_STATUS_ALIASES,
+  DEFAULT_TASK_STATUS,
+  type TaskExecStatus
 } from './styles.node'
 import { RFTaskNode } from '../types'
 import { useFlowEditorStore } from '@/store/taskflow.canvas.store'
@@ -23,12 +26,21 @@ import { getHandlePositions } from '@/utils/node.util'
 
 type Props = NodeProps<RFTaskNode>
 
+function normalizeTaskStatus(status?: string | null): TaskExecStatus {
+  const normalized = String(status ?? '').trim().toUpperCase()
+  if (!normalized) return DEFAULT_TASK_STATUS
+
+  return TASK_STATUS_ALIASES[normalized] ?? DEFAULT_TASK_STATUS
+}
+
 export default function TaskNode({ id, data, selected }: Props) {
   const isContentNode = typeof data?.contentId === 'number'
 
   const title = (data?.label ?? '').trim()
   const titleFontSize = fitTitleFontSize(title.length)
   const taskName = (data?.taskName ?? '').trim()
+  const taskStatus = normalizeTaskStatus(data?.taskStatus)
+  const taskStyle = execStyle[taskStatus]
 
   // 핸들 ID 는 그대로 두고, 모드에 따라 시각적 위치만 바꾼다 (BT 생성은 동일)
   //  - 가로(default): 입력/분기출력=왼쪽, 주흐름 출력=오른쪽
@@ -62,8 +74,8 @@ export default function TaskNode({ id, data, selected }: Props) {
       $selected={selected}
       $taskType={data?.taskType}
       style={{
-        background: execStyle[data.taskStatus ?? 'IDLE'].bg,
-        borderColor: execStyle[data.taskStatus ?? 'IDLE'].border
+        background: taskStyle.bg,
+        borderColor: taskStyle.border
       }}
     >
       {/* 주 흐름(true/next) 출력: 가로=오른쪽, 세로=아래 */}
@@ -81,7 +93,7 @@ export default function TaskNode({ id, data, selected }: Props) {
         ) : null}
       </TaskRunningCountBadge>
 
-      <TaskTitle style={{ color: execStyle[data.taskStatus ?? 'IDLE'].text, fontSize: titleFontSize, lineHeight: 1.4 }}>
+      <TaskTitle style={{ color: taskStyle.text, fontSize: titleFontSize, lineHeight: 1.4 }}>
         {title}
       </TaskTitle>
 
@@ -103,7 +115,7 @@ function fitTitleFontSize(len: number): number {
   return 6
 }
 
-function Pill({ children, tone, dot = false }: { children: ReactNode; tone: 'type' | 'name'; dot: boolean }) {
+function Pill({ children, tone, dot = false }: { children: ReactNode; tone: 'name'; dot?: boolean }) {
   const title = typeof children === 'string' ? children : undefined
 
   return (

@@ -19,7 +19,8 @@ import { useTranslation } from 'react-i18next'
 import { convertDateToString } from '@repo/utils'
 import { toast } from 'react-toastify'
 import { ButtonWrap } from '@/components/common/styles'
-import { useOrganizationStore, useUserStore } from '@repo/stores'
+import { useUserStore } from '@repo/stores'
+import { useOrgIds } from '@/hooks/useOrgIds'
 
 const hoverStyles = {
   rows: {
@@ -34,6 +35,7 @@ const hoverStyles = {
 const Policy = () => {
   const navigate = useNavigate()
   const session = useUserStore((state) => state.session)
+  const userRole = session?.userRole
   const [processedData, setProcessedData] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const { t } = useTranslation('policy')
@@ -56,7 +58,7 @@ const Policy = () => {
   const [deleteMode, setDeleteMode] = useState(false)
   const [orgFilter, setOrgFilter] = useState({ actualOrgs: [], matchesOrg: () => false })
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
-  const { allOrgs, actualOrgs, defaultOrg } = useOrganizationStore()
+  const { orgIds, primaryOrgId } = useOrgIds()
 
   const filteredData = processedData.filter((item) => {
     const matchesStatus = filterQuery === 'all' || item.type.toLowerCase() === filterQuery
@@ -141,9 +143,8 @@ const Policy = () => {
   }
 
   const handleCreate = () => {
-    navigate(
-      `/ota/policy/detail?orgId=${session?.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0 ? defaultOrg.id : actualOrgs[0].id}`
-    )
+    if (!primaryOrgId) return
+    navigate(`/ota/policy/detail?orgId=${primaryOrgId}`)
   }
 
   const handleDelete = async () => {
@@ -160,7 +161,7 @@ const Policy = () => {
       toast.success(tCommon('success'), { autoClose: 2000 })
       fetchData()
     } catch (error) {
-      toast.error(tCommon('error'), { autoClose: 2000 })
+      toast.error(tCommon('error.description'), { autoClose: 2000 })
     } finally {
       setDeleteMode(false)
       setSelectedPolicies([])
@@ -177,15 +178,15 @@ const Policy = () => {
     return selectedPolicies.length === 0 && deleteMode
   }
 
-  const orgIds =
-    session?.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
-      ? [...allOrgs, defaultOrg].map((org) => org.id).join(',')
-      : actualOrgs.map((org) => org.id).join(',')
-
   const fetchData = useCallback(async () => {
+    if (orgIds.length === 0) {
+      setIsLoading(false)
+      return
+    }
+
     try {
       setIsLoading(true)
-      const response = await policyApis.retrievePolicy(orgIds.split(',').sort((a, b) => a - b))
+      const response = await policyApis.retrievePolicy(orgIds)
       const mappedData = response.results.map((policy) => ({
         ...policy,
         createdAt: policy.createdAt ? convertDateToString(policy.createdAt) : '-'
@@ -227,7 +228,7 @@ const Policy = () => {
               <Button
                 variant="contained"
                 onClick={handleCreate}
-                disabled={orgFilter.actualOrgs.length !== 1 && session?.userRole !== 'SYSTEM_MANAGER'}
+                disabled={orgFilter.actualOrgs.length !== 1 && userRole !== 'SYSTEM_MANAGER'}
               >
                 {t('create')}
               </Button>

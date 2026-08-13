@@ -19,5 +19,6 @@
   "batteryLevel": "バッテリーレベル (%以上)",
   "wifiOnly": "Wifiのみ",
   "deleteConfirm": "本当に削除しますか？",
-  "confirm": "確認"
+  "confirm": "確認",
+  "policyCreation": "ポリシー作成"
 }

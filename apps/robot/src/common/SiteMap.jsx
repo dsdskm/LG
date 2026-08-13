@@ -83,7 +83,10 @@ const Canvas = styled.div`
   left: 50%;
   top: 50%;
   will-change: transform;
-  z-index: 100;
+  /* Viewport/Wrapper 둘 다 stacking context를 만들지 않아, 값이 크면 SiteMap을 감싸는
+     상위 컴포넌트(예: SiteMap3D의 툴바·가이드, z-index: 2~3)를 그냥 뚫고 올라가버림.
+     Viewport 내부에는 이 Canvas 외 경쟁하는 형제 요소가 없어 낮은 값이면 충분함. */
+  z-index: 1;
 `
 
 const MapImage = styled.img`

@@ -208,7 +208,7 @@ export const CollapseToggleBtn = styled.button`
 
 export const CollapsibleBody = styled.div`
   overflow: hidden;
-  max-height: ${({ $collapsed }) => ($collapsed ? '0' : '1000px')};
+  max-height: ${({ $collapsed }) => ($collapsed ? '0' : 'none')};
   transition: max-height 0.3s ease-in-out;
 `
 

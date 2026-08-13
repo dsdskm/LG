@@ -12,7 +12,8 @@ import {
 import { useTranslation } from 'react-i18next'
 import { deviceApis, moduleApis } from '@/apis'
 import DeviceTable from '@/components/Device/DeviceTable'
-import { useOrganizationStore, useUserStore } from '@repo/stores'
+import { useOrganizationStore } from '@repo/stores'
+import { useOrgIds } from '@/hooks/useOrgIds'
 import { ClipLoader } from 'react-spinners'
 
 const Device = () => {
@@ -24,8 +25,8 @@ const Device = () => {
   const [searchQuery, setSearchQuery] = useState('')
   const [orgFilter, setOrgFilter] = useState({ actualOrgs: [], matchesOrg: () => false })
   const [isProcessing, setIsProcessing] = useState(false)
-  const { actualOrgs, allOrgs, defaultOrg, company } = useOrganizationStore()
-  const { session } = useUserStore()
+  const { company } = useOrganizationStore()
+  const { orgIds } = useOrgIds()
   const [allModules, setAllModules] = useState([])
 
   const handleSearchChange = (e) => {
@@ -49,22 +50,15 @@ const Device = () => {
     return matchesSearch && matchesOrg
   })
 
-  const orgIds =
-    session?.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
-      ? [...allOrgs, defaultOrg]
-          .map((org) => org?.id)
-          .sort((a, b) => a - b)
-          .join(', ')
-      : actualOrgs.map((org) => org.id).join(', ')
-
-  const parsedOrgIds = orgIds ? orgIds.split(',').map((id) => Number(id.trim())) : []
-
   const fetchDevices = async () => {
-    if (actualOrgs.length === 0 && session?.userRole !== 'SYSTEM_MANAGER') return
+    if (orgIds.length === 0) {
+      setIsLoading(false)
+      return
+    }
 
     setIsLoading(true)
     try {
-      const response = await deviceApis.retrieveDevices(parsedOrgIds)
+      const response = await deviceApis.retrieveDevices(orgIds)
       const sortedResults = (response.results || []).sort((a, b) =>
         (a.displayName || '').localeCompare(b.displayName || '')
       )
@@ -77,7 +71,10 @@ const Device = () => {
   }
 
   useEffect(() => {
-    if (actualOrgs.length === 0 && session?.userRole !== 'SYSTEM_MANAGER') return
+    if (orgIds.length === 0) {
+      setIsLoading(false)
+      return
+    }
 
     fetchDevices()
 

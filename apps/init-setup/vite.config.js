@@ -1,8 +1,29 @@
 import { defineConfig, loadEnv } from 'vite'
 import { resolve } from 'path'
+import { execSync } from 'child_process'
+import { readFileSync, writeFileSync } from 'fs'
 import react from '@vitejs/plugin-react'
 import svgr from 'vite-plugin-svgr'
 import federation from '@originjs/vite-plugin-federation'
+
+// FE 빌드 정보를 dist/build-info.json 으로만 떨어뜨린다 (/version 페이지가 런타임에 읽는다).
+// define 으로 번들에 굽지 않는 이유: dist 가 cloi_entropos 에 커밋되므로 빌드 시각이 번들
+// 해시를 매번 흔들면 diff 가 커진다. 별도 파일이면 이 파일 한 줄만 바뀐다.
+const buildInfoPlugin = (mode) => ({
+  name: 'init-setup-build-info',
+  apply: 'build',
+  writeBundle(options) {
+    const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'))
+    let commit = 'unknown'
+    try {
+      commit = execSync('git rev-parse --short HEAD', { cwd: __dirname }).toString().trim()
+    } catch {
+      // git 없는 빌드 환경(컨테이너 등)에서는 commit 을 생략한다.
+    }
+    const info = { name: pkg.name, version: pkg.version, commit, mode, builtAt: new Date().toISOString() }
+    writeFileSync(resolve(options.dir, 'build-info.json'), `${JSON.stringify(info, null, 2)}\n`)
+  }
+})
 
 export default defineConfig(({ mode }) => {
   const apiEnv = loadEnv(mode, resolve(__dirname, '../../packages/apis'), 'VITE_')
@@ -32,7 +53,8 @@ export default defineConfig(({ mode }) => {
         }
       }),
       react(),
-      svgr({ include: '**/*.svg' })
+      svgr({ include: '**/*.svg' }),
+      buildInfoPlugin(mode)
     ],
     base: '/',
     server: {

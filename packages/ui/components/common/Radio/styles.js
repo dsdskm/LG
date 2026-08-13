@@ -44,20 +44,20 @@ export const StyledRadio = styled.label`
         width: 1rem;
         height: 1rem;
         border-radius: 50%;
-        background: var(--color-primary-70);
+        background: var(--t-select-accent);
         display: none;
       }
     }
 
     &:checked + .radio-mark {
-      border-color: var(--color-primary-70);
+      border-color: var(--t-select-accent);
       &::after {
         display: block;
       }
     }
 
     &:focus-visible + .radio-mark {
-      outline: 2px solid var(--color-primary-60);
+      outline: 2px solid var(--t-select-accent);
       outline-offset: 2px;
     }
   }

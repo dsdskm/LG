@@ -18,7 +18,7 @@ import { moduleApis, packageTypeApis, artifactApis } from '@/apis'
 import { useS3Upload } from '@repo/hooks/useS3Upload'
 import { useOrganizationStore, useUserStore } from '@repo/stores'
 import { DropdownContainer } from './styles'
-import { ButtonWrap, PageHeadWrap } from '@/components/common/styles'
+import { ButtonWrap, DetailHead } from '@/components/common/styles'
 import ForgeListModal from '@/components/Artifact/ForgeListModal'
 import DockerSection from '@/components/Artifact/DockerSection'
 import ForgeSection from '@/components/Artifact/ForgeSection'
@@ -29,8 +29,9 @@ const ArtifactDetail = () => {
   const { id } = useParams()
   const { t } = useTranslation('artifact')
   const { t: tCommon } = useTranslation('common')
-  const { actualOrgs, company, defaultOrg, allOrgs } = useOrganizationStore()
-  const session = useUserStore((state) => state.session)
+  const { company, defaultOrg, allOrgs } = useOrganizationStore()
+  const { session } = useUserStore()
+  const userId = session?.email
 
   const navigate = useNavigate()
   const orgIdParam = new URLSearchParams(window.location.search).get('orgId')
@@ -59,9 +60,8 @@ const ArtifactDetail = () => {
   const [createdArtifactId, setCreatedArtifactId] = useState(null)
   const [isForgeModal, setIsForgeModal] = useState(false)
   const [selectedForgeModel, setSelectedForgeModel] = useState(null)
-  const [organizationId, setOrganizationId] = useState('')
 
-  const { uploadFile, abort, isUploading, uploadProgress, error } = useS3Upload({
+  const { uploadFile, abort, isUploading, uploadProgress } = useS3Upload({
     requestUploadUrl: async ({ file, chunkCount, context }) => {
       const { artifactData, kind } = context
       const res = await artifactApis.requestUploadUrl({
@@ -113,7 +113,8 @@ const ArtifactDetail = () => {
       displayName,
       memo,
       moduleId,
-      version: { displayName: versionList }
+      version: { displayName: versionList },
+      userId
     }
     if (packageType?.code === PACKAGE_TYPE_CODE.FORGE) {
       artifactData.forgeModelId = selectedForgeModel?.id
@@ -274,7 +275,6 @@ const ArtifactDetail = () => {
           setModuleId(artifact.Module.id || '')
           setArtifactPackageTypeId(artifact.Module.packageTypeId || null)
           setVersions(artifact.Versions.map((v) => v.displayName) || [])
-          setOrganizationId(artifact.Organization.id || '')
 
           if (artifact.ForgeModel || artifact.forgeModel) {
             setSelectedForgeModel(artifact.ForgeModel || artifact.forgeModel)
@@ -352,11 +352,11 @@ const ArtifactDetail = () => {
 
   return (
     <StyledPageContent className="column">
-      <Title>
-        {t('artifactTitle')} &gt; {tCommon('detail')}
-      </Title>
-      <PageHeadWrap>
-        <div>{`${tCommon('organizationName')} : ${currentOrg?.displayName}`}</div>
+      <DetailHead>
+        <div className="titleGroup">
+          <Title>{id ? t('artifactDetail') : t('artifactCreation')}</Title>
+          <span className="orgName typographyBody5">{`${tCommon('organizationName')} : ${currentOrg?.displayName || ''}`}</span>
+        </div>
         <ButtonWrap className="alignRight">
           <Button variant="contained" onClick={handleSave} disabled={isLoading || isUploading || isDisabled()}>
             {t(id ? 'modify' : 'save')}
@@ -365,7 +365,7 @@ const ArtifactDetail = () => {
             {t('cancel')}
           </Button>
         </ButtonWrap>
-      </PageHeadWrap>
+      </DetailHead>
       <Section gap="2.4rem">
         <Section gap="2.4rem">
           <Input

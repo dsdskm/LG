@@ -24,7 +24,8 @@ export const ENDPOINTS = {
     SIGNUP_APPLY: `${API_CONFIG.PREFIX_AUTH}/signup/apply`,
     TEMPTOKEN_VALIDATE: `${API_CONFIG.PREFIX_AUTH}/signup/temporary-tokens/validate`,
     SIGNUP_COMPLETE: `${API_CONFIG.PREFIX_AUTH}/signup/complete`,
-    TOKEN_REFRESH: `${API_CONFIG.PREFIX_AUTH}/token/refresh`
+    TOKEN_REFRESH: `${API_CONFIG.PREFIX_AUTH}/token/refresh`,
+    LOGOUT: `${API_CONFIG.PREFIX_AUTH}/logout`
   },
   INVITATION: {
     TOKEN_VALIDATE: `${API_CONFIG.PREFIX_INVITATION}/invitation-tokens/validate`,

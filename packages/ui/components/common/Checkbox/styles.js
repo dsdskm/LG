@@ -43,6 +43,20 @@ export const StyledCheckbox = styled.label`
         width: 100%;
         height: 100%;
       }
+
+      /* svg 안에 색이 하드코딩되어 있어 테마 토큰으로 덮어쓴다 */
+      .default rect {
+        fill: var(--color-neutral-10);
+        stroke: var(--color-secondary-50);
+      }
+
+      .checked rect {
+        fill: var(--t-select-accent);
+      }
+
+      .checked #icon {
+        fill: var(--color-neutral-10);
+      }
     }
 
     &:checked + .checkbox {
@@ -55,7 +69,7 @@ export const StyledCheckbox = styled.label`
     }
 
     &:focus-visible + .checkbox {
-      outline: 2px solid var(--color-primary-60);
+      outline: 2px solid var(--t-select-accent);
       outline-offset: 2px;
     }
   }

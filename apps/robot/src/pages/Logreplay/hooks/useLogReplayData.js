@@ -130,6 +130,10 @@ export default function useLogReplayData({
   const activePoseWindowRef = useRef({ startSec: null, endSec: null })
   const poseInflightRef = useRef(false) // pose 윈도우 로드 in-flight 가드(중복/파일업 방지 — finally에서 반드시 해제)
   const poseTopicUnavailableRef = useRef(false) // ✅ 이 mcap엔 pose 토픽이 없음(또는 메시지 0개)이 확정되면 true — 이후 requestPoseWindow 호출 자체를 차단
+  // ✅ grid가 크기 제한 초과로 폐기됨이 확정되면 true — 지도 위에 그릴 배경이 없으므로 그 위에 렌더링되는
+  //    토픽(경로선/costmap/planned path/goal, 모두 requestPoseWindow 편승분)도 더 이상 요청하지 않음.
+  //    (센서차트/로그 뷰어는 지도와 무관하게 그대로 로드됨 — requestChartOverview/requestLogWindow는 영향 없음)
+  const gridOversizedRef = useRef(false)
   const poseWindowSeqRef = useRef(0)
   const lastPollCenterRef = useRef(null) // ✅ 폴링 게이트: 사용자 seek 감지용
   // ✅ [ADD][Option A] pose window 결과 캐시(플레이바 이동 시 네트워크 없이 여기서 선택)
@@ -150,6 +154,9 @@ export default function useLogReplayData({
   //    UI가 "계속 기다리는 중" 스피너 대신 "이 로그엔 데이터가 없다" 안내를 보여줄 수 있도록 별도 state로 노출.
   const [poseUnavailable, setPoseUnavailable] = useState(false)
   const [gridUnavailable, setGridUnavailable] = useState(false)
+  // ✅ [ADD] grid 토픽/메시지는 있었지만 전부 크기 제한(MAX_GRID_DIMENSION/MAX_GRID_CELLS) 초과로 폐기된 경우.
+  //    gridUnavailable(=토픽 자체가 없음)과 원인이 달라 UI 안내 문구를 구분하기 위해 별도로 둔다.
+  const [gridOversized, setGridOversized] = useState(false)
 
   // ✅ [ADD] pose window -> chart data 변환 유틸
   const buildOdomChartsFromPoses = useCallback((poses) => {
@@ -1034,8 +1041,10 @@ export default function useLogReplayData({
     activePoseWindowRef.current = { startSec: null, endSec: null }
     poseInflightRef.current = false
     poseTopicUnavailableRef.current = false
+    gridOversizedRef.current = false
     setPoseUnavailable(false)
     setGridUnavailable(false)
+    setGridOversized(false)
     poseWindowSeqRef.current = 0
     poseWindowCacheRef.current = []
     lastPoseApplyIdxRef.current = -1
@@ -1084,6 +1093,8 @@ export default function useLogReplayData({
       // ✅ 이 mcap엔 pose 토픽이 없음(또는 메시지 0개)이 이미 확정됨 — 더 이상 요청하지 않음
       //    (파일 전체 요약 통계 기준 판정이라 재생 위치와 무관하게 항상 유효하다)
       if (poseTopicUnavailableRef.current) return
+      // ✅ grid가 크기 제한 초과로 폐기됨 — 그 위에 그릴 배경 자체가 없으므로 경로선/costmap/path/goal도 요청 중단
+      if (gridOversizedRef.current) return
 
       const exp = Number(expectedDurationSecRef.current) || 0
       if (!Number.isFinite(centerSec)) return
@@ -1435,6 +1446,12 @@ export default function useLogReplayData({
               expectedDurationSecRef.current = durationSec
               setDurationMs?.(Math.round(durationSec * 1000))
             }
+          },
+
+          // ✅ grid 메시지는 있었지만 전부 크기 제한 초과로 폐기된 경우: "이 로그엔 지도가 없음"과 구분해 안내
+          onOversized: () => {
+            gridOversizedRef.current = true
+            setGridOversized(true)
           }
         })
       })()
@@ -1566,6 +1583,7 @@ export default function useLogReplayData({
     // ✅ [ADD] "이 로그엔 데이터가 없다"가 확정된 상태(로딩 중과 구분)
     poseUnavailable,
     gridUnavailable,
+    gridOversized,
 
     clearReplaySession
   }

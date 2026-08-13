@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 
 const ApiDoc = () => {
   const { session } = useUserStore()
+  const accessToken = session?.accessToken
   const { t } = useTranslation('common')
   const [swaggerDocument, setSwaggerDocument] = useState()
   const [isLoading, setIsLoading] = useState(true)
@@ -31,8 +32,8 @@ const ApiDoc = () => {
 
   const requestInterceptor = (req) => {
     // Swagger UI 'Authorize' 버튼으로 입력한 값이 없을 때만 자동 주입
-    if (!req.headers['Authorization'] && session?.accessToken) {
-      req.headers['Authorization'] = `Bearer ${session.accessToken}`
+    if (!req.headers['Authorization'] && accessToken) {
+      req.headers['Authorization'] = `Bearer ${accessToken}`
     }
     return req
   }

@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import { deviceTypeApis } from '@/apis'
 import { toast } from 'react-toastify'
-import { ButtonWrap } from '@/components/common/styles'
+import { ButtonWrap, DetailHead } from '@/components/common/styles'
 import { useOrganizationStore } from '@repo/stores'
 
 const DeviceTypeDetail = () => {
@@ -73,18 +73,19 @@ const DeviceTypeDetail = () => {
 
   return (
     <StyledPageContent className="column">
-      <Title>
-        {t('deviceTypeTitle', 'Device Type')} &gt; {tCommon('detail')}
-      </Title>
-
-      <ButtonWrap className="alignRight">
-        <Button variant="contained" onClick={handleSave} disabled={isLoading || isDisabled()}>
-          {id ? t('modify') : t('create')}
-        </Button>
-        <Button variant="contained" onClick={handleCancel} disabled={isLoading}>
-          {t('cancel')}
-        </Button>
-      </ButtonWrap>
+      <DetailHead>
+        <div className="titleGroup">
+          <Title>{id ? t('deviceTypeDetail') : t('deviceTypeCreation')}</Title>
+        </div>
+        <ButtonWrap className="alignRight">
+          <Button variant="contained" onClick={handleSave} disabled={isLoading || isDisabled()}>
+            {id ? t('modify') : t('create')}
+          </Button>
+          <Button variant="contained" onClick={handleCancel} disabled={isLoading}>
+            {t('cancel')}
+          </Button>
+        </ButtonWrap>
+      </DetailHead>
       <Section gap="2.4rem">
         <Section horizontal gap="2.4rem">
           <div style={{ flex: 1 }}>

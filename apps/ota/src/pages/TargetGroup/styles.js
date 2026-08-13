@@ -8,6 +8,130 @@ export const DropdownContainer = styled.div`
   margin-bottom: 2rem;
 `
 
+// 생성 마법사 헤더 : 상세/생성 화면 공용 헤더와 동일
+export { DetailHead as WizardHead } from '@/components/common/styles'
+
+// 2단계 진행 표시 : 원(번호/체크) + 제목 + 설명, 사이는 연결선
+export const StepIndicator = styled.nav`
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 2.4rem;
+  width: 100%;
+  margin-bottom: 2.4rem;
+
+  .step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.8rem;
+    max-width: 32rem;
+    padding: 0;
+    border: 0;
+    background: none;
+    text-align: center;
+    cursor: pointer;
+
+    &:disabled {
+      cursor: default;
+    }
+  }
+
+  .circle {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    width: 3.2rem;
+    height: 3.2rem;
+    border-radius: 50%;
+    background: var(--color-secondary-40);
+    color: var(--color-neutral-10);
+    font-weight: 600;
+  }
+
+  .step.active .circle,
+  .step.done .circle {
+    background: var(--color-neutral-90);
+  }
+
+  .stepTitle {
+    font-weight: 600;
+    color: var(--color-neutral-90);
+  }
+
+  .stepDesc {
+    color: var(--color-secondary-60);
+  }
+
+  .connector {
+    flex: 0 1 12rem;
+    height: 1px;
+    margin-top: 1.6rem;
+    background: var(--color-secondary-30);
+  }
+
+  @media all and (max-width: 767px) {
+    .connector {
+      display: none;
+    }
+  }
+`
+
+export const WizardBody = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  width: 100%;
+`
+
+// 카드 헤더 : 제목 + 선택 개수 배지
+export const CardHead = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin-bottom: 1.9rem;
+
+  .countBadge {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    min-width: 3.2rem;
+    height: 2.2rem;
+    padding: 0 0.8rem;
+    border-radius: 1.1rem;
+    background: var(--color-neutral-90);
+    color: var(--color-neutral-10);
+    font-size: var(--font-size-body-6);
+    font-weight: 600;
+  }
+`
+
+// 조회 화면에서 선택 방식(Static/Dynamic)을 읽기 전용으로 보여주는 영역
+export const ModeSummary = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+
+  .modeHead {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+  }
+
+  .modeSubtitle,
+  .modeDesc {
+    color: var(--color-secondary-60);
+  }
+`
+
+export const RobotFilterRow = styled.div`
+  display: flex;
+  align-items: flex-end;
+  gap: 1.2rem;
+  width: 100%;
+`
+
 export const SelectionTypeContainer = styled.div`
   display: flex;
   flex-direction: column;
@@ -74,6 +198,12 @@ export const DeviceToolbar = styled.div`
   align-items: center;
   justify-content: space-between;
   gap: 1.2rem;
+
+  .toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 1.2rem;
+  }
 
   .toolbar-title {
     font-size: 1.6rem;

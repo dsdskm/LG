@@ -3,7 +3,7 @@ import { StyledPageContent, Section, SectionTitle, Title, Button, Input, Textare
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import { policyApis } from '@/apis'
-import { ButtonWrap, PageHeadWrap } from '@/components/common/styles'
+import { ButtonWrap, DetailHead } from '@/components/common/styles'
 import { useOrganizationStore, useUserStore } from '@repo/stores'
 
 const PolicyDetail = () => {
@@ -21,8 +21,7 @@ const PolicyDetail = () => {
   const [isLoading, setIsLoading] = useState(false)
 
   const [waitTimeout, setWaitTimeout] = useState('')
-  const [battery, setBattery] = useState('')
-  const [wifiOnly, setWifiOnly] = useState(false)
+  // 디바이스 조건(배터리/Wi-Fi) UI가 주석 처리되어 있어 관련 상태도 함께 보류
 
   const handleSave = async () => {
     try {
@@ -80,10 +79,6 @@ const PolicyDetail = () => {
           if (data.waitTimeout) {
             setWaitTimeout(data.waitTimeout || '')
           }
-          if (data.battery) {
-            setBattery(data.battery || '')
-          }
-          setWifiOnly(!!data.wifiOnly)
         }
       } catch (error) {
         console.error('Error retrieving policy:', error)
@@ -100,11 +95,11 @@ const PolicyDetail = () => {
 
   return (
     <StyledPageContent className="column">
-      <Title>
-        {t('policyTitle')} &gt; {tCommon('detail')}
-      </Title>
-      <PageHeadWrap>
-        <div>{`${tCommon('organizationName')} : ${currentOrg?.displayName || ''}`}</div>
+      <DetailHead>
+        <div className="titleGroup">
+          <Title>{id ? t('policyDetail') : t('policyCreation')}</Title>
+          <span className="orgName typographyBody5">{`${tCommon('organizationName')} : ${currentOrg?.displayName || ''}`}</span>
+        </div>
         <ButtonWrap className="alignRight">
           <Button variant="contained" onClick={handleSave} disabled={isLoading || isDisabled()}>
             {t(id ? 'modify' : 'save')}
@@ -113,7 +108,7 @@ const PolicyDetail = () => {
             {t('cancel')}
           </Button>
         </ButtonWrap>
-      </PageHeadWrap>
+      </DetailHead>
       <Section gap="2.4rem">
         <Section gap="2.4rem">
           <Input

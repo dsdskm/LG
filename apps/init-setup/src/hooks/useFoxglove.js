@@ -226,51 +226,52 @@ export function useFoxglove(wsUrl, throttleFps = 10) {
     hasNewDataRef.current = false
   }, [])
 
-  const toggleSubscribe = useCallback((topicName) => {
-    if (!workerRef.current) return
+  const toggleSubscribe = useCallback(
+    (topicName) => {
+      if (!workerRef.current) return
 
-    const isSubscribed = subscribedTopicsRef.current.includes(topicName)
+      const isSubscribed = subscribedTopicsRef.current.includes(topicName)
 
-    if (isSubscribed) {
-      // 구독 해제
-      const subEntries = Object.entries(subMapRef.current).filter(([_, sub]) => sub.topic === topicName)
-      if (subEntries.length > 0) {
-        const subscriptionIdsToUnsub = subEntries.map(([id]) => Number(id))
-        workerRef.current.postMessage({
-          op: 'unsubscribe',
-          data: { subscriptionIds: subscriptionIdsToUnsub }
-        })
+      if (isSubscribed) {
+        // 구독 해제
+        const subEntries = Object.entries(subMapRef.current).filter(([_, sub]) => sub.topic === topicName)
+        if (subEntries.length > 0) {
+          const subscriptionIdsToUnsub = subEntries.map(([id]) => Number(id))
+          workerRef.current.postMessage({
+            op: 'unsubscribe',
+            data: { subscriptionIds: subscriptionIdsToUnsub }
+          })
 
-        subscriptionIdsToUnsub.forEach((id) => {
-          delete subMapRef.current[id]
-        })
+          subscriptionIdsToUnsub.forEach((id) => {
+            delete subMapRef.current[id]
+          })
 
-        setSubscribedTopics((prev) => prev.filter((t) => t !== topicName))
+          setSubscribedTopics((prev) => prev.filter((t) => t !== topicName))
 
-        clearTopicData(topicName)
-      }
-    } else {
-      // 구독 신청
-      const ch = channelsRef.current.find((c) => c.topic === topicName)
-      if (!ch) return
-
-      const subId = nextSubIdRef.current++
-      const encoding = encodingFor(ch.schemaName)
-
-      subMapRef.current[subId] = { topic: topicName, schemaName: ch.schemaName, encoding }
-
-      workerRef.current.postMessage({
-        op: 'subscribe',
-        data: {
-          subscriptions: [
-            { id: subId, channelId: ch.id, topic: topicName, schemaName: ch.schemaName, encoding }
-          ]
+          clearTopicData(topicName)
         }
-      })
+      } else {
+        // 구독 신청
+        const ch = channelsRef.current.find((c) => c.topic === topicName)
+        if (!ch) return
 
-      setSubscribedTopics((prev) => [...prev, topicName])
-    }
-  }, [clearTopicData])
+        const subId = nextSubIdRef.current++
+        const encoding = encodingFor(ch.schemaName)
+
+        subMapRef.current[subId] = { topic: topicName, schemaName: ch.schemaName, encoding }
+
+        workerRef.current.postMessage({
+          op: 'subscribe',
+          data: {
+            subscriptions: [{ id: subId, channelId: ch.id, topic: topicName, schemaName: ch.schemaName, encoding }]
+          }
+        })
+
+        setSubscribedTopics((prev) => [...prev, topicName])
+      }
+    },
+    [clearTopicData]
+  )
 
   const subscribeTopics = useCallback((topicNames) => {
     if (!workerRef.current) return
@@ -302,29 +303,32 @@ export function useFoxglove(wsUrl, throttleFps = 10) {
     }
   }, [])
 
-  const unsubscribeTopics = useCallback((topicNames) => {
-    if (!workerRef.current) return
+  const unsubscribeTopics = useCallback(
+    (topicNames) => {
+      if (!workerRef.current) return
 
-    const subEntries = Object.entries(subMapRef.current).filter(([_, sub]) => topicNames.includes(sub.topic))
-    if (subEntries.length > 0) {
-      const subscriptionIdsToUnsub = subEntries.map(([id]) => Number(id))
+      const subEntries = Object.entries(subMapRef.current).filter(([_, sub]) => topicNames.includes(sub.topic))
+      if (subEntries.length > 0) {
+        const subscriptionIdsToUnsub = subEntries.map(([id]) => Number(id))
 
-      workerRef.current.postMessage({
-        op: 'unsubscribe',
-        data: { subscriptionIds: subscriptionIdsToUnsub }
-      })
+        workerRef.current.postMessage({
+          op: 'unsubscribe',
+          data: { subscriptionIds: subscriptionIdsToUnsub }
+        })
 
-      subscriptionIdsToUnsub.forEach((id) => {
-        const sub = subMapRef.current[id]
-        if (sub) {
-          clearTopicData(sub.topic)
-        }
-        delete subMapRef.current[id]
-      })
+        subscriptionIdsToUnsub.forEach((id) => {
+          const sub = subMapRef.current[id]
+          if (sub) {
+            clearTopicData(sub.topic)
+          }
+          delete subMapRef.current[id]
+        })
 
-      setSubscribedTopics((prev) => prev.filter((t) => !topicNames.includes(t)))
-    }
-  }, [clearTopicData])
+        setSubscribedTopics((prev) => prev.filter((t) => !topicNames.includes(t)))
+      }
+    },
+    [clearTopicData]
+  )
 
   const subscribeAll = useCallback(() => {
     const allTopics = channelsRef.current.map((c) => c.topic)

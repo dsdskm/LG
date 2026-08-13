@@ -177,3 +177,18 @@ export const acceptInvitation = async (invitationId, userNickname, userEmail, us
     throw error
   }
 }
+
+export const logout = async (refreshToken) => {
+  try {
+    const response = await axiosAuth.post(
+      ENDPOINTS.AUTH.LOGOUT,
+      {
+        refreshToken
+      },
+      { headers: commonHeaders() }
+    )
+    return response
+  } catch (error) {
+    throw error
+  }
+}

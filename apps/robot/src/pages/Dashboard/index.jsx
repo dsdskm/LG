@@ -80,6 +80,7 @@ const Dashboard = () => {
   const { t } = useTranslation('robot')
   const [markers, setMarkers] = useState([])
   const [devices, setDevices] = useState([])
+  const [devicesLoaded, setDevicesLoaded] = useState(false) // areaCounts가 실제 로봇 수를 반영하기 전엔 자동 영역 선택을 미룸
   const [sites, setSites] = useState([])
   const [orgFilter, setOrgFilter] = useState({ values: ['all', 'all'] })
   const [deviceCount, setDeviceCount] = useState({ opr: 0, lrn: 0, sta: 0, chr: 0, err: 0, off: 0 })
@@ -95,6 +96,7 @@ const Dashboard = () => {
   const [locSel, setLocSel] = useState({ buildingId: '', floorId: '', areaId: '' })
   const liveIntervalRef = useRef(null)
   const deviceTsRef = useRef({}) // deviceId → { updatedAt, st, conn } 마지막 폴링 타임스탬프
+  const buildingsSiteIdRef = useRef(null) // 현재 buildings가 어느 siteId 응답인지 추적
 
   // 선택된 사이트가 isDefaultSite=true인 경우 → 권역별 지도 표시
   const isDefaultSiteSelected =
@@ -163,33 +165,33 @@ const Dashboard = () => {
       data.offline += state.offline
     })
 
-    const makeTitle = (m) => {
-      const parts = []
-      if (m.operation > 0) parts.push(`${t('operation')}:${m.operation}`)
-      if (m.wait > 0) parts.push(`${t('wait')}:${m.wait}`)
-      if (m.charge > 0) parts.push(`${t('charge')}:${m.charge}`)
-      if (m.error > 0) parts.push(`${t('error')}:${m.error}`)
-      if (m.offline > 0) parts.push(`${t('offline')}:${m.offline}`)
-      const status = parts.length ? `[${parts.join(', ')}]` : ''
-      return `${m.name} - ${m.count}${t('unit')} ${status}`
-    }
-
     const markers = Array.from(siteMap.values()).map((m) => ({
-      title: makeTitle(m),
+      id: m.id,
+      name: m.name,
       lat: m.lat,
-      lng: m.lng
+      lng: m.lng,
+      stats: {
+        operationCnt: m.operation,
+        standbyCnt: m.wait,
+        chargeCnt: m.charge,
+        errorCnt: m.error,
+        offlineCnt: m.offline,
+        totalCnt: m.count
+      }
     }))
     setMarkers(markers)
   }
 
   const loadRobotInfo = useCallback(async () => {
     try {
-      const dataRobot = (await deviceApis.getDevices()).content
+      const dataRobot = (await deviceApis.getDevices({ includeTaskFlowState: false })).content
       setDevices(dataRobot)
       const dataSite = (await siteApis.getSites({})).content
       setSites(dataSite)
     } catch (err) {
       console.error('Error loadGetGroupsSites:', err)
+    } finally {
+      setDevicesLoaded(true)
     }
   }, [])
 
@@ -275,25 +277,35 @@ const Dashboard = () => {
   // 사이트 선택 시 건물/층/영역 계층 조회 (단건 조회가 buildings→floors→areas를 모두 포함)
   useEffect(() => {
     const siteId = orgFilter.values[1]
-    //setLocSel({ buildingId: '', floorId: '', areaId: '' })
+    let cancelled = false
+
+    // 사이트가 바뀌는 즉시 이전 사이트의 buildings/locSel을 비워서
+    // 다음 렌더에서 자동 선택 effect가 옛 데이터로 계산하지 않도록 함
+    setBuildings([])
+    setLocSel({ buildingId: '', floorId: '', areaId: '' })
+    buildingsSiteIdRef.current = null
+
     if (siteId && siteId !== 'all' && !isDefaultSiteSelected) {
       siteApis
         .getSiteById(siteId)
         .then((data) => {
           // 그 사이 사이트가 바뀌었으면 이 응답은 무시
+          if (cancelled) return
+          buildingsSiteIdRef.current = siteId
           setBuildings(data?.buildings ?? [])
         })
-
         .catch((err) => {
+          if (cancelled) return
           console.error('Error getSiteById:', err)
           setBuildings([])
           setLocSel({ buildingId: '', floorId: '', areaId: '' })
         })
-    } else {
-      setBuildings([])
-      setLocSel({ buildingId: '', floorId: '', areaId: '' })
     }
-  }, [orgFilter.values[1]])
+
+    return () => {
+      cancelled = true
+    }
+  }, [orgFilter.values[1], isDefaultSiteSelected])
 
   // 영역별 로봇 수 (state.sitePosition.areaId 기준)
   const areaCounts = useMemo(() => {
@@ -312,11 +324,15 @@ const Dashboard = () => {
   }, [robotDatas, locSel.areaId])
 
   // 최초 로딩 시 로봇이 가장 많은 영역을 자동 선택 (지도 초기 표시).
+  // devicesLoaded 대기: 대시보드 재진입처럼 buildings·devices 로딩이 동시에 시작되는 경우,
+  // buildings가 먼저 응답하면 areaCounts가 아직 비어있어 우선순위 없이 첫 영역이 선택되는 문제 방지.
   useEffect(() => {
-    if (!buildings.length) return
+    if (!buildings.length || !devicesLoaded) return
+    // buildings가 아직 현재 선택된 사이트에 대한 응답이 아니면 스킵
+    if (buildingsSiteIdRef.current !== orgFilter.values[1]) return
     const best = pickMaxRobotArea(buildings, areaCounts)
     if (best) setLocSel(best)
-  }, [buildings])
+  }, [buildings, devicesLoaded, areaCounts, orgFilter.values[1]])
 
   // 맵은 device/area 단위로만 존재 (site/building/floor 단독 조회 불가).
   // area로 조회할 때는 상위 buildingId/floorId를 반드시 함께 전달해야 함.
@@ -336,7 +352,7 @@ const Dashboard = () => {
     } else {
       setUseImageMap(false)
     }
-  }, [locSel.buildingId, locSel.floorId, locSel.areaId])
+  }, [orgFilter.values[1], isDefaultSiteSelected, locSel.buildingId, locSel.floorId, locSel.areaId])
 
   useEffect(() => {
     if (orgFilter.values[1] === 'all' || isDefaultSiteSelected) {
@@ -395,7 +411,9 @@ const Dashboard = () => {
   const pollDevices = useCallback(async () => {
     try {
       const siteId = orgFilter.values[1] !== 'all' ? orgFilter.values[1] : undefined
-      const newDevices = (await deviceApis.getDevices(siteId ? { siteId } : {})).content
+      const newDevices = (
+        await deviceApis.getDevices(siteId ? { siteId, includeTaskFlowState: false } : { includeTaskFlowState: false })
+      ).content
       const { hasChange, merger } = buildDeviceMerger(newDevices, deviceTsRef.current)
       if (hasChange) setDevices(merger)
     } catch (err) {

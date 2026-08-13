@@ -71,7 +71,10 @@ const LeftMapCard = memo(function LeftMapCard({
   // ✅ [ADD] odom(=pose) 기반 센서 차트 데이터
   odomChart1,
   odomChart2,
-  chartLoading
+  chartLoading,
+
+  // ✅ [ADD] grid가 크기 제한 초과로 폐기된 경우 — 스피너가 아닌 확정 안내 문구로 표시(canvas는 계속 hidden)
+  gridOversized
 }) {
   const { t } = useTranslation('robot')
   const [legendOpen, setLegendOpen] = useState(true)
@@ -165,7 +168,7 @@ const LeftMapCard = memo(function LeftMapCard({
                   gap: 8
                 }}
               >
-                {loadPhase !== 'init' && loadPhase !== 'error' && !leftNoData && leftOverlayText ? (
+                {loadPhase !== 'init' && loadPhase !== 'error' && !leftNoData && !gridOversized && leftOverlayText ? (
                   <>
                     <span
                       aria-hidden
@@ -255,7 +258,9 @@ function MapPanels({
 
   // ✅ [ADD] "이 로그엔 데이터가 없다"가 확정된 상태(로딩 중과 구분)
   poseUnavailable,
-  gridUnavailable
+  gridUnavailable,
+  // ✅ [ADD] grid 토픽/메시지는 있었지만 크기 제한(MAX_GRID_DIMENSION/MAX_GRID_CELLS) 초과로 전부 폐기된 경우
+  gridOversized
 }) {
   const { t } = useTranslation('robot')
   // ===============================
@@ -305,7 +310,9 @@ function MapPanels({
   const leftHasGrid = !!gridData
 
   // ✅ 로그 로딩과 지도/플레이는 분리: 지도는 ready면 인터랙션 허용
-  const leftInteractiveReady = loadPhase === 'ready' && (leftReadyByData || leftHasGrid)
+  //    ⚠️ grid가 크기 제한 초과로 폐기된 경우는 "데이터가 없을 뿐"이 아니라 방어 코드가 명시적으로
+  //       거부한 것이므로, pose가 있어도 캔버스에 아무것도 그리지 않고 안내 문구만 계속 표시한다.
+  const leftInteractiveReady = loadPhase === 'ready' && !gridOversized && (leftReadyByData || leftHasGrid)
 
   // ✅ grid/pose 둘 다 "이 로그엔 없음"이 확정된 경우 — 계속 기다리는 스피너 대신 안내 문구로 전환
   const leftNoData = loadPhase === 'ready' && !!gridUnavailable && !!poseUnavailable
@@ -313,12 +320,14 @@ function MapPanels({
   const leftOverlayText = useMemo(() => {
     if (loadPhase === 'error') return t('logreplay.map.loadFailed')
     if (loadPhase === 'init') return t('logreplay.map.initialHint')
+    // ✅ 크기 제한 초과는 "수집 대기"나 "데이터 없음"과 달리 확정적 거부 상태이므로 최우선으로 안내
+    if (gridOversized) return t('logreplay.map.gridTooLarge')
     if (leftNoData) return t('logreplay.map.noMapData')
     if (!leftHasPts && !leftHasGrid) return t('logreplay.map.waitingPathCollection')
     if (loadPhase !== 'ready') return t('logreplay.map.mcapLoading')
     if (!leftReadyByData) return t('logreplay.map.waitingDataStabilize')
     return ''
-  }, [loadPhase, leftNoData, leftHasPts, leftHasGrid, leftReadyByData, t])
+  }, [loadPhase, gridOversized, leftNoData, leftHasPts, leftHasGrid, leftReadyByData, t])
 
   // ===============================
   // 우측 센서 차트 게이팅(좌측과 동일한 로딩 Sync)
@@ -384,6 +393,7 @@ function MapPanels({
         dwaGoals={dwaGoals}
         currentTimestampMs={currentTimestampMs}
         t0EpochMs={t0EpochMs}
+        gridOversized={gridOversized}
       />
 
       {/* 우측: 센서 정보 (조회/로딩 Sync 적용) */}

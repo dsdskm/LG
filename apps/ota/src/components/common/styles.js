@@ -42,6 +42,31 @@ export const PageHeadWrap = styled.div`
   }
 `
 
+// 상세/생성 화면 헤더 : 좌측 타이틀(+조직명), 우측 액션 버튼
+export const DetailHead = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 1rem;
+  width: 100%;
+  margin-bottom: 2.4rem;
+
+  .titleGroup {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .orgName {
+    color: var(--color-secondary-60);
+  }
+
+  ${ButtonWrap} {
+    margin: 0;
+  }
+`
+
 export const slideDown = keyframes`
   from {
     opacity: 0;

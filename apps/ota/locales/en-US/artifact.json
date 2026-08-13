@@ -54,5 +54,6 @@
   "taskInstruction": "Task Instruction",
   "subtaskInstruction": "Sub Task Instruction",
   "selectFoundationModel": "Select Foundation Model",
-  "searchTaskName": "Task Name"
+  "searchTaskName": "Task Name",
+  "artifactCreation": "Artifact Creation"
 }

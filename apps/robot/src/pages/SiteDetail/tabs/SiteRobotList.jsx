@@ -16,7 +16,7 @@ const SiteRobotList = ({ siteId, isDefaultSite }) => {
   const loadSiteRobotList = useCallback(
     async (searchParams = {}) => {
       try {
-        const data = await deviceApis.getDevices({ siteId: siteId })
+        const data = await deviceApis.getDevices({ siteId: siteId, includeTaskFlowState: false })
         //console.info('data :', data)
         setDevices(data.content)
         setTableList(data.content)

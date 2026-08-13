@@ -71,5 +71,10 @@
   "download": "다운로드",
   "downloadComplete": "다운로드가 완료되었습니다. CI/CD 연동 설정을 확인해주세요.",
   "templateDownload": "템플릿 다운로드",
-  "selectOneOrg": "하나의 조직을 선택해주세요."
+  "selectOneOrg": "하나의 조직을 선택해주세요.",
+  "actionCreation": "동작 생성",
+  "deviceTypeDetail": "디바이스 타입 상세",
+  "deviceTypeCreation": "디바이스 타입 생성",
+  "moduleDetail": "모듈 상세",
+  "moduleCreation": "모듈 생성"
 }

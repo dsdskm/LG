@@ -15,7 +15,7 @@ import { deviceApis } from '@/apis'
 import { organizationApis } from '@repo/apis'
 import { toast } from 'react-toastify'
 import { useUserStore } from '@repo/stores'
-import { ButtonWrap } from '@/components/common/styles'
+import { ButtonWrap, DetailHead } from '@/components/common/styles'
 import { useOrganizationStore } from '@repo/stores'
 
 const OrganizationDetail = () => {
@@ -32,6 +32,7 @@ const OrganizationDetail = () => {
   const [selectedDevices, setSelectedDevices] = useState([])
 
   const { session } = useUserStore()
+  const userId = session?.email
   const { actualOrgs } = useOrganizationStore()
 
   const handleSave = () => {
@@ -71,7 +72,7 @@ const OrganizationDetail = () => {
       try {
         let initialSelected = []
         if (id) {
-          const groupRes = await organizationApis.retrieveOrganizationUser({ userId: session?.email, id })
+          const groupRes = await organizationApis.retrieveOrganizationUser({ userId, id })
           const groupData = groupRes.results[0]
           if (groupData) {
             setOrganizationName(groupData.displayName || '')
@@ -94,24 +95,27 @@ const OrganizationDetail = () => {
       }
     }
 
-    if (session) {
+    if (userId) {
       fetchData()
     }
-  }, [id, session])
+    // session 객체 대신 실제로 쓰는 값에만 반응한다 (기기 목록은 actualOrgs 에 의존).
+  }, [id, userId, actualOrgs])
 
   return (
     <StyledPageContent className="column">
-      <Title>
-        {t('organizationTitle')} &gt; {tCommon('detail')}
-      </Title>
-      <ButtonWrap className="alignRight">
-        <Button variant="contained" onClick={handleSave} disabled={isLoading || isDisabled()}>
-          {t('save')}
-        </Button>
-        <Button variant="contained" onClick={handleCancel} disabled={isLoading}>
-          {t('cancel', 'Cancel')}
-        </Button>
-      </ButtonWrap>
+      <DetailHead>
+        <div className="titleGroup">
+          <Title>{id ? t('organizationDetail') : t('organizationCreation')}</Title>
+        </div>
+        <ButtonWrap className="alignRight">
+          <Button variant="contained" onClick={handleSave} disabled={isLoading || isDisabled()}>
+            {t('save')}
+          </Button>
+          <Button variant="contained" onClick={handleCancel} disabled={isLoading}>
+            {t('cancel', 'Cancel')}
+          </Button>
+        </ButtonWrap>
+      </DetailHead>
       <Section gap="2.4rem">
         <Section gap="2.4rem">
           <div>

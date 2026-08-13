@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 import { Modal, ModalButton } from '@repo/ui'
 import SiteMap from './SiteMap'
-import { parseMultigrid, worldToSvgPixel } from '@/utils/mapUtils'
+import { getImageNaturalSize, parseMultigrid, worldToSvgPixel } from '@/utils/mapUtils'
 import { getLocalizedName } from '@/utils/robotUtils'
 import poiMarkerSvg from '@/assets/icons/figma/marker.svg?url'
 
@@ -351,26 +351,85 @@ function SvgMeshGroup({ svgText, pxPerMeter }) {
 }
 
 // PNG map as textured floor plane (for non-SVG maps)
+// pngUrl(presigned URL)은 단 한 번만 fetch해서 blob: URL로 바꾸고, 크기 조회(getImageNaturalSize)와
+// 텍스처 로드(TextureLoader) 둘 다 그 로컬 blob: URL을 사용함 — 같은 presigned URL로 두 번 요청을
+// 보내면(예: 크기용 Image() 요청 + 텍스처용 fetch 요청) 브라우저의 요청 캐싱/coalescing 타이밍에 따라
+// 간헐적으로 CORS 헤더가 빠진 응답이 재사용되는 문제가 있어, 요청을 하나로 합쳐 제거함.
+// blob: URL은 로컬 리소스라 이후 단계는 CORS/WebGL taint와 완전히 무관.
 function PngFloor({ pngUrl, navi }) {
   const [tex, setTex] = useState(null)
   const [imgSize, setImgSize] = useState(null)
+  const [texFailed, setTexFailed] = useState(false)
   const texRef = useRef(null)
+  const blobUrlRef = useRef(null)
 
   useEffect(() => {
+    setTex(null)
+    setImgSize(null)
+    setTexFailed(false)
     if (!pngUrl) return
-    const loader = new THREE.TextureLoader()
-    loader.load(pngUrl, (t) => {
-      texRef.current = t
-      setImgSize({ w: t.image.width, h: t.image.height })
-      setTex(t)
-    })
+    let canceled = false
+
+    ;(async () => {
+      try {
+        // cache: 'no-store' — 같은 presigned URL을 2D에서 <img>/Image()로 먼저 로드한 뒤
+        // 3D에서 fetch()로 다시 요청하면, S3 응답에 Cache-Control이 없어 브라우저가 이전
+        // 로드의 캐시를 재사용하면서 CORS 관련 정보가 어긋나 실패하는 경우가 있어 캐시를 무시함.
+        const res = await fetch(pngUrl, { cache: 'no-store' })
+        if (!res.ok) throw new Error(`PNG 다운로드 실패: ${res.status}`)
+        const blob = await res.blob()
+        if (canceled) return
+        blobUrlRef.current = URL.createObjectURL(blob)
+        const localUrl = blobUrlRef.current
+
+        const { width, height } = await getImageNaturalSize(localUrl)
+        if (canceled) return
+        setImgSize({ w: width, h: height })
+
+        new THREE.TextureLoader().load(
+          localUrl,
+          (t) => {
+            if (canceled) {
+              t.dispose()
+              return
+            }
+            texRef.current = t
+            setTex(t)
+          },
+          undefined,
+          (e) => {
+            if (!canceled) {
+              console.error('PngFloor texture decode 실패:', e)
+              setTexFailed(true)
+            }
+          }
+        )
+      } catch (e) {
+        if (canceled) return
+        console.error('PngFloor fetch 실패(CORS 미설정 가능성 — S3 버킷 CORS 설정 필요):', e)
+        setTexFailed(true)
+        // fetch 자체가 막혀도 크기만은 CORS 없이 읽을 수 있는 방식으로 확보해
+        // 위치가 맞는 빈 바닥은 표시되도록 함 (완전히 안 보이는 것보다 낫음).
+        getImageNaturalSize(pngUrl)
+          .then(({ width, height }) => {
+            if (!canceled) setImgSize({ w: width, h: height })
+          })
+          .catch((sizeErr) => console.error('PngFloor size fallback 실패:', sizeErr))
+      }
+    })()
+
     return () => {
+      canceled = true
       texRef.current?.dispose()
       texRef.current = null
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current)
+        blobUrlRef.current = null
+      }
     }
   }, [pngUrl])
 
-  if (!tex || !imgSize || !navi) return null
+  if (!imgSize || !navi || (!tex && !texFailed)) return null
 
   const res = navi.resolution
   const [ox, oy] = navi.origin
@@ -380,8 +439,12 @@ function PngFloor({ pngUrl, navi }) {
   return (
     <mesh position={[cx, 0, -cy]} rotation={[-Math.PI / 2, 0, 0]}>
       <planeGeometry args={[imgSize.w * res, imgSize.h * res]} />
-      {/* toneMapped=false → ACES 톤매핑이 흰색(자유 영역)을 회색으로 낮추지 않도록 원색 유지 */}
-      <meshBasicMaterial map={tex} side={THREE.DoubleSide} toneMapped={false} />
+      {tex ? (
+        // toneMapped=false → ACES 톤매핑이 흰색(자유 영역)을 회색으로 낮추지 않도록 원색 유지
+        <meshBasicMaterial map={tex} side={THREE.DoubleSide} toneMapped={false} />
+      ) : (
+        <meshBasicMaterial color="#e5e5e5" side={THREE.DoubleSide} toneMapped={false} />
+      )}
     </mesh>
   )
 }
@@ -477,11 +540,12 @@ function PoiPin({ position, isCharging, label, clickable, onClick, poiData = {} 
               color: '#ffffff',
               padding: '8px 12px',
               borderRadius: '6px',
-              fontSize: '11px',
+              fontSize: '12px',
               fontFamily: "'LG_Smart_UI', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
               zIndex: 10000,
               marginBottom: '8px',
-              pointerEvents: 'none'
+              pointerEvents: 'none',
+              whiteSpace: 'nowrap'
             }}
           >
             <div
@@ -499,12 +563,12 @@ function PoiPin({ position, isCharging, label, clickable, onClick, poiData = {} 
             />
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <div style={{ display: 'flex', gap: '8px' }}>
-                <span style={{ color: '#b0b0b0', minWidth: '60px' }}>Name:</span>
+                <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Name:</span>
                 <span>{label}</span>
               </div>
               {poiData.x != null && poiData.y != null && (
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <span style={{ color: '#b0b0b0', minWidth: '60px' }}>Position:</span>
+                  <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Position:</span>
                   <span>
                     X: {poiData.x.toFixed(2)}, Y: {poiData.y.toFixed(2)}
                   </span>
@@ -512,19 +576,19 @@ function PoiPin({ position, isCharging, label, clickable, onClick, poiData = {} 
               )}
               {poiData.yawDeg != null && (
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <span style={{ color: '#b0b0b0', minWidth: '60px' }}>Yaw:</span>
+                  <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Yaw:</span>
                   <span>{poiData.yawDeg.toFixed(1)}°</span>
                 </div>
               )}
               {poiData.tolerance != null && (
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <span style={{ color: '#b0b0b0', minWidth: '60px' }}>Tolerance:</span>
+                  <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Tolerance:</span>
                   <span>{poiData.tolerance.toFixed(2)}m</span>
                 </div>
               )}
               {poiData.properties?.description && (
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <span style={{ color: '#b0b0b0', minWidth: '60px' }}>Description:</span>
+                  <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Description:</span>
                   <span>{poiData.properties.description}</span>
                 </div>
               )}
@@ -817,7 +881,6 @@ const SiteMap3D = ({
   const [isTouch, setIsTouch] = useState(false)
   const [rotateMode, setRotateMode] = useState(false)
   const [poiToMove, setPoiToMove] = useState(null)
-  const blobRef = useRef(null)
   const controlsRef = useRef()
   const canvasWrapRef = useRef(null)
   const longPressRef = useRef({ timer: null, startX: 0, startY: 0 })
@@ -916,36 +979,31 @@ const SiteMap3D = ({
     setSvgSize(null)
     setMultigrid(null)
     setPngUrl(null)
-    if (blobRef.current) {
-      URL.revokeObjectURL(blobRef.current)
-      blobRef.current = null
-    }
   }, [mapData])
 
   // Lazily load the 3D geometry source only when the 3D view is used.
+  // PNG는 presigned URL을 그대로 넘기고, 실제 fetch/blob 변환은 PngFloor 내부에서 처리함
+  // (크기 조회와 텍스처 로드를 분리해 fetch 실패 시에도 그레이스풀하게 대체 표시 가능하도록).
   useEffect(() => {
     if (viewMode !== '3D' || !mapData?.url) return
     if (svgText || pngUrl) return
+
+    if (mapData.type !== 'svg') {
+      setPngUrl(mapData.url)
+      return
+    }
+
     let canceled = false
     setLoading(true)
     ;(async () => {
       try {
         const res = await fetch(mapData.url)
         if (!res.ok || canceled) return
-
-        if (mapData.type === 'svg') {
-          const text = await res.text()
-          if (canceled) return
-          setSvgText(text)
-          setSvgSize(parseSvgSize(text))
-          setMultigrid(parseMultigrid(text))
-        } else {
-          const blob = await res.blob()
-          if (canceled) return
-          if (blobRef.current) URL.revokeObjectURL(blobRef.current)
-          blobRef.current = URL.createObjectURL(blob)
-          setPngUrl(blobRef.current)
-        }
+        const text = await res.text()
+        if (canceled) return
+        setSvgText(text)
+        setSvgSize(parseSvgSize(text))
+        setMultigrid(parseMultigrid(text))
       } catch (e) {
         console.error('SiteMap3D load error:', e)
       } finally {
@@ -957,13 +1015,6 @@ const SiteMap3D = ({
       canceled = true
     }
   }, [viewMode, mapData, svgText, pngUrl])
-
-  // Revoke any object URL on unmount.
-  useEffect(() => {
-    return () => {
-      if (blobRef.current) URL.revokeObjectURL(blobRef.current)
-    }
-  }, [])
 
   const navi = mapServer?.navi
   const isSvg = !!svgText

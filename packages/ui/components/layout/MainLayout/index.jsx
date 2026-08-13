@@ -17,7 +17,10 @@ const MainLayout = ({
   useSubRoutes = false,
   LogoComponent,
   HeaderComponent,
-  aiGreetingExtra
+  aiGreetingExtra,
+  // AI Assistant 를 쓰지 않는 앱(init-setup 등)은 false 로 끈다. 끄면 플로팅 트리거도,
+  // 라우트마다 도는 chatSettings 조회도 아예 일어나지 않는다.
+  useAiAssistant = true
 }) => {
   const location = useLocation()
   const { pathname } = location
@@ -84,7 +87,7 @@ const MainLayout = ({
         <Footer routes={footerRoutes} />
       </ScrollArea>
 
-      <AiAssistantPanel className="aiAssistantPanel" greetingExtra={aiGreetingExtra} />
+      {useAiAssistant && <AiAssistantPanel className="aiAssistantPanel" greetingExtra={aiGreetingExtra} />}
     </StyledLayout>
   )
 }

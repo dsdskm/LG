@@ -71,5 +71,10 @@
   "download": "ダウンロード",
   "downloadComplete": "ダウンロードが完了しました。CI/CD連携設定を確認してください。",
   "templateDownload": "テンプレートダウンロード",
-  "selectOneOrg": "一つの組織を選択してください。"
+  "selectOneOrg": "一つの組織を選択してください。",
+  "actionCreation": "アクション作成",
+  "deviceTypeDetail": "デバイスタイプ詳細",
+  "deviceTypeCreation": "デバイスタイプ作成",
+  "moduleDetail": "モジュール詳細",
+  "moduleCreation": "モジュール作成"
 }

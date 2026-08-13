@@ -47,5 +47,21 @@
   "dynamicModeDescription": "ルールを定義すると、グループ内のデバイスが自動的に更新されます。大規模または変化するセットに最適です。",
   "all": "全体",
   "targetGroupLimitPerOrg": "ターゲットグループは組織あたり{{limit}}個まで作成できます。",
-  "selectMode": "モードを選択してください"
+  "selectMode": "モードを選択してください",
+  "targetGroupCreation": "ターゲットグループ作成",
+  "targetGroupDetails": "ターゲットグループ情報",
+  "targetGroupName": "ターゲットグループ名",
+  "description": "説明（任意）",
+  "enterDescription": "目的、運用状況、運用者への注意事項などを入力してください",
+  "stepInformation": "ターゲットグループ情報",
+  "stepInformationDescription": "グループ情報を入力し、デバイスの選択方式を指定します。",
+  "stepTargets": "対象の構成",
+  "stepTargetsDescription": "デバイスを直接選択するか、動的選択ルールを定義します。",
+  "selectedRobots": "選択されたデバイス",
+  "noRobotsSelected": "選択されたデバイスがありません",
+  "noRobotsSelectedDescription": "続行するには、このターゲットグループにデバイスを追加してください。",
+  "dynamicRules": "動的選択ルール",
+  "next": "次へ",
+  "back": "戻る",
+  "refresh": "更新"
 }

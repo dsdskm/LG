@@ -19,7 +19,7 @@ const UnsignedList = ({ siteId }) => {
   const loadUnsignedList = useCallback(
     async (searchParams = {}) => {
       try {
-        const data = await deviceApis.getDevices()
+        const data = await deviceApis.getDevices({ includeTaskFlowState: false })
         //console.info('data :', data)
         setDevices(data.content)
         setTableList(data.content)

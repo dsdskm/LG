@@ -1,107 +1,53 @@
-import { useMemo, type ChangeEvent, type ReactNode } from 'react'
+import {
+  useMemo,
+  type ChangeEvent,
+  type ReactNode
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import { Checkbox, Input } from '@repo/ui'
+
 import { SelectedData } from '../types'
 import { useFlowEditorStore } from '@/store/taskflow.canvas.store'
 import { PropertyDef } from '../../../types'
-import { EXECUTION_CONDITION_KEY, EXECUTION_CONDITION_OPTIONS, EXECUTION_CONDITION_DEFAULT } from '@/common/constants'
+import {
+  EXECUTION_CONDITION_KEY,
+  EXECUTION_CONDITION_OPTIONS,
+  EXECUTION_CONDITION_DEFAULT
+} from '@/common/constants'
 import { Select } from '../../../styles'
-import { FieldBody, FieldCard, FieldDesc, FieldLabel, InfoBox, TextInput } from './styles.sections'
+import {
+  FieldBody,
+  FieldCard,
+  FieldLabel,
+  InfoBox,
+  TextInput
+} from './styles.sections'
 import ParallelMainNodesSection from '../../ParallelMainNodesSection'
+import ParallelCountGuide from './ParallelCountGuide'
 
 type TaskInfoSectionProps = {
   selectedData: SelectedData | null
-  // 읽기 전용(읽기 전용 캔버스 등)에서는 CONTROL 속성 입력을 비활성화한다.
+
+  // 읽기 전용 캔버스에서는 속성 입력을 비활성화한다.
   readOnly?: boolean
 }
 
-export default function TaskInfoSection({ selectedData, readOnly = false }: TaskInfoSectionProps) {
+export default function TaskInfoSection({
+  selectedData,
+  readOnly = false
+}: TaskInfoSectionProps) {
   const { t } = useTranslation('tms')
-  const updateSelectedNodeProps = useFlowEditorStore((s) => s.updateSelectedNodeProps)
-  const selectedNodeId = useFlowEditorStore((s) => s.selectedNodeId)
-  const edges = useFlowEditorStore((s) => s.edges)
 
-  const parallelSuccessGuide = useMemo(() => {
-    if (!selectedData) return null
-
-    const taskType = String(selectedData.taskType ?? '').toUpperCase()
-    const taskName = String(selectedData.taskName ?? selectedData.label ?? '')
-      .trim()
-      .toLowerCase()
-
-    if (taskType !== 'CONTROL' || taskName !== 'parallel') {
-      return null
-    }
-
-    const rawSuccess = selectedData.properties?.success_count
-    if (rawSuccess === '' || rawSuccess === null || rawSuccess === undefined) {
-      return null
-    }
-
-    const successValue = Number(rawSuccess)
-    if (!Number.isFinite(successValue)) {
-      return null
-    }
-
-    const childIds = Array.from(
-      new Set(
-        edges
-          .filter((e) => e.source === selectedNodeId && (e as any).sourceHandle === 'left')
-          .map((e) => String(e.target))
-      )
-    )
-    const childCount = childIds.length
-
-    const rawMainNodes = selectedData.properties?.main_nodes
-    const isExplicitMainNodes = Array.isArray(rawMainNodes)
-    const mainSet = new Set<string>()
-
-    if (isExplicitMainNodes) {
-      for (const nodeId of rawMainNodes) {
-        const id = String(nodeId)
-        if (childIds.includes(id)) {
-          mainSet.add(id)
-        }
-      }
-    }
-
-    const mainCount = isExplicitMainNodes ? mainSet.size : childCount
-    const nonMainCount = childCount - mainCount
-
-    if (successValue === -1) {
-      return t('canvas.property.parallelSuccessCountAuto')
-    }
-
-    if (mainCount <= 0) {
-      return t('canvas.property.parallelSuccessCountNoMain')
-    }
-
-    if (successValue > mainCount) {
-      return t('canvas.property.parallelSuccessCountInvalid', {
-        input: successValue,
-        mainCount
-      })
-    }
-
-    if (successValue < 1) {
-      return null
-    }
-
-    return t('canvas.property.parallelSuccessCountGuide', {
-      input: successValue,
-      nonMainCount,
-      effective: successValue + nonMainCount
-    })
-  }, [selectedData, edges, selectedNodeId, t])
+  const updateSelectedNodeProps = useFlowEditorStore(
+    (state) => state.updateSelectedNodeProps
+  )
 
   const taskRows = useMemo(() => {
-    if (!selectedData) return []
+    if (!selectedData) {
+      return []
+    }
 
     return [
-      // {
-      //   label: 'label',
-      //   value: selectedData.label ?? ''
-      // },
       {
         label: 'taskId',
         value: selectedData.taskId ?? ''
@@ -117,24 +63,46 @@ export default function TaskInfoSection({ selectedData, readOnly = false }: Task
     ]
   }, [selectedData])
 
-  // property_schema 로 표현되는 속성은 모든 노드 타입에서 보여준다.
-  //  - CONTROL/ROOT/content 없는 ACTION: 모든 속성이 편집 대상
-  //  - content 가 붙은 ACTION(예: PlaySound): 값이 content 로 정해지는 content_reference 만 읽기 전용이고,
-  //    그 외 속성(예: repeat_count)은 편집 가능하다. (BT 에는 node.data.properties 값이 그대로 반영된다)
+  /**
+   * property_schema로 표현되는 속성은 모든 노드 타입에서 표시한다.
+   *
+   * CONTROL / ROOT / content 없는 ACTION:
+   * 모든 속성이 편집 대상이다.
+   *
+   * content가 연결된 ACTION:
+   * content_reference만 읽기 전용이고 나머지 속성은 편집할 수 있다.
+   *
+   * main_nodes:
+   * 일반 입력 필드에서는 제외하고
+   * ParallelMainNodesSection에서 체크박스로 편집한다.
+   */
   const propertyRows = useMemo(() => {
-    if (!selectedData) return []
+    if (!selectedData) {
+      return []
+    }
 
-    const properties = (selectedData.properties ?? {}) as Record<string, unknown>
-    const schemaProperties = selectedData.propertySchema?.properties ?? {}
+    const properties = (
+      selectedData.properties ?? {}
+    ) as Record<string, unknown>
 
-    // 스키마 정의를 기준으로 하되, 스키마에 없지만 노드에 저장된 키도 함께 보여준다.
-    const keys = Array.from(new Set([...Object.keys(schemaProperties), ...Object.keys(properties)]))
+    const schemaProperties =
+      selectedData.propertySchema?.properties ?? {}
 
-    // main_nodes 는 직접 수정 불가(아래 체크박스 UI로만 편집)하므로 입력 행에서 제외한다.
+    // 스키마에 정의된 속성과 실제 노드에 저장된 속성을 모두 표시한다.
+    const keys = Array.from(
+      new Set([
+        ...Object.keys(schemaProperties),
+        ...Object.keys(properties)
+      ])
+    )
+
     return keys
       .filter((key) => key !== 'main_nodes')
       .map((key) => {
-        const schema = schemaProperties[key] as PropertyDef | undefined
+        const schema = schemaProperties[key] as
+          | PropertyDef
+          | undefined
+
         const type = schema?.type ?? 'string'
 
         return {
@@ -144,21 +112,37 @@ export default function TaskInfoSection({ selectedData, readOnly = false }: Task
           type,
           required: Boolean(schema?.required),
           description: schema?.description,
-          // content_reference 는 노드에 묶인 content 가 값을 결정하므로 여기서 바꾸지 않는다.
-          disabled: readOnly || type === 'content_reference'
+
+          // content_reference는 연결된 content가 값을 결정하므로
+          // Property 패널에서 직접 수정하지 않는다.
+          disabled:
+            readOnly ||
+            type === 'content_reference'
         }
       })
   }, [selectedData, readOnly])
 
   if (!taskRows.length) {
-    return <InfoBox>{t('canvas.property.noTaskInfo')}</InfoBox>
+    return (
+      <InfoBox>
+        {t('canvas.property.noTaskInfo')}
+      </InfoBox>
+    )
   }
 
   return (
     <>
       {taskRows.map((row) => (
-        <Field key={row.label} label={row.label}>
-          <TextInput type="text" value={String(row.value)} disabled readOnly />
+        <Field
+          key={row.label}
+          label={row.label}
+        >
+          <TextInput
+            type="text"
+            value={String(row.value)}
+            disabled
+            readOnly
+          />
         </Field>
       ))}
 
@@ -166,38 +150,59 @@ export default function TaskInfoSection({ selectedData, readOnly = false }: Task
         propertyRows.map((row) => (
           <Field
             key={`property-${row.key}`}
-            label={row.required ? `${row.label} *` : row.label}
+            label={
+              row.required
+                ? `${row.label} *`
+                : row.label
+            }
             hint={row.description}
           >
             {row.key === EXECUTION_CONDITION_KEY ? (
               <Select
                 value={
-                  EXECUTION_CONDITION_OPTIONS.includes(String(row.value) as any)
+                  EXECUTION_CONDITION_OPTIONS.includes(
+                    String(row.value) as (typeof EXECUTION_CONDITION_OPTIONS)[number]
+                  )
                     ? String(row.value)
                     : EXECUTION_CONDITION_DEFAULT
                 }
                 disabled={row.disabled}
-                onChange={(e: ChangeEvent<HTMLSelectElement>) => {
-                  if (row.disabled) return
+                onChange={(
+                  event: ChangeEvent<HTMLSelectElement>
+                ) => {
+                  if (row.disabled) {
+                    return
+                  }
+
                   updateSelectedNodeProps({
-                    [row.key]: e.target.value
+                    [row.key]: event.target.value
                   })
                 }}
               >
-                {EXECUTION_CONDITION_OPTIONS.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
+                {EXECUTION_CONDITION_OPTIONS.map(
+                  (option) => (
+                    <option
+                      key={option}
+                      value={option}
+                    >
+                      {option}
+                    </option>
+                  )
+                )}
               </Select>
             ) : row.type === 'boolean' ? (
               <Checkbox
                 checked={Boolean(row.value)}
                 disabled={row.disabled}
-                onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                  if (row.disabled) return
+                onChange={(
+                  event: ChangeEvent<HTMLInputElement>
+                ) => {
+                  if (row.disabled) {
+                    return
+                  }
+
                   updateSelectedNodeProps({
-                    [row.key]: e.target.checked
+                    [row.key]: event.target.checked
                   })
                 }}
               />
@@ -205,19 +210,36 @@ export default function TaskInfoSection({ selectedData, readOnly = false }: Task
               <>
                 <Input
                   size="sm"
-                  type={row.type === 'number' ? 'number' : 'text'}
-                  value={row.value === null || row.value === undefined ? '' : String(row.value)}
+                  type={
+                    row.type === 'number'
+                      ? 'number'
+                      : 'text'
+                  }
+                  value={
+                    row.value === null ||
+                    row.value === undefined
+                      ? ''
+                      : String(row.value)
+                  }
                   disabled={row.disabled}
                   readOnly={row.disabled}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                    if (row.disabled) return
+                  onChange={(
+                    event: ChangeEvent<HTMLInputElement>
+                  ) => {
+                    if (row.disabled) {
+                      return
+                    }
 
-                    const rawValue = e.target.value
+                    const rawValue = event.target.value
 
                     if (row.type === 'number') {
                       updateSelectedNodeProps({
-                        [row.key]: rawValue === '' ? '' : Number(rawValue)
+                        [row.key]:
+                          rawValue === ''
+                            ? ''
+                            : Number(rawValue)
                       })
+
                       return
                     }
 
@@ -226,27 +248,64 @@ export default function TaskInfoSection({ selectedData, readOnly = false }: Task
                     })
                   }}
                 />
-                {row.key === 'success_count' && parallelSuccessGuide ? <FieldDesc>{parallelSuccessGuide}</FieldDesc> : null}
+
+                {row.key === 'success_count' ? (
+                  <ParallelCountGuide
+                    selectedData={selectedData}
+                    propertyKey="success_count"
+                  />
+                ) : null}
+
+                {row.key === 'failure_count' ? (
+                  <ParallelCountGuide
+                    selectedData={selectedData}
+                    propertyKey="failure_count"
+                  />
+                ) : null}
               </>
             )}
           </Field>
         ))
       ) : (
-        <InfoBox>{readOnly ? t('canvas.property.noProperty') : t('canvas.property.noEditableProperty')}</InfoBox>
+        <InfoBox>
+          {readOnly
+            ? t('canvas.property.noProperty')
+            : t('canvas.property.noEditableProperty')}
+        </InfoBox>
       )}
 
-      {/* Parallel 노드: main_nodes 직접 수정 대신 체크박스로 선택 (속성 바로 아래) */}
-      <ParallelMainNodesSection readOnly={readOnly} />
+      {/* Parallel 노드의 Main Node 선택 UI */}
+      <ParallelMainNodesSection
+        readOnly={readOnly}
+      />
     </>
   )
 }
 
-// hint: property_schema 의 description (라벨에 마우스를 올리면 설명이 보인다)
-function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+type FieldProps = {
+  label: string
+  hint?: string
+  children: ReactNode
+}
+
+/**
+ * hint는 property_schema의 description이다.
+ * 라벨에 마우스를 올리면 설명을 표시한다.
+ */
+function Field({
+  label,
+  hint,
+  children
+}: FieldProps) {
   return (
     <FieldCard>
-      <FieldLabel title={hint ?? label}>{label}</FieldLabel>
-      <FieldBody>{children}</FieldBody>
+      <FieldLabel title={hint ?? label}>
+        {label}
+      </FieldLabel>
+
+      <FieldBody>
+        {children}
+      </FieldBody>
     </FieldCard>
   )
 }

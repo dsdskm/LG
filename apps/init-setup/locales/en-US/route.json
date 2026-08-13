@@ -1,6 +1,9 @@
 {
   "SideBar": {
     "gnb": {
+      "initialSetup": "Initial Setup",
+      "mapSetup": "Map Setup",
+      "admin": "Admin",
       "map": "Map",
       "language": "Language",
       "network": "Network",

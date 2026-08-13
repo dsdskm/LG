@@ -530,7 +530,9 @@ const TVDashboard = () => {
   const loadData = useCallback(async () => {
     try {
       const siteId = hasSite ? paramSite : undefined
-      const robotRes = await deviceApis.getDevices(siteId ? { siteId } : {})
+      const robotRes = await deviceApis.getDevices(
+        siteId ? { siteId, includeTaskFlowState: false } : { includeTaskFlowState: false }
+      )
 
       const { hasChange, merger } = buildDeviceMerger(robotRes.content, deviceTsRef.current)
       if (hasChange) setDevices(merger)

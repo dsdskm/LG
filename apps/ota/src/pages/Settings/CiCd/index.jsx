@@ -27,6 +27,7 @@ const CiCd = () => {
   const { t } = useTranslation('settings')
   const { t: tCommon } = useTranslation('common')
   const { session } = useUserStore()
+  const userRole = session?.userRole
 
   const [data, setData] = useState([])
   const [isLoading, setIsLoading] = useState(true)
@@ -155,7 +156,7 @@ const CiCd = () => {
     <StyledPageContent className="column">
       <Title>{t('cicdSettingsTitle')}</Title>
       <OrganizationSelector
-        supportAlls={[session?.userRole === 'SYSTEM_MANAGER', false]}
+        supportAlls={[userRole === 'SYSTEM_MANAGER', false]}
         supportNone={[false, true]}
         allToTop={false}
         onChange={() => {
@@ -181,11 +182,11 @@ const CiCd = () => {
 
         <div style={{ margin: '16px 0', fontSize: '14px', fontWeight: 'bold' }}>
           {tCommon('count') || 'Count'} :{' '}
-          {session?.userRole !== 'SYSTEM_MANAGER' && actualOrgs.length !== 1 ? 0 : filteredData.length}
+          {userRole !== 'SYSTEM_MANAGER' && actualOrgs.length !== 1 ? 0 : filteredData.length}
         </div>
         {isLoading ? (
           <TableLoading />
-        ) : session?.userRole !== 'SYSTEM_MANAGER' && actualOrgs.length !== 1 ? (
+        ) : userRole !== 'SYSTEM_MANAGER' && actualOrgs.length !== 1 ? (
           <NoData>{t('selectOneOrg') || 'Select one org'}</NoData>
         ) : (
           <ModuleTable

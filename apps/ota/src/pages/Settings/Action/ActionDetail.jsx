@@ -15,7 +15,7 @@ import { useTranslation } from 'react-i18next'
 import { DropdownContainer, VariableRow, VariableHeader } from './styles'
 import { useNavigate, useParams } from 'react-router-dom'
 import { actionApis } from '@/apis'
-import { ButtonWrap, PageHeadWrap } from '@/components/common/styles'
+import { ButtonWrap, DetailHead } from '@/components/common/styles'
 import { useOrganizationStore } from '@repo/stores'
 
 const ActionDetail = () => {
@@ -129,11 +129,11 @@ const ActionDetail = () => {
 
   return (
     <StyledPageContent className="column">
-      <Title>
-        {t('actionTitle')} &gt; {tCommon('detail')}
-      </Title>
-      <PageHeadWrap>
-        <div>{`${tCommon('organizationName')} : ${actualOrgs && actualOrgs.length > 0 ? actualOrgs[0]?.displayName : ''}`}</div>
+      <DetailHead>
+        <div className="titleGroup">
+          <Title>{id ? t('actionDetail') : t('actionCreation')}</Title>
+          <span className="orgName typographyBody5">{`${tCommon('organizationName')} : ${actualOrgs && actualOrgs.length > 0 ? actualOrgs[0]?.displayName : ''}`}</span>
+        </div>
         <ButtonWrap className="alignRight">
           <Button variant="contained" onClick={handleSave} disabled={isLoading || isDisabled()}>
             {t(id ? 'modify' : 'save')}
@@ -142,7 +142,7 @@ const ActionDetail = () => {
             {t('cancel')}
           </Button>
         </ButtonWrap>
-      </PageHeadWrap>
+      </DetailHead>
       <Section gap="2.4rem">
         <Section gap="2.4rem">
           <div>

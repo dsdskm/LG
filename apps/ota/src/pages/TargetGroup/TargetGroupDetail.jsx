@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import {
   StyledPageContent,
   Section,
+  SectionTitle,
   Title,
   Button,
   Input,
@@ -24,7 +25,8 @@ import { targetGroupApis, deviceApis, deviceTypeApis, moduleApis } from '@/apis'
 import { convertDateToString } from '@repo/utils'
 import { toast } from 'react-toastify'
 import { useUserStore, useOrganizationStore } from '@repo/stores'
-import { ButtonWrap, PageHeadWrap } from '@/components/common/styles'
+import { useOrgIds } from '@/hooks/useOrgIds'
+import { ButtonWrap } from '@/components/common/styles'
 import {
   SelectionTypeContainer,
   SelectionItemContainer,
@@ -32,8 +34,19 @@ import {
   VersionContainer,
   DeviceToolbar,
   ModalFilterContainer,
-  ModalSelectionBanner
+  ModalSelectionBanner,
+  WizardHead,
+  StepIndicator,
+  WizardBody,
+  CardHead,
+  ModeSummary,
+  RobotFilterRow
 } from './styles'
+
+const STEP = {
+  INFORMATION: 1,
+  TARGETS: 2
+}
 
 const TargetGroupDetail = () => {
   const { id } = useParams()
@@ -41,10 +54,15 @@ const TargetGroupDetail = () => {
   const { t: tCommon } = useTranslation('common')
   const navigate = useNavigate()
 
+  // 생성은 2단계 마법사, 조회/수정은 한 화면
+  const isEditMode = !!id
+  const [step, setStep] = useState(STEP.INFORMATION)
   const [targetGroupName, setTargetGroupName] = useState('')
   const [memo, setMemo] = useState('')
   const [mode, setMode] = useState('static')
   const [isLoading, setIsLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [selectedSearchQuery, setSelectedSearchQuery] = useState('')
 
   const [allDevices, setAllDevices] = useState([])
   const [selectedDevices, setSelectedDevices] = useState([])
@@ -63,18 +81,20 @@ const TargetGroupDetail = () => {
   const [orgName, setOrgName] = useState('')
 
   const { allOrgs, actualOrgs, company, defaultOrg } = useOrganizationStore()
+  const { orgIds } = useOrgIds()
 
   const { session } = useUserStore()
+  const userRole = session?.userRole
 
   const orgIdParam = new URLSearchParams(window.location.search).get('orgId')
   const currentOrg = useMemo(
     () =>
       orgIdParam
-        ? allOrgs.concat(defaultOrg).find((o) => o.id === Number(orgIdParam))
-        : session?.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
+        ? allOrgs.concat(defaultOrg).find((org) => org?.id === Number(orgIdParam))
+        : userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
           ? defaultOrg
           : actualOrgs[0],
-    [actualOrgs, defaultOrg]
+    [orgIdParam, allOrgs, actualOrgs, defaultOrg, userRole]
   )
 
   const handleSave = () => {
@@ -102,7 +122,7 @@ const TargetGroupDetail = () => {
       })
       .catch((error) => {
         console.error(error)
-        toast.error(tCommon('error'), { autoClose: 2000 })
+        toast.error(tCommon('error.description'), { autoClose: 2000 })
       })
   }
 
@@ -151,8 +171,33 @@ const TargetGroupDetail = () => {
   }, [allDevices, deviceSearchQuery])
 
   // --- Selected device table (main view) ---
+  // 선택된 로봇 목록 내 검색
+  const visibleSelectedDevices = useMemo(() => {
+    const query = selectedSearchQuery.trim().toLowerCase()
+    if (!query) return selectedDevices
+    return selectedDevices.filter((device) =>
+      [device.displayName, device.DeviceType?.displayName, orgNameById.get(device.Organization?.id)]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query))
+    )
+  }, [selectedDevices, selectedSearchQuery, orgNameById])
+
+  const handleRefreshDevices = async () => {
+    if (orgIds.length === 0) return
+    setIsRefreshing(true)
+    try {
+      const deviceRes = await deviceApis.retrieveDevices(orgIds)
+      setAllDevices([...(deviceRes.results || [])].sort((a, b) => a.id - b.id))
+    } catch (error) {
+      console.error(error)
+      toast.error(tCommon('error.description'), { autoClose: 2000 })
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
+
   const isAllSelectedChecked =
-    selectedDevices.length > 0 && selectedDevices.every((device) => checkedDeviceIds.has(device.id))
+    visibleSelectedDevices.length > 0 && visibleSelectedDevices.every((device) => checkedDeviceIds.has(device.id))
 
   const toggleCheckedDevice = useCallback((device) => {
     setCheckedDeviceIds((prev) => {
@@ -165,11 +210,11 @@ const TargetGroupDetail = () => {
 
   const toggleCheckAllSelected = useCallback(() => {
     setCheckedDeviceIds((prev) =>
-      selectedDevices.length > 0 && selectedDevices.every((device) => prev.has(device.id))
+      visibleSelectedDevices.length > 0 && visibleSelectedDevices.every((device) => prev.has(device.id))
         ? new Set()
-        : new Set(selectedDevices.map((device) => device.id))
+        : new Set(visibleSelectedDevices.map((device) => device.id))
     )
-  }, [selectedDevices])
+  }, [visibleSelectedDevices])
 
   const handleDeleteChecked = () => {
     setSelectedDevices((prev) => prev.filter((device) => !checkedDeviceIds.has(device.id)))
@@ -345,16 +390,11 @@ const TargetGroupDetail = () => {
   useEffect(() => {
     setOrgName(currentOrg?.displayName)
     const fetchData = async () => {
-      if (actualOrgs.length === 0 && session?.userRole !== 'SYSTEM_MANAGER') return
-
-      const orgIds =
-        session?.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
-          ? [...allOrgs, defaultOrg].map((org) => org.id).join(',')
-          : actualOrgs.map((org) => org.id).join(',')
+      if (orgIds.length === 0) return
 
       const [moduleRes, deviceRes, deviceTypeRes] = await Promise.all([
         moduleApis.retrieveModules(company.id),
-        deviceApis.retrieveDevices(orgIds.split(',').sort((a, b) => a - b)),
+        deviceApis.retrieveDevices(orgIds),
         deviceTypeApis.retrieveDeviceTypes(company.id)
       ])
 
@@ -365,7 +405,7 @@ const TargetGroupDetail = () => {
       setAllDeviceTypes(deviceTypeRes.results || [])
       setIsLoading(true)
 
-      const targetOrgIds = orgIdParam ? [Number(orgIdParam)] : actualOrgs.map((org) => org.id)
+      const targetOrgIds = orgIdParam ? [Number(orgIdParam)] : orgIds
       try {
         let initialSelectedDevices = []
         if (id) {
@@ -392,197 +432,297 @@ const TargetGroupDetail = () => {
     }
 
     fetchData()
-  }, [id])
+  }, [id, orgIds])
+
+  const detailsCard = (
+    <Section gap="1.6rem">
+      <SectionTitle title={t('targetGroupDetails')} />
+      <Input
+        label={t('targetGroupName')}
+        size="lg"
+        placeholder={t('enterTitle')}
+        value={targetGroupName}
+        onChange={(e) => setTargetGroupName(e.target.value)}
+      />
+      <Textarea
+        label={t('description')}
+        size="lg"
+        placeholder={t('enterDescription')}
+        value={memo}
+        onChange={(e) => setMemo(e.target.value)}
+        count={`${memo.length}/100`}
+        maxLength={100}
+      />
+    </Section>
+  )
+
+  // 생성 시에는 선택 가능한 카드, 조회 시에는 이미 정해진 방식을 읽기 전용으로 노출
+  const modeCard = isEditMode ? (
+    <Section>
+      <ModeSummary>
+        <div className="modeHead">
+          <h3 className="typographyHeading3">{mode === 'static' ? t('staticMode') : t('dynamicMode')}</h3>
+          <span className="modeSubtitle typographyBody5">
+            {mode === 'static' ? t('staticModeSubtitle') : t('dynamicModeSubtitle')}
+          </span>
+        </div>
+        <p className="modeDesc typographyBody6">
+          {mode === 'static' ? t('staticModeDescription') : t('dynamicModeDescription')}
+        </p>
+      </ModeSummary>
+    </Section>
+  ) : (
+    <SelectionTypeContainer>
+      <div className="selection-cards">
+        <RadioCard
+          name="targetGroupMode"
+          value="static"
+          checked={mode === 'static'}
+          onChange={(e) => setMode(e.target.value)}
+          title={t('staticMode')}
+          subtitle={t('staticModeSubtitle')}
+          description={t('staticModeDescription')}
+        />
+        <RadioCard
+          name="targetGroupMode"
+          value="dynamic"
+          checked={mode === 'dynamic'}
+          onChange={(e) => setMode(e.target.value)}
+          title={t('dynamicMode')}
+          subtitle={t('dynamicModeSubtitle')}
+          description={t('dynamicModeDescription')}
+        />
+      </div>
+    </SelectionTypeContainer>
+  )
+
+  const targetsCard =
+    mode === 'static' ? (
+      // Static
+      <Section gap="1.6rem">
+        <CardHead>
+          <h3 className="typographyHeading3">{t('selectedRobots')}</h3>
+          <span className="countBadge">{selectedDevices.length}</span>
+        </CardHead>
+        <RobotFilterRow>
+          <SearchContainer>
+            <Search
+              label={t('search')}
+              value={selectedSearchQuery}
+              onChange={(e) => setSelectedSearchQuery(e.target.value)}
+              onReset={() => setSelectedSearchQuery('')}
+              placeholder={t('deviceName')}
+              width="320px"
+            />
+          </SearchContainer>
+          <IconButton
+            size="md"
+            theme="outlined"
+            onClick={handleRefreshDevices}
+            disabled={isRefreshing}
+            aria-label={t('refresh')}
+          >
+            <Icon name="refresh" size={20} color="var(--color-neutral-80)" />
+          </IconButton>
+        </RobotFilterRow>
+        <DeviceToolbar>
+          <div className="toolbar-left">
+            <IconButton
+              size="md"
+              theme="outlined"
+              onClick={handleDeleteChecked}
+              disabled={checkedDeviceIds.size === 0}
+              aria-label={t('delete')}
+            >
+              <Icon name="delete" size={20} color="var(--color-neutral-80)" />
+            </IconButton>
+            <button
+              type="button"
+              className="clear-all"
+              onClick={handleClearAll}
+              disabled={selectedDevices.length === 0}
+            >
+              {t('clearAll')}
+            </button>
+          </div>
+          <div className="toolbar-actions">
+            <Button onClick={openDeviceModal}>{t('addDevice')}</Button>
+          </div>
+        </DeviceToolbar>
+        <Table
+          columns={selectedColumns}
+          data={visibleSelectedDevices}
+          keyField="id"
+          noData={`${t('noRobotsSelected')}<br />${t('noRobotsSelectedDescription')}`}
+          isLoading={isLoading}
+          pagination
+          paginationRowsPerPageOptions={[10, 30, 50, 100]}
+        />
+      </Section>
+    ) : (
+      // Dynamic
+      <Section gap="1.6rem">
+        <SectionTitle title={t('dynamicRules')} />
+        <SelectionRow>
+          {/* Device Type */}
+          <SelectionItemContainer>
+            <Dropdown
+              label={t('deviceType')}
+              size="lg"
+              minWidth="250px"
+              placeholder={t('selectDeviceType')}
+              options={deviceTypeOptions}
+              defaultValue=""
+              onChange={handleSelectDeviceType}
+              disabled={selectedDeviceTypeIds.length === allDeviceTypes.length}
+            />
+            <VersionContainer>
+              {selectedDeviceTypeIds.map((id) => {
+                const deviceTypeObj = allDeviceTypes.find((o) => o.id === id)
+                return (
+                  <Tag key={id} theme="light">
+                    {id === 'all' ? t('all') : deviceTypeObj?.displayName}
+                    <span
+                      style={{ marginLeft: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+                      onClick={() => setSelectedDeviceTypeIds(selectedDeviceTypeIds.filter((itemId) => itemId !== id))}
+                    >
+                      ✕
+                    </span>
+                  </Tag>
+                )
+              })}
+            </VersionContainer>
+          </SelectionItemContainer>
+
+          {/* Module */}
+          <SelectionItemContainer>
+            <Dropdown
+              label={t('module')}
+              size="lg"
+              minWidth="250px"
+              placeholder={t('selectModule')}
+              options={moduleOptions}
+              defaultValue=""
+              onChange={handleSelectModule}
+              disabled={selectedModuleIds.length === allModules.length}
+            />
+            <VersionContainer>
+              {selectedModuleIds.map((id) => {
+                const moduleObj = allModules.find((m) => m.id === id)
+                return (
+                  <Tag key={id} theme="light">
+                    {id === 'all' ? t('all') : moduleObj?.displayName}
+                    <span
+                      style={{ marginLeft: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+                      onClick={() => setSelectedModuleIds(selectedModuleIds.filter((mId) => mId !== id))}
+                    >
+                      ✕
+                    </span>
+                  </Tag>
+                )
+              })}
+            </VersionContainer>
+          </SelectionItemContainer>
+        </SelectionRow>
+
+        {/* Organization */}
+        <span
+          className="label typographyBody6"
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.5rem',
+            color: 'var(--color-neutral-70)',
+            marginTop: '2.4rem'
+          }}
+        >
+          {t('organization')}
+          <TransferList
+            availableItems={allOrgs.filter((org) => !selectedOrganizationIds.includes(org.id))}
+            selectedItems={selectedOrganizationIds.map((id) => allOrgs.find((org) => org.id === id))}
+            onChange={handleOrganizationChange}
+            searchPlaceholder={tCommon('searchPlaceHolder')}
+          />
+        </span>
+      </Section>
+    )
 
   return (
     <StyledPageContent className="column">
-      <Title>
-        {t('targetGroupTitle')} &gt; {tCommon('detail')}
-      </Title>
-      <PageHeadWrap>
-        <div>{`${tCommon('organizationName')} : ${orgName}`}</div>
+      <WizardHead>
+        <div className="titleGroup">
+          <Title>{isEditMode ? t('targetGroupDetail') : t('targetGroupCreation')}</Title>
+          <span className="orgName typographyBody5">{`${tCommon('organizationName')} : ${orgName}`}</span>
+        </div>
         <ButtonWrap className="alignRight">
-          <Button variant="contained" onClick={handleSave} disabled={isLoading || isDisabled()}>
-            {t('save')}
-          </Button>
-          <Button variant="contained" onClick={handleCancel} disabled={isLoading}>
-            {t('cancel')}
-          </Button>
+          {isEditMode || step === STEP.TARGETS ? (
+            <>
+              <Button
+                theme="secondary"
+                onClick={isEditMode ? handleCancel : () => setStep(STEP.INFORMATION)}
+                disabled={isLoading}
+              >
+                {isEditMode ? t('cancel') : t('back')}
+              </Button>
+              <Button onClick={handleSave} disabled={isLoading || isDisabled()}>
+                {t('save')}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button theme="secondary" onClick={handleCancel} disabled={isLoading}>
+                {t('cancel')}
+              </Button>
+              <Button onClick={() => setStep(STEP.TARGETS)} disabled={isLoading || !targetGroupName}>
+                {t('next')}
+              </Button>
+            </>
+          )}
         </ButtonWrap>
-      </PageHeadWrap>
-      <Section gap="2.4rem">
-        <Section gap="2.4rem">
-          <div>
-            <Input
-              label={t('title')}
-              size="lg"
-              placeholder={t('enterTitle')}
-              value={targetGroupName}
-              onChange={(e) => setTargetGroupName(e.target.value)}
-            />
-          </div>
-          <Textarea
-            label={t('memo')}
-            size="lg"
-            placeholder={t('enterMemo')}
-            value={memo}
-            onChange={(e) => setMemo(e.target.value)}
-            count={`${memo.length}/100`}
-            maxLength={100}
-          />
-        </Section>
-        {/* Device selection type */}
-        <SelectionTypeContainer>
-          <div className="selection-cards">
-            <RadioCard
-              name="targetGroupMode"
-              value="static"
-              checked={mode === 'static'}
-              onChange={(e) => setMode(e.target.value)}
-              title={t('staticMode')}
-              subtitle={t('staticModeSubtitle')}
-              description={t('staticModeDescription')}
-            />
-            <RadioCard
-              name="targetGroupMode"
-              value="dynamic"
-              checked={mode === 'dynamic'}
-              onChange={(e) => setMode(e.target.value)}
-              title={t('dynamicMode')}
-              subtitle={t('dynamicModeSubtitle')}
-              description={t('dynamicModeDescription')}
-            />
-          </div>
-        </SelectionTypeContainer>
-        {mode === 'static' ? (
-          // Static
-          <Section gap="1.6rem">
-            <DeviceToolbar>
-              <span className="toolbar-title">
-                {t('device')} ({selectedDevices.length})
-              </span>
-              <div className="toolbar-actions">
-                <IconButton
-                  size="md"
-                  theme="outlined"
-                  onClick={handleDeleteChecked}
-                  disabled={checkedDeviceIds.size === 0}
-                  aria-label={t('delete')}
-                >
-                  <Icon name="delete" size={20} color="var(--color-neutral-80)" />
-                </IconButton>
-                <button
-                  type="button"
-                  className="clear-all"
-                  onClick={handleClearAll}
-                  disabled={selectedDevices.length === 0}
-                >
-                  {t('clearAll')}
-                </button>
-                <Button variant="contained" onClick={openDeviceModal}>
-                  {t('addDevice')}
-                </Button>
-              </div>
-            </DeviceToolbar>
-            <Table
-              columns={selectedColumns}
-              data={selectedDevices}
-              keyField="id"
-              noData={tCommon('noData')}
-              isLoading={isLoading}
-              pagination
-              paginationRowsPerPageOptions={[10, 30, 50, 100]}
-            />
-          </Section>
-        ) : (
-          // Dynamic
-          <div gap="2.4rem">
-            <SelectionRow>
-              {/* Device Type */}
-              <SelectionItemContainer>
-                <Dropdown
-                  label={t('deviceType')}
-                  size="lg"
-                  minWidth="250px"
-                  placeholder={t('selectDeviceType')}
-                  options={deviceTypeOptions}
-                  defaultValue=""
-                  onChange={handleSelectDeviceType}
-                  disabled={selectedDeviceTypeIds.length === allDeviceTypes.length}
-                />
-                <VersionContainer>
-                  {selectedDeviceTypeIds.map((id) => {
-                    const deviceTypeObj = allDeviceTypes.find((o) => o.id === id)
-                    return (
-                      <Tag key={id} theme="light">
-                        {id === 'all' ? t('all') : deviceTypeObj?.displayName}
-                        <span
-                          style={{ marginLeft: '4px', cursor: 'pointer', fontWeight: 'bold' }}
-                          onClick={() =>
-                            setSelectedDeviceTypeIds(selectedDeviceTypeIds.filter((itemId) => itemId !== id))
-                          }
-                        >
-                          ✕
-                        </span>
-                      </Tag>
-                    )
-                  })}
-                </VersionContainer>
-              </SelectionItemContainer>
-
-              {/* Module */}
-              <SelectionItemContainer>
-                <Dropdown
-                  label={t('module')}
-                  size="lg"
-                  minWidth="250px"
-                  placeholder={t('selectModule')}
-                  options={moduleOptions}
-                  defaultValue=""
-                  onChange={handleSelectModule}
-                  disabled={selectedModuleIds.length === allModules.length}
-                />
-                <VersionContainer>
-                  {selectedModuleIds.map((id) => {
-                    const moduleObj = allModules.find((m) => m.id === id)
-                    return (
-                      <Tag key={id} theme="light">
-                        {id === 'all' ? t('all') : moduleObj?.displayName}
-                        <span
-                          style={{ marginLeft: '4px', cursor: 'pointer', fontWeight: 'bold' }}
-                          onClick={() => setSelectedModuleIds(selectedModuleIds.filter((mId) => mId !== id))}
-                        >
-                          ✕
-                        </span>
-                      </Tag>
-                    )
-                  })}
-                </VersionContainer>
-              </SelectionItemContainer>
-            </SelectionRow>
-
-            {/* Organization */}
-            <span
-              className="label typographyBody6"
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.5rem',
-                color: 'var(--color-neutral-70)',
-                marginTop: '2.4rem'
-              }}
+      </WizardHead>
+      {isEditMode ? (
+        // 조회/수정 : 단계 구분 없이 한 화면에 모두 노출
+        <WizardBody>
+          {detailsCard}
+          {modeCard}
+          {targetsCard}
+        </WizardBody>
+      ) : (
+        <>
+          <StepIndicator aria-label={t('targetGroupCreation')}>
+            <button
+              type="button"
+              className={`step ${step === STEP.INFORMATION ? 'active' : 'done'}`}
+              onClick={() => setStep(STEP.INFORMATION)}
             >
-              {t('organization')}
-              <TransferList
-                availableItems={allOrgs.filter((org) => !selectedOrganizationIds.includes(org.id))}
-                selectedItems={selectedOrganizationIds.map((id) => allOrgs.find((org) => org.id === id))}
-                onChange={handleOrganizationChange}
-                searchPlaceholder={tCommon('searchPlaceHolder')}
-              />
-            </span>
-          </div>
-        )}
-      </Section>
+              <span className="circle">
+                {step > STEP.INFORMATION ? <Icon name="check" size={16} /> : STEP.INFORMATION}
+              </span>
+              <span className="stepTitle typographyBody4">{t('stepInformation')}</span>
+              <span className="stepDesc typographyBody6">{t('stepInformationDescription')}</span>
+            </button>
+            <span className="connector" aria-hidden="true" />
+            <button
+              type="button"
+              className={`step ${step === STEP.TARGETS ? 'active' : ''}`}
+              onClick={() => setStep(STEP.TARGETS)}
+              disabled={!targetGroupName}
+            >
+              <span className="circle">{STEP.TARGETS}</span>
+              <span className="stepTitle typographyBody4">{t('stepTargets')}</span>
+              <span className="stepDesc typographyBody6">{t('stepTargetsDescription')}</span>
+            </button>
+          </StepIndicator>
+          {step === STEP.INFORMATION ? (
+            <WizardBody>
+              {detailsCard}
+              {modeCard}
+            </WizardBody>
+          ) : (
+            targetsCard
+          )}
+        </>
+      )}
 
       <Modal
         isOpen={isDeviceModalOpen}

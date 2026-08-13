@@ -20,7 +20,7 @@ export const BackgroundCircle = styled.circle`
 
 export const ForegroundCircle = styled.circle`
   fill: transparent;
-  stroke: var(--color-primary-50, #2563eb);
+  stroke: var(--t-primary-btn-bg);
   stroke-dasharray: ${(props) => props.$circumference};
   stroke-dashoffset: ${(props) => props.$offset};
   stroke-linecap: round;

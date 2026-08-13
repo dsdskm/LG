@@ -47,7 +47,7 @@ export const StyledTabButton = styled.button`
   border: none;
   font-size: var(--font-size-body-6);
   line-height: var(--line-height-body-6);
-  color: ${({ $active }) => ($active ? 'var(--color-primary-70)' : 'var(--color-neutral-50)')};
+  color: ${({ $active }) => ($active ? 'var(--t-tab-active)' : 'var(--color-neutral-50)')};
   font-weight: ${({ $active }) => ($active ? '700' : '400')};
   cursor: pointer;
   transition: all 0.2s ease;
@@ -60,13 +60,13 @@ export const StyledTabButton = styled.button`
     left: 0;
     width: 100%;
     height: 2px;
-    background-color: var(--color-primary-70);
+    background-color: var(--t-tab-active);
     transform: scaleX(${({ $active }) => ($active ? '1' : '0')});
     transition: transform 0.2s ease;
   }
 
   &:hover {
-    color: var(--color-primary-70);
+    color: var(--t-tab-active);
   }
 `
 

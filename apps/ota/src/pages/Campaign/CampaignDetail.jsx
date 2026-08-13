@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import {
   StyledPageContent,
   Section,
+  SectionTitle,
   HeaderTitleGroup,
   Dropdown,
   Search,
@@ -12,7 +13,9 @@ import {
   Title,
   Input,
   Textarea,
-  Modal
+  Modal,
+  Icon,
+  StyledTag
 } from '@repo/ui'
 import { useTranslation } from 'react-i18next'
 import ArtifactTable from '@/components/Artifact/ArtifactTable'
@@ -21,16 +24,33 @@ import { artifactApis } from '@repo/apis'
 import { toast } from 'react-toastify'
 import { convertDateToString } from '@repo/utils'
 import { useOrganizationStore, useUserStore } from '@repo/stores'
-import { DropdownContainer } from './styles'
-import { ButtonWrap, PageHeadWrap } from '@/components/common/styles'
+import { ArtifactPickerBody, DetailCardRow, FieldGroup, InfoList, PickerField } from './styles'
+import { ButtonWrap, DetailHead } from '@/components/common/styles'
 import { ClipLoader } from 'react-spinners'
 import { ARTIFACT_STATUS } from '@/constants/artifact'
+import { DEPLOYMENT_STATUS } from '@/constants/campaign'
+import { statusToColor, statusToBgColor } from '@/utils/common'
+
+const COMPLETED_DEPLOYMENT_STATUS = [
+  DEPLOYMENT_STATUS.SUCCEEDED,
+  DEPLOYMENT_STATUS.FAILED,
+  DEPLOYMENT_STATUS.REJECTED,
+  DEPLOYMENT_STATUS.TIMED_OUT,
+  DEPLOYMENT_STATUS.CANCELED,
+  DEPLOYMENT_STATUS.REMOVED
+]
+
+const FAILED_DEPLOYMENT_STATUS = [DEPLOYMENT_STATUS.FAILED, DEPLOYMENT_STATUS.REJECTED, DEPLOYMENT_STATUS.TIMED_OUT]
+
+const formatDate = (value) => (value ? convertDateToString(value) : '-')
 
 const CampaignDetail = () => {
   const { id } = useParams()
   const { t } = useTranslation('campaign')
   const { t: tCommon } = useTranslation('common')
   const session = useUserStore((state) => state.session)
+  const userId = session?.email
+  const userRole = session?.userRole
   const { allOrgs, actualOrgs, company, defaultOrg } = useOrganizationStore()
 
   const orgIdParam = new URLSearchParams(window.location.search).get('orgId')
@@ -40,8 +60,7 @@ const CampaignDetail = () => {
 
   const [processedArtifactData, setProcessedArtifactData] = useState([])
   const handleRowClick = (row) => {
-    console.log(row)
-    setSelectedArtifactId(row.id)
+    setPendingArtifactId(row.id)
   }
   const [searchQuery, setSearchQuery] = useState('')
   const [targetGroupOptions, setTargetGroupOptions] = useState([])
@@ -64,6 +83,9 @@ const CampaignDetail = () => {
   const [isDeploying, setIsDeploying] = useState(false)
   const [allModules, setAllModules] = useState([])
   const [jobStatus, setJobStatus] = useState(null)
+  const [campaign, setCampaign] = useState(null)
+  const [isArtifactModalOpen, setIsArtifactModalOpen] = useState(false)
+  const [pendingArtifactId, setPendingArtifactId] = useState('')
 
   const tableHeader = () => {
     return {
@@ -72,7 +94,7 @@ const CampaignDetail = () => {
           name: '',
           cell: (row) => (
             <Radio
-              checked={Number(row.id) === Number(selectedArtifactId)}
+              checked={Number(row.id) === Number(pendingArtifactId)}
               onChange={() => handleRowClick(row)}
               disabled={id}
             />
@@ -170,12 +192,46 @@ const CampaignDetail = () => {
     return matchesSearch && matchesOrg && matchesModule && completed && matchesPackageType
   })
 
+  const selectedTargetGroup = targetGroupOptions.find(
+    (option) => Number(option.value) === Number(selectedTargetGroupId)
+  )?.origin
+
+  const selectedArtifact =
+    processedArtifactData.find((item) => Number(item.id) === Number(selectedArtifactId)) || campaign?.Artifact
+
+  const artifactVersion = selectedArtifact?.Versions?.map((version) => version.displayName).join(', ') || '-'
+
+  // 롤아웃 진행 상황 : 캠페인 응답에 디바이스 목록이 있으면 그 기준, 없으면 타겟 그룹 대수만 노출
+  const deployedDevices = campaign?.TargetGroup?.Devices || []
+  const totalUnits = deployedDevices.length || selectedTargetGroup?.deviceCount || 0
+  const completedUnits = deployedDevices.filter((device) =>
+    COMPLETED_DEPLOYMENT_STATUS.includes(device.jobExecutionStatus)
+  ).length
+  const failedUnits = deployedDevices.filter((device) =>
+    FAILED_DEPLOYMENT_STATUS.includes(device.jobExecutionStatus)
+  ).length
+
+  const handleOpenArtifactModal = () => {
+    if (id) return
+    setPendingArtifactId(selectedArtifactId)
+    setIsArtifactModalOpen(true)
+  }
+
+  const handleCloseArtifactModal = () => {
+    setIsArtifactModalOpen(false)
+  }
+
+  const handleConfirmArtifact = () => {
+    setSelectedArtifactId(pendingArtifactId)
+    setIsArtifactModalOpen(false)
+  }
+
   const handleSave = async (isRequest = false) => {
     try {
       const payload = {
         ...(id && { id: Number(id) }),
         displayName, // Mandatory
-        userId: session.email, // Mandatory
+        userId, // Mandatory
         memo, // Optional
         orgId: currentOrg.id, // Mandatory
         targetGroupId: selectedTargetGroupId || undefined, // Mandatory
@@ -193,7 +249,7 @@ const CampaignDetail = () => {
       toast.success(tCommon('success'), { autoClose: 2000 })
     } catch (error) {
       console.error(error)
-      toast.error(tCommon('error'), { autoClose: 2000 })
+      toast.error(tCommon('error.description'), { autoClose: 2000 })
     }
   }
 
@@ -202,17 +258,17 @@ const CampaignDetail = () => {
       const campaignId = await handleSave(true)
 
       if (!campaignId) {
-        toast.error(tCommon('error'), { autoClose: 2000 })
+        toast.error(tCommon('error.description'), { autoClose: 2000 })
         return
       }
 
       setIsDeploying(true)
-      await campaignApis.requestCampaign({ id: campaignId, userId: session.email })
+      await campaignApis.requestCampaign({ id: campaignId, userId })
       navigate('/ota/campaign')
       toast.success(tCommon('success'), { autoClose: 2000 })
     } catch (error) {
       console.error(error)
-      toast.error(tCommon('error'), { autoClose: 2000 })
+      toast.error(tCommon('error.description'), { autoClose: 2000 })
     } finally {
       setIsDeploying(false)
     }
@@ -235,15 +291,16 @@ const CampaignDetail = () => {
     const fetchData = async () => {
       setIsLoading(true)
       try {
-        if (actualOrgs.length === 0 && session.userRole !== 'SYSTEM_MANAGER') return
+        // defaultOrg 초기값이 {} 이므로 id 없는 조직(미로딩)은 제외한다
+        const actualOrgIds = (userRole === 'SYSTEM_MANAGER' ? [...allOrgs, defaultOrg] : actualOrgs)
+          .map((org) => org?.id)
+          .filter((orgId) => orgId !== undefined && orgId !== null)
 
-        const actualOrgIds =
-          session.userRole === 'SYSTEM_MANAGER'
-            ? [...allOrgs, defaultOrg].map((org) => org.id)
-            : actualOrgs.map((org) => org.id)
+        if (actualOrgIds.length === 0) {
+          setIsLoading(false)
+          return
+        }
 
-        console.log('actualOrgIds', actualOrgIds)
-        console.log('session.userRole', session.userRole)
         const [packageTypeRes, groupRes, policyRes, actionRes, artifactRes, moduleRes] = await Promise.all([
           packageTypeApis.retrievePackageTypes(company.id),
           targetGroupApis.retrieveTargetGroup(actualOrgIds),
@@ -313,6 +370,7 @@ const CampaignDetail = () => {
           const campaignResponse = await campaignApis.retrieveCampaign([Number(orgIdParam)], id)
           const campaign = campaignResponse.results.pageCampaign[0]
           if (campaign) {
+            setCampaign(campaign)
             setDisplayName(campaign.displayName)
             setMemo(campaign.memo)
             setSelectedTargetGroupId(campaign.TargetGroup?.id)
@@ -322,6 +380,7 @@ const CampaignDetail = () => {
             setSelectedModuleId(campaign.Module?.id)
             setSelectedOrganizationId(campaign.Organization?.id)
             setSelectedArtifactId(campaign.Artifact?.id)
+            setPendingArtifactId(campaign.Artifact?.id)
             setJobStatus(campaign.jobStatus)
           }
         }
@@ -332,15 +391,15 @@ const CampaignDetail = () => {
     }
 
     fetchData()
-  }, [id, actualOrgs])
+  }, [id, actualOrgs, allOrgs])
 
   return (
     <StyledPageContent className="column">
-      <Title>
-        {t('campaign')} &gt; {tCommon('detail')}
-      </Title>
-      <PageHeadWrap>
-        <div>{`${tCommon('organizationName')} : ${currentOrg?.displayName}`}</div>
+      <DetailHead>
+        <div className="titleGroup">
+          <Title>{id ? t('campaignDetail') : t('campaignCreation')}</Title>
+          <span className="orgName typographyBody5">{`${tCommon('organizationName')} : ${currentOrg?.displayName || ''}`}</span>
+        </div>
         <ButtonWrap className="alignRight">
           <Button onClick={() => handleRequest()} disabled={isDeployDisabled()}>
             {t('request')}
@@ -350,20 +409,21 @@ const CampaignDetail = () => {
           </Button>
           <Button onClick={() => handleCancel()}>{t('cancel')}</Button>
         </ButtonWrap>
-      </PageHeadWrap>
-      <Section gap="2.4rem">
-        <Section gap="2.4rem">
+      </DetailHead>
+      <DetailCardRow $columns="minmax(0, 2fr) minmax(0, 1fr)">
+        <Section gap="1.6rem">
+          <SectionTitle title={t('campaignDetails')} />
           <Input
-            label={t('title')}
+            label={t('campaignName')}
             size="lg"
             placeholder={t('enterTitle')}
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
           />
           <Textarea
-            label={t('memo')}
+            label={t('description')}
             size="lg"
-            placeholder={t('enterMemo')}
+            placeholder={t('enterDescription')}
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
             count={`${memo.length}/100`}
@@ -371,23 +431,83 @@ const CampaignDetail = () => {
           />
         </Section>
         <Section>
-          <DropdownContainer>
-            <Dropdown
-              label={t('targetGroup')}
+          <SectionTitle title={t('updateStatus')} />
+          <InfoList>
+            <dt>{t('status')}</dt>
+            <dd>
+              <StyledTag color={statusToColor(jobStatus)} bgColor={statusToBgColor(jobStatus)}>
+                {jobStatus || t('notDeployed')}
+              </StyledTag>
+            </dd>
+            <dt>{t('step')}</dt>
+            <dd>{campaign?.totalStep ? `${campaign.currentStep ?? 0} / ${campaign.totalStep}` : '-'}</dd>
+            <dt>{t('rolloutProgress')}</dt>
+            <dd>
+              {`${completedUnits} / ${totalUnits}`}
+              <span className="failedCount">{`· ${failedUnits} ${t('failed')}`}</span>
+            </dd>
+            {/* <dt>{t('rolloutVersion')}</dt>
+            <dd>{artifactVersion}</dd> */}
+            <dt>{t('startedAt')}</dt>
+            <dd>{formatDate(campaign?.requestAt)}</dd>
+            <dt>{t('lastUpdated')}</dt>
+            <dd>{formatDate(campaign?.updatedAt)}</dd>
+            <dt>{t('completedAt')}</dt>
+            <dd>{formatDate(campaign?.completeAt)}</dd>
+          </InfoList>
+        </Section>
+      </DetailCardRow>
+      <DetailCardRow $columns="repeat(3, minmax(0, 1fr))">
+        <Section gap="1.6rem">
+          <SectionTitle title={t('targetGroup')} />
+          <Dropdown
+            label={t('name')}
+            size="lg"
+            value={selectedTargetGroupId}
+            placeholder={t('selectTargetGroup')}
+            options={targetGroupOptions}
+            disabled={id}
+            onChange={handleGroupChange}
+          />
+          <InfoList>
+            <dt>{t('units')}</dt>
+            <dd>{selectedTargetGroup?.deviceCount ?? '-'}</dd>
+            <dt>{t('mode')}</dt>
+            <dd>{selectedTargetGroup?.mode ? t(selectedTargetGroup.mode) : '-'}</dd>
+            <dt>{t('lastUpdated')}</dt>
+            <dd>{formatDate(selectedTargetGroup?.updatedAt)}</dd>
+          </InfoList>
+        </Section>
+        <Section gap="1.6rem">
+          <SectionTitle title={t('artifact')} />
+          <PickerField $disabled={!!id} onClick={handleOpenArtifactModal}>
+            <Input
+              label={t('name')}
               size="lg"
-              value={selectedTargetGroupId}
-              placeholder={t('selectTargetGroup')}
-              minWidth="200px"
-              options={targetGroupOptions}
-              disabled={id}
-              onChange={handleGroupChange}
+              readOnly
+              placeholder={t('selectArtifact')}
+              value={selectedArtifact?.displayName || ''}
+              disabled={!!id}
+              unit={<Icon name="search" size={20} />}
             />
+          </PickerField>
+          <InfoList>
+            <dt>{t('module')}</dt>
+            <dd>{selectedArtifact?.Module?.displayName || '-'}</dd>
+            <dt>{t('version')}</dt>
+            <dd>{artifactVersion}</dd>
+            <dt>{t('lastUpdated')}</dt>
+            <dd>{formatDate(selectedArtifact?.updatedAt)}</dd>
+          </InfoList>
+        </Section>
+        <Section gap="1.6rem">
+          <SectionTitle title={t('rolloutSettings')} />
+          <FieldGroup>
             <Dropdown
-              label={t('policy')}
+              label={t('timeoutPolicy')}
               size="lg"
               value={selectedPolicyId}
               placeholder={t('selectPolicy')}
-              minWidth="200px"
               options={policyOptions}
               disabled={id}
               onChange={handlePolicyChange}
@@ -396,8 +516,7 @@ const CampaignDetail = () => {
               label={t('preAction')}
               size="lg"
               value={selectedPreActionId}
-              placeholder={t('selectAction')}
-              minWidth="200px"
+              placeholder={t('notSet')}
               options={actionOptions}
               disabled={id}
               onChange={handlePreActionChange}
@@ -406,15 +525,32 @@ const CampaignDetail = () => {
               label={t('postAction')}
               size="lg"
               value={selectedPostActionId}
-              placeholder={t('selectAction')}
-              minWidth="200px"
+              placeholder={t('notSet')}
               options={actionOptions}
               disabled={id}
               onChange={handlePostActionChange}
             />
-          </DropdownContainer>
+          </FieldGroup>
         </Section>
-        <Section gap="2.4rem">
+      </DetailCardRow>
+      <Modal
+        isOpen={isArtifactModalOpen}
+        size="xl"
+        title={t('selectArtifact')}
+        closeButton
+        onClose={handleCloseArtifactModal}
+        renderButtonComponent={
+          <>
+            <Button theme="secondary" onClick={handleCloseArtifactModal}>
+              {tCommon('cancel')}
+            </Button>
+            <Button onClick={handleConfirmArtifact} disabled={!pendingArtifactId}>
+              {tCommon('confirm')}
+            </Button>
+          </>
+        }
+      >
+        <ArtifactPickerBody>
           <HeaderTitleGroup>
             <Dropdown
               label={t('packageType')}
@@ -471,14 +607,14 @@ const CampaignDetail = () => {
               paginationRowsPerPageOptions={[10, 30, 50, 100]}
             />
           )}
-        </Section>
-        <Modal isOpen={isDeploying} size="xs">
-          <div style={{ textAlign: 'center', padding: '20px' }}>
-            <ClipLoader color={'#36d7b7'} loading={true} size={50} />
-            <div style={{ marginTop: '20px' }}>{t('deploying')}</div>
-          </div>
-        </Modal>
-      </Section>
+        </ArtifactPickerBody>
+      </Modal>
+      <Modal isOpen={isDeploying} size="xs">
+        <div style={{ textAlign: 'center', padding: '20px' }}>
+          <ClipLoader color={'#36d7b7'} loading={true} size={50} />
+          <div style={{ marginTop: '20px' }}>{t('deploying')}</div>
+        </div>
+      </Modal>
     </StyledPageContent>
   )
 }

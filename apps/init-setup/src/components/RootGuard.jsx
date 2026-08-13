@@ -2,6 +2,10 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useUserStore } from '@repo/stores'
 import { getUserInfo } from '@repo/apis'
+import { fetchRobotSetupCompleted } from '@/hooks/useRobotSetupStatus'
+
+// 초기 설정이 끝난 로봇은 '초기 설정' 메뉴가 없으므로 맵 설정의 첫 화면으로 들어간다.
+const resolveLandingPath = async () => ((await fetchRobotSetupCompleted()) ? '/map/scan' : '/language')
 
 const decodeJwt = (token) => {
   try {
@@ -70,7 +74,7 @@ const RootGuard = () => {
               userRole: userInfo.userRole,
               userLevel: getUserLevel(userInfo.userRole)
             })
-            navigate('/language', { replace: true })
+            navigate(await resolveLandingPath(), { replace: true })
           } else {
             navigate('/login', { replace: true })
           }
@@ -87,7 +91,7 @@ const RootGuard = () => {
           try {
             const userInfo = await getUserInfo(session.userId, session.accessToken)
             if (userInfo) {
-              navigate('/language', { replace: true })
+              navigate(await resolveLandingPath(), { replace: true })
             } else {
               navigate('/login', { replace: true })
             }

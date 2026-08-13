@@ -137,6 +137,7 @@ const BodyContainer = React.memo(
       chartLoading,
       poseUnavailable,
       gridUnavailable,
+      gridOversized,
 
       // 플레이어 바
       progressBarRef,
@@ -209,6 +210,7 @@ const BodyContainer = React.memo(
             chartLoading={chartLoading}
             poseUnavailable={poseUnavailable}
             gridUnavailable={gridUnavailable}
+            gridOversized={gridOversized}
           />
 
           {/* 공통 플레이어 바 (두 맵 하단 전체 폭) */}
@@ -386,6 +388,7 @@ export default function Logreplay({ robotName = '로봇 명', initialDate }) {
     chartLoading,
     poseUnavailable,
     gridUnavailable,
+    gridOversized,
 
     // 배속 (훅에서 제공)
     playbackRate,
@@ -518,6 +521,7 @@ export default function Logreplay({ robotName = '로봇 명', initialDate }) {
           chartLoading={chartLoading}
           poseUnavailable={poseUnavailable}
           gridUnavailable={gridUnavailable}
+          gridOversized={gridOversized}
           // 플레이어 바
           progressBarRef={progressBarRef}
           handleProgressPointerDown={handleProgressPointerDown}

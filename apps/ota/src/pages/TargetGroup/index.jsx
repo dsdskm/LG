@@ -16,6 +16,7 @@ import GroupTable from '@/components/TargetGroup/GroupTable'
 import { useTranslation } from 'react-i18next'
 import { targetGroupApis } from '@/apis'
 import { useOrganizationStore, useUserStore } from '@repo/stores'
+import { useOrgIds } from '@/hooks/useOrgIds'
 import { convertDateToString } from '@repo/utils'
 import { ButtonWrap } from '@/components/common/styles'
 import { toast } from 'react-toastify'
@@ -35,9 +36,11 @@ const hoverStyles = {
 const TargetGroup = () => {
   const navigate = useNavigate()
   const session = useUserStore((state) => state.session)
+  const userRole = session?.userRole
   const { t } = useTranslation('targetGroup')
   const { t: tCommon } = useTranslation('common')
   const { actualOrgs, allOrgs, defaultOrg } = useOrganizationStore()
+  const { orgIds, primaryOrgId } = useOrgIds()
   const [isLoading, setIsLoading] = useState(true)
   const [filterQuery, setFilterQuery] = useState('all')
   const [modeOptions, setModeOptions] = useState([])
@@ -111,18 +114,13 @@ const TargetGroup = () => {
   }
 
   const checkTargetGroupLimitPerOrg = () => {
-    const currentOrg = session?.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0 ? defaultOrg : actualOrgs[0]
+    const currentOrg = userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0 ? defaultOrg : actualOrgs[0]
     const targetGroupCount = processedData.filter((item) => item.organizationId === currentOrg.id).length
     return targetGroupCount < LIMIT_TARGET_GROUP_PER_ORG
   }
 
-  const allOrgIds =
-    session?.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
-      ? [...allOrgs, defaultOrg].map((org) => org.id).join(',')
-      : actualOrgs.map((org) => org.id).join(',')
-
   useEffect(() => {
-    if (actualOrgs.length === 0 && session?.userRole !== 'SYSTEM_MANAGER') {
+    if (orgIds.length === 0) {
       setIsLoading(false)
       return
     }
@@ -130,7 +128,7 @@ const TargetGroup = () => {
     setIsLoading(true)
     const retrieveTargetGroup = async () => {
       try {
-        const response = await targetGroupApis.retrieveTargetGroup(allOrgIds.split(','))
+        const response = await targetGroupApis.retrieveTargetGroup(orgIds)
         const responseData = response.results
           .filter((item) => item.campaignType === 'update')
           .map((item) => {
@@ -153,7 +151,7 @@ const TargetGroup = () => {
     }
 
     retrieveTargetGroup()
-  }, [allOrgIds])
+  }, [orgIds])
 
   const handleSelectOrg = useCallback((info) => {
     setOrgFilter({ actualOrgs: info.actualOrgs, matchesOrg: info.matchesOrg })
@@ -164,8 +162,8 @@ const TargetGroup = () => {
       toast.error(t('targetGroupLimitPerOrg', { limit: LIMIT_TARGET_GROUP_PER_ORG }), { autoClose: 2000 })
       return
     }
-    const orgId = session?.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0 ? defaultOrg.id : actualOrgs[0].id
-    navigate(`/ota/target-group/detail/?orgId=${orgId}`)
+    if (!primaryOrgId) return
+    navigate(`/ota/target-group/detail/?orgId=${primaryOrgId}`)
   }
 
   const handleFilterChange = (value) => {
@@ -198,7 +196,7 @@ const TargetGroup = () => {
             />
           </SearchContainer>
           <ButtonWrap className="alignRight" style={{ marginBottom: '-2rem' }}>
-            <Button onClick={handleCreate} disabled={actualOrgs.length !== 1 && session?.userRole !== 'SYSTEM_MANAGER'}>
+            <Button onClick={handleCreate} disabled={actualOrgs.length !== 1 && userRole !== 'SYSTEM_MANAGER'}>
               {t('create')}
             </Button>
             <Button>{t('delete')}</Button>

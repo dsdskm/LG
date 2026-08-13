@@ -19,13 +19,7 @@ for (let i = 0; i <= 100; i++) {
  *   2. LaserScan 포인트          (빨간 점들)
  *   3. 로봇 위치 마커             (파란 원 + 방향 화살표)
  */
-function MapCanvas({
-  mapData,
-  scanData,
-  odomData,
-  subscribedTopics = [],
-  customTopicsData = {}
-}) {
+function MapCanvas({ mapData, scanData, odomData, subscribedTopics = [], customTopicsData = {} }) {
   const canvasRef = useRef(null)
   const mapCacheCanvasRef = useRef(null)
   const mapCacheValidRef = useRef(false)
@@ -145,9 +139,7 @@ function MapCanvas({
 
     // ROS 월드 좌표(미터) → 캔버스 픽셀 좌표 변환
     // 지도 원점 또는 임의의 중앙 원점 (-12.5m, -12.5m) 사용해 (0,0)을 중앙에 오게 함
-    const origin = hasMap
-      ? (mapData.info.origin?.position ?? { x: 0, y: 0 })
-      : { x: -12.5, y: -12.5 }
+    const origin = hasMap ? (mapData.info.origin?.position ?? { x: 0, y: 0 }) : { x: -12.5, y: -12.5 }
 
     const worldToCanvas = (wx, wy) => {
       const col = (wx - origin.x) / resolution
@@ -166,17 +158,7 @@ function MapCanvas({
         ctx.webkitImageSmoothingEnabled = false
         ctx.msImageSmoothingEnabled = false
 
-        ctx.drawImage(
-          mapCacheCanvasRef.current,
-          0,
-          0,
-          width,
-          height,
-          0,
-          0,
-          canvas.width,
-          canvas.height
-        )
+        ctx.drawImage(mapCacheCanvasRef.current, 0, 0, width, height, 0, 0, canvas.width, canvas.height)
       } else {
         // 캐시 준비중인 경우의 대체 렌더링
         ctx.fillStyle = '#cccccc'

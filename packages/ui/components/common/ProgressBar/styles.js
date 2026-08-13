@@ -19,7 +19,7 @@ export const ProgressTrack = styled.div`
 `
 
 export const ProgressFill = styled.div`
-  background-color: var(--color-primary-70);
+  background-color: var(--t-primary-btn-bg);
   border-radius: var(--radius-sm);
   height: 100%;
   width: ${({ $percentage }) => $percentage}%;

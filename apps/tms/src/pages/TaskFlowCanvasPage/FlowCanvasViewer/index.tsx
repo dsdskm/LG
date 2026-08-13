@@ -863,6 +863,12 @@ function InnerReadonlyCanvas({ flowDefinition, activeNodeList, displayOption, fl
                   nodesConnectable={false}
                   elementsSelectable={false}
                   zoomOnDoubleClick={false}
+                  // 뷰어는 스크롤되는 페이지 안에 놓이므로, 휠/트랙패드 스와이프를 줌으로 먹지 않고
+                  // 페이지 스크롤로 넘긴다. 확대/축소는 핀치(zoomOnPinch 기본 true)와 Controls 버튼으로.
+                  zoomOnScroll={false}
+                  // preventScrolling=false 여야 wheel 이벤트가 페이지로 전파된다(기본값 true = 차단).
+                  // 모바일은 기본값을 유지해 터치 패닝/핀치 처리를 건드리지 않는다.
+                  preventScrolling={isMobile}
                   panOnDrag
                   deleteKeyCode={null}
                   onNodeClick={handleNodeClick}
