@@ -56,6 +56,8 @@ export default function TaskEdge({
   targetY,
   sourcePosition,
   targetPosition,
+  sourceHandleId,
+  targetHandleId,
   data,
   style,
   markerEnd,
@@ -64,6 +66,19 @@ export default function TaskEdge({
   const edgeType = ((data as any)?.edgeType ?? DEFAULT_EDGE_TYPE) as EdgeVisualType
   const waypoints = ((data as any)?.waypoints ?? []) as EdgeWaypoint[]
   const hasWaypoints = waypoints.length > 0
+
+  const sourceNodeId = String((data as any)?.sourceNodeId ?? '')
+  const sourceNode = useFlowEditorStore((s) => s.nodes.find((node) => String(node.id) === sourceNodeId))
+  const sourceTaskType = String((sourceNode?.data as any)?.taskType ?? '').toUpperCase()
+  const isActionFailureBranch = sourceTaskType === 'ACTION' && (sourceHandleId === 'left' || (data as any)?.sourceHandleId === 'left')
+
+  const strokeColor = isActionFailureBranch ? '#dc2626' : (style?.stroke as string | undefined) ?? '#94a3b8'
+  const edgeMarkerEnd = isActionFailureBranch
+    ? markerEnd
+      ? { ...markerEnd, color: strokeColor }
+      : { type: 'arrowclosed', color: strokeColor }
+    : markerEnd
+  const failureLabel = isActionFailureBranch ? 'Fallback' : null
 
   const { screenToFlowPosition } = useReactFlow()
   const setEdgeWaypoints = useFlowEditorStore((s) => s.setEdgeWaypoints)
@@ -203,10 +218,37 @@ export default function TaskEdge({
         style={{
           ...style,
           fill: 'none',
+          stroke: strokeColor,
+          strokeWidth: isActionFailureBranch ? 1.8 : style?.strokeWidth ?? 1.25,
           strokeLinejoin: 'round'
         }}
-        markerEnd={markerEnd}
+        markerEnd={edgeMarkerEnd}
       />
+
+      {failureLabel && (
+        <EdgeLabelRenderer>
+          <div
+            className="nodrag nopan"
+            style={{
+              position: 'absolute',
+              transform: `translate(-50%, -50%) translate(${(sourceX + targetX) / 2}px, ${(sourceY + targetY) / 2}px)`,
+              padding: '1px 4px',
+              borderRadius: '999px',
+              background: '#fee2e2',
+              border: '1px solid #fca5a5',
+              color: '#991b1b',
+              fontSize: '5.5px',
+              fontWeight: 700,
+              lineHeight: 1.1,
+              whiteSpace: 'nowrap',
+              pointerEvents: 'none',
+              boxShadow: '0 2px 6px rgba(127, 29, 29, 0.12)'
+            }}
+          >
+            {failureLabel}
+          </div>
+        </EdgeLabelRenderer>
+      )}
 
       {selected && (
         <EdgeLabelRenderer>

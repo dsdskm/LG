@@ -126,6 +126,7 @@ export default function Map() {
     mapData,
     odomData,
     scanData,
+    robotPose,
     topics,
     subscribedTopics,
     customTopicsData,
@@ -177,6 +178,7 @@ export default function Map() {
             mapData={mapData}
             scanData={scanData}
             odomData={odomData}
+            robotPose={robotPose}
             subscribedTopics={subscribedTopics}
             customTopicsData={customTopicsData}
             t={t}

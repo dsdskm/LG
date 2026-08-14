@@ -49,10 +49,8 @@ const Semantic = () => {
   // 이 화면에는 연결 툴바가 없으므로 진입 시 바로 연결하고 떠날 때 끊는다
   // (구독은 advertise 를 받은 useFoxglove 가 역할별로 자동 처리한다).
   const [wsUrl] = useState(resolveWsUrl)
-  const { mapData, odomData, scanData, subscribedTopics, customTopicsData, connect, disconnect } = useFoxglove(
-    wsUrl,
-    10
-  )
+  const { mapData, odomData, scanData, robotPose, subscribedTopics, customTopicsData, connect, disconnect } =
+    useFoxglove(wsUrl, 10)
 
   useEffect(() => {
     connect()
@@ -202,6 +200,7 @@ const Semantic = () => {
               mapData={mapData}
               scanData={scanData}
               odomData={odomData}
+              robotPose={robotPose}
               subscribedTopics={subscribedTopics}
               customTopicsData={customTopicsData}
               t={t}

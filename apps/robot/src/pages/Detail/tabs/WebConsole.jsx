@@ -100,39 +100,7 @@ const WebConsole = ({ t, deviceId, i18n }) => {
 
   // ✅ 카드 타입 정의
   const cardTypes = {
-    READONLY: {
-      status: {
-        name: t('stateInformation'),
-        path: '/status',
-        port: 3000,
-        icon: '📊'
-      },
-      sensor: {
-        name: t('sensorData'),
-        path: '/sensor',
-        port: 3000,
-        icon: '🔍'
-      },
-      micom: {
-        name: t('micom'),
-        path: '/micom',
-        port: 3000,
-        icon: '🔧'
-      },
-      diagnostic: {
-        name: t('diagnostic'),
-        path: '/diagnostic',
-        port: 3000,
-        icon: '🩺'
-      },
-      '3d-view': {
-        name: t('3dView'),
-        path: '/3d-view',
-        port: 3000,
-        icon: '🎯',
-        realtimePort: 9765
-      }
-    },
+    READONLY: {},
     CONTROL: {
       RAAT: {
         name: 'RAAT',
@@ -140,34 +108,10 @@ const WebConsole = ({ t, deviceId, i18n }) => {
         port: 3002,
         icon: '🛠️'
       },
-      'map-settings': {
-        name: t('mapSetting'),
-        path: '/map-settings',
-        port: 3000,
-        icon: '🗺️'
-      },
-      poi: {
-        name: t('pointOfInterest'),
-        path: '/poi',
-        port: 3000,
-        icon: '📍'
-      },
-      tofu: {
-        name: 'TOFU',
-        path: '/tofu',
-        port: 3000,
-        icon: '🤖'
-      },
-      vla: {
-        name: 'VLA',
-        path: '/vla',
-        port: 3000,
-        icon: '🧠'
-      },
-      settings: {
-        name: t('setting'),
-        path: '/settings',
-        port: 3000,
+      initialSetup: {
+        name: 'initialSetup',
+        path: '/',
+        port: 18080,
         icon: '⚙️'
       }
     }

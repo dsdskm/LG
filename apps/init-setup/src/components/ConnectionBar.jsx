@@ -205,15 +205,21 @@ export default function ConnectionBar({
           >
             {t('start')}
           </Button>
-          <Button size="md" onClick={handleSave}>
-            {t('save')}
-          </Button>
-          <Button size="md" theme="tertiary" onClick={handleReset}>
-            {t('reset')}
-          </Button>
-          <Button size="md" theme="tertiary" onClick={handleCancel}>
-            {t('cancel')}
-          </Button>
+          {/* 저장 · 리셋 · 취소는 매핑이 시작된 뒤에만 의미가 있으므로 그때만 노출한다
+              (매핑 전에는 비활성 버튼도 두지 않아 시작 버튼만 남는다). */}
+          {isMapping && (
+            <>
+              <Button size="md" onClick={handleSave}>
+                {t('save')}
+              </Button>
+              <Button size="md" theme="tertiary" onClick={handleReset}>
+                {t('reset')}
+              </Button>
+              <Button size="md" theme="tertiary" onClick={handleCancel}>
+                {t('cancel')}
+              </Button>
+            </>
+          )}
         </div>
       )}
     </div>

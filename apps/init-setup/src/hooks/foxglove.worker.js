@@ -1,7 +1,7 @@
 import { parseCDR } from './cdrParser'
 
 let ws = null
-const subMap = {} // subId -> { topic, schemaName, encoding }
+const subMap = {} // subId -> { topic, schemaName, encoding, channelId }
 
 self.onmessage = (event) => {
   const { op, data } = event.data
@@ -78,7 +78,17 @@ self.onmessage = (event) => {
           if (msg.op === 'serverInfo') {
             self.postMessage({ op: 'serverInfo', name: msg.name, supportedEncodings: msg.supportedEncodings })
           } else if (msg.op === 'advertise') {
+            // advertise 는 증분 메시지다 — 새로 생긴 채널만 담겨 온다.
+            // 메인 스레드에서 기존 목록에 병합한다.
             self.postMessage({ op: 'advertise', channels: msg.channels })
+          } else if (msg.op === 'unadvertise') {
+            // 사라진 채널의 구독은 서버에서 이미 무효다. 남은 구독 매핑을 정리해
+            // 노드가 재시작되며 새 channelId 로 다시 advertise 될 때 재구독되게 한다.
+            const goneIds = new Set(msg.channelIds)
+            Object.entries(subMap).forEach(([subId, sub]) => {
+              if (goneIds.has(sub.channelId)) delete subMap[subId]
+            })
+            self.postMessage({ op: 'unadvertise', channelIds: msg.channelIds })
           }
         } catch (e) {}
       }
@@ -100,7 +110,12 @@ self.onmessage = (event) => {
       if (!ws || ws.readyState !== WebSocket.OPEN) return
 
       const subsToSend = subscriptions.map((sub) => {
-        subMap[sub.id] = { topic: sub.topic, schemaName: sub.schemaName, encoding: sub.encoding }
+        subMap[sub.id] = {
+          topic: sub.topic,
+          schemaName: sub.schemaName,
+          encoding: sub.encoding,
+          channelId: sub.channelId
+        }
         return { id: sub.id, channelId: sub.channelId, encoding: sub.encoding }
       })
 

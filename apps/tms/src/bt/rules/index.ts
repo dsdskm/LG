@@ -12,6 +12,7 @@ import { rule_reactiveAnd } from './rule_reactiveseand'
 import { rule_retryUntilSuccessful } from './rule_retryuntilsuccessful'
 import { rule_precondition } from './rule_precondition'
 import { rule_delay } from './rule_delay'
+import { rule_timeout } from './rule_timeout'
 
 export const btRules = [
   rule_ifElse,
@@ -26,6 +27,7 @@ export const btRules = [
   rule_retryUntilSuccessful,
   rule_precondition,
   rule_delay,
+  rule_timeout,
   rule_alwaysSuccess,
 
   rule_ifThen

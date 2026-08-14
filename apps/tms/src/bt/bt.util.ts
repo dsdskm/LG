@@ -96,6 +96,10 @@ export function isDelayControlNode(node: Node): boolean {
   return isControlNode(node) && getNodeTaskName(node) === 'delay'
 }
 
+export function isTimeoutControlNode(node: Node): boolean {
+  return isControlNode(node) && getNodeTaskName(node) === 'timeout'
+}
+
 export function isAlwaysSuccessNode(node: Node): boolean {
   return isActionNode(node) && getNodeTaskName(node) === 'alwayssuccess'
 }
@@ -113,7 +117,8 @@ export function canUseLeftBranches(node: Node): boolean {
     isForceFailureControlNode(node) ||
     isRetryUntilSuccessfulControlNode(node) ||
     isPreconditionControlNode(node) ||
-    isDelayControlNode(node)
+    isDelayControlNode(node) ||
+    isTimeoutControlNode(node)
   )
 }
 
@@ -181,6 +186,10 @@ export function isPreconditionRuleMatch(node: Node, outgoing?: OutgoingInfo): bo
 
 export function isDelayRuleMatch(node: Node, outgoing?: OutgoingInfo): boolean {
   return isDelayControlNode(node)
+}
+
+export function isTimeoutRuleMatch(node: Node, outgoing?: OutgoingInfo): boolean {
+  return isTimeoutControlNode(node)
 }
 
 export function isIfThenElseRuleMatch(node: Node, outgoing?: OutgoingInfo): boolean {
