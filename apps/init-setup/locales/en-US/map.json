@@ -42,7 +42,18 @@
   "cancel": "Cancel",
   "topicInfo": "Topic Info",
   "selectLocationForMapping": "Select building, floor and area to start mapping",
+  "connectToStartMapping": "Connect to the robot first to start mapping",
   "semanticPageTitle": "Semantic (POI)",
   "selectLocationForSemantic": "Select building, floor and area to save new POIs",
-  "noPoiLoaded": "No POI to display"
+  "noPoiLoaded": "No POI to display",
+  "saveComplete": {
+    "title": "Map Saved",
+    "description": "Map '{{name}}' has been saved.",
+    "gridChecking": "Checking whether the 2D grid map files were written...",
+    "gridReady": "2D grid map files (grid_map.yaml / grid_map.png) were written as well.",
+    "gridPending": "The 2D grid map files are not written yet. Check the map list again in a moment.",
+    "gridUnknown": "Could not verify the 2D grid map files (map directory is not accessible).",
+    "close": "Close",
+    "goSemantic": "Go to Semantic"
+  }
 }

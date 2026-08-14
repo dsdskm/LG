@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { list } from '@/apis/robotSetupApis'
 
 // 셋업 진행 상태는 앱 진입 시 한 번만 확인한다.
-// RootGuard(랜딩 경로 결정) 와 App(탭/사이드바/라우트 구성) 이 같은 값을 봐야 하므로
-// 모듈 레벨에 Promise 를 캐시해 요청을 1회로 묶는다.
+// App 이 이 값 하나로 탭/사이드바/라우트 구성 · 단계 잠금 · 착지 경로(currentStep 이 가리키는
+// 작업 중인 단계)를 모두 계산하므로, 모듈 레벨에 Promise 를 캐시해 요청을 1회로 묶는다.
 let setupPromise = null
 
 /**
@@ -23,9 +23,6 @@ export const fetchRobotSetup = () => {
   }
   return setupPromise
 }
-
-/** 초기 설정 완료 여부만 필요한 곳(RootGuard)용. */
-export const fetchRobotSetupCompleted = () => fetchRobotSetup().then((setup) => setup?.status === 'completed')
 
 /** 캐시 무효화 (초기 설정을 완료 처리한 직후 등). */
 export const resetRobotSetupCache = () => {

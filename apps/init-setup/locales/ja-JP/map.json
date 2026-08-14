@@ -41,5 +41,16 @@
   "reset": "再起動",
   "cancel": "キャンセル",
   "topicInfo": "トピック情報",
-  "selectLocationForMapping": "マッピングを開始するには建物・階・エリアをすべて選択してください"
+  "selectLocationForMapping": "マッピングを開始するには建物・階・エリアをすべて選択してください",
+  "connectToStartMapping": "マッピングを開始するには先にロボットへ接続してください",
+  "saveComplete": {
+    "title": "マップ保存完了",
+    "description": "マップ「{{name}}」を保存しました。",
+    "gridChecking": "2Dグリッドマップファイルの生成を確認しています...",
+    "gridReady": "2Dグリッドマップファイル(grid_map.yaml / grid_map.png)も保存されました。",
+    "gridPending": "2Dグリッドマップファイルはまだ生成されていません。しばらくしてからマップ一覧で再確認してください。",
+    "gridUnknown": "2Dグリッドマップファイルの生成は確認できません(マップ保存先にアクセスできません)。",
+    "close": "閉じる",
+    "goSemantic": "セマンティック画面へ移動"
+  }
 }

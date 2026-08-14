@@ -16,6 +16,78 @@ import { getWaypointHelperLines } from '@/utils/helperLines'
 
 type Point = { x: number; y: number }
 
+type ResolveEdgeLabelArgs = {
+  sourceNode?: { id?: string | number; data?: Record<string, any> } | null
+  sourceHandleId?: string | null
+  targetHandleId?: string | null
+  nodes?: Array<{ id?: string | number; data?: Record<string, any> }> | null
+  edges?: Array<{
+    source?: string | null
+    target?: string | null
+    sourceHandle?: string | null
+    targetHandle?: string | null
+    data?: Record<string, any>
+  }> | null
+  sourceTaskType?: string
+}
+
+export function resolveEdgeLabel({
+  sourceNode,
+  sourceHandleId,
+  targetHandleId,
+  nodes = [],
+  edges = [],
+  sourceTaskType
+}: ResolveEdgeLabelArgs): 'condition' | 'success' | 'failure' | null {
+  const sourceId = String(sourceNode?.id ?? '')
+  const sourceName = String((sourceNode?.data as any)?.taskName ?? '').trim().toLowerCase()
+  const resolvedSourceTaskType = String(sourceTaskType ?? (sourceNode?.data as any)?.taskType ?? '').toUpperCase()
+
+  const isIfThenElseNode =
+    sourceName === 'ifthenelse' ||
+    sourceName === 'if then else' ||
+    sourceName === 'if_then_else' ||
+    sourceName === 'ifthen else'
+
+  if (sourceHandleId === 'left' && targetHandleId === 'left' && isIfThenElseNode) {
+    return 'condition'
+  }
+
+  const isConnectedFromIfThenElse = (nodes ?? []).some((node) => {
+    const nodeId = String(node?.id ?? '')
+    const taskName = String((node?.data as any)?.taskName ?? '').trim().toLowerCase()
+    const isIfThenElse =
+      taskName === 'ifthenelse' ||
+      taskName === 'if then else' ||
+      taskName === 'if_then_else' ||
+      taskName === 'ifthen else'
+
+    if (!isIfThenElse) return false
+
+    return (edges ?? []).some((edge) => {
+      const edgeSourceId = String(edge?.source ?? '')
+      const edgeTargetId = String(edge?.target ?? '')
+      const edgeSourceHandle = String(edge?.sourceHandle ?? (edge?.data as any)?.sourceHandleId ?? '')
+      const edgeTargetHandle = String(edge?.targetHandle ?? (edge?.data as any)?.targetHandleId ?? '')
+      return edgeSourceId === String(nodeId) && edgeTargetId === sourceId && edgeSourceHandle === 'left' && edgeTargetHandle === 'left'
+    })
+  })
+
+  if (isConnectedFromIfThenElse && sourceHandleId === 'right' && targetHandleId === 'left') {
+    return 'success'
+  }
+
+  if (isConnectedFromIfThenElse && sourceHandleId === 'left' && targetHandleId === 'left') {
+    return 'failure'
+  }
+
+  if (resolvedSourceTaskType === 'ACTION' && sourceHandleId === 'left' && targetHandleId === 'left') {
+    return 'failure'
+  }
+
+  return null
+}
+
 // source → ...waypoints → target 를 직선 구간으로 잇는 경로
 function buildPolylinePath(points: Point[]): string {
   if (points.length === 0) return ''
@@ -70,15 +142,24 @@ export default function TaskEdge({
   const sourceNodeId = String((data as any)?.sourceNodeId ?? '')
   const sourceNode = useFlowEditorStore((s) => s.nodes.find((node) => String(node.id) === sourceNodeId))
   const sourceTaskType = String((sourceNode?.data as any)?.taskType ?? '').toUpperCase()
-  const isActionFailureBranch = sourceTaskType === 'ACTION' && (sourceHandleId === 'left' || (data as any)?.sourceHandleId === 'left')
+  const nodes = useFlowEditorStore((s) => s.nodes)
+  const edges = useFlowEditorStore((s) => s.edges)
+  const labelText = resolveEdgeLabel({
+    sourceNode,
+    sourceHandleId,
+    targetHandleId,
+    nodes,
+    edges,
+    sourceTaskType
+  })
+  const isFailureBranch = labelText === 'failure'
 
-  const strokeColor = isActionFailureBranch ? '#dc2626' : (style?.stroke as string | undefined) ?? '#94a3b8'
-  const edgeMarkerEnd = isActionFailureBranch
+  const strokeColor = isFailureBranch ? '#dc2626' : (style?.stroke as string | undefined) ?? '#94a3b8'
+  const edgeMarkerEnd = isFailureBranch
     ? markerEnd
-      ? { ...markerEnd, color: strokeColor }
+      ? ({ ...(markerEnd as Record<string, unknown>), color: strokeColor } as Record<string, unknown>)
       : { type: 'arrowclosed', color: strokeColor }
     : markerEnd
-  const failureLabel = isActionFailureBranch ? 'Fallback' : null
 
   const { screenToFlowPosition } = useReactFlow()
   const setEdgeWaypoints = useFlowEditorStore((s) => s.setEdgeWaypoints)
@@ -219,13 +300,13 @@ export default function TaskEdge({
           ...style,
           fill: 'none',
           stroke: strokeColor,
-          strokeWidth: isActionFailureBranch ? 1.8 : style?.strokeWidth ?? 1.25,
+          strokeWidth: isFailureBranch ? 1.8 : style?.strokeWidth ?? 1.25,
           strokeLinejoin: 'round'
         }}
         markerEnd={edgeMarkerEnd}
       />
 
-      {failureLabel && (
+      {labelText && (
         <EdgeLabelRenderer>
           <div
             className="nodrag nopan"
@@ -234,18 +315,38 @@ export default function TaskEdge({
               transform: `translate(-50%, -50%) translate(${(sourceX + targetX) / 2}px, ${(sourceY + targetY) / 2}px)`,
               padding: '1px 4px',
               borderRadius: '999px',
-              background: '#fee2e2',
-              border: '1px solid #fca5a5',
-              color: '#991b1b',
+              background:
+                labelText === 'failure'
+                  ? '#fee2e2'
+                  : labelText === 'success'
+                    ? '#dcfce7'
+                    : '#dbeafe',
+              border:
+                labelText === 'failure'
+                  ? '1px solid #fca5a5'
+                  : labelText === 'success'
+                    ? '1px solid #86efac'
+                    : '1px solid #93c5fd',
+              color:
+                labelText === 'failure'
+                  ? '#991b1b'
+                  : labelText === 'success'
+                    ? '#166534'
+                    : '#1d4ed8',
               fontSize: '5.5px',
               fontWeight: 700,
               lineHeight: 1.1,
               whiteSpace: 'nowrap',
               pointerEvents: 'none',
-              boxShadow: '0 2px 6px rgba(127, 29, 29, 0.12)'
+              boxShadow:
+                labelText === 'failure'
+                  ? '0 2px 6px rgba(127, 29, 29, 0.12)'
+                  : labelText === 'success'
+                    ? '0 2px 6px rgba(21, 128, 61, 0.12)'
+                    : '0 2px 6px rgba(30, 64, 175, 0.12)'
             }}
           >
-            {failureLabel}
+            {labelText}
           </div>
         </EdgeLabelRenderer>
       )}

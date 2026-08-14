@@ -1,7 +1,16 @@
 import React, { useMemo, Suspense } from 'react'
 import { useLocation } from 'react-router-dom'
 import Router from './router/Router'
-import { appRoutes, getAppPrefix, flattenRoutes, getSetupProgress, HEADER_GNB, SETUP_GROUP } from './router/routes'
+import {
+  appRoutes,
+  getAppPrefix,
+  flattenRoutes,
+  getSetupProgress,
+  getSetupLandingPath,
+  HEADER_GNB,
+  SETUP_GROUP
+} from './router/routes'
+import RootGuard from './components/RootGuard'
 import useRobotSetupStatus from './hooks/useRobotSetupStatus'
 import useAdminSchemas from './hooks/useAdminSchemas'
 import { createGlobalStyle } from 'styled-components'
@@ -103,7 +112,17 @@ const App = () => {
     [appT]
   )
 
-  const allRoutes = useMemo(() => flattenRoutes(processedAppRoutes), [processedAppRoutes])
+  // 앱 진입('/') · 없는 URL 의 착지점 = 저장된 currentStep 이 가리키는 '작업 중인 단계' 화면.
+  // 셋업 조회가 끝난 뒤에만 라우트를 그리므로(아래 setupLoading 가드) 값이 준비된 상태로 내려간다.
+  const setupLandingPath = useMemo(
+    () => getSetupLandingPath(setup, { completed: setupCompleted }),
+    [setup, setupCompleted]
+  )
+
+  const allRoutes = useMemo(
+    () => flattenRoutes(processedAppRoutes, <RootGuard landingPath={setupLandingPath} />),
+    [processedAppRoutes, setupLandingPath]
+  )
 
   // 상태를 모르는 동안 라우트를 그리면 감춰야 할 초기 설정 화면이 한 프레임 노출될 수 있다.
   // /version 은 예외 — BE 가 죽어 셋업 조회가 늦어도 버전은 확인할 수 있어야 한다.
@@ -133,8 +152,11 @@ const App = () => {
           groupSideBarRoutes={groupSideBarRoutes}
           lockedPaths={lockedPaths}
           gate={gate}
-          // 없는 URL 의 착지점은 설치 플로우 첫 탭 (admin 은 제외)
-          landingPath={headerRoutes.find((tab) => tab.group !== SETUP_GROUP.ADMIN)?.path || '/login'}
+          // 없는 URL(셋업 완료로 제거된 초기 설정 경로 등)의 착지점.
+          // 진행 중인 단계로 보내고, 계산이 불가하면 설치 플로우 첫 탭으로 떨어뜨린다 (admin 은 제외).
+          landingPath={
+            setupLandingPath || headerRoutes.find((tab) => tab.group !== SETUP_GROUP.ADMIN)?.path || '/login'
+          }
           appT={sideBarT}
         />
       </Suspense>

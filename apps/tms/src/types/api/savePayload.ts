@@ -12,10 +12,10 @@ type FlowMode = 'default' | 'tree'
 
 type ViewportLike =
   | {
-      x?: number
-      y?: number
-      zoom?: number
-    }
+    x?: number
+    y?: number
+    zoom?: number
+  }
   | [number, number, number]
   | null
   | undefined
@@ -94,9 +94,9 @@ function normalizeNode(node: any) {
     data: node?.data ?? {},
     measured: node?.measured
       ? {
-          width: node.measured.width,
-          height: node.measured.height
-        }
+        width: node.measured.width,
+        height: node.measured.height
+      }
       : undefined,
     selected: !!node?.selected,
     dragging: !!node?.dragging,
@@ -126,6 +126,7 @@ function normalizeCanvasNote(note: any) {
     id: note?.id,
     x: Number(note?.x ?? 0),
     y: Number(note?.y ?? 0),
+    title: String(note?.title ?? '메모'),
     text: String(note?.text ?? ''),
     width: Number(note?.width ?? 240),
     height: Number(note?.height ?? 150),

@@ -2,10 +2,11 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useUserStore } from '@repo/stores'
 import { getUserInfo } from '@repo/apis'
-import { fetchRobotSetupCompleted } from '@/hooks/useRobotSetupStatus'
 
-// 초기 설정이 끝난 로봇은 '초기 설정' 메뉴가 없으므로 맵 설정의 첫 화면으로 들어간다.
-const resolveLandingPath = async () => ((await fetchRobotSetupCompleted()) ? '/map/scan' : '/language')
+// 세션 검증 후 착지할 경로. App 이 robotSetup.currentStep 으로 계산해 내려준다
+// (초기 설정이 끝난 로봇은 '초기 설정' 메뉴가 없어 맵 설정 첫 화면이 된다).
+// 셋업 조회 실패 등으로 값이 없으면 첫 단계로 보낸다 — 단계를 건너뛰는 쪽이 더 위험하다.
+const FALLBACK_LANDING_PATH = '/language'
 
 const decodeJwt = (token) => {
   try {
@@ -44,8 +45,9 @@ function getUserLevel(userRole) {
   return returnLevel
 }
 
-const RootGuard = () => {
+const RootGuard = ({ landingPath }) => {
   const navigate = useNavigate()
+  const resolvedLandingPath = landingPath || FALLBACK_LANDING_PATH
   const [searchParams] = useSearchParams()
   const [isValidating, setIsValidating] = useState(true)
 
@@ -74,7 +76,7 @@ const RootGuard = () => {
               userRole: userInfo.userRole,
               userLevel: getUserLevel(userInfo.userRole)
             })
-            navigate(await resolveLandingPath(), { replace: true })
+            navigate(resolvedLandingPath, { replace: true })
           } else {
             navigate('/login', { replace: true })
           }
@@ -91,7 +93,7 @@ const RootGuard = () => {
           try {
             const userInfo = await getUserInfo(session.userId, session.accessToken)
             if (userInfo) {
-              navigate(await resolveLandingPath(), { replace: true })
+              navigate(resolvedLandingPath, { replace: true })
             } else {
               navigate('/login', { replace: true })
             }
@@ -110,7 +112,7 @@ const RootGuard = () => {
     }
 
     validateSession()
-  }, [searchParams, navigate])
+  }, [searchParams, navigate, resolvedLandingPath])
 
   if (isValidating) {
     return (

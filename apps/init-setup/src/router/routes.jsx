@@ -170,7 +170,12 @@ export const getAppPrefix = (pathname) => {
   return pathname.split('/').filter(Boolean)[0] || ''
 }
 
-export const flattenRoutes = (routes) => {
+/**
+ * @param {object[]} routes 트리 형태의 라우트 목록
+ * @param {React.ReactNode} [rootElement] '/' 에 붙일 엘리먼트.
+ *   App 은 셋업 진행 상태를 알고 있으므로 착지 경로를 주입한 RootGuard 를 넘긴다.
+ */
+export const flattenRoutes = (routes, rootElement = <RootGuard />) => {
   // 하위 메뉴(depth)는 부모의 group 을 물려받는다 — 헤더 탭 / 사이드바 필터가 group 으로 동작하므로
   // /map/scan 같은 자식 경로에서도 소속 그룹을 알 수 있어야 한다.
   const flatten = (items, parentGroup) =>
@@ -181,7 +186,7 @@ export const flattenRoutes = (routes) => {
       return depth ? [...acc, ...flatten(depth, group)] : acc
     }, [])
 
-  return [...flatten(routes), { name: '', path: '/', prefix: '', hideLayout: true, element: <RootGuard /> }]
+  return [...flatten(routes), { name: '', path: '/', prefix: '', hideLayout: true, element: rootElement }]
 }
 
 /** 라우트를 한 번만 펼쳐 재사용한다 (단계 순서 계산 · 그룹 판별 공용). */
@@ -219,6 +224,23 @@ export const getSetupProgress = (setup, { completed = false, enforce = true } = 
     pendingStep: SETUP_STEP_ROUTES[unlockedCount - 1] || SETUP_STEP_ROUTES[0],
     lockedPaths: new Set(SETUP_STEP_ROUTES.slice(unlockedCount).map((route) => route.path))
   }
+}
+
+/**
+ * 앱 진입 시 착지할 경로. 저장된 robotSetup.currentStep 을 SETUP_STEP_ROUTES 의 1-based 위치로
+ * 해석해 '지금 작업 중인 단계' 화면으로 바로 보낸다.
+ * - 셋업 완료: 초기 설정 그룹이 제거되므로 맵 설정 첫 화면
+ * - currentStep 없음/비정상: 첫 단계 (뒤 단계를 건너뛰게 만드는 것보다 안전하다)
+ * 순서 강제(enforce) 여부와 무관하게 같은 경로를 쓴다 — 강제를 꺼도 진행 중 단계에서 이어받는 게 맞다.
+ * @param {object|null} setup robotSetup 레코드
+ * @param {{completed?: boolean}} [options]
+ * @returns {string|undefined}
+ */
+export const getSetupLandingPath = (setup, { completed = false } = {}) => {
+  if (completed) return MAP_STEP_ROUTES[0]?.path
+  const step = Number(setup?.currentStep)
+  const index = Number.isFinite(step) && step > 0 ? Math.min(step, SETUP_STEP_ROUTES.length) - 1 : 0
+  return SETUP_STEP_ROUTES[index]?.path
 }
 
 /** pathname 이 속한 그룹을 찾는다 (플랫하게 펼친 라우트 기준). */
