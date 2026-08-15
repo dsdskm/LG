@@ -17,7 +17,6 @@ import {
     SecondaryTextButton,
     PrimaryButton,
     SectionGrid,
-    FieldGroup,
     FieldLabel,
     FieldHint,
     TextInput,
@@ -41,11 +40,6 @@ const LARGE_MODAL_STYLE = {
     maxHeight: '72vh',
     overflowY: 'auto',
 }
-
-const ACTION_CREATE_MODAL_STYLE = LARGE_MODAL_STYLE
-
-const ACTION_DETAIL_MODAL_STYLE = LARGE_MODAL_STYLE
-
 const MODAL_BUTTON_STYLE = {
     height: '36px',
     minWidth: '96px',
@@ -74,15 +68,6 @@ const parseJsonArray = (value, fallback = []) => {
     }
 }
 
-const parseJsonObject = (value, fallback = {}) => {
-    try {
-        const parsed = JSON.parse(String(value ?? '{}'))
-        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : fallback
-    } catch {
-        return fallback
-    }
-}
-
 const normalizeKeywordArray = (value) => {
     const rows = Array.isArray(value) ? value : []
     const normalized = rows
@@ -93,7 +78,6 @@ const normalizeKeywordArray = (value) => {
 
 const RAG_INTENT_OPTIONS = [
     { key: 'info', label: '정보 인텐트용' },
-    { key: 'action', label: '액션 인텐트용' },
 ]
 
 const normalizeRagIntentType = (value) => {
@@ -117,15 +101,7 @@ const IMAGE_ATTACH_MODE_OPTIONS = [
 const getRagIntentLabel = (value) => {
     const intentType = normalizeRagIntentType(value)
     if (intentType === 'info') return '정보 인텐트'
-    if (intentType === 'action') return '액션 인텐트'
-    return '공용(정보/액션)'
-}
-
-const normalizeToolKind = (value) => {
-    const kind = String(value ?? '').trim().toLowerCase()
-    if (kind === 'data') return 'data'
-    if (kind === 'action') return 'action'
-    return 'action'
+    return '공용(정보)'
 }
 
 const normalizeCommonRagKey = (value) => {
@@ -347,15 +323,79 @@ const KeywordListEditor = ({ keywords, onChange, hint }) => {
         </div>
     )
 }
+export const AppScopeSettingsCard = ({
+    appKey,
+    allPrompts,
+    commonInputHintPromptDraft,
+    promptDrafts,
+    creatingPromptRouteKey,
+    ragDrafts,
+    savingRagKey,
+    deletingRagKey,
+    savingCreateRag,
+    commonIntentPromptItem,
+    commonIntentPromptDraft,
+    onPromptChange,
+    onSavePrompt,
+    onCreatePrompt,
+    onRagChange,
+    onSaveRag,
+    onCreateRag,
+    onDeleteRag,
+    screenGroups,
+}) => {
+    const appPromptList = Array.isArray(allPrompts)
+        ? allPrompts.filter((item) => String(item?.appKey ?? item?.app_key ?? '').trim().toLowerCase() === String(appKey ?? '').trim().toLowerCase())
+        : []
+    const appRagDocs = Array.isArray(screenGroups)
+        ? screenGroups.flatMap((group) => Array.isArray(group?.ragDocs) ? group.ragDocs : [])
+        : []
+
+    const appLabel = String(appKey ?? '').trim() || 'APP'
+
+    return (
+        <SettingCard>
+            <SectionTitleRow>
+                <CardHeader>
+                    <CardTitle>{appLabel.toUpperCase() || 'APP'} 앱별 설정</CardTitle>
+                    <SmallBadge>앱 범위</SmallBadge>
+                </CardHeader>
+            </SectionTitleRow>
+
+            <PageDescription>
+                앱 단위의 RAG와 분류 LLM 프롬프트를 함께 관리합니다. 상세 화면 분류 프롬프트는 하위 화면에서 별도로 설정할 수 있습니다.
+            </PageDescription>
+
+            <div style={{ display: 'grid', gap: '12px' }}>
+                <ScreenRagList
+                    appKey={appKey}
+                    routeKey={appKey}
+                    routeParentKey={appKey}
+                    ragDocs={appRagDocs.filter((item) => String(item?.appKey ?? item?.app_key ?? '').trim().toLowerCase() === String(appKey ?? '').trim().toLowerCase())}
+                    ragDrafts={ragDrafts}
+                    savingRagKey={savingRagKey}
+                    deletingRagKey={deletingRagKey}
+                    savingCreateRag={savingCreateRag}
+                    onRagChange={onRagChange}
+                    onSaveRag={onSaveRag}
+                    onCreateRag={onCreateRag}
+                    onDeleteRag={onDeleteRag}
+                    initialIntentType="info"
+                    fixedIntentType=""
+                />
+            </div>
+        </SettingCard>
+    )
+}
 
 export const AppScreenSettingsTab = ({
+    appKey,
     activeRouteKey,
     values,
     settingDrafts,
     savingSettingScope,
     screenGroups,
     commonRagDocs,
-    commonTools,
     commonPromptItem,
     commonPromptDraft,
     commonIntentPromptItem,
@@ -363,20 +403,16 @@ export const AppScreenSettingsTab = ({
     commonInputHintPromptItem,
     commonInputHintPromptDraft,
     allPrompts,
-    actionTypes,
     promptDrafts,
     creatingPromptRouteKey,
     guidanceDrafts,
     ragDrafts,
-    toolDrafts,
     savingPromptKey,
     savingGuidanceKey,
     creatingGuidanceRouteKey,
     savingRagKey,
     deletingRagKey,
     savingCreateRag,
-    savingCreateTool,
-    savingToolKey,
     onSettingDraftChange,
     onSaveSettingGroup,
     onPromptChange,
@@ -389,27 +425,26 @@ export const AppScreenSettingsTab = ({
     onSaveRag,
     onCreateRag,
     onDeleteRag,
-    onToolChange,
-    onSaveTool,
-    onCreateTool,
-    onDeleteTool,
     onGoToCommonTab,
 }) => {
     const filteredGroups = filterScreenGroupsByRoute(screenGroups, activeRouteKey)
 
+    console.info('[chat-settings][screen-group-render]', {
+        activeRouteKey,
+        filteredGroupKeys: filteredGroups.map((group) => String(group.routeKey ?? '')),
+        filteredPromptSamples: filteredGroups.flatMap((group) => (Array.isArray(group.prompts) ? group.prompts : []).map((item) => ({
+            routeKey: group.routeKey,
+            appKey: item?.appKey ?? item?.app_key,
+            screenKey: item?.screenKey ?? item?.screen_key ?? item?.key,
+            routeValue: item?.routeKey ?? item?.route_key,
+            type: item?.type ?? item?.promptType ?? item?.category,
+            label: item?.label,
+            contentLength: String(item?.content ?? item?.prompt ?? '').length,
+        }))),
+    })
+
     return (
         <div style={{ display: 'grid', gap: '16px' }}>
-            <SettingCard>
-                <CardHeader>
-                    <CardTitle>{activeRouteKey}</CardTitle>
-                    <SmallBadge>화면별 설정</SmallBadge>
-                </CardHeader>
-
-                <PageDescription>
-                    선택한 화면에서 동작하는 프롬프트, 추천 메세지 카드, RAG 텍스트, 화면 액션을 한 곳에서 관리합니다.
-                </PageDescription>
-            </SettingCard>
-
             {filteredGroups.length > 0 ? (
                 filteredGroups.map((group) => (
                     <ScreenSettingGroup
@@ -419,7 +454,6 @@ export const AppScreenSettingsTab = ({
                         settingDrafts={settingDrafts}
                         savingSettingScope={savingSettingScope}
                         commonRagDocs={commonRagDocs}
-                        commonTools={commonTools}
                         onGoToCommonTab={onGoToCommonTab}
                         commonPromptItem={commonPromptItem}
                         commonPromptDraft={commonPromptDraft}
@@ -428,20 +462,16 @@ export const AppScreenSettingsTab = ({
                         commonInputHintPromptItem={commonInputHintPromptItem}
                         commonInputHintPromptDraft={commonInputHintPromptDraft}
                         allPrompts={allPrompts}
-                        actionTypes={actionTypes}
                         promptDrafts={promptDrafts}
                         creatingPromptRouteKey={creatingPromptRouteKey}
                         guidanceDrafts={guidanceDrafts}
                         ragDrafts={ragDrafts}
-                        toolDrafts={toolDrafts}
                         savingPromptKey={savingPromptKey}
                         savingGuidanceKey={savingGuidanceKey}
                         creatingGuidanceRouteKey={creatingGuidanceRouteKey}
                         savingRagKey={savingRagKey}
                         deletingRagKey={deletingRagKey}
                         savingCreateRag={savingCreateRag}
-                        savingCreateTool={savingCreateTool}
-                        savingToolKey={savingToolKey}
                         onSettingDraftChange={onSettingDraftChange}
                         onSaveSettingGroup={onSaveSettingGroup}
                         onPromptChange={onPromptChange}
@@ -454,10 +484,6 @@ export const AppScreenSettingsTab = ({
                         onSaveRag={onSaveRag}
                         onCreateRag={onCreateRag}
                         onDeleteRag={onDeleteRag}
-                        onToolChange={onToolChange}
-                        onSaveTool={onSaveTool}
-                        onCreateTool={onCreateTool}
-                        onDeleteTool={onDeleteTool}
                     />
                 ))
             ) : (
@@ -467,7 +493,7 @@ export const AppScreenSettingsTab = ({
                     </CardHeader>
 
                     <PageDescription>
-                        현재 선택한 routeKey에 등록된 화면 프롬프트, 추천 메세지, RAG 데이터, 화면 액션이 없습니다.
+                        현재 선택한 routeKey에 등록된 화면 프롬프트, 추천 메세지, RAG 데이터가 없습니다.
                     </PageDescription>
 
                     <PageDescription>routeKey: {activeRouteKey || '-'}</PageDescription>
@@ -483,7 +509,6 @@ const ScreenSettingGroup = ({
     settingDrafts,
     savingSettingScope,
     commonRagDocs,
-    commonTools,
     onGoToCommonTab,
     commonPromptItem,
     commonPromptDraft,
@@ -492,20 +517,16 @@ const ScreenSettingGroup = ({
     commonInputHintPromptItem,
     commonInputHintPromptDraft,
     allPrompts,
-    actionTypes,
     promptDrafts,
     creatingPromptRouteKey,
     guidanceDrafts,
     ragDrafts,
-    toolDrafts,
     savingPromptKey,
     savingGuidanceKey,
     creatingGuidanceRouteKey,
     savingRagKey,
     deletingRagKey,
     savingCreateRag,
-    savingCreateTool,
-    savingToolKey,
     onSettingDraftChange,
     onSaveSettingGroup,
     onPromptChange,
@@ -518,17 +539,12 @@ const ScreenSettingGroup = ({
     onSaveRag,
     onCreateRag,
     onDeleteRag,
-    onToolChange,
-    onSaveTool,
-    onCreateTool,
-    onDeleteTool,
 }) => {
     const title = getScreenTitle(group)
     const [activeStage, setActiveStage] = useState('')
-    const actionToolCount = group.tools.length
     const promptSummary = group.prompts.reduce(
         (acc, item) => {
-            const promptType = String(item?.promptType ?? item?.category ?? '').toLowerCase()
+            const promptType = String(item?.type ?? item?.promptType ?? item?.category ?? '').toLowerCase()
             if (promptType === 'intent-hint') acc.intent += 1
             else if (promptType === 'input-hint') acc.hint += 1
             else if (promptType === 'data-system') acc.data += 1
@@ -565,14 +581,6 @@ const ScreenSettingGroup = ({
         const intentType = normalizeRagIntentType(item?.intentType)
         return intentType === 'info' || intentType === 'both'
     })
-    const commonActionRagDocs = (Array.isArray(commonRagDocs) ? commonRagDocs : []).filter((item) => {
-        const key = resolveCommonRagScopeKey(item)
-        if (key === 'common_action') return true
-        if (key === 'common_info') return false
-        const intentType = normalizeRagIntentType(item?.intentType)
-        return intentType === 'action' || intentType === 'both'
-    })
-    const commonActionToolCount = Array.isArray(commonTools) ? commonTools.length : 0
 
     return (
         <SettingCard>
@@ -580,55 +588,59 @@ const ScreenSettingGroup = ({
                 <CardHeader>
                     <CardTitle>{title}</CardTitle>
                     <SmallBadge>
-                        추천 {group.guidance.length}개 · RAG 정보 {ragSummary.info + ragSummary.both}개 · RAG 액션 {ragSummary.action + ragSummary.both}개 · 액션 툴 {actionToolCount}개
+                        추천 {group.guidance.length}개
                     </SmallBadge>
                 </CardHeader>
             </SectionTitleRow>
 
-            <PageDescription>routeKey: {group.routeKey}</PageDescription>
+            <PageDescription>screenKey: {group.routeKey}</PageDescription>
 
-            {isTaskflowCanvasRoute(group.routeKey) ? (
-                <TaskflowRuleEditorSection
-                    scope={String(group.routeKey ?? '').trim()}
-                    scopeLabel="화면별"
-                    values={values}
-                    settingDrafts={settingDrafts}
-                    savingSettingScope={savingSettingScope}
-                    onSettingDraftChange={onSettingDraftChange}
-                    onSaveSettingGroup={onSaveSettingGroup}
-                />
-            ) : null}
+            <PageDescription>
+                이 화면의 분류 LLM 프롬프트와 각종 상세 설정을 관리합니다. 앱 단위 설정은 기본값용으로만 두고, 실제 동작 분기는 화면마다 별도 지정해야 합니다.
+            </PageDescription>
+
+            <ScreenPromptSection
+                appKey={String(group.routeKey ?? '').split('/')[0] || ''}
+                routeKey={group.routeKey}
+                routeParentKey={group.routeParentKey}
+                prompts={group.prompts}
+                allPrompts={allPrompts}
+                commonIntentPromptItem={commonIntentPromptItem}
+                commonIntentPromptDraft={commonIntentPromptDraft}
+                promptDrafts={promptDrafts}
+                savingPromptKey={savingPromptKey}
+                creatingPromptRouteKey={creatingPromptRouteKey}
+                onPromptChange={onPromptChange}
+                onSavePrompt={onSavePrompt}
+                onCreatePrompt={onCreatePrompt}
+                promptType="intent-hint"
+                title="상세 화면 분류 LLM 프롬프트"
+                description="이 화면이 info 분기를 결정할 때 사용할 상세 룰입니다. 기본값, 화면별 값, 또는 둘을 병합해서 적용할지 선택할 수 있습니다."
+                createLabel="분류 프롬프트 추가"
+                emptyText="등록된 상세 화면 분류 프롬프트가 없습니다."
+                expandedView
+                allowCreate
+                singleOnly
+            />
+
+            <ScreenGuidanceList
+                appKey={String(group.routeKey ?? '').split('/')[0] || ''}
+                routeKey={group.routeKey}
+                routeParentKey={group.routeParentKey}
+                guidance={group.guidance}
+                guidanceDrafts={guidanceDrafts}
+                savingGuidanceKey={savingGuidanceKey}
+                creatingGuidanceRouteKey={creatingGuidanceRouteKey}
+                onGuidanceChange={onGuidanceChange}
+                onSaveGuidance={onSaveGuidance}
+                onCreateGuidance={onCreateGuidance}
+            />
 
             <EventRuleDbEditorSection
                 scopeKey={String(group.routeKey ?? '').trim() || 'common'}
-                title="Front Rule Engine (화면별)"
-                description="이 화면의 모든 메시지를 앞단 룰로 분기합니다. info는 chunk 키로 답변하고, action은 tool을 직접 실행합니다."
-                values={values}
-                settingDrafts={settingDrafts}
-                savingSettingScope={savingSettingScope}
-                onSettingDraftChange={onSettingDraftChange}
-                onSaveSettingGroup={onSaveSettingGroup}
+                title="화면별 룰"
+                description="이 화면의 app_key와 screen_key로 등록된 룰을 조회하고 관리합니다."
             />
-
-            <ChatFlowMap
-                intentPromptCount={promptSummary.intent}
-                inputHintCount={promptSummary.hint}
-                actionPromptCount={promptSummary.action}
-                guidanceCount={group.guidance.length}
-                routeKey={group.routeKey}
-                infoRagCount={ragSummary.info + ragSummary.both}
-                actionRagCount={ragSummary.action + ragSummary.both}
-                commonInfoRagCount={commonRagSummary.info + commonRagSummary.both}
-                commonActionRagCount={commonRagSummary.action + commonRagSummary.both}
-                actionToolCount={actionToolCount}
-                commonActionToolCount={commonActionToolCount}
-                isFrontRuleEnabled
-                onSelectStage={setActiveStage}
-            />
-
-            <PageDescription>
-                클릭 가능한 단계 카드를 누르면 해당 설정이 팝업에서 열립니다.
-            </PageDescription>
 
             {activeStage ? (
                 <ModalBackdrop>
@@ -637,21 +649,6 @@ const ScreenSettingGroup = ({
                         <ModalDescription>{getStageDescription(activeStage)}</ModalDescription>
 
                         <div style={{ marginTop: '14px', display: 'grid', gap: '12px' }}>
-                            {activeStage === 'guidance' ? (
-                                <ScreenGuidanceList
-                                    appKey={String(group.routeKey ?? '').split('/')[0] || ''}
-                                    routeKey={group.routeKey}
-                                    routeParentKey={group.routeParentKey}
-                                    guidance={group.guidance}
-                                    guidanceDrafts={guidanceDrafts}
-                                    savingGuidanceKey={savingGuidanceKey}
-                                    creatingGuidanceRouteKey={creatingGuidanceRouteKey}
-                                    onGuidanceChange={onGuidanceChange}
-                                    onSaveGuidance={onSaveGuidance}
-                                    onCreateGuidance={onCreateGuidance}
-                                />
-                            ) : null}
-
                             {activeStage === 'hint' ? (
                                 <ScreenPromptSection
                                     appKey={String(group.routeKey ?? '').split('/')[0] || ''}
@@ -686,19 +683,6 @@ const ScreenSettingGroup = ({
                                 <ScreenRouteSummary routeKey={group.routeKey} routeParentKey={group.routeParentKey} />
                             ) : null}
 
-                            {activeStage === 'event-rule-first' ? (
-                                <EventRuleDbEditorSection
-                                    scopeKey={String(group.routeKey ?? '').trim() || 'common'}
-                                    showHeader={false}
-                                    description="실행 순서: route 확정 다음에 front-rule이 먼저 동작합니다. 매칭 시 LLM 인텐트 분류 없이 바로 info/action 실행으로 처리합니다."
-                                    values={values}
-                                    settingDrafts={settingDrafts}
-                                    savingSettingScope={savingSettingScope}
-                                    onSettingDraftChange={onSettingDraftChange}
-                                    onSaveSettingGroup={onSaveSettingGroup}
-                                />
-                            ) : null}
-
                             {activeStage === 'intent-prompt' ? (
                                 <ScreenPromptSection
                                     appKey={String(group.routeKey ?? '').split('/')[0] || ''}
@@ -723,81 +707,6 @@ const ScreenSettingGroup = ({
                                     allowCreate={false}
                                     singleOnly
                                 />
-                            ) : null}
-
-                            {['action-prompt', 'info-prompt'].includes(activeStage) ? (
-                                <div style={{ display: 'grid', gap: '12px' }}>
-                                    <ActionPromptPreview
-                                        flowType={activeStage === 'info-prompt' ? 'info' : 'action'}
-                                        commonPromptItem={commonPromptItem}
-                                        commonPromptDraft={commonPromptDraft}
-                                        prompts={group.prompts}
-                                        promptDrafts={promptDrafts}
-                                    />
-
-                                    <ActionUnifiedPromptSection
-                                        flowType={activeStage === 'info-prompt' ? 'info' : 'action'}
-                                        appKey={String(group.routeKey ?? '').split('/')[0] || ''}
-                                        routeKey={group.routeKey}
-                                        routeParentKey={group.routeParentKey}
-                                        prompts={group.prompts}
-                                        promptDrafts={promptDrafts}
-                                        savingPromptKey={savingPromptKey}
-                                        creatingPromptRouteKey={creatingPromptRouteKey}
-                                        onPromptChange={onPromptChange}
-                                        onSavePrompt={onSavePrompt}
-                                        onCreatePrompt={onCreatePrompt}
-                                    />
-                                </div>
-                            ) : null}
-
-                            {activeStage === 'action-tool' ? (
-                                <div style={{ display: 'grid', gap: '12px' }}>
-                                    <ActionToolPriorityPreview tools={group.tools} />
-                                    <ScreenToolList
-                                        appKey={String(group.routeKey ?? '').split('/')[0] || ''}
-                                        routeKey={group.routeKey}
-                                        routeParentKey={group.routeParentKey}
-                                        actionTypes={actionTypes}
-                                        tools={group.tools}
-                                        toolDrafts={toolDrafts}
-                                        savingCreateTool={savingCreateTool}
-                                        savingToolKey={savingToolKey}
-                                        onToolChange={onToolChange}
-                                        onSaveTool={onSaveTool}
-                                        onCreateTool={onCreateTool}
-                                        onDeleteTool={onDeleteTool}
-                                    />
-                                </div>
-                            ) : null}
-
-                            {activeStage === 'common-action-tool' ? (
-                                <div style={{ display: 'grid', gap: '12px' }}>
-                                    <FlowStageNoteCard
-                                        title="공통 액션 툴을 확인 중입니다..."
-                                        description="공통 액션 툴은 공통 탭에서만 관리하고, 앱 화면에서는 조회만 제공합니다."
-                                        details={[
-                                            '여기서는 공통 탭에서 등록한 액션 툴만 표시합니다.',
-                                            '공통 툴 수정/추가는 공통 탭에서 진행합니다.',
-                                        ]}
-                                    />
-
-                                    <ScreenToolList
-                                        appKey="common"
-                                        routeKey="common"
-                                        routeParentKey="common"
-                                        actionTypes={actionTypes}
-                                        tools={Array.isArray(commonTools) ? commonTools : []}
-                                        toolDrafts={toolDrafts}
-                                        savingCreateTool={false}
-                                        savingToolKey={savingToolKey}
-                                        onToolChange={onToolChange}
-                                        onSaveTool={onSaveTool}
-                                        onCreateTool={onCreateTool}
-                                        onDeleteTool={onDeleteTool}
-                                        readOnly
-                                    />
-                                </div>
                             ) : null}
 
                             {activeStage === 'info-rag' ? (
@@ -859,45 +768,13 @@ const ScreenSettingGroup = ({
 
                             {activeStage === 'action-rag' ? (
                                 <div style={{ display: 'grid', gap: '12px' }}>
-                                    <ScreenRagList
-                                        key="action-rag-list"
-                                        appKey={String(group.routeKey ?? '').split('/')[0] || ''}
-                                        routeKey={group.routeKey}
-                                        routeParentKey={group.routeParentKey}
-                                        ragDocs={group.ragDocs}
-                                        ragDrafts={ragDrafts}
-                                        savingRagKey={savingRagKey}
-                                        deletingRagKey={deletingRagKey}
-                                        savingCreateRag={savingCreateRag}
-                                        onRagChange={onRagChange}
-                                        onSaveRag={onSaveRag}
-                                        onCreateRag={onCreateRag}
-                                        onDeleteRag={onDeleteRag}
-                                        initialIntentType="action"
-                                        fixedIntentType="action"
-                                    />
-                                </div>
-                            ) : null}
-
-                            {activeStage === 'action-common-rag' ? (
-                                <div style={{ display: 'grid', gap: '12px' }}>
-                                    <ScreenRagList
-                                        key="action-common-rag-list"
-                                        appKey="common"
-                                        routeKey="common_action"
-                                        routeParentKey="common_action"
-                                        ragDocs={commonActionRagDocs}
-                                        ragDrafts={ragDrafts}
-                                        savingRagKey={savingRagKey}
-                                        deletingRagKey={deletingRagKey}
-                                        savingCreateRag={false}
-                                        onRagChange={onRagChange}
-                                        onSaveRag={onSaveRag}
-                                        onCreateRag={onCreateRag}
-                                        onDeleteRag={onDeleteRag}
-                                        initialIntentType="action"
-                                        fixedIntentType="action"
-                                        readOnly
+                                    <FlowStageNoteCard
+                                        title="액션 분류 후 비슷한 추천 응답으로 종료"
+                                        description="front-rule가 걸리지 않고 백엔드가 action으로 분류되면, 가장 비슷한 front-rule 문구 추천을 선택해 즉시 응답을 종료합니다."
+                                        details={[
+                                            '이 단계는 실제 tool 실행 대신 유사 문구 추천 응답을 생성합니다.',
+                                            '설정값은 공통/화면 intent 분기와 유사도 점수 기반으로 보조됩니다.',
+                                        ]}
                                     />
                                 </div>
                             ) : null}
@@ -905,7 +782,7 @@ const ScreenSettingGroup = ({
                         </div>
 
                         <ModalActions style={{ gap: '10px' }}>
-                            {['info-common-rag', 'action-common-rag', 'common-action-tool'].includes(activeStage) && onGoToCommonTab ? (
+                            {['info-common-rag'].includes(activeStage) && onGoToCommonTab ? (
                                 <SecondaryTextButton
                                     type="button"
                                     onClick={() => { setActiveStage(''); onGoToCommonTab() }}
@@ -931,16 +808,11 @@ const getStageTitle = (stageKey) => {
         guidance: '1) 메세지',
         'screen-route': '2) 화면별 분기',
         'event-rule-first': '3) Front Rule Engine',
-        'intent-prompt': '4) 인텐트 분기 룰',
-        'info-prompt': 'info 인텐트 룰',
-        'action-prompt': 'action 인텐트 룰',
-        'info-rag': 'info 경로: 화면 정보 RAG',
-        'info-common-rag': '공통 정보 RAG',
-        'info-llm-fallback': 'info 경로: RAG 미충족시 LLM 호출',
-        'action-rag': 'action 경로: 화면 액션 RAG 조회/편집',
-        'action-common-rag': '공통 action RAG',
-        'action-tool': 'action 경로: 통합 툴 실행',
-        'common-action-tool': 'action 경로: 공통 액션 툴 조회',
+        'intent-prompt': '4) 백엔드 intent 분류',
+        'info-rag': '5) info 경로 RAG 선택',
+        'info-common-rag': '공통 RAG',
+        'info-llm-fallback': '6) default LLM fallback',
+        'action-rag': '7) action 경로 유사 응답',
     }
     return map[stageKey] ?? '설정 상세'
 }
@@ -950,17 +822,12 @@ const getStageDescription = (stageKey) => {
         hint: '채팅 입력창 placeholder를 관리합니다. 화면별 힌트가 없으면 공통 입력 힌트를 사용합니다.',
         guidance: '추천 카드 선택 또는 직접 입력으로 들어온 사용자 메세지 단계입니다.',
         'screen-route': '현재 화면(routeKey)에 맞는 ScreenConfig를 먼저 확정합니다.',
-        'event-rule-first': '화면별 front-rule을 먼저 평가합니다. 매칭되면 LLM 인텐트 분류를 건너뛰고 info/action을 직접 수행합니다.',
-        'intent-prompt': 'LLM intent 분기(info/action) 판단에 사용하는 화면 전용 룰입니다.',
-        'info-prompt': 'info 인텐트에서 답변 정책/톤/우선순위를 제어하는 룰입니다. 공통+화면 룰을 병합해 사용합니다.',
-        'action-prompt': 'action 인텐트에서 툴 선택/파라미터 추론을 제어하는 룰입니다. 공통+화면 룰을 병합해 사용합니다.',
-        'info-rag': '공통 정보 RAG를 먼저 조회하고, 부족하면 화면 정보 RAG를 다시 확인합니다.',
-        'info-common-rag': '공통 탭에 등록된 공통 정보 RAG를 조회합니다. 이 화면에서는 읽기 전용입니다.',
-        'info-llm-fallback': '화면 RAG와 공통 RAG를 모두 확인했는데도 부족하면 기본 LLM 응답으로 전환합니다.',
-        'action-rag': '해당 화면의 화면 액션 RAG를 먼저 조회하고, 부족하면 공통 action RAG와 공통 action 툴을 다시 확인합니다.',
-        'action-common-rag': '공통 탭에 등록된 action 공통 RAG를 조회합니다. 이 화면에서는 읽기 전용입니다.',
-        'action-tool': 'action 툴을 통합 실행합니다. 응답 포맷에 따라 사이트 추가 액션 여부가 결정됩니다.',
-        'common-action-tool': '공통 탭에 등록된 공통 action 툴을 조회합니다. 이 화면에서는 읽기 전용입니다.',
+        'event-rule-first': 'front-rule이 먼저 평가됩니다. 걸리면 즉시 action을 수행하고 종료합니다.',
+        'intent-prompt': 'front-rule이 안 걸리면 백엔드에서 info 분류를 수행합니다.',
+        'info-rag': 'info인 경우 공통 RAG와 화면별 RAG를 모두 점수 비교해 가장 높은 문서를 선택합니다.',
+        'info-common-rag': '공통 RAG를 먼저 확인하고 점수 기준을 적용합니다.',
+        'info-llm-fallback': '유효한 RAG 점수(0.6 이상)가 없으면 default LLM 동작으로 넘어갑니다.',
+        'action-rag': 'action으로 분류되면 유사한 front-rule 문구 추천 응답으로 마무리합니다.',
     }
     return map[stageKey] ?? ''
 }
@@ -986,55 +853,11 @@ const ScreenRouteSummary = ({ routeKey, routeParentKey }) => {
         <PromptCard>
             <PromptMeta>
                 <span>화면 설정 확정</span>
-                <span>routeKey: {routeKey || '-'}</span>
+                <span>screenKey: {routeKey || '-'}</span>
                 <span>parent: {routeParentKey || '-'}</span>
             </PromptMeta>
-            <PageDescription>오케스트레이터는 먼저 routeKey로 ScreenConfig를 찾습니다.</PageDescription>
+            <PageDescription>오케스트레이터는 먼저 screenKey로 ScreenConfig를 찾습니다.</PageDescription>
             <PageDescription>화면 설정이 없으면 handled=false로 종료되어 상위 fallback 경로로 넘어갑니다.</PageDescription>
-        </PromptCard>
-    )
-}
-
-const ActionToolPriorityPreview = ({ tools }) => {
-    const ordered = Array.isArray(tools) ? tools : []
-
-    return (
-        <PromptCard>
-            <PromptMeta>
-                <span>액션 툴 우선순위 미리보기</span>
-                <span>총 {ordered.length}개</span>
-            </PromptMeta>
-
-            <PageDescription>
-                실제 action 경로에서는 아래 순서대로 도구가 평가됩니다. (동일 toolName은 1회만 사용)
-            </PageDescription>
-
-            {ordered.length > 0 ? (
-                <div style={{ display: 'grid', gap: '6px' }}>
-                    {ordered.map((tool, index) => {
-                        const name = String(tool?.toolName ?? '-').trim() || '-'
-                        const displayName = String(tool?.displayName ?? '').trim() || name
-                        return (
-                            <div
-                                key={`priority-${tool?.id ?? index}`}
-                                style={{
-                                    display: 'flex',
-                                    gap: '8px',
-                                    alignItems: 'center',
-                                    fontSize: '12px',
-                                    color: '#334155',
-                                }}
-                            >
-                                <span style={{ minWidth: '26px', fontWeight: 800, color: '#1d4ed8' }}>{index + 1}.</span>
-                                <span style={{ fontWeight: 700 }}>{displayName}</span>
-                                <span style={{ color: '#64748b' }}>({name})</span>
-                            </div>
-                        )
-                    })}
-                </div>
-            ) : (
-                <PageDescription>등록된 액션 툴이 없습니다.</PageDescription>
-            )}
         </PromptCard>
     )
 }
@@ -1042,7 +865,7 @@ const ActionToolPriorityPreview = ({ tools }) => {
 const ActionPromptPreview = ({ flowType = 'action', commonPromptItem, commonPromptDraft, prompts, promptDrafts }) => {
     const pickPromptContent = (promptType) => {
         const item = (Array.isArray(prompts) ? prompts : []).find(
-            (row) => String(row?.promptType ?? row?.category ?? '').toLowerCase() === String(promptType ?? '').toLowerCase(),
+            (row) => String(row?.type ?? row?.promptType ?? row?.category ?? '').toLowerCase() === String(promptType ?? '').toLowerCase(),
         )
         if (!item) return ''
 
@@ -1083,7 +906,7 @@ const ActionPromptPreview = ({ flowType = 'action', commonPromptItem, commonProm
     )
 }
 
-const ChatFlowMap = ({ intentPromptCount, inputHintCount, actionPromptCount, guidanceCount, routeKey, infoRagCount, actionRagCount, commonInfoRagCount, commonActionRagCount, actionToolCount, commonActionToolCount, isFrontRuleEnabled = true, onSelectStage }) => {
+const ChatFlowMap = ({ intentPromptCount, inputHintCount, actionPromptCount, guidanceCount, routeKey, infoRagCount, actionRagCount, commonInfoRagCount, commonActionRagCount, isFrontRuleEnabled = true, onSelectStage }) => {
     const defaultFlowItems = [
         {
             key: 'hint',
@@ -1100,67 +923,42 @@ const ChatFlowMap = ({ intentPromptCount, inputHintCount, actionPromptCount, gui
         ...(isFrontRuleEnabled
             ? [{
                 key: 'event-rule-first',
-                node: <FlowNode title="Front Rule Engine" desc="모든 메시지 룰 우선 분기" tone="actionCommonTool" onClick={() => onSelectStage('event-rule-first')} />,
+                node: <FlowNode title="Front Rule Engine" desc="걸리면 action 즉시 수행" tone="actionCommonTool" onClick={() => onSelectStage('event-rule-first')} />,
             }]
             : []),
         {
             key: 'intent-prompt',
-            node: <FlowNode title="인텐트 분기 룰" desc={`intent-hint (${intentPromptCount}개)`} tone="prompt" onClick={() => onSelectStage('intent-prompt')} />,
+            node: <FlowNode title="백엔드 intent 분류" desc="info / action 분류" tone="prompt" onClick={() => onSelectStage('intent-prompt')} />,
         },
     ]
 
     const infoFlowItems = [
-
+        {
+            key: 'info-common-rag',
+            node: <FlowNode title="공통 RAG" desc={`공통 RAG ${commonInfoRagCount}개 확인`} tone="rag" onClick={() => onSelectStage('info-common-rag')} />,
+        },
         {
             key: 'info-rag',
-            node: <FlowNode title="화면 정보 RAG" desc={`해당 화면의 정보 RAG ${infoRagCount}개 확인`} tone="rag" dashed onClick={() => onSelectStage('info-rag')} />,
-        },
-                {
-            key: 'info-common-rag',
-            node: <FlowNode title="공통 정보 RAG" desc={`공통 정보 RAG ${commonInfoRagCount}개를 먼저 확인`} tone="rag" onClick={() => onSelectStage('info-common-rag')} />,
-        },
-        {
-            key: 'info-prompt',
-            node: <FlowNode title="info 인텐트 룰" desc={`공통+화면 룰 (${actionPromptCount}개)`} tone="prompt" dashed onClick={() => onSelectStage('info-prompt')} />,
+            node: <FlowNode title="앱별 RAG" desc={`해당 화면 RAG ${infoRagCount}개 확인`} tone="rag" dashed onClick={() => onSelectStage('info-rag')} />,
         },
         {
             key: 'info-llm-fallback',
-            node: <FlowNode title="RAG 미충족시 LLM 호출" desc="공통 RAG까지 비면 기본 LLM 폴백" tone="fallback" dashed onClick={() => onSelectStage('info-llm-fallback')} />,
+            node: <FlowNode title="default LLM" desc="점수 < 0.6 또는 미충족" tone="fallback" dashed onClick={() => onSelectStage('info-llm-fallback')} />,
         },
         {
             key: 'info-result',
-            node: <FlowNode title="응답 생성" desc="RAG 근거 또는 기본 LLM 답변" tone="result" clickable={false} />,
+            node: <FlowNode title="응답 생성" desc="가장 높은 RAG 선택 또는 LLM 답변" tone="result" clickable={false} />,
         },
     ]
 
     const actionFlowItems = [
         {
             key: 'action-rag',
-            node: <FlowNode title="화면 액션 RAG" desc={`해당 화면의 action RAG ${actionRagCount}개를 먼저 확인`} tone="rag" onClick={() => onSelectStage('action-rag')} />,
-        },
-        {
-            key: 'action-common-rag',
-            node: <FlowNode title="공통 액션 RAG" desc={`공통 action RAG ${commonActionRagCount}개 확인`} tone="rag" dashed onClick={() => onSelectStage('action-common-rag')} />,
-        },
-        {
-            key: 'action-prompt',
-            node: <FlowNode title="action 인텐트 룰" desc={`공통+화면 룰 병합 (${actionPromptCount}개)`} tone="prompt" dashed onClick={() => onSelectStage('action-prompt')} />,
-        },
-        {
-            key: 'action-tool',
-            node: <FlowNode title="통합 액션 툴" desc={`등록 툴 ${actionToolCount}개를 순차 실행`} tone="action" onClick={() => onSelectStage('action-tool')} />,
-        },
-        {
-            key: 'common-action-tool',
-            node: <FlowNode title="공통 액션 툴" desc={`공통 action 툴 ${commonActionToolCount}개 확인`} tone="actionCommonTool" dashed onClick={() => onSelectStage('common-action-tool')} />,
-        },
-        {
-            key: 'action-fallback',
-            node: <FlowNode title="툴 미선택/미충족" desc="공통 액션도 부족하면 fallback text" tone="fallback" dashed clickable={false} />,
+            node: <FlowNode title="유사 문구 추천" desc="front-rule 가장 비슷한 응답" tone="rag" onClick={() => onSelectStage('action-rag')} />,
         },
         {
             key: 'action-result',
-            node: <FlowNode title="응답 생성" desc="사이트 액션 필요 여부 결정" tone="result" clickable={false} />,
+            node: <FlowNode title="응답 종료" desc="추가 tool 실행 없음" tone="result" clickable={false} />,
         },
     ]
 
@@ -1303,7 +1101,7 @@ const ActionUnifiedPromptSection = ({
     const promptDescription = flowType === 'info'
         ? 'info 경로에서는 공통+화면 프롬프트를 함께 사용하며, 이 값은 action-system 기준으로 관리됩니다.'
         : 'action 경로 프롬프트는 action-system 단일 타입으로 관리합니다.'
-    const actionPrompt = (Array.isArray(prompts) ? prompts : []).find((item) => String(item?.promptType ?? '').toLowerCase() === 'action-system')
+    const actionPrompt = (Array.isArray(prompts) ? prompts : []).find((item) => String(item?.type ?? item?.promptType ?? '').toLowerCase() === 'action-system')
     const sourcePrompt = actionPrompt ?? null
 
     const [draft, setDraft] = useState({
@@ -1336,8 +1134,8 @@ const ActionUnifiedPromptSection = ({
         const requiredPromptTypes = ['action-system']
         const existingMap = new Map(
             (Array.isArray(prompts) ? prompts : [])
-                .filter((item) => requiredPromptTypes.includes(String(item?.promptType ?? '').toLowerCase()))
-                .map((item) => [String(item.promptType).toLowerCase(), item]),
+                .filter((item) => requiredPromptTypes.includes(String(item?.type ?? item?.promptType ?? '').toLowerCase()))
+                .map((item) => [String(item?.type ?? item?.promptType ?? '').toLowerCase(), item]),
         )
 
         for (const promptType of requiredPromptTypes) {
@@ -1413,8 +1211,19 @@ const ScreenPromptSection = ({ appKey, routeKey, routeParentKey, prompts, allPro
     const [createDraft, setCreateDraft] = useState(getInitialCreateDraft)
 
     const normalizedRouteKey = String(routeKey ?? '').trim()
+    const intentModePrompt = useMemo(() => {
+        if (!normalizedRouteKey) return null
+        return (Array.isArray(prompts) ? prompts : []).find((item) => {
+            const rowType = String(item?.type ?? item?.promptType ?? item?.category ?? '').trim().toLowerCase()
+            const rowRouteKey = String(item?.screenKey ?? item?.screen_key ?? item?.routeKey ?? item?.route_key ?? '').trim()
+            return rowType === 'intent-hint-mode' && rowRouteKey === normalizedRouteKey
+        }) ?? null
+    }, [normalizedRouteKey, prompts])
     const isCreatingHere = creatingPromptRouteKey === normalizedRouteKey
-    const filteredPrompts = (Array.isArray(prompts) ? prompts : []).filter((item) => String(item?.promptType ?? item?.category ?? '').toLowerCase() === String(promptType ?? '').toLowerCase())
+    const filteredPrompts = (Array.isArray(prompts) ? prompts : []).filter((item) => {
+        const type = String(item?.type ?? item?.promptType ?? item?.category ?? '').trim().toLowerCase()
+        return type === String(promptType ?? '').trim().toLowerCase()
+    })
     const visiblePrompts = singleOnly ? filteredPrompts.slice(0, 1) : filteredPrompts
     const singlePrompt = singleOnly ? (visiblePrompts[0] ?? null) : null
     const [singleDraft, setSingleDraft] = useState({ content: '', enabled: true })
@@ -1438,11 +1247,14 @@ const ScreenPromptSection = ({ appKey, routeKey, routeParentKey, prompts, allPro
     }, [singleOnly, singlePrompt, promptDrafts, createDraft.content, createDraft.enabled, promptType])
 
     const handleCreateSubmit = async () => {
+        const content = String(createDraft.content ?? '').trim()
+        if (!content) return
+
         const ok = await onCreatePrompt({
             appKey,
             routeKey: normalizedRouteKey,
             routeParentKey,
-            content: createDraft.content,
+            content,
             label: createDraft.label,
             promptType,
             enabled: createDraft.enabled,
@@ -1456,11 +1268,14 @@ const ScreenPromptSection = ({ appKey, routeKey, routeParentKey, prompts, allPro
     const handleSingleSubmit = async () => {
         if (!normalizedRouteKey) return
 
+        const content = String(singleDraft.content ?? '').trim()
+        if (!content) return
+
         let promptSaved = false
 
         if (singlePrompt) {
             await onSavePrompt(singlePrompt, {
-                content: singleDraft.content,
+                content,
                 enabled: singleDraft.enabled,
             })
             promptSaved = true
@@ -1469,7 +1284,7 @@ const ScreenPromptSection = ({ appKey, routeKey, routeParentKey, prompts, allPro
                 appKey,
                 routeKey: normalizedRouteKey,
                 routeParentKey,
-                content: singleDraft.content,
+                content,
                 label: title,
                 promptType,
                 enabled: singleDraft.enabled,
@@ -1477,7 +1292,6 @@ const ScreenPromptSection = ({ appKey, routeKey, routeParentKey, prompts, allPro
         }
 
         if (!promptSaved) return
-
     }
 
     const isSingleSaving = singlePrompt
@@ -1487,33 +1301,33 @@ const ScreenPromptSection = ({ appKey, routeKey, routeParentKey, prompts, allPro
     const appIntentPrompt = useMemo(() => {
         if (promptType !== 'intent-hint') return null
         return (Array.isArray(allPrompts) ? allPrompts : []).find((item) => {
-            const key = String(item?.key ?? '').trim()
-            const type = String(item?.promptType ?? item?.category ?? '').trim().toLowerCase()
-            return key === String(appKey ?? '').trim() && type === 'intent-hint'
+            const key = String(item?.appKey ?? item?.app_key ?? '').trim().toLowerCase()
+            const type = String(item?.type ?? item?.promptType ?? item?.category ?? '').trim().toLowerCase()
+            return key === String(appKey ?? '').trim().toLowerCase() && type === 'intent-hint'
         }) ?? null
     }, [allPrompts, appKey, promptType])
 
-    const mergedIntentHintPreview = useMemo(() => {
-        if (promptType !== 'intent-hint') return ''
-
+    const commonIntentHintContent = useMemo(() => {
         const commonEnabled = commonIntentPromptDraft?.enabled ?? commonIntentPromptItem?.enabled !== false
-        const commonContent = commonEnabled
+        return commonEnabled
             ? String(commonIntentPromptDraft?.content ?? commonIntentPromptItem?.content ?? '').trim()
             : ''
+    }, [commonIntentPromptDraft, commonIntentPromptItem])
 
-        const appContent = appIntentPrompt
-            ? (() => {
-                const draft = getPromptDraft(promptDrafts, appIntentPrompt)
-                return draft.enabled !== false ? String(draft.content ?? '').trim() : ''
-            })()
-            : ''
+    const appIntentHintContent = useMemo(() => {
+        if (!appIntentPrompt) return ''
+        const draft = getPromptDraft(promptDrafts, appIntentPrompt)
+        return draft.enabled !== false ? String(draft.content ?? '').trim() : ''
+    }, [appIntentPrompt, promptDrafts])
 
-        const screenContent = singleDraft.enabled !== false
-            ? String(singleDraft.content ?? '').trim()
-            : ''
+    const screenIntentHintContent = useMemo(() => {
+        return singleDraft.enabled !== false ? String(singleDraft.content ?? '').trim() : ''
+    }, [singleDraft])
 
-        return [commonContent, appContent, screenContent].filter(Boolean).join('\n\n')
-    }, [promptType, commonIntentPromptDraft, commonIntentPromptItem, appIntentPrompt, promptDrafts, singleDraft])
+    const mergedIntentHintPreview = useMemo(() => {
+        if (promptType !== 'intent-hint') return ''
+        return [commonIntentHintContent, appIntentHintContent, screenIntentHintContent].filter(Boolean).join('\n\n')
+    }, [promptType, commonIntentHintContent, appIntentHintContent, screenIntentHintContent])
 
     return (
         <div style={{ display: 'grid', gap: '12px' }}>
@@ -1522,38 +1336,9 @@ const ScreenPromptSection = ({ appKey, routeKey, routeParentKey, prompts, allPro
                     <CardTitle>{title}</CardTitle>
                     <ComingSoonBadge>{filteredPrompts.length}개</ComingSoonBadge>
                 </CardHeader>
-
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    {promptType === 'intent-hint' ? (
-                        <SecondaryTextButton type="button" onClick={() => setPreviewOpen(true)}>
-                            설명 보기
-                        </SecondaryTextButton>
-                    ) : null}
-                    {allowCreate ? (
-                        <PrimaryButton type="button" onClick={() => setCreateOpen((prev) => !prev)} disabled={!normalizedRouteKey || isCreatingHere}>
-                            {isCreatingHere ? '생성 중...' : createOpen ? '닫기' : createLabel}
-                        </PrimaryButton>
-                    ) : null}
-                </div>
             </SectionTitleRow>
 
             <PageDescription>{description}</PageDescription>
-
-            {singleOnly && promptType === 'intent-hint' ? (
-                <PromptCard>
-                    <PromptMeta>
-                        <span>분기 프롬프트 병합 미리보기</span>
-                        <span>common + app + screen</span>
-                        <span>len: {mergedIntentHintPreview.length}</span>
-                    </PromptMeta>
-
-                    <PromptTextarea
-                        value={mergedIntentHintPreview || '활성화된 분기 프롬프트가 없습니다.'}
-                        readOnly
-                        style={{ minHeight: '180px', background: '#f8fafc', color: '#334155' }}
-                    />
-                </PromptCard>
-            ) : null}
 
             {singleOnly && promptType === 'input-hint' ? (
                 <PromptCard>
@@ -1580,7 +1365,7 @@ const ScreenPromptSection = ({ appKey, routeKey, routeParentKey, prompts, allPro
                     <PromptTextarea
                         value={singleDraft.content}
                         onChange={(e) => setSingleDraft((prev) => ({ ...prev, content: e.target.value }))}
-                        placeholder="이 화면에 적용할 프롬프트를 입력하세요."
+                        placeholder={'이 화면에 적용할 프롬프트를 입력하세요.'}
                         style={{ minHeight: expandedView ? '320px' : '160px' }}
                     />
 
@@ -1699,28 +1484,6 @@ const ScreenPromptSection = ({ appKey, routeKey, routeParentKey, prompts, allPro
                 </>
             )}
 
-            {previewOpen && promptType === 'intent-hint' ? (
-                <ModalBackdrop>
-                    <ModalCard style={LARGE_MODAL_STYLE}>
-                        <ModalTitle>분기 프롬프트 설명</ModalTitle>
-                        <ModalDescription>이 프롬프트는 info/action 분기 판단을 돕는 용도입니다.</ModalDescription>
-
-                        <div style={{ marginTop: '14px', display: 'grid', gap: '10px' }}>
-                            <PromptTextarea
-                                value={singleOnly
-                                    ? String(mergedIntentHintPreview || singleDraft.content || '')
-                                    : String(filteredPrompts[0]?.content ?? createDraft.content ?? '')}
-                                readOnly
-                                style={{ minHeight: expandedView ? '520px' : '320px', background: '#f8fafc', color: '#334155' }}
-                            />
-                        </div>
-
-                        <ModalActions>
-                            <PrimaryButton type="button" onClick={() => setPreviewOpen(false)} style={MODAL_BUTTON_STYLE}>확인</PrimaryButton>
-                        </ModalActions>
-                    </ModalCard>
-                </ModalBackdrop>
-            ) : null}
         </div>
     )
 }
@@ -1812,7 +1575,7 @@ const ScreenGuidanceList = ({
         <div style={{ display: 'grid', gap: '12px' }}>
             <SectionTitleRow>
                 <CardHeader>
-                    <CardTitle>추천 메세지</CardTitle>
+                    <CardTitle>화면별 가이드 문구</CardTitle>
                     <ComingSoonBadge>{examples.length}개</ComingSoonBadge>
                 </CardHeader>
 
@@ -1827,7 +1590,7 @@ const ScreenGuidanceList = ({
             </SectionTitleRow>
 
             <PageDescription>
-                채팅창에 추천 카드로 노출할 문구 목록입니다. 추천 메세지는 화면별 guidance.examples에 저장됩니다.
+                이 화면에 처음 진입했을 때 추천 카드로 보여주고, 입력창 힌트로 랜덤 노출할 문구 목록입니다. 화면별 guidance.examples에 저장됩니다.
             </PageDescription>
 
             {activeGuidance ? (
@@ -2187,13 +1950,6 @@ const ScreenRagList = ({
                                     readOnly
                                     style={{ minHeight: '56px', background: '#f8fafc', color: '#334155' }}
                                 />
-
-                                <FieldLabel>이미지 노출 정책</FieldLabel>
-                                <PromptTextarea
-                                    value={normalizeImageAttachMode(activeRagDoc.imageAttachMode)}
-                                    readOnly
-                                    style={{ minHeight: '56px', background: '#f8fafc', color: '#334155' }}
-                                />
                                 <FieldHint>
                                     {isCommonRagDoc(activeRagDoc)
                                         ? '공통 RAG는 이 화면에서 읽기 전용입니다. 공통 탭에서 편집해 주세요.'
@@ -2209,39 +1965,7 @@ const ScreenRagList = ({
                                 <span>updated: {formatDateTime(activeRagDoc.updatedAt)}</span>
                             </PromptMeta>
 
-                            <FieldLabel>인텐트 용도</FieldLabel>
-                            {isIntentFixed ? (
-                                <FieldHint>{getRagIntentLabel(normalizedFixedIntentType)} 고정</FieldHint>
-                            ) : (
-                                <>
-                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                        {[...RAG_INTENT_OPTIONS, { key: 'both', label: '공용(정보/액션)' }].map((option) => {
-                                            const active = normalizeRagIntentType(activeRagDraft.intentType) === option.key
-                                            return (
-                                                <button
-                                                    key={`intent-${option.key}`}
-                                                    type="button"
-                                                    onClick={() => onRagChange(activeRagKey, 'intentType', option.key)}
-                                                    style={{
-                                                        height: '32px',
-                                                        padding: '0 10px',
-                                                        borderRadius: '999px',
-                                                        border: active ? '1px solid #2563eb' : '1px solid #dbe3ef',
-                                                        background: active ? '#eff6ff' : '#ffffff',
-                                                        color: active ? '#1d4ed8' : '#475569',
-                                                        fontSize: '12px',
-                                                        fontWeight: 700,
-                                                        cursor: 'pointer',
-                                                    }}
-                                                >
-                                                    {option.label}
-                                                </button>
-                                            )
-                                        })}
-                                    </div>
-                                    <FieldHint>info 응답용인지, action 실행 전/후 보강용인지 명확히 분리하세요.</FieldHint>
-                                </>
-                            )}
+                            <FieldHint>화면별 RAG는 무조건 정보 인텐트용으로 사용됩니다.</FieldHint>
 
                             <FieldLabel>제목</FieldLabel>
                             <input
@@ -2274,34 +1998,7 @@ const ScreenRagList = ({
                                 value={String(activeRagDraft.imageUrl ?? '')}
                                 onChange={(e) => onRagChange(activeRagKey, 'imageUrl', e.target.value)}
                             />
-                            <FieldHint>설명 응답에 함께 표시할 이미지 URL입니다.</FieldHint>
-
-                            <FieldLabel>이미지 노출 정책</FieldLabel>
-                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                {IMAGE_ATTACH_MODE_OPTIONS.map((option) => {
-                                    const active = normalizeImageAttachMode(activeRagDraft.imageAttachMode) === option.key
-                                    return (
-                                        <button
-                                            key={`screen-image-mode-${option.key}`}
-                                            type="button"
-                                            onClick={() => onRagChange(activeRagKey, 'imageAttachMode', option.key)}
-                                            style={{
-                                                height: '32px',
-                                                padding: '0 10px',
-                                                borderRadius: '999px',
-                                                border: active ? '1px solid #2563eb' : '1px solid #dbe3ef',
-                                                background: active ? '#eff6ff' : '#ffffff',
-                                                color: active ? '#1d4ed8' : '#475569',
-                                                fontSize: '12px',
-                                                fontWeight: 700,
-                                                cursor: 'pointer',
-                                            }}
-                                        >
-                                            {option.label}
-                                        </button>
-                                    )
-                                })}
-                            </div>
+                            <FieldHint>이미지 URL이 있으면 자동으로 표시됩니다.</FieldHint>
 
                             <PromptFooter>
                                 <ToggleButton
@@ -2354,36 +2051,7 @@ const ScreenRagList = ({
                                 onChange={(e) => setNewRagDraft((prev) => ({ ...prev, title: e.target.value }))}
                             />
 
-                            <FieldLabel>인텐트 용도</FieldLabel>
-                            {isIntentFixed ? (
-                                <FieldHint>{getRagIntentLabel(normalizedFixedIntentType)} 고정</FieldHint>
-                            ) : (
-                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                    {[...RAG_INTENT_OPTIONS, { key: 'both', label: '공용(정보/액션)' }].map((option) => {
-                                        const active = normalizeRagIntentType(newRagDraft.intentType) === option.key
-                                        return (
-                                            <button
-                                                key={`create-intent-${option.key}`}
-                                                type="button"
-                                                onClick={() => setNewRagDraft((prev) => ({ ...prev, intentType: option.key }))}
-                                                style={{
-                                                    height: '32px',
-                                                    padding: '0 10px',
-                                                    borderRadius: '999px',
-                                                    border: active ? '1px solid #2563eb' : '1px solid #dbe3ef',
-                                                    background: active ? '#eff6ff' : '#ffffff',
-                                                    color: active ? '#1d4ed8' : '#475569',
-                                                    fontSize: '12px',
-                                                    fontWeight: 700,
-                                                    cursor: 'pointer',
-                                                }}
-                                            >
-                                                {option.label}
-                                            </button>
-                                        )
-                                    })}
-                                </div>
-                            )}
+                            <FieldHint>화면별 RAG는 무조건 정보 인텐트용으로 저장됩니다.</FieldHint>
 
                             <FieldLabel>keywords</FieldLabel>
                             <KeywordListEditor
@@ -2405,34 +2073,7 @@ const ScreenRagList = ({
                                 value={String(newRagDraft.imageUrl ?? '')}
                                 onChange={(e) => setNewRagDraft((prev) => ({ ...prev, imageUrl: e.target.value }))}
                             />
-                            <FieldHint>설명 응답과 함께 표시할 이미지 URL입니다.</FieldHint>
-
-                            <FieldLabel>이미지 노출 정책</FieldLabel>
-                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                {IMAGE_ATTACH_MODE_OPTIONS.map((option) => {
-                                    const active = normalizeImageAttachMode(newRagDraft.imageAttachMode) === option.key
-                                    return (
-                                        <button
-                                            key={`create-screen-image-mode-${option.key}`}
-                                            type="button"
-                                            onClick={() => setNewRagDraft((prev) => ({ ...prev, imageAttachMode: option.key }))}
-                                            style={{
-                                                height: '32px',
-                                                padding: '0 10px',
-                                                borderRadius: '999px',
-                                                border: active ? '1px solid #2563eb' : '1px solid #dbe3ef',
-                                                background: active ? '#eff6ff' : '#ffffff',
-                                                color: active ? '#1d4ed8' : '#475569',
-                                                fontSize: '12px',
-                                                fontWeight: 700,
-                                                cursor: 'pointer',
-                                            }}
-                                        >
-                                            {option.label}
-                                        </button>
-                                    )
-                                })}
-                            </div>
+                            <FieldHint>이미지 URL이 있으면 자동으로 표시됩니다.</FieldHint>
 
                             <PromptFooter>
                                 <ToggleButton
@@ -2458,738 +2099,3 @@ const ScreenRagList = ({
     )
 }
 
-const ScreenToolList = ({
-    appKey,
-    routeKey,
-    routeParentKey,
-    actionTypes,
-    tools,
-    toolDrafts,
-    savingCreateTool,
-    savingToolKey,
-    onToolChange,
-    onSaveTool,
-    onCreateTool,
-    onDeleteTool,
-    readOnly = false,
-}) => {
-    const [createOpen, setCreateOpen] = useState(false)
-    const [editOpen, setEditOpen] = useState(false)
-    const [detailTab, setDetailTab] = useState('rest')
-    const [selectedToolKey, setSelectedToolKey] = useState('')
-    const [createDraft, setCreateDraft] = useState({
-        actionTypeKey: String(actionTypes?.[0]?.key ?? ''),
-        toolName: '',
-        displayName: '',
-        description: '',
-        endpoint: '',
-        baseUrl: '',
-        requestHeadersText: '{}',
-        requestQueryText: '{}',
-        requestBodyText: '{}',
-        contextParamsText: '[]',
-        requestParamsText: '[]',
-        staticPayloadText: '{}',
-        enabled: true,
-    })
-
-    const handleCreateChange = (field, nextValue) => {
-        setCreateDraft((prev) => ({
-            ...prev,
-            [field]: nextValue,
-        }))
-    }
-
-    const openCreate = () => {
-        setCreateDraft({
-            actionTypeKey: String(actionTypes?.[0]?.key ?? ''),
-            toolName: '',
-            displayName: '',
-            description: '',
-            endpoint: '',
-            baseUrl: '',
-            requestHeadersText: '{}',
-            requestQueryText: '{}',
-            requestBodyText: '{}',
-            contextParamsText: '[]',
-            requestParamsText: '[]',
-            staticPayloadText: '{}',
-            enabled: true,
-        })
-        setCreateOpen(true)
-    }
-
-    const handleCreateSubmit = async () => {
-        const ok = await onCreateTool({
-            appKey,
-            key: routeKey,
-            routeKey: routeParentKey,
-            ...createDraft,
-        })
-
-        if (!ok) return
-    }
-
-    const getDraftForItem = (item) => {
-        const toolKey = String(item.id)
-        return toolDrafts[toolKey] ?? {
-            enabled: item.enabled !== false,
-            displayName: String(item.displayName ?? ''),
-            description: String(item.description ?? ''),
-            apiName: String(item.apiName ?? ''),
-            method: String(item.method ?? ''),
-            endpoint: String(item.endpoint ?? ''),
-            baseUrl: String(item.baseUrl ?? ''),
-            requestHeadersText: JSON.stringify(item.requestHeaders ?? {}, null, 2),
-            requestQueryText: JSON.stringify(item.requestQuery ?? {}, null, 2),
-            requestBodyText: JSON.stringify(item.requestBody ?? {}, null, 2),
-            contextParamsText: JSON.stringify(item.contextParams ?? [], null, 2),
-            requestParamsText: JSON.stringify(item.requestParams ?? [], null, 2),
-            staticPayloadText: JSON.stringify(item.staticPayload ?? {}, null, 2),
-        }
-    }
-
-    const selectedTool = tools.find((item) => String(item.id) === selectedToolKey) ?? null
-    const selectedIsReadOnly = Boolean(readOnly || selectedTool?.isReadOnly || selectedTool?.isCodeTool)
-    const filteredTools = tools
-    const selectedDraft = selectedTool ? getDraftForItem(selectedTool) : null
-    const selectedContextParams = selectedDraft ? parseJsonArray(selectedDraft.contextParamsText, []) : []
-    const selectedRequestParams = selectedDraft ? parseJsonArray(selectedDraft.requestParamsText, []) : []
-    const selectedRequestHeaders = selectedDraft ? parseJsonObject(selectedDraft.requestHeadersText, {}) : {}
-    const selectedRequestQuery = selectedDraft ? parseJsonObject(selectedDraft.requestQueryText, {}) : {}
-    const selectedRequestBody = selectedDraft ? parseJsonObject(selectedDraft.requestBodyText, {}) : {}
-    const selectedStaticPayload = selectedDraft ? parseJsonObject(selectedDraft.staticPayloadText, {}) : {}
-
-    const selectedContextSummary = selectedContextParams
-        .map((rule) => String(rule?.argKey ?? rule?.name ?? '-'))
-        .filter(Boolean)
-
-    const editableContextParams = selectedContextParams
-        .filter((item) => item && typeof item === 'object')
-        .map((item) => ({
-            argKey: String(item?.argKey ?? item?.name ?? '').trim(),
-            sourcePath: String(item?.sourcePath ?? item?.from ?? item?.contextKey ?? item?.path ?? '').trim(),
-            required: Boolean(item?.required),
-            defaultValue: item?.defaultValue ?? item?.default,
-        }))
-
-    const editableRequestParams = selectedRequestParams
-        .filter((item) => item && typeof item === 'object')
-        .map((item) => ({
-            name: String(item?.name ?? item?.key ?? item?.argKey ?? '').trim(),
-            type: String(item?.type ?? '').trim().toLowerCase() || 'string',
-            in: String(item?.in ?? item?.location ?? item?.target ?? '').trim().toLowerCase(),
-            required: Boolean(item?.required),
-            defaultValue: item?.defaultValue ?? item?.default,
-            description: String(item?.description ?? '').trim(),
-        }))
-
-    const dynamicRequestSummary = selectedRequestParams
-        .map((rule) => `${String(rule?.name ?? '-')}(${String(rule?.in ?? '').trim() || 'auto'})`)
-        .filter(Boolean)
-
-    const fixedQuerySummary = Object.keys(selectedRequestQuery)
-        .sort((a, b) => a.localeCompare(b))
-        .map((key) => `${key}(query:fixed)`)
-
-    const fixedBodySummary = Object.keys(selectedRequestBody)
-        .sort((a, b) => a.localeCompare(b))
-        .map((key) => `${key}(body:fixed)`)
-
-    const staticPayloadBodySummary = Object.keys(selectedStaticPayload)
-        .filter((key) => !['baseUrl', 'headers', 'query', 'body', 'useAccessToken'].includes(key))
-        .sort((a, b) => a.localeCompare(b))
-        .map((key) => `${key}(static)`)
-
-    const staticPayloadNestedBodySummary = selectedStaticPayload?.body && typeof selectedStaticPayload.body === 'object' && !Array.isArray(selectedStaticPayload.body)
-        ? Object.keys(selectedStaticPayload.body)
-            .sort((a, b) => a.localeCompare(b))
-            .map((key) => `${key}(static:body)`)
-        : []
-
-    const requestSummary = [
-        ...dynamicRequestSummary,
-        ...fixedQuerySummary,
-        ...fixedBodySummary,
-        ...staticPayloadBodySummary,
-        ...staticPayloadNestedBodySummary,
-    ]
-
-    const headerSummary = Object.keys(selectedRequestHeaders)
-        .sort((a, b) => a.localeCompare(b))
-
-    const updateContextParamsText = (nextRows) => {
-        if (!selectedToolKey) return
-        onToolChange(selectedToolKey, 'contextParamsText', JSON.stringify(nextRows, null, 2))
-    }
-
-    const updateRequestParamsText = (nextRows) => {
-        if (!selectedToolKey) return
-        onToolChange(selectedToolKey, 'requestParamsText', JSON.stringify(nextRows, null, 2))
-    }
-
-    const handleAddContextParam = () => {
-        const next = [
-            ...editableContextParams,
-            { argKey: '', sourcePath: '', required: false },
-        ]
-        updateContextParamsText(next)
-    }
-
-    const handleChangeContextParam = (index, patch) => {
-        const next = editableContextParams.map((row, i) => {
-            if (i !== index) return row
-            const merged = { ...row, ...patch }
-            if (!String(merged.sourcePath ?? '').trim() && String(merged.argKey ?? '').trim()) {
-                merged.sourcePath = String(merged.argKey).trim()
-            }
-            return merged
-        })
-        updateContextParamsText(next)
-    }
-
-    const handleRemoveContextParam = (index) => {
-        const next = editableContextParams.filter((_, i) => i !== index)
-        updateContextParamsText(next)
-    }
-
-    const handleAddRequestParam = () => {
-        const next = [
-            ...editableRequestParams,
-            { name: '', type: 'string', in: '', required: false },
-        ]
-        updateRequestParamsText(next)
-    }
-
-    const handleChangeRequestParam = (index, patch) => {
-        const next = editableRequestParams.map((row, i) => {
-            if (i !== index) return row
-            const merged = { ...row, ...patch }
-            const normalizedType = String(merged.type ?? '').trim().toLowerCase()
-            if (!['string', 'number', 'integer', 'boolean', 'object', 'array'].includes(normalizedType)) {
-                merged.type = 'string'
-            } else {
-                merged.type = normalizedType
-            }
-            return merged
-        })
-        updateRequestParamsText(next)
-    }
-
-    const handleRemoveRequestParam = (index) => {
-        const next = editableRequestParams.filter((_, i) => i !== index)
-        updateRequestParamsText(next)
-    }
-
-    const openDetail = (item) => {
-        setSelectedToolKey(String(item.id))
-        setDetailTab('rest')
-        setEditOpen(true)
-    }
-
-    const closeDetail = () => {
-        setEditOpen(false)
-        setSelectedToolKey('')
-    }
-
-    return (
-        <div style={{ display: 'grid', gap: '12px' }}>
-            <SectionTitleRow>
-                <CardHeader>
-                    <CardTitle>화면 액션</CardTitle>
-                    <ComingSoonBadge>{tools.length}개</ComingSoonBadge>
-                </CardHeader>
-
-                {!readOnly ? (
-                    <PrimaryButton type="button" onClick={openCreate} disabled={savingCreateTool} style={{ height: '36px' }}>
-                        {savingCreateTool ? '추가 중...' : '+ 화면 액션 추가'}
-                    </PrimaryButton>
-                ) : null}
-            </SectionTitleRow>
-
-            <PageDescription>
-                {readOnly
-                    ? '공통 탭에서 등록한 공통 액션 목록입니다. 이 화면에서는 조회만 제공합니다.'
-                    : '이 화면에서 실행할 액션을 관리합니다. REST 액션은 동적 등록/수정이 가능하고, 코드 내장 액션은 읽기 전용으로 표시됩니다.'}
-            </PageDescription>
-
-            <OptionList>
-                {filteredTools.length > 0 ? (
-                    filteredTools.map((item) => {
-                        const toolKey = String(item.id)
-                        const displayName = String(item.displayName ?? item.toolName ?? '-')
-                        const endpoint = String(item.endpoint ?? '-')
-                        const method = String(item.method ?? '').toUpperCase() || '-'
-                        const isReadOnly = Boolean(item?.isReadOnly || item?.isCodeTool)
-
-                        return (
-                            <button
-                                key={toolKey}
-                                type="button"
-                                onClick={() => openDetail(item)}
-                                style={{
-                                    width: '100%',
-                                    textAlign: 'left',
-                                    border: '1px solid #e5e7eb',
-                                    borderRadius: '12px',
-                                    background: '#ffffff',
-                                    padding: '10px 12px',
-                                    display: 'grid',
-                                    gap: '6px',
-                                    cursor: 'pointer',
-                                }}
-                            >
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                                    <strong style={{ fontSize: '13px', color: '#0f172a' }}>{displayName}</strong>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        {isReadOnly ? (
-                                            <span
-                                                style={{
-                                                    fontSize: '11px',
-                                                    fontWeight: 700,
-                                                    color: '#92400e',
-                                                    border: '1px solid #fcd34d',
-                                                    background: '#fffbeb',
-                                                    borderRadius: '999px',
-                                                    padding: '2px 8px',
-                                                }}
-                                            >
-                                                코드 내장
-                                            </span>
-                                        ) : null}
-                                        <span
-                                            style={{
-                                                fontSize: '11px',
-                                                fontWeight: 700,
-                                                color: item.enabled !== false ? '#1d4ed8' : '#64748b',
-                                                border: item.enabled !== false ? '1px solid #bfdbfe' : '1px solid #dbe3ef',
-                                                background: item.enabled !== false ? '#eff6ff' : '#f8fafc',
-                                                borderRadius: '999px',
-                                                padding: '2px 8px',
-                                            }}
-                                        >
-                                            {item.enabled !== false ? '활성' : '비활성'}
-                                        </span>
-                                    </div>
-                                </div>
-
-                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', fontSize: '12px', color: '#64748b' }}>
-                                    <span>{item.toolName}</span>
-                                    <span>{method}</span>
-                                    <span>{endpoint}</span>
-                                </div>
-                            </button>
-                        )
-                    })
-                ) : (
-                    <PageDescription>등록된 화면 액션이 없습니다. + 화면 액션 추가로 첫 액션을 등록해 주세요.</PageDescription>
-                )}
-            </OptionList>
-
-            {editOpen && selectedTool && selectedDraft ? (
-                <ModalBackdrop>
-                    <ModalCard style={ACTION_DETAIL_MODAL_STYLE}>
-                        <ModalTitle>화면 액션 상세</ModalTitle>
-                        <ModalDescription>
-                            {selectedIsReadOnly
-                                ? '코드 내장 액션입니다. 동작은 백엔드 코드에서 관리되며 이 화면에서는 조회만 가능합니다.'
-                                : '필수 정보는 목록에서 확인하고, 상세 수정은 팝업에서 관리합니다.'}
-                        </ModalDescription>
-
-                        <div style={{ marginTop: '14px', display: 'grid', gap: '10px' }}>
-                            <PromptMeta>
-                                <span>{selectedTool.toolName}</span>
-                                <span>{selectedTool.key}</span>
-                                <span>parent: {selectedTool.routeKey || '-'}</span>
-                            </PromptMeta>
-
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                                <SecondaryTextButton
-                                    type="button"
-                                    onClick={() => setDetailTab('frontend')}
-                                    style={{
-                                        border: detailTab === 'frontend' ? '1px solid #2563eb' : undefined,
-                                        color: detailTab === 'frontend' ? '#1d4ed8' : undefined,
-                                        background: detailTab === 'frontend' ? '#eff6ff' : undefined,
-                                    }}
-                                >
-                                    프론트 입력값
-                                </SecondaryTextButton>
-                                <SecondaryTextButton
-                                    type="button"
-                                    onClick={() => setDetailTab('rest')}
-                                    style={{
-                                        border: detailTab === 'rest' ? '1px solid #2563eb' : undefined,
-                                        color: detailTab === 'rest' ? '#1d4ed8' : undefined,
-                                        background: detailTab === 'rest' ? '#eff6ff' : undefined,
-                                    }}
-                                >
-                                    REST 호출값
-                                </SecondaryTextButton>
-                            </div>
-
-                            <FieldGroup>
-                                <FieldLabel>표시명 (display_name)</FieldLabel>
-                                <FieldHint>설정 화면에 노출되는 툴 이름입니다.</FieldHint>
-                                <TextInput
-                                    value={selectedDraft.displayName}
-                                    onChange={(e) => onToolChange(selectedToolKey, 'displayName', e.target.value)}
-                                    disabled={selectedIsReadOnly}
-                                />
-                            </FieldGroup>
-
-                            {detailTab === 'frontend' ? (
-                                <>
-                                    <FieldGroup>
-                                        <FieldLabel>context_params (JSON)</FieldLabel>
-                                        <FieldHint>화면 컨텍스트에서 자동 주입할 값 정의입니다.</FieldHint>
-                                        <PromptTextarea
-                                            value={selectedDraft.contextParamsText}
-                                            onChange={(e) => onToolChange(selectedToolKey, 'contextParamsText', e.target.value)}
-                                            disabled={selectedIsReadOnly}
-                                            style={{ minHeight: '120px' }}
-                                        />
-                                        <FieldHint>
-                                            예: [{'{'}"argKey":"groupId","sourcePath":"groupId","required":true{'}'}, {'{'}"argKey":"siteId","sourcePath":"siteId"{'}'}]
-                                        </FieldHint>
-                                    </FieldGroup>
-                                </>
-                            ) : (
-                                <>
-                                    <FieldGroup>
-                                        <FieldLabel>API 정보</FieldLabel>
-                                        <FieldHint>연동 대상 API 이름, 메서드, 엔드포인트입니다. tool_name 전용 구현이 없을 때는 api_name + method로 백엔드 툴 매핑에 사용됩니다.</FieldHint>
-                                        <InlineFields>
-                                            <TextInput value={selectedDraft.apiName} onChange={(e) => onToolChange(selectedToolKey, 'apiName', e.target.value)} disabled={selectedIsReadOnly} />
-                                            <TextInput value={selectedDraft.method} onChange={(e) => onToolChange(selectedToolKey, 'method', e.target.value)} disabled={selectedIsReadOnly} />
-                                            <TextInput value={selectedDraft.endpoint} onChange={(e) => onToolChange(selectedToolKey, 'endpoint', e.target.value)} disabled={selectedIsReadOnly} />
-                                        </InlineFields>
-                                    </FieldGroup>
-
-                                    <FieldGroup>
-                                        <FieldLabel>Base URL (base_url)</FieldLabel>
-                                        <FieldHint>endpoint가 상대 경로면 필수입니다. endpoint를 절대 URL로 넣으면 생략 가능합니다.</FieldHint>
-                                        <TextInput
-                                            value={selectedDraft.baseUrl}
-                                            onChange={(e) => onToolChange(selectedToolKey, 'baseUrl', e.target.value)}
-                                            disabled={selectedIsReadOnly}
-                                            placeholder="예: http://event-analyzer:3002"
-                                        />
-                                    </FieldGroup>
-
-                                    <FieldGroup>
-                                        <FieldLabel>실제 사용 파라미터 요약</FieldLabel>
-                                        <FieldHint>백엔드 동적 REST 호출에서 실제 사용되는 입력 후보입니다. 아래 input 행에서 context/request를 직접 수정하면 JSON에 즉시 반영됩니다.</FieldHint>
-                                        <div style={{ display: 'grid', gap: '8px', marginBottom: '8px' }}>
-                                            <div style={{ display: 'grid', gap: '4px' }}>
-                                                <FieldHint>context 파라미터</FieldHint>
-                                                <div style={{ display: 'grid', gap: '6px' }}>
-                                                    {editableContextParams.length > 0 ? editableContextParams.map((row, index) => (
-                                                        <div key={`ctx-${index}`} style={{ display: 'grid', gap: '6px', gridTemplateColumns: 'minmax(120px,1fr) minmax(150px,1fr) 80px 70px', alignItems: 'center' }}>
-                                                            <TextInput
-                                                                value={row.argKey}
-                                                                onChange={(e) => handleChangeContextParam(index, { argKey: e.target.value })}
-                                                                placeholder="argKey"
-                                                            />
-                                                            <TextInput
-                                                                value={row.sourcePath}
-                                                                onChange={(e) => handleChangeContextParam(index, { sourcePath: e.target.value })}
-                                                                placeholder="sourcePath"
-                                                            />
-                                                            <label style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '12px', color: '#334155' }}>
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={Boolean(row.required)}
-                                                                    onChange={(e) => handleChangeContextParam(index, { required: e.target.checked })}
-                                                                />
-                                                                필수
-                                                            </label>
-                                                            <SecondaryTextButton type="button" onClick={() => handleRemoveContextParam(index)} style={{ height: '32px' }}>
-                                                                삭제
-                                                            </SecondaryTextButton>
-                                                        </div>
-                                                    )) : (
-                                                        <FieldHint>등록된 context 파라미터가 없습니다.</FieldHint>
-                                                    )}
-                                                    <SecondaryTextButton type="button" onClick={handleAddContextParam} style={{ width: 'fit-content', height: '32px' }}>
-                                                        + context 추가
-                                                    </SecondaryTextButton>
-                                                </div>
-                                            </div>
-                                            <div style={{ display: 'grid', gap: '4px' }}>
-                                                <FieldHint>request 파라미터</FieldHint>
-                                                <div style={{ display: 'grid', gap: '6px' }}>
-                                                    {editableRequestParams.length > 0 ? editableRequestParams.map((row, index) => (
-                                                        <div key={`req-${index}`} style={{ display: 'grid', gap: '6px', gridTemplateColumns: 'minmax(120px,1fr) 120px 110px 80px 70px', alignItems: 'center' }}>
-                                                            <TextInput
-                                                                value={row.name}
-                                                                onChange={(e) => handleChangeRequestParam(index, { name: e.target.value })}
-                                                                placeholder="name"
-                                                            />
-                                                            <select
-                                                                value={row.type || 'string'}
-                                                                onChange={(e) => handleChangeRequestParam(index, { type: e.target.value })}
-                                                                style={{ height: '38px', border: '1px solid #dbe3ef', borderRadius: '10px', background: '#fff', padding: '0 10px', fontSize: '13px', color: '#334155' }}
-                                                            >
-                                                                <option value="string">string</option>
-                                                                <option value="number">number</option>
-                                                                <option value="integer">integer</option>
-                                                                <option value="boolean">boolean</option>
-                                                                <option value="object">object</option>
-                                                                <option value="array">array</option>
-                                                            </select>
-                                                            <select
-                                                                value={row.in || ''}
-                                                                onChange={(e) => handleChangeRequestParam(index, { in: e.target.value })}
-                                                                style={{ height: '38px', border: '1px solid #dbe3ef', borderRadius: '10px', background: '#fff', padding: '0 10px', fontSize: '13px', color: '#334155' }}
-                                                            >
-                                                                <option value="">auto</option>
-                                                                <option value="query">query</option>
-                                                                <option value="body">body</option>
-                                                                <option value="header">header</option>
-                                                            </select>
-                                                            <label style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '12px', color: '#334155' }}>
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={Boolean(row.required)}
-                                                                    onChange={(e) => handleChangeRequestParam(index, { required: e.target.checked })}
-                                                                />
-                                                                필수
-                                                            </label>
-                                                            <SecondaryTextButton type="button" onClick={() => handleRemoveRequestParam(index)} style={{ height: '32px' }}>
-                                                                삭제
-                                                            </SecondaryTextButton>
-                                                        </div>
-                                                    )) : (
-                                                        <FieldHint>등록된 request 파라미터가 없습니다.</FieldHint>
-                                                    )}
-                                                    <SecondaryTextButton type="button" onClick={handleAddRequestParam} style={{ width: 'fit-content', height: '32px' }}>
-                                                        + request 추가
-                                                    </SecondaryTextButton>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div
-                                            style={{
-                                                border: '1px solid #dbe3ef',
-                                                borderRadius: '10px',
-                                                background: '#f8fafc',
-                                                padding: '10px 12px',
-                                                display: 'grid',
-                                                gap: '6px',
-                                                fontSize: '12px',
-                                                color: '#334155',
-                                            }}
-                                        >
-                                            <div>
-                                                context: {selectedContextSummary.length > 0
-                                                    ? selectedContextSummary.join(', ')
-                                                    : '-'}
-                                            </div>
-                                            <div>
-                                                request: {requestSummary.length > 0
-                                                    ? requestSummary.join(', ')
-                                                    : '-'}
-                                            </div>
-                                            <div>
-                                                headers: {headerSummary.length > 0
-                                                    ? headerSummary.map((key) => `${key}(header:fixed)`).join(', ')
-                                                    : '-'}
-                                            </div>
-                                        </div>
-                                    </FieldGroup>
-
-                                    <FieldGroup>
-                                        <FieldLabel>Request Headers (request_headers JSON)</FieldLabel>
-                                        <FieldHint>고정 헤더 값을 JSON 객체로 입력합니다.</FieldHint>
-                                        <PromptTextarea
-                                            value={selectedDraft.requestHeadersText}
-                                            onChange={(e) => onToolChange(selectedToolKey, 'requestHeadersText', e.target.value)}
-                                            disabled={selectedIsReadOnly}
-                                            style={{ minHeight: '96px' }}
-                                        />
-                                        <FieldHint>예: {'{'}"x-client-id":"robot-ui","x-trace-id":"ailog-chat"{'}'}</FieldHint>
-                                    </FieldGroup>
-
-                                    <FieldGroup>
-                                        <FieldLabel>Request Query (request_query JSON)</FieldLabel>
-                                        <FieldHint>항상 포함할 query 파라미터를 JSON 객체로 입력합니다.</FieldHint>
-                                        <PromptTextarea
-                                            value={selectedDraft.requestQueryText}
-                                            onChange={(e) => onToolChange(selectedToolKey, 'requestQueryText', e.target.value)}
-                                            disabled={selectedIsReadOnly}
-                                            style={{ minHeight: '96px' }}
-                                        />
-                                        <FieldHint>예: {'{'}"count":1000,"includeClosed":false{'}'}</FieldHint>
-                                    </FieldGroup>
-
-                                    <FieldGroup>
-                                        <FieldLabel>Request Body (request_body JSON)</FieldLabel>
-                                        <FieldHint>항상 포함할 body 값을 JSON 객체로 입력합니다.</FieldHint>
-                                        <PromptTextarea
-                                            value={selectedDraft.requestBodyText}
-                                            onChange={(e) => onToolChange(selectedToolKey, 'requestBodyText', e.target.value)}
-                                            disabled={selectedIsReadOnly}
-                                            style={{ minHeight: '96px' }}
-                                        />
-                                        <FieldHint>예: {'{'}"source":"ai-chat","requestedBy":"robot/ailog/event"{'}'}</FieldHint>
-                                    </FieldGroup>
-                                </>
-                            )}
-                        </div>
-
-                        <ModalActions style={{ gap: '10px' }}>
-                            <ToggleButton
-                                type="button"
-                                $active={selectedDraft.enabled}
-                                onClick={() => onToolChange(selectedToolKey, 'enabled', !selectedDraft.enabled)}
-                                disabled={selectedIsReadOnly}
-                            >
-                                {selectedDraft.enabled ? '활성' : '비활성'}
-                            </ToggleButton>
-
-                            <SecondaryTextButton type="button" onClick={() => onDeleteTool(selectedTool)} disabled={selectedIsReadOnly}>
-                                삭제
-                            </SecondaryTextButton>
-
-                            <SecondaryTextButton type="button" onClick={closeDetail}>
-                                닫기
-                            </SecondaryTextButton>
-
-                            <PrimaryButton
-                                type="button"
-                                onClick={() => onSaveTool(selectedTool)}
-                                disabled={savingToolKey === selectedToolKey || selectedIsReadOnly}
-                            >
-                                {savingToolKey === selectedToolKey ? '저장 중...' : '저장'}
-                            </PrimaryButton>
-                        </ModalActions>
-                    </ModalCard>
-                </ModalBackdrop>
-            ) : null}
-
-            {!readOnly && createOpen ? (
-                <ModalBackdrop>
-                    <ModalCard style={ACTION_CREATE_MODAL_STYLE}>
-                        <ModalTitle>화면 액션 추가</ModalTitle>
-                        <ModalDescription>선택한 화면에 연결할 REST 액션을 등록합니다.</ModalDescription>
-
-                        <div style={{ marginTop: '12px', display: 'grid', gap: '8px' }}>
-                            <FieldLabel>액션 유형</FieldLabel>
-                            <select
-                                value={createDraft.actionTypeKey}
-                                onChange={(e) => handleCreateChange('actionTypeKey', e.target.value)}
-                                style={{
-                                    width: '100%',
-                                    height: '42px',
-                                    border: '1px solid #dbe3ef',
-                                    borderRadius: '10px',
-                                    padding: '0 10px',
-                                    fontSize: '13px',
-                                    color: '#334155',
-                                    background: '#fff',
-                                }}
-                            >
-                                {(actionTypes ?? []).map((item) => (
-                                    <option key={item.key} value={item.key}>{item.label}</option>
-                                ))}
-                            </select>
-
-                            <FieldLabel>액션 키 (tool_name)</FieldLabel>
-                            <TextInput value={createDraft.toolName} onChange={(e) => handleCreateChange('toolName', e.target.value)} />
-                            <FieldHint>예: create_report, search_history, update_robot_status</FieldHint>
-
-                            <FieldLabel>표시명 (display_name)</FieldLabel>
-                            <TextInput value={createDraft.displayName} onChange={(e) => handleCreateChange('displayName', e.target.value)} />
-
-                            <FieldLabel>설명 (description)</FieldLabel>
-                            <PromptTextarea
-                                value={createDraft.description}
-                                onChange={(e) => handleCreateChange('description', e.target.value)}
-                                style={{ minHeight: '72px' }}
-                            />
-
-                            <FieldLabel>엔드포인트 (endpoint)</FieldLabel>
-                            <TextInput value={createDraft.endpoint} onChange={(e) => handleCreateChange('endpoint', e.target.value)} />
-                            <FieldHint>예: /api/robot/reports/search</FieldHint>
-
-                            <FieldLabel>Base URL (base_url)</FieldLabel>
-                            <TextInput
-                                value={createDraft.baseUrl}
-                                onChange={(e) => handleCreateChange('baseUrl', e.target.value)}
-                                placeholder="예: http://action-runner:3004"
-                            />
-                            <FieldHint>endpoint가 상대 경로면 필수입니다. endpoint를 절대 URL로 넣으면 생략 가능합니다.</FieldHint>
-
-                            <FieldLabel>Request Headers (request_headers JSON)</FieldLabel>
-                            <PromptTextarea
-                                value={createDraft.requestHeadersText}
-                                onChange={(e) => handleCreateChange('requestHeadersText', e.target.value)}
-                                style={{ minHeight: '84px' }}
-                            />
-                            <FieldHint>예: {'{'}"x-client-id":"robot-ui","x-trace-id":"ailog-chat"{'}'}</FieldHint>
-
-                            <FieldLabel>Request Query (request_query JSON)</FieldLabel>
-                            <PromptTextarea
-                                value={createDraft.requestQueryText}
-                                onChange={(e) => handleCreateChange('requestQueryText', e.target.value)}
-                                style={{ minHeight: '84px' }}
-                            />
-                            <FieldHint>예: {'{'}"count":1000,"includeClosed":false{'}'}</FieldHint>
-
-                            <FieldLabel>Request Body (request_body JSON)</FieldLabel>
-                            <PromptTextarea
-                                value={createDraft.requestBodyText}
-                                onChange={(e) => handleCreateChange('requestBodyText', e.target.value)}
-                                style={{ minHeight: '84px' }}
-                            />
-                            <FieldHint>예: {'{'}"source":"ai-chat","requestedBy":"robot/ailog/event"{'}'}</FieldHint>
-
-                            <FieldLabel>context_params (JSON)</FieldLabel>
-                            <PromptTextarea
-                                value={createDraft.contextParamsText}
-                                onChange={(e) => handleCreateChange('contextParamsText', e.target.value)}
-                                style={{ minHeight: '84px' }}
-                            />
-                            <FieldHint>
-                                예: [{'{'}"argKey":"groupId","sourcePath":"groupId","required":true{'}'}, {'{'}"argKey":"siteId","sourcePath":"siteId"{'}'}]
-                            </FieldHint>
-
-                            <FieldLabel>request_params (JSON, 프론트 body 기준)</FieldLabel>
-                            <PromptTextarea
-                                value={createDraft.requestParamsText}
-                                onChange={(e) => handleCreateChange('requestParamsText', e.target.value)}
-                                style={{ minHeight: '84px' }}
-                            />
-                            <FieldHint>이 값들은 프론트엔드가 body로 보내는 필드 구조를 기준으로 작성합니다.</FieldHint>
-
-                            <FieldLabel>static_payload (JSON)</FieldLabel>
-                            <PromptTextarea
-                                value={createDraft.staticPayloadText}
-                                onChange={(e) => handleCreateChange('staticPayloadText', e.target.value)}
-                                style={{ minHeight: '84px' }}
-                            />
-
-                            <PromptFooter>
-                                <ToggleButton
-                                    type="button"
-                                    $active={Boolean(createDraft.enabled)}
-                                    onClick={() => handleCreateChange('enabled', !createDraft.enabled)}
-                                >
-                                    {createDraft.enabled ? '활성' : '비활성'}
-                                </ToggleButton>
-                            </PromptFooter>
-                        </div>
-
-                        <ModalActions style={{ gap: '10px' }}>
-                            <SecondaryTextButton type="button" onClick={() => setCreateOpen(false)} style={MODAL_BUTTON_STYLE}>취소</SecondaryTextButton>
-                            <PrimaryButton type="button" onClick={handleCreateSubmit} disabled={savingCreateTool} style={MODAL_BUTTON_STYLE}>
-                                {savingCreateTool ? '저장 중...' : '저장'}
-                            </PrimaryButton>
-                        </ModalActions>
-                    </ModalCard>
-                </ModalBackdrop>
-            ) : null}
-        </div>
-    )
-}

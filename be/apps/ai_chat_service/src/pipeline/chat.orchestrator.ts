@@ -503,11 +503,6 @@ export class ChatOrchestrator {
       )
     }
 
-    // 실행 가능 tool이 없는 화면이면 info(RAG)로 처리한다.
-    if (pipelineIntent !== 'info' && screen.dataTools.length === 0 && screen.actionTools.length === 0) {
-      pipelineIntent = 'info'
-    }
-
     const hasComposeTaskflowTool = screen.actionTools.some(
       (tool) => tool?.declaration?.name === 'compose_linear_taskflow',
     )
@@ -804,41 +799,6 @@ export class ChatOrchestrator {
     return null
   }
 
-  private buildTaskflowRetrySuggestion(message: string): string {
-    const text = String(message ?? '').trim().toLowerCase()
-
-    if (/(삭제|지워|제거|없애)/.test(text)) {
-      return '"검사" 노드 삭제해줘'
-    }
-
-    if (/(연결|이어|->|→)/.test(text)) {
-      return '입고 -> 검사 -> 적재 연결해줘'
-    }
-
-    if (/(추가|생성|만들|구성|수정|변경|편집)/.test(text)) {
-      return 'Start -> PickUp(창고) -> MoveTo(검사장) -> PutDown 구성해줘'
-    }
-
-    return '입고 -> 검사 -> 적재 구성해줘'
-  }
-
-  private buildActionRetrySuggestion(screen: ScreenConfig, message: string): string | undefined {
-    const hasComposeTaskflowTool = screen.actionTools.some(
-      (tool) => tool?.declaration?.name === 'compose_linear_taskflow',
-    )
-
-    if (hasComposeTaskflowTool) {
-      return this.buildTaskflowRetrySuggestion(message)
-    }
-
-    const hasRunActionTool = screen.actionTools.some((tool) => tool?.declaration?.name === 'run_action')
-    if (hasRunActionTool) {
-      return '대상과 작업을 함께 적어주세요. 예: "로봇 A를 점검 실행해줘"'
-    }
-
-    return undefined
-  }
-
   private async tryDeterministicTaskflowDraft(
     screen: ScreenConfig,
     message: string,
@@ -1027,12 +987,12 @@ export class ChatOrchestrator {
     const hasExecutionTool = executionTools.length > 0
 
     if (!hasExecutionTool) {
-      const fallbackText = String(screen.fallbackText ?? '').trim() || '실행 가능한 도구가 없습니다.'
+      const fallbackText = this.buildScreenGuidanceReply(screen)
       this.stageLog('3단계:ACTION처리_툴없음', reqId, 'status=blocked reason=현재 화면에 실행 가능한 tool이 없음')
       return {
         handled: true,
         reply: {
-          chat_action: screen.chatActions.info,
+          chat_action: screen.chatActions.action,
           text: fallbackText,
         },
         meta: {
@@ -1118,12 +1078,7 @@ export class ChatOrchestrator {
 
       const resolvedFilters = pickResolvedFilters(executionCalls)
       const fallbackReason = this.resolveExecutionFallbackReason(executionCalls)
-      const fallbackText = this.buildExecutionFallbackText(
-        screen,
-        message,
-        String(screen.fallbackText ?? ''),
-        fallbackReason,
-      )
+      const fallbackText = this.buildScreenGuidanceReply(screen)
 
       if (noExecution && !navigation) {
         this.stageLog('3-2단계:ACTION_폴백텍스트', reqId, `status=fallback reason=${fallbackReason} source=${source}`)
@@ -1132,9 +1087,9 @@ export class ChatOrchestrator {
       const finalText =
         clarificationText ||
         assistantToolText ||
-        executionText?.trim() ||
         (navigation ? `${navigation.screenName ?? navigation.path} 화면으로 이동하겠습니다.` : '') ||
         (noExecution ? fallbackText : '') ||
+        executionText?.trim() ||
         (hasSiteAction ? '요청을 처리했습니다.' : '조회 결과를 확인했습니다.')
 
       return {
@@ -1205,6 +1160,18 @@ export class ChatOrchestrator {
     return firstAttempt
   }
 
+  private buildScreenGuidanceReply(screen: ScreenConfig): string {
+    const examples = Array.isArray(screen.guidanceExamples)
+      ? screen.guidanceExamples.map((item) => String(item ?? '').trim()).filter(Boolean)
+      : []
+
+    if (examples.length > 0) {
+      return `아래처럼 요청해보세요.\n${examples.join('\n')}`
+    }
+
+    return String(screen.fallbackText ?? '').trim() || '실행 가능한 가이드 문구가 없습니다.'
+  }
+
   private retrieveActionRagContext(
     collectionNames: string[],
     query: string,
@@ -1251,28 +1218,6 @@ export class ChatOrchestrator {
     return 'tool-execution-failed'
   }
 
-  private buildExecutionFallbackText(
-    screen: ScreenConfig,
-    message: string,
-    baseFallbackText: string,
-    reason: 'tool-not-selected' | 'missing-params' | 'permission-denied' | 'tool-execution-failed',
-  ): string {
-    const guidanceByReason: Record<typeof reason, string> = {
-      'tool-not-selected': '요청을 조금 더 구체적으로 입력해 주세요.',
-      'missing-params': '필수 입력값이 부족할 수 있어요. 대상 이름/조건을 포함해 다시 요청해 주세요.',
-      'permission-denied': '권한 확인이 필요합니다. 권한 또는 토큰 상태를 점검해 주세요.',
-      'tool-execution-failed': '일시적인 실행 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.',
-    }
-
-    const base = String(baseFallbackText ?? '').trim() || '요청을 처리할 수 있는 도구를 찾지 못했습니다.'
-    const suggestion = this.buildActionRetrySuggestion(screen, message)
-    const suggestionText = suggestion
-      ? ` 가장 유사한 실행 문장 예시: ${suggestion}`
-      : ''
-
-    return `${base} ${guidanceByReason[reason]}${suggestionText}`.trim()
-  }
-
   private resolveExecutionTools(screen: ScreenConfig): ToolDefinition[] {
     const ordered = [...screen.actionTools, ...screen.dataTools]
 
@@ -1298,11 +1243,13 @@ export class ChatOrchestrator {
     const promptBlocks: string[] = [basePrompt]
 
     if (String(actionRagContext ?? '').trim()) {
+      const commonRagSystem = getPromptStore()?.getPromptContent('common', 'rag-system') ?? ''
       promptBlocks.push([
+        commonRagSystem,
         '다음은 action 실행 시 참고해야 하는 액션 RAG 문서다.',
         '문서에 나온 파라미터 규칙/정책/우선순위를 가능한 범위에서 tool 인자 구성에 반영하라.',
         String(actionRagContext ?? '').trim(),
-      ].join('\n\n'))
+      ].filter(Boolean).join('\n\n'))
     }
 
     if (previousFilters) {

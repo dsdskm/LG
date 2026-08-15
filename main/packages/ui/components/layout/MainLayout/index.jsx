@@ -17,7 +17,8 @@ const MainLayout = ({
   useSubRoutes = false,
   LogoComponent,
   HeaderComponent,
-  aiGreetingExtra
+  aiGreetingExtra,
+  aiAssistantCommandAdapter
 }) => {
   const location = useLocation()
   const { pathname } = location
@@ -84,7 +85,11 @@ const MainLayout = ({
         <Footer routes={footerRoutes} />
       </ScrollArea>
 
-      <AiAssistantPanel className="aiAssistantPanel" greetingExtra={aiGreetingExtra} />
+      <AiAssistantPanel
+        className="aiAssistantPanel"
+        greetingExtra={aiGreetingExtra}
+        commandAdapter={aiAssistantCommandAdapter}
+      />
     </StyledLayout>
   )
 }

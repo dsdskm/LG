@@ -10,7 +10,6 @@ import {
     ActionRow,
     PrimaryButton,
     ManagementGrid,
-    SectionTitleRow,
     PromptCard,
     PromptMeta,
     PromptTextarea,
@@ -309,6 +308,16 @@ export const CommonSettingsTab = ({
     savingCommonPrompt,
     onCommonPromptChange,
     onSaveCommonPrompt,
+    commonIntentPromptItem,
+    commonIntentPromptDraft,
+    savingCommonIntentPrompt,
+    onCommonIntentPromptChange,
+    onSaveCommonIntentPrompt,
+    commonRagPromptItem,
+    commonRagPromptDraft,
+    savingCommonRagPrompt,
+    onCommonRagPromptChange,
+    onSaveCommonRagPrompt,
     commonInputHintPromptItem,
     commonInputHintPromptDraft,
     savingCommonInputHintPrompt,
@@ -329,14 +338,6 @@ export const CommonSettingsTab = ({
     onCreateCommonInfoRag,
     onCreateCommonActionRag,
     onDeleteCommonRag,
-    commonTools,
-    actionTypes,
-    savingToolKey,
-    savingCreateCommonTool,
-    deletingToolKey,
-    onSaveTool,
-    onCreateCommonTool,
-    onDeleteTool,
 }) => {
     return (
         <ManagementGrid>
@@ -364,6 +365,19 @@ export const CommonSettingsTab = ({
                 savingCommonPrompt={savingCommonPrompt}
                 onCommonPromptChange={onCommonPromptChange}
                 onSaveCommonPrompt={onSaveCommonPrompt}
+                commonIntentPromptItem={commonIntentPromptItem}
+                commonIntentPromptDraft={commonIntentPromptDraft}
+                savingCommonIntentPrompt={savingCommonIntentPrompt}
+                onCommonIntentPromptChange={onCommonIntentPromptChange}
+                onSaveCommonIntentPrompt={onSaveCommonIntentPrompt}
+            />
+
+            <CommonRagPromptManagementCard
+                commonRagPromptItem={commonRagPromptItem}
+                commonRagPromptDraft={commonRagPromptDraft}
+                savingCommonRagPrompt={savingCommonRagPrompt}
+                onCommonRagPromptChange={onCommonRagPromptChange}
+                onSaveCommonRagPrompt={onSaveCommonRagPrompt}
             />
 
             <CommonRagManagementCard
@@ -622,61 +636,210 @@ const ProviderSettingCard = ({
     )
 }
 
-const PromptManagementCard = ({
-    commonPromptItem,
-    commonPromptDraft,
-    savingCommonPrompt,
-    onCommonPromptChange,
-    onSaveCommonPrompt,
+const DefaultIntentPromptManagementCard = ({
+    commonIntentPromptItem,
+    commonIntentPromptDraft,
+    savingCommonIntentPrompt,
+    onCommonIntentPromptChange,
+    onSaveCommonIntentPrompt,
 }) => {
-    const hasPrompt = Boolean(commonPromptItem?.id)
+    const hasPrompt = Boolean(commonIntentPromptItem?.id)
 
     return (
         <SettingCard>
             <CardHeader>
-                <CardTitle>공통 프롬프트</CardTitle>
+                <CardTitle>기본 분류 LLM 프롬프트</CardTitle>
             </CardHeader>
 
-            <PageDescription>공통 답변 톤과 규칙을 관리합니다. 없으면 등록하고, 있으면 수정합니다.</PageDescription>
+            <PageDescription>상세 화면에 별도 분류 프롬프트가 없을 때 사용하는 공통 기본값입니다. info 분기 기준을 정의합니다.</PageDescription>
 
             <PromptCard>
                 <PromptMeta>
-                    <span>{commonPromptItem?.label || commonPromptDraft.label || '공통 프롬프트'}</span>
+                    <span>{commonIntentPromptItem?.label || commonIntentPromptDraft.label || '기본 분류 LLM 프롬프트'}</span>
                     <span>key: common</span>
-                    <span>type: system</span>
-                    {hasPrompt ? <span>updated: {formatDateTime(commonPromptItem?.updatedAt)}</span> : null}
+                    <span>type: intent-hint</span>
+                    {hasPrompt ? <span>updated: {formatDateTime(commonIntentPromptItem?.updatedAt)}</span> : null}
                 </PromptMeta>
 
                 <PromptTextarea
-                    
-                    value={commonPromptDraft.content}
-                    onChange={(e) => onCommonPromptChange('content', e.target.value)}
+                    value={commonIntentPromptDraft.content}
+                    onChange={(e) => onCommonIntentPromptChange('content', e.target.value)}
+                    style={{ minHeight: '180px' }}
                 />
 
                 <PromptFooter>
                     <ToggleButton
                         type="button"
-                        $active={Boolean(commonPromptDraft.enabled)}
-                        onClick={() => onCommonPromptChange('enabled', !commonPromptDraft.enabled)}
+                        $active={Boolean(commonIntentPromptDraft.enabled)}
+                        onClick={() => onCommonIntentPromptChange('enabled', !commonIntentPromptDraft.enabled)}
                     >
-                        {commonPromptDraft.enabled ? '활성' : '비활성'}
+                        {commonIntentPromptDraft.enabled ? '활성' : '비활성'}
                     </ToggleButton>
 
                     {hasPrompt ? (
                         <SecondaryTextButton
                             type="button"
                             onClick={() => {
-                                onCommonPromptChange('content', String(commonPromptItem?.content ?? commonPromptItem?.prompt ?? ''))
-                                onCommonPromptChange('label', String(commonPromptItem?.label ?? '공통 프롬프트'))
-                                onCommonPromptChange('enabled', commonPromptItem?.enabled !== false)
+                                onCommonIntentPromptChange('content', String(commonIntentPromptItem?.content ?? commonIntentPromptItem?.prompt ?? ''))
+                                onCommonIntentPromptChange('label', String(commonIntentPromptItem?.label ?? '기본 분류 LLM 프롬프트'))
+                                onCommonIntentPromptChange('enabled', commonIntentPromptItem?.enabled !== false)
                             }}
                         >
                             원본 복원
                         </SecondaryTextButton>
                     ) : null}
 
-                    <PrimaryButton type="button" onClick={onSaveCommonPrompt} disabled={savingCommonPrompt}>
-                        {savingCommonPrompt ? '저장 중...' : hasPrompt ? '저장' : '등록'}
+                    <PrimaryButton type="button" onClick={onSaveCommonIntentPrompt} disabled={savingCommonIntentPrompt}>
+                        {savingCommonIntentPrompt ? '저장 중...' : hasPrompt ? '저장' : '등록'}
+                    </PrimaryButton>
+                </PromptFooter>
+            </PromptCard>
+        </SettingCard>
+    )
+}
+
+const CommonRagPromptManagementCard = ({
+    commonRagPromptItem,
+    commonRagPromptDraft,
+    savingCommonRagPrompt,
+    onCommonRagPromptChange,
+    onSaveCommonRagPrompt,
+}) => {
+    const hasPrompt = Boolean(commonRagPromptItem?.id)
+
+    return (
+        <SettingCard>
+            <CardHeader>
+                <CardTitle>공통 RAG 프롬프트</CardTitle>
+            </CardHeader>
+
+            <PageDescription>info와 action RAG 문서를 LLM에 전달할 때 공통으로 적용하는 지침입니다.</PageDescription>
+
+            <PromptCard>
+                <PromptMeta>
+                    <span>{commonRagPromptItem?.label || commonRagPromptDraft.label || '공통 RAG 프롬프트'}</span>
+                    <span>key: common</span>
+                    <span>type: rag-system</span>
+                    {hasPrompt ? <span>updated: {formatDateTime(commonRagPromptItem?.updatedAt)}</span> : null}
+                </PromptMeta>
+
+                <PromptTextarea
+                    value={commonRagPromptDraft.content}
+                    onChange={(e) => onCommonRagPromptChange('content', e.target.value)}
+                    placeholder="공통 RAG 지침을 입력하세요."
+                    style={{ minHeight: '180px' }}
+                />
+
+                <PromptFooter>
+                    <ToggleButton
+                        type="button"
+                        $active={Boolean(commonRagPromptDraft.enabled)}
+                        onClick={() => onCommonRagPromptChange('enabled', !commonRagPromptDraft.enabled)}
+                    >
+                        {commonRagPromptDraft.enabled ? '활성' : '비활성'}
+                    </ToggleButton>
+
+                    {hasPrompt ? (
+                        <SecondaryTextButton
+                            type="button"
+                            onClick={() => {
+                                onCommonRagPromptChange('content', String(commonRagPromptItem?.content ?? commonRagPromptItem?.prompt ?? ''))
+                                onCommonRagPromptChange('enabled', commonRagPromptItem?.enabled !== false)
+                            }}
+                        >
+                            원본 복원
+                        </SecondaryTextButton>
+                    ) : null}
+
+                    <PrimaryButton type="button" onClick={onSaveCommonRagPrompt} disabled={savingCommonRagPrompt}>
+                        {savingCommonRagPrompt ? '저장 중...' : hasPrompt ? '저장' : '등록'}
+                    </PrimaryButton>
+                </PromptFooter>
+            </PromptCard>
+        </SettingCard>
+    )
+}
+
+const PromptManagementCard = ({
+    commonPromptItem,
+    commonPromptDraft,
+    savingCommonPrompt,
+    onCommonPromptChange,
+    onSaveCommonPrompt,
+    commonIntentPromptItem,
+    commonIntentPromptDraft,
+    savingCommonIntentPrompt,
+    onCommonIntentPromptChange,
+    onSaveCommonIntentPrompt,
+}) => {
+    const hasPrompt = Boolean(commonPromptItem?.id)
+    const hasIntentPrompt = Boolean(commonIntentPromptItem?.id)
+    const effectiveLabel = commonPromptItem?.label || commonPromptDraft.label || '공통 / 분류 LLM 프롬프트'
+
+    return (
+        <SettingCard>
+            <CardHeader>
+                <CardTitle>공통 / 분류 LLM 프롬프트</CardTitle>
+            </CardHeader>
+
+            <PageDescription>기본값으로 쓰는 공통 프롬프트입니다. 분류 판단 로직과 기본 응답 규칙을 같은 문맥에서 관리합니다.</PageDescription>
+
+            <PromptCard>
+                <PromptMeta>
+                    <span>{effectiveLabel}</span>
+                    <span>key: common</span>
+                    <span>type: system + intent-hint</span>
+                    {hasPrompt || hasIntentPrompt ? <span>updated: {formatDateTime(commonPromptItem?.updatedAt ?? commonIntentPromptItem?.updatedAt)}</span> : null}
+                </PromptMeta>
+
+                <PromptTextarea
+                    value={commonPromptDraft.content || commonIntentPromptDraft.content}
+                    onChange={(e) => {
+                        onCommonPromptChange('content', e.target.value)
+                        onCommonIntentPromptChange('content', e.target.value)
+                    }}
+                />
+
+                <PromptFooter>
+                    <ToggleButton
+                        type="button"
+                        $active={Boolean(commonPromptDraft.enabled) && Boolean(commonIntentPromptDraft.enabled)}
+                        onClick={() => {
+                            const nextValue = !(Boolean(commonPromptDraft.enabled) && Boolean(commonIntentPromptDraft.enabled))
+                            onCommonPromptChange('enabled', nextValue)
+                            onCommonIntentPromptChange('enabled', nextValue)
+                        }}
+                    >
+                        {Boolean(commonPromptDraft.enabled) && Boolean(commonIntentPromptDraft.enabled) ? '활성' : '비활성'}
+                    </ToggleButton>
+
+                    {hasPrompt || hasIntentPrompt ? (
+                        <SecondaryTextButton
+                            type="button"
+                            onClick={() => {
+                                const restoredPrompt = String(commonPromptItem?.content ?? commonPromptItem?.prompt ?? commonIntentPromptItem?.content ?? commonIntentPromptItem?.prompt ?? '')
+                                const restoredLabel = String(commonPromptItem?.label ?? commonIntentPromptItem?.label ?? '공통 / 분류 LLM 프롬프트')
+                                onCommonPromptChange('content', restoredPrompt)
+                                onCommonIntentPromptChange('content', restoredPrompt)
+                                onCommonPromptChange('label', restoredLabel)
+                                onCommonIntentPromptChange('label', restoredLabel)
+                                onCommonPromptChange('enabled', commonPromptItem?.enabled !== false)
+                                onCommonIntentPromptChange('enabled', commonIntentPromptItem?.enabled !== false)
+                            }}
+                        >
+                            원본 복원
+                        </SecondaryTextButton>
+                    ) : null}
+
+                    <PrimaryButton
+                        type="button"
+                        onClick={() => {
+                            onSaveCommonPrompt()
+                            onSaveCommonIntentPrompt()
+                        }}
+                        disabled={savingCommonPrompt || savingCommonIntentPrompt}
+                    >
+                        {savingCommonPrompt || savingCommonIntentPrompt ? '저장 중...' : '저장'}
                     </PrimaryButton>
                 </PromptFooter>
             </PromptCard>
@@ -978,511 +1141,6 @@ const CommonRagManagementCard = ({
 
                             <PrimaryButton type="button" onClick={handleCreateCommonRagSubmit} disabled={savingCreateCommonRag}>
                                 {savingCreateCommonRag ? '등록 중...' : '청크 등록'}
-                            </PrimaryButton>
-                        </ModalActions>
-                    </ModalCard>
-                </ModalBackdrop>
-            ) : null}
-        </SettingCard>
-    )
-}
-
-const CommonToolManagementCard = ({
-    tools,
-    actionTypes,
-    savingToolKey,
-    savingCreateCommonTool,
-    deletingToolKey,
-    onSaveTool,
-    onCreateCommonTool,
-    onDeleteTool,
-}) => {
-    const normalizePath = (value) => String(value ?? '').trim().replace(/^\/+/, '')
-
-    const sortedTools = useMemo(() => {
-        return [...tools].sort((left, right) => {
-            const leftOrder = Number(left?.sortOrder ?? 0)
-            const rightOrder = Number(right?.sortOrder ?? 0)
-
-            if (leftOrder !== rightOrder) return leftOrder - rightOrder
-            return String(left?.displayName ?? left?.toolName ?? '').localeCompare(String(right?.displayName ?? right?.toolName ?? ''))
-        })
-    }, [tools])
-
-    const [activeToolKey, setActiveToolKey] = useState('')
-    const [modalMode, setModalMode] = useState('')
-    const [modalDraft, setModalDraft] = useState({
-        actionTypeKey: '',
-        displayName: '',
-        path: '',
-        enabled: true,
-    })
-    const [activeActionTypeKey, setActiveActionTypeKey] = useState('')
-
-    const defaultActionTypeKey = String(actionTypes?.[0]?.key ?? '')
-
-    const actionTypeLabelMap = useMemo(() => {
-        return new Map((actionTypes ?? []).map((item) => [String(item.key), String(item.label ?? item.key)]))
-    }, [actionTypes])
-
-    const resolveActionTypeKey = (tool) => {
-        const apiName = String(tool?.apiName ?? '').trim()
-        const method = String(tool?.method ?? '').trim().toUpperCase()
-        const found = actionTypes.find((item) => {
-            const typeApiName = String(item?.apiName ?? '').trim()
-            const typeMethod = String(item?.method ?? '').trim().toUpperCase()
-            return typeApiName === apiName && typeMethod === method
-        })
-        return String(found?.key ?? defaultActionTypeKey)
-    }
-
-    const groupedToolsByType = useMemo(() => {
-        const grouped = new Map()
-
-        sortedTools.forEach((item) => {
-            const actionTypeKey = resolveActionTypeKey(item)
-            const group = grouped.get(actionTypeKey) ?? []
-            group.push(item)
-            grouped.set(actionTypeKey, group)
-        })
-
-        return grouped
-    }, [sortedTools, actionTypes, defaultActionTypeKey])
-
-    const orderedActionTypeGroups = useMemo(() => {
-        const groups = []
-        const visited = new Set()
-
-        ;(actionTypes ?? []).forEach((item) => {
-            const key = String(item.key)
-            const toolsByType = groupedToolsByType.get(key) ?? []
-            if (toolsByType.length === 0) return
-
-            visited.add(key)
-            groups.push({
-                key,
-                label: String(item.label ?? key),
-                items: toolsByType,
-            })
-        })
-
-        groupedToolsByType.forEach((items, key) => {
-            if (visited.has(key) || items.length === 0) return
-
-            groups.push({
-                key,
-                label: actionTypeLabelMap.get(key) ?? key,
-                items,
-            })
-        })
-
-        return groups
-    }, [groupedToolsByType, actionTypes, actionTypeLabelMap])
-
-    const activeTypeTools = useMemo(() => {
-        return groupedToolsByType.get(activeActionTypeKey) ?? []
-    }, [groupedToolsByType, activeActionTypeKey])
-
-    const routedTools = useMemo(() => {
-        return activeTypeTools
-            .map((item) => {
-                const path = normalizePath(item?.staticPayload?.path ?? item?.endpoint ?? '')
-                return {
-                    item,
-                    path,
-                    segments: path.split('/').filter(Boolean),
-                }
-            })
-            .filter((entry) => entry.path)
-    }, [activeTypeTools])
-
-    const [activePathSegments, setActivePathSegments] = useState([])
-
-    const routeLevels = useMemo(() => {
-        const levels = []
-
-        for (let depth = 0; depth < 12; depth += 1) {
-            const prefix = activePathSegments.slice(0, depth)
-            const candidates = routedTools.filter((entry) =>
-                prefix.every((segment, idx) => entry.segments[idx] === segment)
-            )
-
-            const options = Array.from(new Set(
-                candidates
-                    .map((entry) => entry.segments[depth])
-                    .filter(Boolean)
-            ))
-
-            if (options.length === 0) break
-
-            levels.push({
-                depth,
-                options,
-            })
-
-            if (!activePathSegments[depth]) break
-        }
-
-        return levels
-    }, [routedTools, activePathSegments])
-
-    const activePath = activePathSegments.join('/')
-
-    const activeRouteTool = useMemo(() => {
-        if (!activePath) return null
-        return routedTools.find((entry) => entry.path === activePath)?.item ?? null
-    }, [routedTools, activePath])
-
-    const activeTypeLabel = actionTypeLabelMap.get(activeActionTypeKey) ?? activeActionTypeKey
-
-    useEffect(() => {
-        if (orderedActionTypeGroups.length === 0) {
-            if (activeActionTypeKey) setActiveActionTypeKey('')
-            return
-        }
-
-        const exists = orderedActionTypeGroups.some((item) => item.key === activeActionTypeKey)
-        if (!exists) {
-            setActiveActionTypeKey(String(orderedActionTypeGroups[0].key))
-        }
-    }, [orderedActionTypeGroups, activeActionTypeKey])
-
-    useEffect(() => {
-        if (activeTypeTools.length === 0) {
-            if (activeToolKey) setActiveToolKey('')
-            return
-        }
-
-        const exists = activeTypeTools.some((item) => String(item.id) === activeToolKey)
-        if (!exists) {
-            setActiveToolKey(String(activeTypeTools[0].id))
-        }
-    }, [activeTypeTools, activeToolKey])
-
-    useEffect(() => {
-        if (routedTools.length === 0) {
-            setActivePathSegments([])
-            return
-        }
-
-        const currentPath = activePathSegments.join('/')
-        const exists = routedTools.some((entry) => entry.path === currentPath)
-
-        if (!exists) {
-            setActivePathSegments([...routedTools[0].segments])
-        }
-    }, [routedTools])
-
-    useEffect(() => {
-        if (!activeRouteTool) return
-        setActiveToolKey(String(activeRouteTool.id))
-    }, [activeRouteTool])
-
-    const activeTool = activeRouteTool ?? activeTypeTools.find((item) => String(item.id) === activeToolKey) ?? null
-    const activeToolName = String(activeTool?.displayName ?? activeTool?.toolName ?? '-')
-    const activeToolPath = String(activeTool?.staticPayload?.path ?? activeTool?.endpoint ?? activePath ?? '-')
-    const isCreateMode = modalMode === 'create'
-    const isEditMode = modalMode === 'edit'
-
-    const openCreateModal = () => {
-        setModalDraft({
-            actionTypeKey: defaultActionTypeKey,
-            displayName: '',
-            path: '',
-            enabled: true,
-        })
-        setModalMode('create')
-    }
-
-    const openEditModal = () => {
-        if (!activeTool) return
-
-        setModalDraft({
-            actionTypeKey: resolveActionTypeKey(activeTool),
-            displayName: String(activeTool.displayName ?? activeTool.toolName ?? ''),
-            path: String(activeTool?.staticPayload?.path ?? activeTool?.endpoint ?? ''),
-            enabled: activeTool.enabled !== false,
-        })
-        setModalMode('edit')
-    }
-
-    const closeModal = () => setModalMode('')
-
-    const handleModalChange = (field, nextValue) => {
-        setModalDraft((prev) => ({
-            ...prev,
-            [field]: nextValue,
-        }))
-    }
-
-    const handleSubmitModal = async () => {
-        if (isCreateMode) {
-            await onCreateCommonTool(modalDraft)
-            return
-        }
-
-        if (isEditMode && activeTool) {
-            await onSaveTool(activeTool, modalDraft)
-        }
-    }
-
-    return (
-        <SettingCard>
-            <SectionTitleRow>
-                <CardHeader>
-                    <CardTitle>공통 액션</CardTitle>
-                    <SmallBadge>{tools.length}개</SmallBadge>
-                </CardHeader>
-
-                <PrimaryButton
-                    type="button"
-                    onClick={openCreateModal}
-                    disabled={savingCreateCommonTool}
-                    style={{ height: '36px' }}
-                >
-                    {savingCreateCommonTool ? '추가 중...' : '+ 공통 액션 추가'}
-                </PrimaryButton>
-            </SectionTitleRow>
-
-            {sortedTools.length > 0 ? (
-                <>
-                    <div
-                        style={{
-                            display: 'grid',
-                            gap: '10px',
-                        }}
-                    >
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                            {orderedActionTypeGroups.map((group) => {
-                                const selected = group.key === activeActionTypeKey
-
-                                return (
-                                    <button
-                                        key={group.key}
-                                        type="button"
-                                        onClick={() => setActiveActionTypeKey(group.key)}
-                                        style={{
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '6px',
-                                            height: '34px',
-                                            padding: '0 12px',
-                                            borderRadius: '999px',
-                                            border: selected ? '1px solid #2563eb' : '1px solid #dbe3ef',
-                                            background: selected ? '#eff6ff' : '#fff',
-                                            color: selected ? '#1d4ed8' : '#334155',
-                                            cursor: 'pointer',
-                                            fontSize: '12px',
-                                            fontWeight: 600,
-                                        }}
-                                    >
-                                        <span>{group.label}</span>
-                                        <span
-                                            style={{
-                                                minWidth: '18px',
-                                                height: '18px',
-                                                borderRadius: '999px',
-                                                background: selected ? '#2563eb' : '#e2e8f0',
-                                                color: selected ? '#fff' : '#334155',
-                                                fontSize: '11px',
-                                                display: 'inline-flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                padding: '0 5px',
-                                            }}
-                                        >
-                                            {group.items.length}
-                                        </span>
-                                    </button>
-                                )
-                            })}
-                        </div>
-
-                        <div
-                            style={{
-                                display: 'grid',
-                                gridTemplateColumns: 'minmax(0, 1fr) minmax(320px, 360px)',
-                                gap: '12px',
-                                alignItems: 'start',
-                            }}
-                        >
-                            <div
-                                style={{
-                                    display: 'flex',
-                                    gap: '10px',
-                                    overflowX: 'auto',
-                                    paddingBottom: '4px',
-                                }}
-                            >
-                                {routeLevels.map((level) => (
-                                    <div
-                                        key={`route-level-${level.depth}`}
-                                        style={{
-                                            minWidth: '220px',
-                                            border: '1px solid #dbe3ef',
-                                            borderRadius: '12px',
-                                            padding: '10px',
-                                            display: 'grid',
-                                            gap: '8px',
-                                            background: '#fff',
-                                        }}
-                                    >
-                                        <strong style={{ fontSize: '12px', color: '#64748b' }}>
-                                            경로 레벨 {level.depth + 1}
-                                        </strong>
-
-                                        {level.options.map((segment) => {
-                                            const selected = activePathSegments[level.depth] === segment
-                                            const isParam = segment.startsWith(':')
-
-                                            return (
-                                                <button
-                                                    key={`${level.depth}-${segment}`}
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setActivePathSegments((prev) => {
-                                                            const next = [...prev.slice(0, level.depth), segment]
-                                                            return next
-                                                        })
-                                                    }}
-                                                    style={{
-                                                        textAlign: 'left',
-                                                        padding: '9px 10px',
-                                                        borderRadius: '10px',
-                                                        border: selected ? '1px solid #2563eb' : '1px solid #dbe3ef',
-                                                        background: selected ? '#eff6ff' : '#ffffff',
-                                                        color: selected ? '#1d4ed8' : '#334155',
-                                                        cursor: 'pointer',
-                                                        display: 'grid',
-                                                        gap: '2px',
-                                                    }}
-                                                >
-                                                    <strong style={{ fontSize: '13px' }}>{segment}</strong>
-                                                    {isParam ? (
-                                                        <span style={{ fontSize: '11px', color: '#7c3aed' }}>
-                                                            파라미터 입력 필요
-                                                        </span>
-                                                    ) : null}
-                                                </button>
-                                            )
-                                        })}
-                                    </div>
-                                ))}
-                            </div>
-
-                            {activeTool ? (
-                                <PromptCard style={{ margin: 0 }}>
-                                    <PromptMeta>
-                                        <span>{activeToolName}</span>
-                                        <span>유형: {activeTypeLabel}</span>
-                                        <span>updated: {formatDateTime(activeTool.updatedAt)}</span>
-                                    </PromptMeta>
-
-                                    <FieldLabel>화면 이름</FieldLabel>
-                                    <PageDescription>{activeToolName}</PageDescription>
-
-                                    <FieldLabel>경로</FieldLabel>
-                                    <PageDescription>{activeToolPath}</PageDescription>
-
-                                    <PromptFooter>
-                                        <ToggleButton type="button" $active={activeTool.enabled !== false}>
-                                            {activeTool.enabled !== false ? '활성' : '비활성'}
-                                        </ToggleButton>
-
-                                        <SecondaryTextButton
-                                            type="button"
-                                            onClick={() => onDeleteTool(activeTool)}
-                                            disabled={deletingToolKey === String(activeTool.id)}
-                                        >
-                                            {deletingToolKey === String(activeTool.id) ? '삭제 중...' : '삭제'}
-                                        </SecondaryTextButton>
-
-                                        <PrimaryButton
-                                            type="button"
-                                            onClick={openEditModal}
-                                            disabled={savingToolKey === String(activeTool.id)}
-                                        >
-                                            수정
-                                        </PrimaryButton>
-                                    </PromptFooter>
-                                </PromptCard>
-                            ) : (
-                                <PromptCard style={{ margin: 0 }}>
-                                    <PageDescription>좌측 경로에서 액션을 선택하면 상세 설정이 표시됩니다.</PageDescription>
-                                </PromptCard>
-                            )}
-                        </div>
-
-                    </div>
-                </>
-            ) : (
-                <PageDescription>등록된 공통 액션이 없습니다. 우측의 + 공통 액션 추가 버튼으로 등록해 주세요.</PageDescription>
-            )}
-
-            {(isCreateMode || isEditMode) ? (
-                <ModalBackdrop>
-                    <ModalCard style={UNIFIED_MODAL_STYLE}>
-                        <ModalTitle>{isCreateMode ? '공통 액션 추가' : '공통 액션 수정'}</ModalTitle>
-                        <ModalDescription>기본 정보는 목록에 간단히 표시하고, 상세 입력은 팝업에서 관리합니다.</ModalDescription>
-
-                        <div style={{ marginTop: '14px', display: 'grid', gap: '10px' }}>
-                            <FieldLabel>액션 유형</FieldLabel>
-                            <select
-                                value={modalDraft.actionTypeKey}
-                                onChange={(e) => handleModalChange('actionTypeKey', e.target.value)}
-                                disabled={isEditMode}
-                                style={{
-                                    width: '100%',
-                                    height: '42px',
-                                    border: '1px solid #dbe3ef',
-                                    borderRadius: '10px',
-                                    padding: '0 10px',
-                                    fontSize: '13px',
-                                    color: '#334155',
-                                    background: isEditMode ? '#f8fafc' : '#fff',
-                                }}
-                            >
-                                {actionTypes.map((item) => (
-                                    <option key={item.key} value={item.key}>{item.label}</option>
-                                ))}
-                            </select>
-
-                            <FieldLabel>화면 이름</FieldLabel>
-                            <PromptTextarea
-                                style={{ minHeight: '20px', lineHeight: 1 }}
-                                value={modalDraft.displayName}
-                                onChange={(e) => handleModalChange('displayName', e.target.value)}
-                                
-                            />
-
-                            <FieldLabel>경로 (path)</FieldLabel>
-                            <PromptTextarea
-                                style={{ minHeight: '20px', lineHeight: 1 }}
-                                value={modalDraft.path}
-                                onChange={(e) => handleModalChange('path', e.target.value)}
-                                
-                            />
-                            <FieldHint>예: robot/ailog/ai-chat-settings</FieldHint>
-
-                            <PromptFooter>
-                                <ToggleButton
-                                    type="button"
-                                    $active={Boolean(modalDraft.enabled)}
-                                    onClick={() => handleModalChange('enabled', !modalDraft.enabled)}
-                                >
-                                    {modalDraft.enabled ? '활성' : '비활성'}
-                                </ToggleButton>
-                            </PromptFooter>
-                        </div>
-
-                        <ModalActions style={{ gap: '10px' }}>
-                            <SecondaryTextButton type="button" onClick={closeModal}>취소</SecondaryTextButton>
-                            <PrimaryButton
-                                type="button"
-                                onClick={handleSubmitModal}
-                                disabled={savingCreateCommonTool || (isEditMode && activeTool ? savingToolKey === String(activeTool.id) : false)}
-                            >
-                                {isCreateMode ? (savingCreateCommonTool ? '추가 중...' : '추가') : (activeTool && savingToolKey === String(activeTool.id) ? '저장 중...' : '저장')}
                             </PrimaryButton>
                         </ModalActions>
                     </ModalCard>

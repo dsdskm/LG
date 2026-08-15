@@ -16,7 +16,6 @@ import type { LlmProvider, LlmRuntime } from '../llm/llm.types'
 import { ChatLogService } from '../features/chat-settings/db/chat-log.service'
 import { ChatSettingService } from '../features/chat-settings/service/chat-setting.service'
 import { getPromptStore, type RagChunkData } from '../features/chat/service/prompt-store.service'
-import { findPhraseMapMatch } from '../features/chat-settings/db/query-phrase-map.repo'
 import { ChatOrchestrator } from '../pipeline/chat.orchestrator'
 import { loadChatPipelineConfig } from '../pipeline/pipeline.config'
 import type { ChatReply, ChatReplyImage, ChatTurn, SuggestedAction } from '../pipeline/pipeline.types'
@@ -29,8 +28,8 @@ import { getScreenConfig } from '../pipeline/screen-registry'
 import type { ToolDefinition } from '../pipeline/tool.type'
 import { buildToolContextFromBody } from '../pipeline/tool-context.util'
 import { queryEvents } from '../screens/robot/ailog-event.datatools'
-import { matchAiLogEventRule } from '../domains/ai-log-event/event-rule-first'
 import { matchFrontRule, type FrontRuleMatch } from '../domains/front-rule/front-rule-engine'
+import { ChatRuleService } from '../features/chat-settings/db/chat-rule.service'
 import type { MatchedRuleInfo } from '../pipeline/pipeline.types'
 
 type RuntimeEntry = {
@@ -65,6 +64,9 @@ type ChatLogDebugMeta = {
   infoTextMissing?: boolean
   emptyTextReason?: string
   suggestedActionsAttached?: boolean
+  ragMatchScore?: number
+  ragAdjustedScore?: number
+  ragThresholdScore?: number
   ragMinScore?: number
   ragSelectionRule?: string
   usedCollection?: string
@@ -112,6 +114,7 @@ export class ChatService {
   constructor(
     private readonly chatLog: ChatLogService,
     private readonly chatSetting: ChatSettingService,
+    private readonly chatRules: ChatRuleService,
   ) {
     this.silenceVerboseLogs()
   }
@@ -135,7 +138,7 @@ export class ChatService {
     this.logger.warn(`[chatSiteAssitant] [1단계:인텐트] [reqId=${reqId}] intent=${intent}`)
 
     const ragScores = Array.isArray(reply.ragScores) ? reply.ragScores : []
-    if (ragScores.length > 0) {
+    if (intent === 'info' || ragScores.length > 0) {
       const common = ragScores.find((item) => String(item.collection) === 'common')
       const screenBest = ragScores
         .filter((item) => String(item.collection) !== 'common')
@@ -145,10 +148,13 @@ export class ChatService {
       const screenScore = screenBest ? Number(screenBest.adjustedScore ?? screenBest.topScore ?? 0).toFixed(2) : '-'
       const screenCollection = screenBest?.collection ?? '-'
       const usedCollection = String(reply.usedCollection ?? '-').trim() || '-'
+      const selected = ragScores.find((item) => String(item.collection) === usedCollection)
+      const selectedScore = selected ? Number(selected.topScore ?? 0).toFixed(2) : '-'
+      const selectedAdjustedScore = selected ? Number(selected.adjustedScore ?? selected.topScore ?? 0).toFixed(2) : '-'
       const threshold = Number(this.pipelineCfg.infoRagMinScore ?? 0).toFixed(2)
 
       this.logger.warn(
-        `[chatSiteAssitant] [2단계:RAG점수] [reqId=${reqId}] threshold=${threshold} common=${commonScore} screen(${screenCollection})=${screenScore} selected=${usedCollection}`,
+        `[chatSiteAssitant] [2단계:RAG점수] [reqId=${reqId}] matchScore=${selectedScore} adjustedScore=${selectedAdjustedScore} thresholdScore=${threshold} selected=${usedCollection} common=${commonScore} screen(${screenCollection})=${screenScore}`,
       )
     }
 
@@ -358,21 +364,6 @@ export class ChatService {
           this.attachPipelineTrace(
             frontRuleReply,
             'rule(front-rule)=>direct(info|action)=>응답조립',
-          ),
-          ctx,
-        ),
-        ctx,
-      ))
-    }
-
-    const ruleFirstReply = await this.tryRuleFirstEventQuery(ctx)
-    if (ruleFirstReply) {
-      this.stageLog('3단계:룰우선처리', 'served', 'event 전용 룰우선 처리로 응답 완료', reqId)
-      return this.ensureUserFacingReply(this.withSuggestedActions(
-        this.withTaskflowExplanationImages(
-          this.attachPipelineTrace(
-            ruleFirstReply,
-            'rule(event-rule-first)=>tool(query_events)=>응답조립',
           ),
           ctx,
         ),
@@ -1376,88 +1367,6 @@ export class ChatService {
     return null
   }
 
-  /**
-   * 규칙 기반 우선 처리.
-   * phrase map 에 매칭되는 robot/ailog/event 조회 문장은 LLM 없이 즉시 처리한다.
-   */
-  private async tryRuleFirstEventQuery(ctx: ChatContext): Promise<ChatReply | null> {
-    const phraseMatch = await findPhraseMapMatch('robot/ailog/event', ctx.message)
-    const eventRuleMatch = await matchAiLogEventRule({
-      routeKey: 'robot/ailog/event',
-      message: ctx.message,
-      phraseMatch,
-    })
-
-    if (!eventRuleMatch) {
-      this.stageLog('3단계:룰우선처리', 'miss', '매칭 규칙이 없어 일반 파이프라인으로 진행', ctx.reqId)
-      return null
-    }
-
-    if (phraseMatch) {
-      this.stageLog(
-        '3단계:룰우선처리',
-        'matched',
-        `phrase-map 매칭 성공(matchType=${phraseMatch.matchType ?? 'exact'})`,
-        ctx.reqId,
-      )
-    } else {
-      this.stageLog(
-        '3단계:룰우선처리',
-        'rule-matched',
-        `이벤트 룰 매칭(${eventRuleMatch.type}, confidence=${eventRuleMatch.confidence})`,
-        ctx.reqId,
-      )
-    }
-
-    const toolCtx = buildToolContextFromBody({
-      body: ctx.body,
-      message: ctx.message,
-      log: {
-        log: (m) => this.logger.log(m),
-        error: (m) => this.logger.error(m),
-      },
-    })
-
-    try {
-      const result = (await queryEvents.execute({
-        ...eventRuleMatch.toolArgs,
-      }, toolCtx)) as any
-      const filters = result?.resolvedFilters && typeof result.resolvedFilters === 'object'
-        ? result.resolvedFilters
-        : undefined
-      const summary = this.toDisplayText(result?.summary)
-
-      const screen = getScreenConfig('robot/ailog/event', ctx.reqId)
-      const reply: ChatReply = {
-        chat_action: screen?.chatActions.data ?? 'ailog/event/filter',
-        chat_action_param: filters ? { filters } : undefined,
-        text: summary || '조회 결과를 확인했습니다.',
-      }
-
-      const normalizedReply = this.ensurePeriodInEventReply(reply)
-      const matchedRuleSource = eventRuleMatch.type === 'phrase-map' ? 'phrase-map' : 'db-rule'
-      const matchedRuleKey = String(eventRuleMatch.reason ?? '').replace(/^db-rule:/, '').trim()
-      normalizedReply.matchedRule = {
-        source: 'event-rule-first',
-        ruleType: matchedRuleSource,
-        ruleKey: matchedRuleKey || undefined,
-        reason: eventRuleMatch.reason,
-        confidence: Number.isFinite(Number(eventRuleMatch.confidence))
-          ? Number(eventRuleMatch.confidence)
-          : undefined,
-      }
-      await this.saveLog(ctx.body, normalizedReply, ctx, this.buildChatLogDebugMeta(ctx, normalizedReply, undefined, 'rule-first'))
-      this.stageLog('3단계:룰우선처리', 'served', '룰 기반 직접 조회 응답 반환 완료', ctx.reqId)
-      return normalizedReply
-    } catch (e: any) {
-      this.logger.debug(
-        `[rule-first] direct query failed route=${ctx.key} err=${e?.message ?? String(e)}; fallback to pipeline`,
-      )
-      this.stageLog('3단계:룰우선처리', 'error', '직접 조회 실패로 일반 파이프라인으로 폴백', ctx.reqId)
-      return null
-    }
-  }
-
   private resolveFrontRuleCollections(routeKey: string): string[] {
     const screen = getScreenConfig(routeKey)
     if (!screen) return ['common']
@@ -1559,7 +1468,10 @@ export class ChatService {
       return {
         chat_action: ruleMatch.chatAction || screen?.chatActions.data || 'ailog/event/filter',
         chat_action_param: filters ? { filters } : undefined,
-        text: this.toDisplayText(result?.summary) || String(ruleMatch.fallbackText ?? '').trim() || '조회 결과를 확인했습니다.',
+        text: this.toDisplayText(result?.summary)
+          || String(ruleMatch.fallbackText ?? '').trim()
+          || String(screen?.fallbackText ?? '').trim()
+          || '조회 결과를 확인했습니다.',
       }
     }
 
@@ -1581,16 +1493,168 @@ export class ChatService {
         toolName,
         toolResult: resultRow,
       },
-      text: text || String(ruleMatch.fallbackText ?? '').trim() || '요청을 처리했습니다.',
+      text: text
+        || String(ruleMatch.fallbackText ?? '').trim()
+        || String(screen?.fallbackText ?? '').trim()
+        || '요청을 처리했습니다.',
     }
+  }
+
+  /** taskflow-graph 룰(노드 연결/삭제)은 tool 없이 캔버스 draft를 바로 만들어 응답한다. */
+  private async buildTaskflowGraphRuleReply(
+    ctx: ChatContext,
+    routeKey: string,
+    ruleMatch: FrontRuleMatch,
+  ): Promise<ChatReply | null> {
+    if (ruleMatch.ruleType === 'taskflow-graph-guide') {
+      const screen = getScreenConfig(routeKey)
+      const guideText = String(ruleMatch.fallbackText ?? '').trim()
+      const guidanceText = Array.isArray(screen?.guidanceExamples) && screen.guidanceExamples.length > 0
+        ? `아래처럼 요청해보세요.\n${screen.guidanceExamples.join('\n')}`
+        : ''
+
+      const reply: ChatReply = {
+        chat_action: ruleMatch.chatAction || screen?.chatActions.info || 'info',
+        chat_action_param: {
+          ...(ruleMatch.chatActionParam ?? {}),
+          matchedRuleKey: ruleMatch.ruleKey,
+        },
+        text: guideText || guidanceText || '지원하는 요청 형식을 확인해 주세요.',
+      }
+
+      reply.pipelineConfidence = ruleMatch.confidence
+      reply.matchedRule = {
+        source: 'front-rule',
+        ruleKey: ruleMatch.ruleKey,
+        ruleType: ruleMatch.ruleType,
+        reason: ruleMatch.reason,
+        confidence: Number.isFinite(Number(ruleMatch.confidence)) ? Number(ruleMatch.confidence) : undefined,
+      }
+
+      await this.saveLog(ctx.body, reply, ctx, this.buildChatLogDebugMeta(ctx, reply, {
+        pipelineIntent: 'info',
+        pipelineConfidence: ruleMatch.confidence,
+        pipelineTrace: `front-rule:${ruleMatch.ruleKey}`,
+      }, 'front-rule'))
+
+      return reply
+    }
+
+    if (ruleMatch.ruleType !== 'taskflow-graph') return null
+
+    const arrowLines = ruleMatch.graphOperation === 'separate-arrow-lines'
+      ? String(ruleMatch.captures[0] ?? ctx.message)
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .flatMap((line) => {
+            const separators = Array.from(line.match(/->|=>|→|⇒/g) ?? [])
+            const rawLabels = line.split(/->|=>|→|⇒/).map((item) => item.trim())
+            const hasLeadingArrow = rawLabels[0] === ''
+            const labels = hasLeadingArrow ? rawLabels.slice(1) : rawLabels
+            const valid = labels.every(Boolean) && (hasLeadingArrow ? labels.length >= 1 : labels.length >= 2)
+            return valid ? [{ labels, separators, hasLeadingArrow }] : []
+          })
+      : []
+
+    const nodes = arrowLines.length > 0
+      ? arrowLines.flatMap((line) => line.labels)
+      : ruleMatch.graphOperation === 'append-leading'
+      ? String(ruleMatch.captures[0] ?? '')
+          .split(/->|=>|→|⇒/)
+          .map((item) => item.trim())
+          .filter(Boolean)
+      : ruleMatch.captures.map((item) => String(item ?? '').trim()).filter(Boolean)
+    this.logger.warn(
+      `[front-rule][taskflow-graph] reqId=${ctx.reqId} ruleKey=${ruleMatch.ruleKey} nodes=${JSON.stringify(nodes)} direction=${ruleMatch.direction ?? '-'}`,
+    )
+
+    const minimumNodeCount =
+      ruleMatch.graphOperation === 'append-leading' || ruleMatch.graphOperation === 'separate-arrow-lines' ? 1 : 2
+    if (nodes.length < minimumNodeCount) {
+      this.logger.warn(`[front-rule][taskflow-graph] reqId=${ctx.reqId} 노드 캡처 부족으로 draft 생성 생략`)
+      return null
+    }
+
+    const insertAfter = arrowLines.length > 0
+      ? arrowLines.flatMap((line) => line.labels.map((label, index) => {
+          if (index === 0) {
+            return { after: '', step: label, isolated: true, sourceHandle: 'right', targetHandle: 'left' }
+          }
+
+          const separatorIndex = line.hasLeadingArrow ? index : index - 1
+          const separator = line.separators[separatorIndex] ?? '->'
+          const vertical = separator === '=>' || separator === '⇒'
+          return {
+            after: line.labels[index - 1],
+            step: label,
+            appendOnly: true,
+            sourceHandle: vertical ? 'left' : 'right',
+            targetHandle: 'left',
+          }
+        }))
+      : nodes.map((label, index) => (
+          index === 0
+            ? { after: '', step: label, appendOnly: true, sourceHandle: 'right', targetHandle: 'left' }
+            : { after: nodes[index - 1], step: label, appendOnly: true, sourceHandle: 'right', targetHandle: 'left' }
+        ))
+
+    const canvasDraft = {
+      mode: 'edit' as const,
+      insertAfter,
+    }
+
+    const screen = getScreenConfig(routeKey)
+    const connectionText = arrowLines.length > 0
+      ? arrowLines.map((line) => line.labels.join(' -> ')).join('\n')
+      : nodes.join(' -> ')
+    const text = `${connectionText} 연결을 캔버스에 반영했습니다.`
+
+    const reply: ChatReply = {
+      chat_action: ruleMatch.chatAction || screen?.chatActions.action || 'action',
+      chat_action_param: {
+        ...(ruleMatch.chatActionParam ?? {}),
+        matchedRuleKey: ruleMatch.ruleKey,
+        canvasDraft,
+      },
+      text,
+    }
+
+    reply.pipelineConfidence = ruleMatch.confidence
+    reply.matchedRule = {
+      source: 'front-rule',
+      ruleKey: ruleMatch.ruleKey,
+      ruleType: ruleMatch.ruleType,
+      reason: ruleMatch.reason,
+      confidence: Number.isFinite(Number(ruleMatch.confidence)) ? Number(ruleMatch.confidence) : undefined,
+    }
+
+    this.logger.warn(
+      `[front-rule][taskflow-graph] reqId=${ctx.reqId} draft=${JSON.stringify(canvasDraft)}`,
+    )
+
+    await this.saveLog(ctx.body, reply, ctx, this.buildChatLogDebugMeta(ctx, reply, {
+      pipelineIntent: 'action',
+      pipelineConfidence: ruleMatch.confidence,
+      pipelineTrace: `front-rule:${ruleMatch.ruleKey}`,
+    }, 'front-rule'))
+
+    this.stageLog('3단계:룰우선처리', 'served', `taskflow-graph 룰로 캔버스 draft 응답(ruleKey=${ruleMatch.ruleKey})`, ctx.reqId)
+    return reply
   }
 
   private async tryFrontRuleEngine(ctx: ChatContext): Promise<ChatReply | null> {
     const matchedRouteKey = this.findNearestRegisteredRouteKey(ctx.key, ctx.reqId) ?? ctx.key
-    const ruleMatch = await matchFrontRule({
-      routeKey: matchedRouteKey,
-      message: ctx.message,
-    })
+    this.logger.warn(
+      `[front-rule] reqId=${ctx.reqId} ctxKey=${ctx.key} matchedRouteKey=${matchedRouteKey} currentPath=${ctx.currentPath || '-'} message="${ctx.message}"`,
+    )
+    const ruleMatch = await matchFrontRule(
+      {
+        screenKey: matchedRouteKey,
+        message: ctx.message,
+      },
+      (appKey, screenKey) => this.chatRules.listByAppAndScreen(appKey, screenKey),
+    )
 
     if (!ruleMatch) {
       this.stageLog('3단계:룰우선처리', 'miss', 'front-rule 매칭 없음', ctx.reqId)
@@ -1620,7 +1684,10 @@ export class ChatService {
           usedChunks: chunks.map((row) => row.key),
           usedCollection: chunks[0]?.collection,
         },
-        text: text || String(ruleMatch.fallbackText ?? '').trim() || '관련 정보를 찾지 못했습니다.',
+        text: text
+          || String(ruleMatch.fallbackText ?? '').trim()
+          || String(screen?.fallbackText ?? '').trim()
+          || '관련 정보를 찾지 못했습니다.',
       }
 
       reply.usedCollection = chunks[0]?.collection
@@ -1645,6 +1712,9 @@ export class ChatService {
 
       return reply
     }
+
+    const canvasReply = await this.buildTaskflowGraphRuleReply(ctx, matchedRouteKey, ruleMatch)
+    if (canvasReply) return canvasReply
 
     const toolName = String(ruleMatch.toolName ?? '').trim()
     if (!toolName) {
@@ -1766,6 +1836,11 @@ export class ChatService {
       ? reply.usedChunks.map((item) => String(item ?? '').trim()).filter(Boolean)
       : []
     const ragScores = Array.isArray(reply?.ragScores) ? reply.ragScores : []
+    const selectedRagScore = usedCollection
+      ? ragScores.find((item) => String(item?.collection ?? '').trim() === usedCollection)
+      : undefined
+    const ragMatchScoreRaw = Number(selectedRagScore?.topScore)
+    const ragAdjustedScoreRaw = Number(selectedRagScore?.adjustedScore)
     const screenTask = String(meta?.screenTask ?? '').trim() || undefined
     const isOrchestratorSource = source === 'orchestrator'
     const defaultLlmFallback = isOrchestratorSource
@@ -1812,6 +1887,9 @@ export class ChatService {
       infoTextMissing,
       emptyTextReason,
       suggestedActionsAttached,
+      ragMatchScore: Number.isFinite(ragMatchScoreRaw) ? ragMatchScoreRaw : undefined,
+      ragAdjustedScore: Number.isFinite(ragAdjustedScoreRaw) ? ragAdjustedScoreRaw : undefined,
+      ragThresholdScore: ragMinScore,
       ragMinScore,
       ragSelectionRule,
       usedCollection,

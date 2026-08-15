@@ -1,12 +1,12 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
+import { randomUUID } from 'crypto'
 import { Repository } from 'typeorm'
 
 import { Screen } from '../db/chat-screen.entity'
 import { Prompt } from '../db/chat-prompt.entity'
 import { ScreenGuidanceEntity } from '../db/chat-guidance.entity'
 import { Rag } from '../db/chat-rag-doc.entity'
-import { ChatActionTypeEntity } from '../db/chat-action-type.entity'
 
 export type GuidanceData = {
   screenName: string
@@ -57,7 +57,6 @@ export class PromptStoreService implements OnModuleInit {
     @InjectRepository(Prompt) private readonly promptRepo: Repository<Prompt>,
     @InjectRepository(ScreenGuidanceEntity) private readonly guidanceRepo: Repository<ScreenGuidanceEntity>,
     @InjectRepository(Rag) private readonly ragRepo: Repository<Rag>,
-    @InjectRepository(ChatActionTypeEntity) private readonly actionTypeRepo: Repository<ChatActionTypeEntity>,
   ) {}
 
   async onModuleInit() {
@@ -282,9 +281,17 @@ export class PromptStoreService implements OnModuleInit {
     return row
   }
 
-  async listRag(screenKey?: string) {
+  async listRag(filter?: { appKey?: string; screenKey?: string }) {
+    const where: Record<string, unknown> = {}
+
+    const appKey = String(filter?.appKey ?? '').trim()
+    const screenKey = String(filter?.screenKey ?? '').trim()
+
+    if (appKey) where.appKey = appKey
+    if (screenKey) where.screenKey = screenKey
+
     return this.ragRepo.find({
-      where: screenKey ? { screenKey } : {},
+      where: Object.keys(where).length > 0 ? where : {},
       order: { appKey: 'ASC', screenKey: 'ASC', chunkKey: 'ASC' },
     })
   }
@@ -402,11 +409,7 @@ export class PromptStoreService implements OnModuleInit {
 
     const requestedChunkKey = String(input.chunkKey ?? '').trim()
     const title = String(input.title ?? '').trim()
-    const baseChunkKey = requestedChunkKey || title
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-    const chunkKey = baseChunkKey || `chunk-${Date.now()}`
+    const chunkKey = requestedChunkKey || `chunk-${randomUUID()}`
 
     const existing = await this.ragRepo.findOne({ where: { screenKey, chunkKey } })
     if (existing) throw new Error('screen rag chunk already exists')
@@ -438,10 +441,4 @@ export class PromptStoreService implements OnModuleInit {
     return { id }
   }
 
-  async listActionTypes() {
-    return this.actionTypeRepo.find({
-      where: { enabled: true },
-      order: { sortOrder: 'ASC', key: 'ASC' },
-    })
-  }
 }

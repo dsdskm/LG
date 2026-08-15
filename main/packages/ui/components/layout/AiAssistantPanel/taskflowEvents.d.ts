@@ -1,0 +1,5 @@
+export const AI_TASKFLOW_CANVAS_DRAFT_EVENT: 'ai-assistant:taskflow-canvas-draft'
+export const AI_TASKFLOW_CANVAS_CLARIFY_EVENT: 'ai-assistant:taskflow-canvas-clarify'
+export const AI_TASKFLOW_CANVAS_COMMAND_EVENT: 'ai-assistant:taskflow-canvas-command'
+export const AI_TASKFLOW_CANVAS_RESULT_EVENT: 'ai-assistant:taskflow-canvas-result'
+export const AI_TASKFLOW_REFRESH_CONTENTS_EVENT: 'ai-assistant:taskflow-refresh-contents'

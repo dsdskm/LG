@@ -167,7 +167,14 @@
     "btWarning": {
       "title": "Behavior Tree 생성이 불가능합니다",
       "description": "현재 구성은 Behavior Tree 로 변환할 수 없어 최종 버전으로는 저장할 수 없습니다.\n저장 버전으로만 저장하시겠습니까?",
+      "commandSavedOnlyDescription": "현재 구성은 Behavior Tree 로 변환할 수 없어 최종 버전으로는 저장할 수 없습니다.\n저장 버전으로만 저장하였습니다.",
       "confirm": "저장 버전으로 저장"
+    },
+    "commandErrors": {
+      "undoUnavailable": "실행 취소할 캔버스 작업이 없습니다.",
+      "redoUnavailable": "다시 실행할 캔버스 작업이 없습니다.",
+      "finalUnavailable": "리셋할 최종 버전이 없습니다.",
+      "unsupported": "지원하지 않는 캔버스 명령입니다."
     },
     "saveConfirm": {
       "title": "저장하시겠습니까?",

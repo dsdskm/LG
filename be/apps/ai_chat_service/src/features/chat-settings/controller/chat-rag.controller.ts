@@ -34,9 +34,9 @@ export class ChatRagController {
     const appKey = String(appKeyQuery ?? appKeyCamel ?? '').trim() || undefined
     const screenKey = String(screenKeyQuery ?? screenKeyCamel ?? '').trim() || undefined
 
-    const items = await this.promptStore.listRag(screenKey)
+    const items = await this.promptStore.listRag({ appKey, screenKey })
     const filtered = appKey
-      ? items.filter((item) => String(item.appKey ?? '').trim() === appKey)
+      ? items.filter((item) => String(item.appKey ?? '').trim() === appKey || String(item.screenKey ?? '').trim() === appKey)
       : items
 
     this.logger.log(
@@ -48,13 +48,13 @@ export class ChatRagController {
   @Post()
   @ApiOperation({ summary: 'RAG 문서 생성' })
   @ApiOkResponse({ description: '생성된 RAG 문서 반환' })
-  async createRag(@Body() body: ChatRagBody) {
-    const screenKey = String(body?.screenKey ?? '').trim()
+  async createRag(@Body() body: ChatRagBody & { key?: string | null; routeKey?: string | null; screen_key?: string | null; app_key?: string | null; route_key?: string | null }) {
+    const screenKey = String(body?.screenKey ?? body?.screen_key ?? body?.key ?? body?.routeKey ?? body?.route_key ?? '').trim()
     if (!screenKey) throw new Error('screenKey is required')
 
-    const appKey = body?.appKey == null ? undefined : String(body.appKey).trim() || undefined
+    const appKey = String(body?.appKey ?? body?.app_key ?? '').trim() || screenKey.split('/')[0] || 'common'
     const created = await this.promptStore.createRagChunk({
-      appKey: appKey ?? screenKey.split('/')[0] ?? screenKey,
+      appKey,
       screenKey,
       chunkKey: body?.chunkKey ?? undefined,
       title: body?.title ?? undefined,
@@ -65,7 +65,7 @@ export class ChatRagController {
       enabled: body?.enabled ?? true,
     })
 
-    this.logger.log(`[chat_settings/rag-docs] create screenKey=${screenKey}`)
+    this.logger.log(`[chat_settings/rag-docs] create appKey=${appKey} screenKey=${screenKey}`)
     return ok(created)
   }
 

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'react-toastify'
 import styled from 'styled-components'
 import { Button } from '@repo/ui'
+import { AI_TASKFLOW_REFRESH_CONTENTS_EVENT } from '@repo/ui/components/layout/AiAssistantPanel/taskflowEvents.js'
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -439,8 +440,10 @@ function InnerCanvas() {
 
   // 사용 콘텐츠를 최신 버전으로 갱신. 버전 변경분은 노드에 반영(성공 토스트), 최신 목록에 없어
   // 갱신 못한 건 팝업으로 알린다. 버전 동일(스킵)은 알리지 않는다.
-  const onRefreshContentsClick = useCallback(async () => {
-    if (refreshingContents) return
+  const onRefreshContentsClick = useCallback(async (): Promise<{ success: boolean; message?: string }> => {
+    if (refreshingContents) {
+      return { success: false, message: t('canvas.nodeActions.refreshContentsLoading') }
+    }
     setRefreshingContents(true)
     try {
       const { changed, missing } = await refreshContents()
@@ -448,20 +451,40 @@ function InnerCanvas() {
       // 변경·갱신불가 모두 없으면 토스트만, 하나라도 있으면 결과 팝업으로 상세 표시
       if (changed.length === 0 && missing.length === 0) {
         toast.info(t('canvas.nodeActions.refreshContentsNoChange'))
-        return
+        return { success: true, message: t('canvas.nodeActions.refreshContentsNoChange') }
       }
 
       if (changed.length > 0) {
         toast.success(t('canvas.nodeActions.refreshContentsDone', { count: changed.length }))
       }
       setRefreshResult({ changed, missing })
+      return { success: true }
     } catch (e) {
       console.error('refreshContents failed:', e)
       toast.error(t('canvas.nodeActions.refreshContentsError'))
+      return { success: false, message: t('canvas.nodeActions.refreshContentsError') }
     } finally {
       setRefreshingContents(false)
     }
   }, [refreshContents, refreshingContents, t])
+
+  useEffect(() => {
+    const onRefreshContentsCommand = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        handled?: boolean
+        complete?: (result: { success: boolean; message?: string }) => void
+      }>).detail
+      if (!detail || typeof detail.complete !== 'function') return
+
+      detail.handled = true
+      void onRefreshContentsClick().then(detail.complete)
+    }
+
+    window.addEventListener(AI_TASKFLOW_REFRESH_CONTENTS_EVENT, onRefreshContentsCommand)
+    return () => {
+      window.removeEventListener(AI_TASKFLOW_REFRESH_CONTENTS_EVENT, onRefreshContentsCommand)
+    }
+  }, [onRefreshContentsClick])
 
   const onAlignClick = useCallback(() => {
     if (!canAlign) {

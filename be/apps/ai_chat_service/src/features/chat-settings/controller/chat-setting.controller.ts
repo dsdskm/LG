@@ -1,21 +1,9 @@
-import { Body, Controller, Get, Logger, Put, Query } from '@nestjs/common'
+import { Body, Controller, Get, Logger, Post, Put, Query } from '@nestjs/common'
 import { ok, type ChatSettingUpdateRequest } from '@ai-log/shared-contracts'
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger'
 import { ChatLogService } from '../db/chat-log.service'
 import { CHAT_SETTING_KEYS, ChatSettingService } from '../service/chat-setting.service'
 import { PromptStoreService } from '../../chat/service/prompt-store.service'
-import {
-  buildLegacyEventRuleSettingKey,
-  listAllEventRuleRowsByScope,
-  parseLegacyEventRuleSettingKey,
-  replaceEventRulesByScope,
-} from '../db/event-rule-admin.repo'
-import {
-  buildLegacyEventAliasSettingKey,
-  listAllEventFilterAliasesByScope,
-  parseLegacyEventAliasSettingKey,
-  replaceEventFilterAliases,
-} from '../db/event-filter-alias.repo'
 
 @ApiTags('chat-settings')
 @Controller('chat/settings')
@@ -32,33 +20,40 @@ export class ChatSettingController {
   @ApiOperation({ summary: '채팅 설정 전체 + 스키마 조회' })
   @ApiOkResponse({ description: '설정/스키마 반환' })
   async getAll() {
+    this.logger.log('[chat_settings] getAll request received', {
+      path: '/chat/settings',
+      query: {},
+      method: 'GET',
+    })
+
     const values = await this.settings.getAll()
     const schema = await this.settings.getSchema()
     const llmProvider = await this.settings.getLlmProvider()
-    const eventRulesByScope = await listAllEventRuleRowsByScope()
-    const eventAliasesByScope = await listAllEventFilterAliasesByScope()
     const history = await this.chatLog.list({ limit: 20 })
     const prompts = await this.promptStore.listPrompts()
-
-    this.logger.log(
-      `[chat_settings] getAll history=${history.length} prompts=${prompts.length} settings=${Object.keys(values).length}`,
-    )
+    const guidance = await this.promptStore.listGuidance()
+    const ragDocs = await this.promptStore.listRag()
+    const screens = await this.promptStore.listScreens()
 
     const bridgedValues: Record<string, unknown> = { ...values, llmProvider }
-    for (const [scopeKey, rows] of Object.entries(eventRulesByScope)) {
-      bridgedValues[buildLegacyEventRuleSettingKey(scopeKey)] = rows
-    }
-    for (const [scopeKey, aliases] of Object.entries(eventAliasesByScope)) {
-      bridgedValues[buildLegacyEventAliasSettingKey(scopeKey, 'period')] = aliases.period
-      bridgedValues[buildLegacyEventAliasSettingKey(scopeKey, 'severity')] = aliases.severity
-      bridgedValues[buildLegacyEventAliasSettingKey(scopeKey, 'status')] = aliases.status
-    }
-
-    return ok({
+    const payload = {
       schema,
       values: bridgedValues,
-      management: { history, prompts },
-    })
+      management: {
+        history,
+        prompts,
+        guidance,
+        ragDocs,
+        screens,
+      },
+    }
+
+    this.logger.log('[chat_settings] getAll response payload', JSON.stringify(payload, null, 2))
+    this.logger.log(
+      `[chat_settings] getAll summary history=${history.length} prompts=${prompts.length} guidance=${guidance.length} ragDocs=${ragDocs.length} screens=${screens.length} settings=${Object.keys(values).length}`,
+    )
+
+    return ok(payload)
   }
 
   @Get('history')
@@ -101,6 +96,30 @@ export class ChatSettingController {
     })
   }
 
+  @Post('history')
+  @ApiOperation({ summary: '로컬 채팅 명령 실행 내역 저장' })
+  async saveLocalHistory(@Body() body: Record<string, unknown>) {
+    const debugMeta = body?.debugMeta && typeof body.debugMeta === 'object' && !Array.isArray(body.debugMeta)
+      ? (body.debugMeta as Record<string, unknown>)
+      : undefined
+
+    await this.chatLog.save({
+      author: String(body?.author ?? '').trim() || undefined,
+      conversationId: String(body?.conversationId ?? '').trim() || undefined,
+      currentApp: String(body?.currentApp ?? '').trim() || undefined,
+      currentPath: String(body?.currentPath ?? '').trim() || undefined,
+      chatAction: String(body?.chatAction ?? 'taskflow-command').trim() || 'taskflow-command',
+      userMessage: String(body?.userMessage ?? '').trim() || undefined,
+      assistantText: String(body?.assistantText ?? '').trim() || undefined,
+      debugMeta: {
+        source: 'local-command',
+        ...debugMeta,
+      },
+    })
+
+    return ok({ saved: true })
+  }
+
   @Put()
   @ApiOperation({ summary: '채팅 설정 부분 갱신' })
   @ApiOkResponse({ description: '갱신된 설정 반환' })
@@ -115,18 +134,6 @@ export class ChatSettingController {
     for (const item of body?.settings ?? []) {
       if (!item?.key) continue
 
-      const eventRuleScope = parseLegacyEventRuleSettingKey(item.key)
-      if (eventRuleScope) {
-        await replaceEventRulesByScope(eventRuleScope.scopeKey, item.value)
-        continue
-      }
-
-      const eventAliasScope = parseLegacyEventAliasSettingKey(item.key)
-      if (eventAliasScope) {
-        await replaceEventFilterAliases(eventAliasScope.scopeKey, eventAliasScope.aliasType, item.value)
-        continue
-      }
-
       const value =
         item.key === CHAT_SETTING_KEYS.llmProvider
           ? this.settings.normalizeProvider(item.value)
@@ -136,18 +143,8 @@ export class ChatSettingController {
 
     const values = await this.settings.getAll()
     const llmProvider = await this.settings.getLlmProvider()
-    const eventRulesByScope = await listAllEventRuleRowsByScope()
-    const eventAliasesByScope = await listAllEventFilterAliasesByScope()
 
     const bridgedValues: Record<string, unknown> = { ...values, llmProvider }
-    for (const [scopeKey, rows] of Object.entries(eventRulesByScope)) {
-      bridgedValues[buildLegacyEventRuleSettingKey(scopeKey)] = rows
-    }
-    for (const [scopeKey, aliases] of Object.entries(eventAliasesByScope)) {
-      bridgedValues[buildLegacyEventAliasSettingKey(scopeKey, 'period')] = aliases.period
-      bridgedValues[buildLegacyEventAliasSettingKey(scopeKey, 'severity')] = aliases.severity
-      bridgedValues[buildLegacyEventAliasSettingKey(scopeKey, 'status')] = aliases.status
-    }
 
     return ok({ values: bridgedValues })
   }

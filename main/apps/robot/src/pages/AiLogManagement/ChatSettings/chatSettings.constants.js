@@ -3,8 +3,6 @@ export const EMPTY_MANAGEMENT = {
     prompts: [],
     guidance: [],
     ragDocs: [],
-    screenTools: [],
-    actionTypes: [],
     history: [],
 }
 

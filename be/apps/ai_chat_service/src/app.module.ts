@@ -6,12 +6,13 @@ import { ChatLogEntity } from './features/chat-settings/db/chat-log.entity';
 import { ChatLogService } from './features/chat-settings/db/chat-log.service';
 import { ChatSettingEntity } from './features/chat-settings/db/chat-setting.entity';
 import { ChatSettingService } from './features/chat-settings/service/chat-setting.service';
-import { ChatSettingController, ChatGuidanceController, ChatPromptController, ChatRagController } from './features/chat-settings';
+import { ChatSettingController, ChatGuidanceController, ChatPromptController, ChatRagController, ChatRuleController } from './features/chat-settings';
 import { Prompt } from './features/chat/db/chat-prompt.entity';
 import { Rag } from './features/chat/db/chat-rag-doc.entity';
 import { Screen } from './features/chat/db/chat-screen.entity';
 import { ScreenGuidanceEntity } from './features/chat/db/chat-guidance.entity';
-import { ChatActionTypeEntity } from './features/chat/db/chat-action-type.entity';
+import { ChatRuleEntity } from './features/chat-settings/db/chat-rule.entity';
+import { ChatRuleService } from './features/chat-settings/db/chat-rule.service';
 import { PromptStoreService } from './features/chat/service/prompt-store.service';
 
 @Module({
@@ -26,9 +27,9 @@ import { PromptStoreService } from './features/chat/service/prompt-store.service
         Rag,
         Screen,
         ScreenGuidanceEntity,
-        ChatActionTypeEntity,
+        ChatRuleEntity,
       ],
-      synchronize: false,
+      synchronize: true,
       logging: false,
     }),
     TypeOrmModule.forFeature([
@@ -38,10 +39,10 @@ import { PromptStoreService } from './features/chat/service/prompt-store.service
       Rag,
       Screen,
       ScreenGuidanceEntity,
-      ChatActionTypeEntity,
+      ChatRuleEntity,
     ]),
   ],
-  controllers: [ChatController, HealthController, ChatSettingController, ChatGuidanceController, ChatPromptController, ChatRagController],
-  providers: [ChatService, HealthService, ChatLogService, ChatSettingService, PromptStoreService],
+  controllers: [ChatController, HealthController, ChatSettingController, ChatGuidanceController, ChatPromptController, ChatRagController, ChatRuleController],
+  providers: [ChatService, HealthService, ChatLogService, ChatSettingService, PromptStoreService, ChatRuleService],
 })
 export class AppModule { }

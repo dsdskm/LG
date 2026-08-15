@@ -24,6 +24,13 @@ import TaskFlowInfoDialog from '../components/dialog/TaskFlowInfoDialog'
 import PalettePanel from './PalettePanel'
 import { buildBehaviorTreeFromFlowDefinition } from '@/bt/build'
 import { buildTaskFlowPersistPayload, type SaveMode } from '@/types/api/savePayload'
+import {
+  AI_TASKFLOW_CANVAS_CLARIFY_EVENT,
+  AI_TASKFLOW_CANVAS_COMMAND_EVENT,
+  AI_TASKFLOW_CANVAS_DRAFT_EVENT,
+  AI_TASKFLOW_CANVAS_RESULT_EVENT,
+  AI_TASKFLOW_REFRESH_CONTENTS_EVENT
+} from '@repo/ui/components/layout/AiAssistantPanel/taskflowEvents.js'
 import { useOrganizationStore } from '@repo/stores'
 import { Checkbox } from '@repo/ui'
 import { Main, PageRoot, SaveHint } from './styles'
@@ -36,10 +43,6 @@ import { useFlowEditorStore as useFlowEditorStoreHook, type RFEdge, type RFNode 
 type SaveOverride = { name: string; description: string }
 type MoveToMapEntry = { nodeId: string; mapId: string }
 
-const AI_TASKFLOW_CANVAS_EVENT = 'ai-assistant:taskflow-canvas-draft'
-const AI_TASKFLOW_CANVAS_CLARIFY_EVENT = 'ai-assistant:taskflow-canvas-clarify'
-const AI_TASKFLOW_CANVAS_COMMAND_EVENT = 'ai-assistant:taskflow-canvas-command'
-const AI_TASKFLOW_CANVAS_RESULT_EVENT = 'ai-assistant:taskflow-canvas-result'
 
 declare global {
   interface Window {
@@ -821,9 +824,14 @@ export function applyEditDraftToFlowDefinition(
     }
   }
   if (unresolvedInsertLabels.length > 0) {
+    const missingLabels = Array.from(new Set(unresolvedInsertLabels.filter(Boolean)))
+    const quotedLabels = missingLabels.map((label) => `"${label}"`).join(',')
     return {
       next: null,
-      clarification: `"${unresolvedInsertLabels[0]}" 노드를 찾지 못했습니다. TaskPanel의 정확한 이름으로 다시 요청해 주세요.`
+      clarification:
+        missingLabels.length === 1
+          ? `${quotedLabels}노드 이름을 다시 확인해주세요`
+          : `${quotedLabels} 노드 이름을 다시 확인해주세요`
     }
   }
 
@@ -929,7 +937,9 @@ export function applyEditDraftToFlowDefinition(
           ? 'right'
           : insert?.sourceHandle === 'top'
             ? 'top'
-            : 'bottom'
+            : insert?.sourceHandle === 'bottom'
+              ? 'bottom'
+              : 'right'
     const targetHandle =
       insert?.targetHandle === 'right'
         ? 'right'
@@ -937,7 +947,9 @@ export function applyEditDraftToFlowDefinition(
           ? 'left'
           : insert?.targetHandle === 'bottom'
             ? 'bottom'
-            : 'top'
+            : insert?.targetHandle === 'top'
+              ? 'top'
+              : 'left'
     const reverseDirection = Boolean(insert?.reverseDirection)
     const appendOnly = Boolean(insert?.appendOnly)
     let isolated = Boolean((insert as any)?.isolated)
@@ -1075,7 +1087,7 @@ export function applyEditDraftToFlowDefinition(
       }
 
       const newNodeId = `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-      nextNodes.push({
+      const isolatedNode: RFNode = {
         id: newNodeId,
         type: 'taskNode',
         position: { x: posX, y: posY },
@@ -1095,7 +1107,15 @@ export function applyEditDraftToFlowDefinition(
           propertySchema: item.task.propertySchema,
           properties: { ...defaults, ...(normalized.properties ?? {}) }
         }
-      })
+      }
+      nextNodes.push(isolatedNode)
+
+      const isolatedLabelKey = normalizeNameKey(
+        isolatedNode.data?.label ?? isolatedNode.data?.contentName ?? isolatedNode.data?.taskName
+      )
+      if (isolatedLabelKey) {
+        draftCreatedNodesByLabel.set(isolatedLabelKey, isolatedNode)
+      }
       continue
     }
 
@@ -1119,13 +1139,10 @@ export function applyEditDraftToFlowDefinition(
 
     if (!after) continue
 
-    let anchorNode = findNodeByName(after)
+    const labelKey = normalizeNameKey(after)
+    let anchorNode = labelKey ? (draftCreatedNodesByLabel.get(labelKey) ?? null) : null
     if (!anchorNode) {
-      const labelKey = normalizeNameKey(after)
-      const seeded = labelKey ? (draftCreatedNodesByLabel.get(labelKey) ?? null) : null
-      if (seeded) {
-        anchorNode = seeded
-      }
+      anchorNode = findNodeByName(after)
     }
     if (!anchorNode) {
       const fallbackTailName = resolveTailNodeName(nextNodes, nextEdges)
@@ -1661,6 +1678,7 @@ export default function TaskFlowCanvasPage() {
         window.dispatchEvent(
           new CustomEvent(AI_TASKFLOW_CANVAS_RESULT_EVENT, {
             detail: {
+              kind: 'draft',
               assistantMessageId: draft.assistantMessageId,
               success: false,
               didApply: false,
@@ -1688,19 +1706,23 @@ export default function TaskFlowCanvasPage() {
       window.dispatchEvent(
         new CustomEvent(AI_TASKFLOW_CANVAS_RESULT_EVENT, {
           detail: {
+            kind: 'draft',
             assistantMessageId: draft.assistantMessageId,
             success: newNodeIds.length > 0,
             didApply: newNodeIds.length > 0,
             insertedNodeCount: newNodeIds.length,
-            message: newNodeIds.length > 0 ? '반영 완료' : '요청을 받았지만 실제 반영은 실패했습니다.'
+            message:
+              newNodeIds.length > 0
+                ? `${newNodeIds.length}개 노드를 새 공간에 추가했습니다.`
+                : '요청을 받았지만 실제 반영은 실패했습니다.'
           }
         })
       )
     }
 
-    window.addEventListener(AI_TASKFLOW_CANVAS_EVENT, onTaskflowDraft)
+    window.addEventListener(AI_TASKFLOW_CANVAS_DRAFT_EVENT, onTaskflowDraft)
     return () => {
-      window.removeEventListener(AI_TASKFLOW_CANVAS_EVENT, onTaskflowDraft)
+      window.removeEventListener(AI_TASKFLOW_CANVAS_DRAFT_EVENT, onTaskflowDraft)
     }
   }, [nodes, edges, viewport, palette, applyFlowDefinitionWithHistory])
 
@@ -1755,6 +1777,7 @@ export default function TaskFlowCanvasPage() {
       window.dispatchEvent(
         new CustomEvent(AI_TASKFLOW_CANVAS_RESULT_EVENT, {
           detail: {
+            kind: 'draft',
             assistantMessageId: pending.assistantMessageId,
             success: false,
             didApply: false,
@@ -1777,11 +1800,15 @@ export default function TaskFlowCanvasPage() {
     window.dispatchEvent(
       new CustomEvent(AI_TASKFLOW_CANVAS_RESULT_EVENT, {
         detail: {
+          kind: 'draft',
           assistantMessageId: pending.assistantMessageId,
           success: newNodeIds.length > 0,
           didApply: newNodeIds.length > 0,
           insertedNodeCount: newNodeIds.length,
-          message: newNodeIds.length > 0 ? '반영 완료' : '요청을 받았지만 실제 반영은 실패했습니다.'
+          message:
+            newNodeIds.length > 0
+              ? `${newNodeIds.length}개 노드를 새 공간에 추가했습니다.`
+              : '요청을 받았지만 실제 반영은 실패했습니다.'
         }
       })
     )
@@ -2193,6 +2220,85 @@ export default function TaskFlowCanvasPage() {
     await doSave(target.mode, target.behaviorTree, override)
   }
 
+  const saveFromCommand = async (withFinal: boolean): Promise<{ success: boolean; message: string }> => {
+    if (saving) {
+      return { success: false, message: t('canvas.header.saving') }
+    }
+
+    const trimmedName = flowName.trim()
+    const trimmedDescription = flowDescription.trim()
+    if (!trimmedName) {
+      return { success: false, message: t('canvas.page.nameRequired') }
+    }
+
+    const groupId = selectedGroupId || normalizeOrgId(selectedFlow?.groupId)
+    const siteId = selectedSiteId || normalizeOrgId(selectedFlow?.siteId)
+    if (!groupId || !siteId) {
+      return { success: false, message: t('canvas.page.orgRequired') }
+    }
+
+    let mode: SaveMode = 'saved'
+    let behaviorTree: string | undefined
+    let resultMessage = ''
+    if (withFinal) {
+      const target = resolveSaveTarget(true)
+      if (target.reason) {
+        resultMessage = `${t('canvas.btWarning.title')}\n${t('canvas.btWarning.commandSavedOnlyDescription')}`
+      } else {
+        mode = 'both'
+        behaviorTree = target.behaviorTree
+      }
+    }
+
+    if (mode === 'both' && !behaviorTree?.trim()) {
+      return { success: false, message: t('canvas.page.btNoResult') }
+    }
+
+    const idForUpdate = numericFlowId > 0 ? numericFlowId : selectedFlowId
+    if (!isNewFlow && !idForUpdate) {
+      return { success: false, message: t('canvas.page.saveError') }
+    }
+
+    try {
+      setSaving(true)
+      const payload = buildTaskFlowPersistPayload({
+        mode,
+        flowId: isNewFlow ? 0 : idForUpdate,
+        baseFlow: selectedFlow,
+        flowName: trimmedName,
+        flowDescription: trimmedDescription,
+        nodes,
+        edges,
+        canvasNotes,
+        viewport,
+        flowMode,
+        behaviorTree,
+        groupId,
+        siteId
+      })
+
+      if (isNewFlow) {
+        const created = await createTaskFlowAsync(payload)
+        markSaved()
+        await syncAfterCreate(created)
+      } else if (idForUpdate) {
+        await updateTaskFlowAsync({ id: idForUpdate, patch: payload })
+        markSaved()
+        await refreshSelectedFlow()
+      }
+
+      return { success: true, message: resultMessage }
+    } catch (error: any) {
+      console.error('[SAVE][COMMAND] failed:', error)
+      return {
+        success: false,
+        message: error?.response?.data?.message || error?.message || t('canvas.page.saveError')
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const onSave = () => {
     if (saving) return
 
@@ -2231,10 +2337,26 @@ export default function TaskFlowCanvasPage() {
   }, [isDirty, leaveCanvas, saving])
 
   useEffect(() => {
-    const onTaskflowCanvasCommand = (event: Event) => {
+    const onTaskflowCanvasCommand = async (event: Event) => {
       const custom = event as CustomEvent<any>
       const command = custom?.detail?.command
       if (!command || typeof command !== 'object') return
+      const replyText = String(custom?.detail?.replyText ?? '').trim()
+
+      const dispatchResult = (success: boolean, message?: string) => {
+        window.dispatchEvent(
+          new CustomEvent(AI_TASKFLOW_CANVAS_RESULT_EVENT, {
+            detail: {
+              kind: 'command',
+              commandType: type,
+              success,
+              didApply: success,
+              message: String(message ?? '').trim() || replyText,
+              historyContext: custom?.detail?.historyContext
+            }
+          })
+        )
+      }
 
       const type = String(command?.type ?? '')
         .trim()
@@ -2249,7 +2371,59 @@ export default function TaskFlowCanvasPage() {
         type === 'save-temp' ||
         type === 'tempsave'
       ) {
-        void requestSave(undefined, type === 'save' || type === 'save-final')
+        const result = await saveFromCommand(type === 'save' || type === 'save-final')
+        dispatchResult(result.success, result.message || replyText)
+        return
+      }
+
+      if (type === 'refresh-contents') {
+        const detail: {
+          handled: boolean
+          complete: (result: { success: boolean; message?: string }) => void
+        } = {
+          handled: false,
+          complete: () => undefined
+        }
+        const resultPromise = new Promise<{ success: boolean; message?: string }>((resolve) => {
+          detail.complete = resolve
+        })
+
+        window.dispatchEvent(new CustomEvent(AI_TASKFLOW_REFRESH_CONTENTS_EVENT, { detail }))
+        if (!detail.handled) {
+          dispatchResult(false, t('canvas.nodeActions.refreshContentsError'))
+          return
+        }
+
+        const result = await resultPromise
+        dispatchResult(result.success, result.message || replyText)
+        return
+      }
+
+      if (type === 'remove-nodes-by-name') {
+        const names = Array.isArray(command?.names)
+          ? command.names.map((name: unknown) => String(name ?? '').trim()).filter(Boolean)
+          : []
+        if (names.length === 0) {
+          dispatchResult(false, String(command?.notFoundText ?? '').trim())
+          return
+        }
+
+        const applied = applyEditDraftToFlowDefinition(
+          { mode: 'edit', removeByName: names },
+          nodes,
+          edges,
+          viewport,
+          palette
+        )
+        const next = applied?.next
+        const deletedCount = next && Array.isArray(next.nodes) ? nodes.length - next.nodes.length : 0
+        if (!next || deletedCount <= 0) {
+          dispatchResult(false, String(command?.notFoundText ?? '').trim())
+          return
+        }
+
+        applyFlowDefinitionWithHistory(next as Record<string, unknown>)
+        dispatchResult(true)
         return
       }
 
@@ -2259,34 +2433,60 @@ export default function TaskFlowCanvasPage() {
           .toLowerCase()
         const mode = modeRaw === 'tree' || modeRaw === 'vertical' || modeRaw === '세로' ? 'tree' : 'default'
         setFlowModeFromStore(mode)
+        dispatchResult(true)
         return
       }
 
       if (type === 'undo') {
+        if (!canUndo) {
+          dispatchResult(false, t('canvas.commandErrors.undoUnavailable'))
+          return
+        }
         undo()
+        dispatchResult(true)
         return
       }
 
       if (type === 'redo') {
+        if (!canRedo) {
+          dispatchResult(false, t('canvas.commandErrors.redoUnavailable'))
+          return
+        }
         redo()
+        dispatchResult(true)
         return
       }
 
-      if (type === 'clear-all' || type === 'reset-all' || type === 'reset') {
+      if (type === 'reset-to-final') {
+        if (!canResetToFinal) {
+          dispatchResult(false, t('canvas.commandErrors.finalUnavailable'))
+          return
+        }
+        applyFinalToCanvas()
+        dispatchResult(true)
+        return
+      }
+
+      if (type === 'clear-all' || type === 'reset-all') {
         clearAllNodesExceptStart()
+        dispatchResult(true)
         return
       }
 
       if (type === 'align') {
         alignSelectedNodesAuto()
+        dispatchResult(true)
+        return
       }
+
+      dispatchResult(false, t('canvas.commandErrors.unsupported'))
     }
 
     window.addEventListener(AI_TASKFLOW_CANVAS_COMMAND_EVENT, onTaskflowCanvasCommand)
     return () => {
       window.removeEventListener(AI_TASKFLOW_CANVAS_COMMAND_EVENT, onTaskflowCanvasCommand)
     }
-  }, [requestSave, setFlowModeFromStore, alignSelectedNodesAuto])
+  }, [saveFromCommand, nodes, edges, viewport, palette, applyFlowDefinitionWithHistory, setFlowModeFromStore, canUndo, undo, canRedo, redo, canResetToFinal, applyFinalToCanvas, clearAllNodesExceptStart, alignSelectedNodesAuto])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

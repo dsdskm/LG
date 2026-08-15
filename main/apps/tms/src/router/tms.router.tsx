@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { AiAssistantPanel, MainLayout } from '@repo/ui'
+import { taskflowCommandAdapter } from '@repo/ui/components/layout/AiAssistantPanel/taskflowCommandRules.js'
 import RouteSync from './tms.routeSync'
 
 type RouteItem = {
@@ -50,7 +51,10 @@ const Router = ({ allRoutes, appPrefix, processedAppRoutes, headerRoutes, appT }
                   >
                     <div style={{ minWidth: 0, minHeight: 0, overflow: 'hidden' }}>{item.element}</div>
                     <div style={{ minWidth: 0, minHeight: 0, display: 'flex' }}>
-                      <AiAssistantPanel className="aiAssistantPanel" />
+                      <AiAssistantPanel
+                        className="aiAssistantPanel"
+                        commandAdapter={taskflowCommandAdapter}
+                      />
                     </div>
                   </div>
                 ) : (

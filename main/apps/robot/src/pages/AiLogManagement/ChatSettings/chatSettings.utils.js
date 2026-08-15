@@ -62,95 +62,55 @@ export const getScreenTitle = (group) => {
     return '알 수 없는 화면'
 }
 
-export const groupScreenSettings = (screens, prompts, guidance, ragDocs, screenTools) => {
+export const groupScreenSettings = (screens, prompts, guidance, ragDocs) => {
     const map = new Map()
+    const normalizedPrompts = Array.isArray(prompts) ? prompts : []
+    const normalizedGuidance = Array.isArray(guidance) ? guidance : []
+    const normalizedRagDocs = Array.isArray(ragDocs) ? ragDocs : []
 
-    const isTaskflowCanvasRoute = (routeKey) => {
-        const normalized = normalizeRoute(routeKey)
-        if (!normalized) return false
-        return /^tms\/taskflows\/(?:[^/]+|:taskFlowId|:id)\/canvas(?:\/|$)/.test(normalized)
-    }
+    console.info('[chat-settings][screen-group]', {
+        screens: Array.isArray(screens) ? screens.length : 0,
+        prompts: normalizedPrompts.length,
+        guidance: normalizedGuidance.length,
+        ragDocs: normalizedRagDocs.length,
+        samplePrompts: normalizedPrompts.slice(0, 6).map((item) => ({
+            id: item?.id,
+            appKey: item?.appKey ?? item?.app_key,
+            screenKey: item?.screenKey ?? item?.screen_key ?? item?.key,
+            routeKey: item?.routeKey ?? item?.route_key,
+            type: item?.type ?? item?.promptType ?? item?.category,
+            label: item?.label,
+            contentLength: String(item?.content ?? item?.prompt ?? '').length,
+        })),
+    })
 
-    const buildBuiltInActionTools = (routeKey, existingTools) => {
-        if (!isTaskflowCanvasRoute(routeKey)) return []
-
-        const hasCompose = (Array.isArray(existingTools) ? existingTools : []).some(
-            (tool) => String(tool?.toolName ?? '').trim() === 'compose_linear_taskflow'
-        )
-        if (hasCompose) return []
-
-        return [
-            {
-                id: `builtin::${normalizeRoute(routeKey)}::compose_linear_taskflow`,
-                appKey: 'tms',
-                key: normalizeRoute(routeKey),
-                routeKey: 'tms/taskflows',
-                toolName: 'compose_linear_taskflow',
-                displayName: '직선 태스크플로우 구성',
-                kind: 'action',
-                description: '코드 내장 액션 툴(동적 편집 불가). 사용자 요청을 태스크플로우 캔버스 draft로 구성합니다.',
-                apiName: 'compose_linear_taskflow',
-                method: 'LOCAL',
-                endpoint: '-',
-                baseUrl: '',
-                requestHeaders: {},
-                requestQuery: {},
-                requestBody: {},
-                contextParams: [],
-                requestParams: [{ name: 'steps', type: 'array', required: true, in: 'body' }],
-                staticPayload: { layout: 'linear', mode: 'replace' },
-                sortOrder: 9999,
-                enabled: true,
-                isCodeTool: true,
-                isReadOnly: true,
-            },
-        ]
-    }
-
-    const buildLookupRouteKeys = (routeKey) => {
-        const normalized = normalizeRoute(routeKey)
-        if (!normalized) return ['common']
-
-        const segments = normalized.split('/').filter(Boolean)
-        const parents = Array.from({ length: Math.max(segments.length - 1, 0) }, (_, idx) =>
-            segments.slice(0, segments.length - 1 - idx).join('/')
-        )
-
-        return [normalized, ...parents, 'common'].filter(Boolean)
-    }
-
-    const buildInheritedTools = (routeKey) => {
-        const lookupKeys = buildLookupRouteKeys(routeKey)
-        const priority = new Map(lookupKeys.map((key, idx) => [key, idx]))
-
-        const candidates = (Array.isArray(screenTools) ? screenTools : [])
-            .filter((tool) => tool?.enabled !== false)
-            .map((tool) => {
-                const key = normalizeRoute(tool?.key ?? tool?.routeKey)
-                return { tool, key, priority: priority.get(key) }
-            })
-            .filter((item) => item.priority !== undefined)
-            .sort((left, right) => {
-                if (left.priority !== right.priority) return Number(left.priority) - Number(right.priority)
-                if (Number(left.tool?.sortOrder ?? 0) !== Number(right.tool?.sortOrder ?? 0)) {
-                    return Number(left.tool?.sortOrder ?? 0) - Number(right.tool?.sortOrder ?? 0)
-                }
-                return String(left.tool?.toolName ?? '').localeCompare(String(right.tool?.toolName ?? ''))
-            })
-
-        const seen = new Set()
-        const merged = []
-
-        for (const item of candidates) {
-            const toolName = String(item.tool?.toolName ?? '').trim()
-            if (!toolName || seen.has(toolName)) continue
-            seen.add(toolName)
-            merged.push(item.tool)
-        }
-
-        const builtInTools = buildBuiltInActionTools(routeKey, merged)
-        return [...merged, ...builtInTools]
-    }
+    console.info('[chat-settings][screen-group][prompt-route-debug]', {
+        promptRows: normalizedPrompts.map((item) => ({
+            id: item?.id,
+            appKey: item?.appKey ?? item?.app_key,
+            screenKey: item?.screenKey ?? item?.screen_key ?? item?.key,
+            routeKey: item?.routeKey ?? item?.route_key,
+            derivedRouteKey: getGuidanceRouteKey(item),
+            type: item?.type ?? item?.promptType ?? item?.category,
+            label: item?.label,
+            contentLength: String(item?.content ?? item?.prompt ?? '').length,
+        })),
+        guidanceRows: normalizedGuidance.map((item) => ({
+            id: item?.id,
+            appKey: item?.appKey ?? item?.app_key,
+            screenKey: item?.screenKey ?? item?.screen_key ?? item?.key,
+            routeKey: item?.routeKey ?? item?.route_key,
+            derivedRouteKey: getGuidanceRouteKey(item),
+            examplesCount: Array.isArray(item?.examples) ? item.examples.length : 0,
+        })),
+        ragRows: normalizedRagDocs.map((item) => ({
+            id: item?.id,
+            appKey: item?.appKey ?? item?.app_key,
+            screenKey: item?.screenKey ?? item?.screen_key ?? item?.key,
+            routeKey: item?.routeKey ?? item?.route_key,
+            intentType: item?.intentType,
+        })),
+    })
 
     for (const item of screens) {
         const routeKey = getScreenRouteKey(item)
@@ -161,7 +121,6 @@ export const groupScreenSettings = (screens, prompts, guidance, ragDocs, screenT
             prompts: [],
             guidance: [],
             ragDocs: [],
-            tools: [],
         })
     }
 
@@ -174,7 +133,6 @@ export const groupScreenSettings = (screens, prompts, guidance, ragDocs, screenT
             prompts: [],
             guidance: [],
             ragDocs: [],
-            tools: [],
         }
 
         map.set(routeKey, {
@@ -193,7 +151,6 @@ export const groupScreenSettings = (screens, prompts, guidance, ragDocs, screenT
             prompts: [],
             guidance: [],
             ragDocs: [],
-            tools: [],
         }
 
         map.set(routeKey, {
@@ -205,7 +162,9 @@ export const groupScreenSettings = (screens, prompts, guidance, ragDocs, screenT
     }
 
     for (const item of ragDocs) {
-        const routeKey = String(item?.key ?? 'unknown')
+        const routeKey = String(
+            item?.screenKey ?? item?.screen_key ?? item?.key ?? item?.routeKey ?? item?.route_key ?? 'unknown'
+        )
         const prev = map.get(routeKey) ?? {
             routeKey,
             routeParentKey: item?.routeKey ?? '',
@@ -213,61 +172,84 @@ export const groupScreenSettings = (screens, prompts, guidance, ragDocs, screenT
             prompts: [],
             guidance: [],
             ragDocs: [],
-            tools: [],
         }
 
         map.set(routeKey, {
             ...prev,
             routeParentKey: prev.routeParentKey || item?.routeKey || '',
+            screenName: prev.screenName || item?.screenName || routeKey,
             ragDocs: [...prev.ragDocs, item],
         })
     }
 
-    for (const tool of screenTools) {
-        const routeKey = String(tool?.key ?? tool?.routeKey ?? 'unknown')
-        const prev = map.get(routeKey) ?? {
-            routeKey,
-            routeParentKey: tool?.routeKey ?? '',
-            screenName: routeKey,
-            prompts: [],
-            guidance: [],
-            ragDocs: [],
-            tools: [],
-        }
-
-        map.set(routeKey, {
-            ...prev,
-            routeParentKey: prev.routeParentKey || tool?.routeKey || '',
-            screenName: prev.screenName || routeKey,
-            tools: [...prev.tools, tool],
-        })
-    }
-
-    return Array.from(map.values())
+    const grouped = Array.from(map.values())
         .map((group) => ({
             ...group,
             prompts: group.prompts.slice().sort((left, right) => Number(left.sortOrder ?? 0) - Number(right.sortOrder ?? 0)),
             guidance: group.guidance.slice().sort((left, right) => String(left.key).localeCompare(String(right.key))),
             ragDocs: group.ragDocs.slice().sort((left, right) => Number(left.sortOrder ?? 0) - Number(right.sortOrder ?? 0)),
-            tools: buildInheritedTools(group.routeKey),
         }))
         .sort((left, right) => getScreenTitle(left).localeCompare(getScreenTitle(right)))
+
+    console.info('[chat-settings][screen-group][final-groups]', {
+        count: grouped.length,
+        groupKeys: grouped.map((group) => ({
+            routeKey: group.routeKey,
+            parent: group.routeParentKey,
+            promptCount: group.prompts.length,
+            guidanceCount: group.guidance.length,
+            ragCount: group.ragDocs.length,
+            promptTypes: group.prompts.map((item) => String(item?.type ?? item?.promptType ?? item?.category ?? 'unknown')),
+        })),
+    })
+
+    return grouped
+}
+
+const routePatternMatches = (routeKey, targetRouteKey) => {
+    const current = normalizeRoute(routeKey)
+    const target = normalizeRoute(targetRouteKey)
+
+    if (!current || !target) return false
+    if (current === target) return true
+
+    const currentSegments = current.split('/').filter(Boolean)
+    const targetSegments = target.split('/').filter(Boolean)
+    if (currentSegments.length !== targetSegments.length) return false
+
+    return currentSegments.every((segment, index) => {
+        const targetSegment = targetSegments[index]
+        return segment === targetSegment || segment.startsWith(':') || targetSegment.startsWith(':')
+    })
 }
 
 export const isSameOrChildRoute = (routeKey, targetRouteKey) => {
     if (!routeKey || !targetRouteKey) return false
 
-    return routeKey === targetRouteKey || routeKey.startsWith(`${targetRouteKey}/`)
+    const current = normalizeRoute(routeKey)
+    const target = normalizeRoute(targetRouteKey)
+    if (current === target) return true
+
+    return current.startsWith(`${target}/`) || routePatternMatches(current, target)
 }
 
 export const filterScreenGroupsByRoute = (screenGroups, activeRouteKey) => {
     if (!activeRouteKey) return []
 
-    return screenGroups.filter((group) => {
+    const filtered = (Array.isArray(screenGroups) ? screenGroups : []).filter((group) => {
         const routeKey = String(group.routeKey ?? '')
 
-        return routeKey === activeRouteKey
+        return routePatternMatches(routeKey, activeRouteKey)
     })
+
+    console.info('[chat-settings][screen-group][filter-by-route]', {
+        activeRouteKey,
+        allGroupKeys: (Array.isArray(screenGroups) ? screenGroups : []).map((group) => String(group.routeKey ?? '')),
+        filteredGroupKeys: filtered.map((group) => String(group.routeKey ?? '')),
+        filteredCount: filtered.length,
+    })
+
+    return filtered
 }
 
 const normalizeRoute = (value) => String(value ?? '').trim().replace(/^\/+/, '')
@@ -279,15 +261,15 @@ export const buildAppRouteTree = (screens, appKey, visibleRouteKeys) => {
     const appScreens = (Array.isArray(screens) ? screens : [])
         .filter((item) => item?.enabled !== false)
         .map((item) => {
-            const key = normalizeRoute(item?.key)
-            const parentKey = normalizeRoute(item?.routeKey)
-            const itemAppKey = String(item?.appKey ?? '').trim() || key.split('/')[0]
+            const key = normalizeRoute(item?.key ?? item?.screenKey ?? item?.screen_key)
+            const parentKey = normalizeRoute(item?.routeKey ?? item?.route_key ?? '')
+            const itemAppKey = String(item?.appKey ?? item?.app_key ?? '').trim() || key.split('/')[0]
 
             return {
                 key,
                 parentKey,
                 appKey: itemAppKey,
-                label: String(item?.screenName ?? key.split('/').pop() ?? key),
+                label: String(item?.screenName ?? item?.name ?? key.split('/').pop() ?? key),
                 sortOrder: Number(item?.sortOrder ?? 0),
             }
         })
@@ -362,26 +344,6 @@ const buildFilteredAppRouteTree = (appScreens, visibleRouteKeys) => {
     return roots
 }
 
-export const buildActionRouteKeysByApp = (screenTools, appKey) => {
-    const normalizedAppKey = String(appKey ?? '').trim()
-    if (!normalizedAppKey) return new Set()
-
-    const keys = new Set()
-    for (const item of (Array.isArray(screenTools) ? screenTools : [])) {
-        if (item?.enabled === false) continue
-        if (String(item?.key ?? '').trim() !== 'common') continue
-
-        const method = String(item?.method ?? '').trim().toUpperCase()
-        if (method !== 'NAVIGATE') continue
-
-        const path = normalizeRoute(item?.staticPayload?.path ?? item?.endpoint)
-        if (!path || !path.startsWith(`${normalizedAppKey}/`)) continue
-        keys.add(path)
-    }
-
-    return keys
-}
-
 export const getFirstRouteKeyFromTree = (routeTree) => {
     const list = Array.isArray(routeTree) ? routeTree : []
     if (list.length === 0) return ''
@@ -403,7 +365,7 @@ export const hasRouteKeyInTree = (routeTree, routeKey) => {
 
     const visit = (node) => {
         if (!node) return false
-        if (String(node.key ?? '') === target) return true
+        if (routePatternMatches(String(node.key ?? ''), target)) return true
         return (node.children ?? []).some((child) => visit(child))
     }
 

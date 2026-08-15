@@ -41,7 +41,7 @@ export type RagScoreEntry = {
 }
 
 export type MatchedRuleInfo = {
-  source: 'front-rule' | 'event-rule-first' | 'orchestrator' | 'guidance'
+  source: 'front-rule' | 'orchestrator' | 'guidance'
   ruleKey?: string
   ruleType?: string
   reason?: string

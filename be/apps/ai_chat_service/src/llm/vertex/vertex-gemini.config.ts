@@ -15,7 +15,7 @@ function toNumber(value: string | undefined, fallback: number) {
 
 export function loadVertexGeminiConfig(): VertexGeminiConfig {
   const projectId = (process.env.GOOGLE_CLOUD_PROJECT ?? '').trim();
-
+  console.log(`projectId ${projectId}`)
   return {
     projectId,
     defaultLocation: (process.env.GOOGLE_CLOUD_LOCATION ?? 'global').trim(),

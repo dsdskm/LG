@@ -1,5 +1,3 @@
-import { listTaskflowRuleRows, type TaskflowRuleType } from '../features/taskflow/db/taskflow-rule.repo'
-
 export type TaskflowLanguageRules = {
   composeNoisePhrases: string[]
   requestTailPhrases: string[]
@@ -197,11 +195,8 @@ function buildScopeRuleMaps(routeScope: string, rows: Array<{ scopeKey: string; 
   return { scoped }
 }
 
-async function readScopeRuleMaps(ruleType: TaskflowRuleType, routeKey: string): Promise<ScopeRuleMaps> {
-  const routeScope = scopeForRules(routeKey)
-  if (!routeScope) return { scoped: {} }
-  const rows = await listTaskflowRuleRows(ruleType, [routeScope])
-  return buildScopeRuleMaps(routeScope, rows)
+async function readScopeRuleMaps(_routeKey: string): Promise<ScopeRuleMaps> {
+  return { scoped: {} }
 }
 
 function readMergedList(ruleMaps: ScopeRuleMaps, ruleName: string): string[] {
@@ -221,7 +216,7 @@ function readMergedNumber(ruleMaps: ScopeRuleMaps, ruleName: string, fallback: n
 }
 
 async function readRules(routeKey: string): Promise<TaskflowLanguageRules> {
-  const ruleMaps = await readScopeRuleMaps('language', routeKey)
+  const ruleMaps = await readScopeRuleMaps(routeKey)
 
   return {
     composeNoisePhrases: readMergedList(ruleMaps, 'composeNoisePhrases'),
@@ -266,7 +261,7 @@ export async function loadTaskflowLanguageRules(routeKey: string): Promise<Taskf
 }
 
 async function readClassifierRules(routeKey: string): Promise<TaskflowClassifierRules> {
-  const ruleMaps = await readScopeRuleMaps('classifier', routeKey)
+  const ruleMaps = await readScopeRuleMaps(routeKey)
 
   return {
     explanationKeywords: readMergedList(ruleMaps, 'explanationKeywords'),
@@ -296,7 +291,7 @@ export async function loadTaskflowClassifierRules(routeKey: string): Promise<Tas
 }
 
 async function readOrchestratorRules(routeKey: string): Promise<TaskflowOrchestratorRules> {
-  const ruleMaps = await readScopeRuleMaps('orchestrator', routeKey)
+  const ruleMaps = await readScopeRuleMaps(routeKey)
 
   return {
     nodeClarificationPhrases: readMergedList(ruleMaps, 'nodeClarificationPhrases'),

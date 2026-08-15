@@ -47,11 +47,32 @@ function parseIntent(text?: string): IntentResult {
   const stripped = raw.replace(/```(?:json)?\s*([\s\S]*?)\s*```/i, '$1').trim()
   const obj = safeJsonParse(stripped) as any
 
-  const intent: ChatIntent = VALID.includes(obj?.intent) ? obj.intent : 'info'
-  const rawConf = Number(obj?.confidence)
-  const confidence = Number.isFinite(rawConf)
-    ? Math.min(1, Math.max(0, rawConf))
-    : 0
-  const reason = String(obj?.reason ?? '').trim()
-  return { intent, confidence, reason }
+  if (obj && typeof obj === 'object') {
+    const candidateIntent = String(obj?.intent ?? obj?.classification ?? '').trim().toLowerCase()
+    const intent: ChatIntent = VALID.includes(candidateIntent as ChatIntent) ? candidateIntent as ChatIntent : 'info'
+    const rawConf = Number(obj?.confidence ?? obj?.score)
+    const confidence = Number.isFinite(rawConf)
+      ? Math.min(1, Math.max(0, rawConf))
+      : 0
+    const reason = String(obj?.reason ?? '').trim()
+    return { intent, confidence, reason }
+  }
+
+  const direct = stripped.match(/\b(info|data|action)\b/i)
+  if (direct) {
+    const intent = direct[1].toLowerCase() as ChatIntent
+    const confidenceMatch = stripped.match(/(?:confidence|신뢰도|score)\s*[:=]\s*([0-9]*\.?[0-9]+)/i)
+    const confidence = confidenceMatch ? Math.min(1, Math.max(0, Number(confidenceMatch[1]))) : 0.8
+    return { intent: VALID.includes(intent) ? intent : 'info', confidence, reason: stripped }
+  }
+
+  const intentByPattern = stripped.match(/(?:intent|의도)\s*[:=]\s*(info|data|action)/i)
+  if (intentByPattern) {
+    const intent = intentByPattern[1].toLowerCase() as ChatIntent
+    const confidenceMatch = stripped.match(/(?:confidence|신뢰도|score)\s*[:=]\s*([0-9]*\.?[0-9]+)/i)
+    const confidence = confidenceMatch ? Math.min(1, Math.max(0, Number(confidenceMatch[1]))) : 0.8
+    return { intent: VALID.includes(intent) ? intent : 'info', confidence, reason: stripped }
+  }
+
+  return { intent: 'info', confidence: 0, reason: stripped }
 }

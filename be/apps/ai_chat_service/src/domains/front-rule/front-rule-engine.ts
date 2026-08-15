@@ -1,10 +1,14 @@
-import { listEventRules, type EventRuleRow } from '../../features/chat-settings/db/event-rule.repo'
+import { Logger } from '@nestjs/common'
+import type { ChatRuleEntity } from '../../features/chat-settings/db/chat-rule.entity'
+
+const logger = new Logger('FrontRuleEngine')
 
 export type FrontRuleIntent = 'info' | 'action'
 
 export type FrontRuleMatch = {
   routeKey: string
   ruleKey: string
+  ruleType: string
   confidence: number
   reason: string
   intent: FrontRuleIntent
@@ -15,10 +19,13 @@ export type FrontRuleMatch = {
   fallbackText?: string
   chatAction?: string
   chatActionParam?: Record<string, unknown>
+  captures: string[]
+  direction?: string
+  graphOperation?: string
 }
 
 type FrontRuleContext = {
-  routeKey: string
+  screenKey: string
   message: string
 }
 
@@ -32,6 +39,42 @@ type FrontRuleTemplateMeta = {
   chatAction?: string
   chatActionParam?: Record<string, unknown>
   remainingArgs: Record<string, unknown>
+}
+
+const screenRuleCache = new Map<string, ChatRuleEntity[]>()
+
+function screenCacheKey(appKey: string, screenKey: string): string {
+  return `${appKey}::${screenKey}`
+}
+
+export function clearScreenRuleCache(screenKey?: string): void {
+  if (!screenKey) {
+    screenRuleCache.clear()
+    return
+  }
+
+  const normalizedScreenKey = normalize(screenKey)
+  for (const key of screenRuleCache.keys()) {
+    if (key.endsWith(`::${normalizedScreenKey}`)) screenRuleCache.delete(key)
+  }
+}
+
+async function getCachedScreenRules(
+  appKey: string,
+  screenKey: string,
+  loadRules: (appKey: string, screenKey: string) => Promise<ChatRuleEntity[]>,
+): Promise<ChatRuleEntity[]> {
+  const key = screenCacheKey(appKey, screenKey)
+  const cached = screenRuleCache.get(key)
+  if (cached) {
+    logger.log(`[front-rule] cache hit key=${key} rules=${cached.length}`)
+    return cached
+  }
+
+  const rules = await loadRules(appKey, screenKey)
+  screenRuleCache.set(key, rules)
+  logger.log(`[front-rule] cache miss key=${key} loaded=${rules.length}`)
+  return rules
 }
 
 const META_KEYS = new Set([
@@ -75,15 +118,10 @@ function canCompileRegex(pattern: string): RegExp | null {
 
 function interpolateTemplateValue(value: unknown, message: string, captures: string[]): unknown {
   if (typeof value === 'string') {
-    if (value === '$message') return message
-
-    const captureMatch = value.match(/^\$(\d+)$/)
-    if (captureMatch) {
-      const index = Number(captureMatch[1])
-      return captures[index - 1] ?? ''
-    }
-
-    return value
+    return value.replace(/\$message|\$(\d+)/g, (token, captureIndex: string | undefined) => {
+      if (token === '$message') return message
+      return captures[Number(captureIndex) - 1] ?? ''
+    })
   }
 
   if (Array.isArray(value)) {
@@ -152,10 +190,10 @@ function parseTemplateMeta(template: Record<string, unknown>): FrontRuleTemplate
   }
 }
 
-function inferIntent(rule: EventRuleRow, meta: FrontRuleTemplateMeta): FrontRuleIntent {
+function inferIntent(rule: ChatRuleEntity, meta: FrontRuleTemplateMeta): FrontRuleIntent {
   if (meta.intent) return meta.intent
 
-  const byIntentKey = parseIntent(rule.intentKey)
+  const byIntentKey = parseIntent(ruleValue(rule).intent ?? rule.ruleType)
   if (byIntentKey) return byIntentKey
 
   if (meta.chunkKeys.length > 0) return 'info'
@@ -167,12 +205,12 @@ function inferIntent(rule: EventRuleRow, meta: FrontRuleTemplateMeta): FrontRule
   return 'action'
 }
 
-function buildToolArgs(rule: EventRuleRow, meta: FrontRuleTemplateMeta, message: string): Record<string, unknown> {
+function buildToolArgs(rule: ChatRuleEntity, meta: FrontRuleTemplateMeta, message: string): Record<string, unknown> {
   const base = {
     ...(Object.keys(meta.toolArgs ?? {}).length > 0 ? meta.toolArgs : meta.remainingArgs),
   }
 
-  if (!hasMainFilter(base) && rule.fallbackKeyword) {
+  if (!hasMainFilter(base) && ruleValue(rule).fallbackKeyword === true) {
     base.keyword = message
   }
 
@@ -184,32 +222,65 @@ function isEmptyObject(value: Record<string, unknown> | undefined): boolean {
   return Object.keys(value).length === 0
 }
 
-export async function matchFrontRule(ctx: FrontRuleContext): Promise<FrontRuleMatch | null> {
+export async function matchFrontRule(
+  ctx: FrontRuleContext,
+  loadRules: (appKey: string, screenKey: string) => Promise<ChatRuleEntity[]>,
+): Promise<FrontRuleMatch | null> {
+  const screenKey = normalize(ctx.screenKey)
+  const appKey = screenKey.split('/').filter(Boolean)[0] || ''
+  const rules = await getCachedScreenRules(appKey, screenKey, loadRules)
+
+  return matchFrontRuleRows(ctx, rules)
+}
+
+export function matchFrontRuleRows(
+  ctx: FrontRuleContext,
+  rules: ChatRuleEntity[],
+): FrontRuleMatch | null {
   const message = normalize(ctx.message)
   if (!message) return null
 
-  const rules = await listEventRules(ctx.routeKey)
-  if (rules.length === 0) return null
+  const screenKey = normalize(ctx.screenKey)
+  const appKey = screenKey.split('/').filter(Boolean)[0] || ''
+
+  logger.log(`[front-rule] match start appKey=${appKey} screenKey=${screenKey} message="${message}" rules=${rules.length}`)
+
+  if (rules.length === 0) {
+    logger.warn(`[front-rule] no rules for appKey=${appKey} screenKey=${screenKey}`)
+    return null
+  }
 
   for (const rule of rules) {
-    const regex = canCompileRegex(rule.patternRegex)
-    if (!regex) continue
+    const pattern = patternForRule(rule)
+    const regex = canCompileRegex(pattern)
+    if (!regex) {
+      logger.warn(`[front-rule] invalid regex ruleKey=${rule.ruleKey} pattern=${pattern}`)
+      continue
+    }
 
     const matched = message.match(regex)
+    logger.log(
+      `[front-rule] try ruleKey=${rule.ruleKey} ruleType=${rule.ruleType} pattern=${pattern} matched=${Boolean(matched)}`,
+    )
     if (!matched) continue
 
-    const captures = matched.slice(1).map((v) => String(v ?? '').trim())
-    const interpolatedTemplate = toRecord(interpolateTemplateValue(rule.filtersTemplate, message, captures))
+    const captures = matched.slice(1).map((v) => String(v ?? '').trim()).filter(Boolean)
+    const interpolatedTemplate = toRecord(interpolateTemplateValue(templateForRule(rule), message, captures))
     const meta = parseTemplateMeta(interpolatedTemplate)
 
     const intent = inferIntent(rule, meta)
     const toolName = inferToolName(meta)
     const toolArgs = buildToolArgs(rule, meta, message)
 
+    logger.log(
+      `[front-rule] matched ruleKey=${rule.ruleKey} intent=${intent} captures=${JSON.stringify(captures)}`,
+    )
+
     return {
-      routeKey: rule.routeKey,
+      routeKey: rule.screenKey,
       ruleKey: rule.ruleKey,
-      confidence: Number.isFinite(Number(rule.confidence)) ? Number(rule.confidence) : 0.95,
+      ruleType: String(rule.ruleType ?? '').trim(),
+      confidence: Number.isFinite(Number(ruleValue(rule).confidence)) ? Number(ruleValue(rule).confidence) : 0.95,
       reason: `front-rule:${rule.ruleKey}`,
       intent,
       toolName,
@@ -219,8 +290,61 @@ export async function matchFrontRule(ctx: FrontRuleContext): Promise<FrontRuleMa
       fallbackText: meta.fallbackText,
       chatAction: meta.chatAction,
       chatActionParam: isEmptyObject(meta.chatActionParam) ? undefined : meta.chatActionParam,
+      captures,
+      direction: normalize(ruleValue(rule).direction) || undefined,
+      graphOperation: normalize(ruleValue(rule).graphOperation) || undefined,
     }
   }
 
+  logger.warn(`[front-rule] no rule matched screenKey=${screenKey} message="${message}"`)
   return null
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function ruleValue(rule: ChatRuleEntity): Record<string, unknown> {
+  return toRecord(rule.valueJson)
+}
+
+const ARROW_SEPARATOR = '(?:->|=>|→|⇒)'
+
+/** "A->B", "A->B->C" 같은 자리표시자 패턴을 노드명 캡처 정규식으로 바꾼다. */
+function buildPatternFromTemplate(template: string): string | null {
+  const parts = template
+    .split(/->|=>|→|⇒/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+
+  if (parts.length < 2) return null
+  if (!parts.every((part) => /^[A-Z]$/.test(part))) return null
+
+  const capture = '\\s*([^\\s][^-=→⇒]*?)\\s*'
+  const chain = Array.from({ length: parts.length - 1 }, () => `${ARROW_SEPARATOR}${capture}`).join('')
+  const tail = parts.length === 2 ? `(?!${ARROW_SEPARATOR})` : ''
+  return `^${capture}${chain}${tail}\\s*$`
+}
+
+function patternForRule(rule: ChatRuleEntity): string {
+  const value = ruleValue(rule)
+
+  const explicitRegex = normalize(value.patternRegex ?? value.regex)
+  if (explicitRegex) return explicitRegex
+
+  const patternTemplate = normalize(value.pattern)
+  if (patternTemplate) {
+    const built = buildPatternFromTemplate(patternTemplate)
+    if (built) return built
+    return escapeRegex(patternTemplate)
+  }
+
+  const aliases = toStringArray(value.aliases)
+  if (aliases.length > 0) return `^(?:${aliases.map(escapeRegex).join('|')})$`
+  return escapeRegex(rule.ruleKey)
+}
+
+function templateForRule(rule: ChatRuleEntity): Record<string, unknown> {
+  const value = ruleValue(rule)
+  return toRecord(value.filtersTemplate ?? value.toolArgs ?? value)
 }

@@ -8,13 +8,6 @@
 import type { ToolContext, ToolDefinition } from '../../pipeline/tool.type'
 import { fetchQueryLogs, fetchFuncs, type FuncCatalogItem } from '../../integrations/robot-api.client'
 import { buildEventSummary } from '../../integrations/event-summary.util'
-import { listEventFilterAliases, type EventFilterAliasRow } from '../../features/chat-settings/db/event-filter-alias.repo'
-import {
-  buildEventQueryCacheKey,
-  getEventQueryCache,
-  setEventQueryCache,
-} from '../../features/chat-settings/db/event-query-cache.repo'
-import { findPhraseMapMatch } from '../../features/chat-settings/db/query-phrase-map.repo'
 
 const normKey = (s: unknown) => String(s ?? '').trim().toLowerCase().replace(/\s+/g, '')
 const toObject = (value: unknown): Record<string, unknown> =>
@@ -127,49 +120,6 @@ function daysBetween(start: string, end: string): number {
   if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return 1
   const ms = Math.abs(e.getTime() - s.getTime())
   return Math.max(1, Math.floor(ms / (24 * 60 * 60 * 1000)) + 1)
-}
-
-function resolveQueryCacheTtlSeconds(start: string, end: string): number {
-  const spanDays = daysBetween(start, end)
-  if (spanDays <= 1) return 30
-  if (spanDays <= 7) return 120
-  if (spanDays <= 31) return 300
-  return 600
-}
-
-function pickOptionalString(value: unknown): string | undefined {
-  const s = String(value ?? '').trim()
-  return s || undefined
-}
-
-function extractResolvedFilters(payload: any): {
-  start: string
-  end: string
-  severity: string | undefined
-  func: string | undefined
-  status: string | undefined
-  keyword: string | undefined
-} | null {
-  if (!payload || typeof payload !== 'object') return null
-
-  const rf = toObject(payload.resolvedFilters)
-  const start = pickOptionalString(rf.startDate)
-  const end = pickOptionalString(rf.endDate)
-  if (!start || !end) return null
-
-  return {
-    start,
-    end,
-    severity: pickOptionalString(rf.severity),
-    func: pickOptionalString(rf.func),
-    status: pickOptionalString(rf.status),
-    keyword: pickOptionalString(rf.searchQuery),
-  }
-}
-
-function isSeedPlaceholderPayload(payload: any): boolean {
-  const summary = String(payload?.summary ?? '').toLowerCase()
-  return summary.includes('(seed cache)')
 }
 
 function compactForMatch(value?: string): string {
@@ -335,6 +285,11 @@ function hasExplicitPeriodOrDateInText(value?: string): boolean {
   return false
 }
 
+function pickOptionalString(value: unknown): string | undefined {
+  const normalized = String(value ?? '').trim()
+  return normalized || undefined
+}
+
 function getContextEventDateRange(ctx: ToolContext): { start?: string; end?: string } {
   const contextScope = toObject(ctx.context)
   const eventFilters = toObject(contextScope.eventFilters)
@@ -498,52 +453,6 @@ function resolvePeriod(period?: string, start?: string, end?: string, sourceText
   }
 }
 
-function matchesAlias(mode: 'exact' | 'contains' | 'regex', sourcePattern: string, target: string): boolean {
-  if (!sourcePattern || !target) return false
-
-  if (mode === 'exact') {
-    return compactForMatch(target) === compactForMatch(sourcePattern)
-  }
-
-  if (mode === 'regex') {
-    try {
-      return new RegExp(sourcePattern, 'i').test(target)
-    } catch {
-      return false
-    }
-  }
-
-  return compactForMatch(target).includes(compactForMatch(sourcePattern))
-}
-
-function findAliasValue(aliases: EventFilterAliasRow[], valueA?: string, valueB?: string): string | undefined {
-  const candidates = [String(valueA ?? '').trim(), String(valueB ?? '').trim()].filter(Boolean)
-  if (candidates.length === 0) return undefined
-
-  for (const alias of aliases) {
-    if (!alias?.enabled) continue
-    for (const candidate of candidates) {
-      if (matchesAlias(alias.matchMode, alias.sourcePattern, candidate)) {
-        return String(alias.normalizedValue ?? '').trim() || undefined
-      }
-    }
-  }
-
-  return undefined
-}
-
-function normalizeSeverityByAliases(aliases: EventFilterAliasRow[], severityArg?: string, sourceTextArg?: string): string | undefined {
-  return findAliasValue(aliases, severityArg, sourceTextArg)
-}
-
-function normalizeStatusByAliases(aliases: EventFilterAliasRow[], statusArg?: string, sourceTextArg?: string): string | undefined {
-  return findAliasValue(aliases, statusArg, sourceTextArg)
-}
-
-function normalizePeriodByAliases(aliases: EventFilterAliasRow[], periodArg?: string, sourceTextArg?: string): string | undefined {
-  return findAliasValue(aliases, periodArg, sourceTextArg)
-}
-
 export const queryEvents: ToolDefinition = {
   declaration: {
     name: 'query_events',
@@ -584,27 +493,10 @@ export const queryEvents: ToolDefinition = {
     },
   },
   async execute(args, ctx: ToolContext) {
-        const [periodAliases, severityAliases, statusAliases] = await Promise.all([
-          listEventFilterAliases('robot/ailog/event', 'period'),
-          listEventFilterAliases('robot/ailog/event', 'severity'),
-          listEventFilterAliases('robot/ailog/event', 'status'),
-        ])
-
     const rawMessage = String((ctx.context as Record<string, unknown> | undefined)?.__userMessage ?? '').trim()
 
-    const phraseMatch = rawMessage
-      ? await findPhraseMapMatch('robot/ailog/event', rawMessage)
-      : null
-
     const mergedArgs: Record<string, unknown> = {
-      ...(phraseMatch?.filtersTemplate ?? {}),
       ...(args ?? {}),
-    }
-
-    if (phraseMatch) {
-      ctx.log?.log(
-        `[phrase-map] matched route=robot/ailog/event matchType=${phraseMatch.matchType ?? 'exact'} intent=${phraseMatch.intentKey} phrase=${phraseMatch.phrase}`,
-      )
     }
 
     const sourceText = [args.period, args.start, args.end, args.severity, args.func, args.status, args.keyword]
@@ -672,14 +564,8 @@ export const queryEvents: ToolDefinition = {
       )
     }
 
-    const normalizedPeriodFromAlias = normalizePeriodByAliases(
-      periodAliases,
-      explicitPeriodArg,
-      sourceTextWithMappedArgs || sourceText,
-    )
-
     const { start, end } = resolvePeriod(
-      normalizedPeriodFromAlias ?? explicitPeriodArg,
+      explicitPeriodArg,
       effectiveStartArg,
       effectiveEndArg,
       sourceTextWithMappedArgs || sourceText,
@@ -688,8 +574,8 @@ export const queryEvents: ToolDefinition = {
     const rawStatus = asOptionalString(normalizedMergedArgs.status)
     const rawFunc = asOptionalString(normalizedMergedArgs.func)
 
-    const severity = normalizeSeverityByAliases(severityAliases, rawSeverity, sourceTextWithMappedArgs || sourceText)
-    const status = normalizeStatusByAliases(statusAliases, rawStatus, sourceTextWithMappedArgs || sourceText)
+    const severity = rawSeverity
+    const status = rawStatus
     const { func, keyword: resolvedKeyword } = await resolveFuncFilter(
       ctx,
       rawFunc,
@@ -701,81 +587,7 @@ export const queryEvents: ToolDefinition = {
     const statusFallbackKeyword = rawStatus && !status ? rawStatus : undefined
     const keyword = mergeKeyword(resolvedKeyword, severityFallbackKeyword, statusFallbackKeyword)
 
-    const contextScope = toObject(ctx.context)
-    const cacheScope = {
-      groupId: contextScope.groupId ?? null,
-      siteId: contextScope.siteId ?? null,
-    }
-
-    const cacheKey = buildEventQueryCacheKey({
-      routeKey: 'robot/ailog/event',
-      eventAnalyzerUrl: ctx.eventAnalyzerUrl,
-      scope: cacheScope,
-      accessToken: ctx.accessToken,
-      filters: {
-        start,
-        end,
-        severity,
-        func,
-        status,
-        keyword,
-      },
-    })
-
-    // 수동 seed SQL과의 호환을 위해, 런타임 키 미스 시 seed 호환 키를 한 번 더 조회한다.
-    const seedCompatibleKey = buildEventQueryCacheKey({
-      routeKey: 'robot/ailog/event',
-      eventAnalyzerUrl: '',
-      scope: {},
-      accessToken: undefined,
-      filters: {
-        start,
-        end,
-        severity,
-        func,
-        status,
-        keyword,
-      },
-    })
-
     let queryParams = { start, end, severity, func, status, keyword }
-    let cacheHit = false
-
-    const cached = await getEventQueryCache<any>(cacheKey)
-    if (cached && typeof cached === 'object') {
-      const cachedFilters = extractResolvedFilters(cached)
-      if (cachedFilters) {
-        queryParams = cachedFilters
-        cacheHit = true
-        ctx.log?.log(
-          `[cache] hit route=robot/ailog/event tool=query_events key=${cacheKey.slice(0, 12)} start=${cachedFilters.start} end=${cachedFilters.end} -> api-refresh`,
-        )
-      } else {
-        ctx.log?.log(
-          `[cache] malformed route=robot/ailog/event tool=query_events key=${cacheKey.slice(0, 12)} -> fallback-to-request-filters`,
-        )
-      }
-    }
-
-    if (!cacheHit && seedCompatibleKey !== cacheKey) {
-      const seededCached = await getEventQueryCache<any>(seedCompatibleKey)
-      if (seededCached && typeof seededCached === 'object') {
-        const seedFilters = extractResolvedFilters(seededCached)
-        if (seedFilters) {
-          queryParams = seedFilters
-          cacheHit = true
-          ctx.log?.log(
-            `[cache] hit-seed route=robot/ailog/event tool=query_events key=${seedCompatibleKey.slice(0, 12)} start=${seedFilters.start} end=${seedFilters.end} -> api-refresh`,
-          )
-        } else {
-          ctx.log?.log(
-            `[cache] hit-seed-malformed route=robot/ailog/event tool=query_events key=${seedCompatibleKey.slice(0, 12)} -> fallback-to-request-filters`,
-          )
-        }
-      }
-    }
-
-    // 캐시 히트여도 DB payload의 필터를 기준으로 event_analyzer를 다시 조회한다.
     // event_analyzer /query/logs 실제 파라미터명: start, end, severity, func, status, summary
     const { items, totalCount } = await fetchQueryLogsWithChunking(ctx, queryParams)
 
@@ -803,12 +615,6 @@ export const queryEvents: ToolDefinition = {
       summary,
       sampleItems,
     }
-
-    const ttlSeconds = resolveQueryCacheTtlSeconds(queryParams.start, queryParams.end)
-    await setEventQueryCache(cacheKey, 'robot/ailog/event', result, ttlSeconds)
-    ctx.log?.log(cacheHit
-      ? `[cache] refresh route=robot/ailog/event tool=query_events key=${cacheKey.slice(0, 12)} ttl=${ttlSeconds}s`
-      : `[cache] miss route=robot/ailog/event tool=query_events key=${cacheKey.slice(0, 12)} ttl=${ttlSeconds}s`)
 
     return result
   },

@@ -252,8 +252,10 @@ export class RagService {
       .map((row, i) => `[문서 ${i + 1}] ${row.chunk.title}\n${row.chunk.body}`)
       .join('\n\n')
 
-    const commonSystem = getPromptStore()?.getPromptContent('common', 'system') ?? ''
-    const system = [commonSystem, context].filter(Boolean).join('\n\n')
+    const promptStore = getPromptStore()
+    const commonSystem = promptStore?.getPromptContent('common', 'system') ?? ''
+    const commonRagSystem = promptStore?.getPromptContent('common', 'rag-system') ?? ''
+    const system = [commonSystem, commonRagSystem, context].filter(Boolean).join('\n\n')
 
     this.logger.log?.(
       `================= [3-3-2단계:RAG_청크강제폴백] [reqId=${reqId}] chunkKeys=${JSON.stringify(targetChunkKeys)} matchedChunks=${JSON.stringify(usedChunkIds)} collections=${JSON.stringify(uniqueCollections)}`,
@@ -365,11 +367,13 @@ export class RagService {
       .map((h, i) => `[문서 ${i + 1}] ${h.chunk.title}\n${h.chunk.body}`)
       .join('\n\n')
 
-    const commonSystem = getPromptStore()?.getPromptContent('common', 'system') ?? ''
+    const promptStore = getPromptStore()
+    const commonSystem = promptStore?.getPromptContent('common', 'system') ?? ''
+    const commonRagSystem = promptStore?.getPromptContent('common', 'rag-system') ?? ''
 
     const ragSystem = context
 
-    const system = [commonSystem, ragSystem].filter(Boolean).join('\n\n')
+    const system = [commonSystem, commonRagSystem, ragSystem].filter(Boolean).join('\n\n')
 
     this.stageLog(
       '3-4단계:RAG_프롬프트생성',

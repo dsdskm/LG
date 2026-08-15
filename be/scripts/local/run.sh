@@ -112,7 +112,19 @@ run_service() {
   fi
 
   echo "[dev-run] starting $app_name ($mode)"
-  npx dotenv -e .env -- pnpm --filter "$app_path" "$mode"
+
+  local env_file=".env"
+  if [[ ! -f "$env_file" ]]; then
+    env_file=".env.docker"
+  fi
+
+  DB_URL_EVENT_RECEIVER="postgresql://root:root@localhost:5433/event_receiver_db" \
+  DB_URL_EVENT_ANALYZER="postgresql://root:root@localhost:5434/event_analyzer_db" \
+  DB_URL_ACTION_RUNNER="postgresql://root:root@localhost:5436/action_runner_db" \
+  DB_URL_REPORT_MANAGER="postgresql://root:root@localhost:5437/report_manager_db" \
+  DB_URL_AI_CHAT_SERVICE="postgresql://root:root@localhost:5439/ai_chat_service_db" \
+  DB_URL_CONFIG_MANAGER="postgresql://root:root@localhost:5440/config_manager_db" \
+  npx dotenv -e "$env_file" -- pnpm --filter "$app_path" "$mode"
 }
 
 run_build() {
