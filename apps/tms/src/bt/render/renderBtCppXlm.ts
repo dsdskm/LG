@@ -15,6 +15,7 @@ import { reactiveAndNodeType } from '../nodes/btReactiveAndNode'
 import { retryUntilSuccessfulNodeType, retryUntilSuccessfulNumAttemptsProp } from '../nodes/btRetryUntilSuccessfulNode'
 import { btDelayNodeType } from '../nodes/btDelayNode'
 import { btTimeoutNodeType } from '../nodes/btTimeoutNode'
+import { reactiveOrNodeType } from '../nodes/btReactiveOrNode'
 
 // 제어 노드(Sequence/Parallel/Repeat 등)는 node_id 를 XML 로 내보내지 않는다.
 // node_id 는 시뮬레이터/검증이 attrs 로 내부 참조하므로 AST 에는 남기고, 렌더링 시에만 제외한다.
@@ -79,6 +80,17 @@ function renderAstNode(node: BtAstNode, depth: number): string {
 
     if (!childrenXml) return `${pad}<ReactiveSequence${attrs}/>`
     return `${pad}<ReactiveSequence${attrs}>\n${childrenXml}\n${pad}</ReactiveSequence>`
+  }
+
+  if (node.kind === reactiveOrNodeType) {
+    const childrenXml = node.children.map((c) => renderAstNode(c, depth + 1)).join('\n')
+    const attrs = attrsToString({
+      name: node.name,
+      ...(node.attrs ?? {})
+    })
+
+    if (!childrenXml) return `${pad}<ReactiveFallback${attrs}/>`
+    return `${pad}<ReactiveFallback${attrs}>\n${childrenXml}\n${pad}</ReactiveFallback>`
   }
 
   if (node.kind === parallelNodeType) {

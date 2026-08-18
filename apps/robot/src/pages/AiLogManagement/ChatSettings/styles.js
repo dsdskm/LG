@@ -5,7 +5,12 @@ export const PageRoot = styled.div`
   flex-direction: column;
   width: 100%;
   min-width: 0;
-  gap: 16px;
+  gap: 18px;
+  padding: 20px 18px 18px;
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.04);
 `
 
 export const HeaderRow = styled.div`
@@ -49,9 +54,9 @@ export const ErrorBox = styled.div`
 
 const panelBox = `
   border: 1px solid #e5e7eb;
-  border-radius: 16px;
+  border-radius: 14px;
   background: #ffffff;
-  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.06);
+  box-shadow: none;
 `
 
 export const SettingCard = styled.section`
@@ -60,6 +65,7 @@ export const SettingCard = styled.section`
   display: grid;
   gap: 12px;
   align-content: start;
+  overflow: hidden;
 `
 
 export const CardHeader = styled.div`
@@ -232,10 +238,10 @@ export const SmallBadge = styled.span`
 export const PromptCard = styled.div`
   display: grid;
   gap: 10px;
-  padding: 14px;
-  border: 1px solid #e5e7eb;
-  border-radius: 14px;
-  background: #fdfefe;
+  padding: 16px;
+  border: 1px solid #edf2f7;
+  border-radius: 12px;
+  background: #ffffff;
 `
 
 export const PromptMeta = styled.div`

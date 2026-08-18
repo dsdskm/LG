@@ -18,11 +18,8 @@ const MainLayout = ({
   LogoComponent,
   HeaderComponent,
   aiGreetingExtra,
-  // AI Assistant 를 쓰지 않는 앱(init-setup 등)은 false 로 끈다. 끄면 플로팅 트리거도,
-  // 라우트마다 도는 chatSettings 조회도 아예 일어나지 않는다.
+  aiAssistantCommandAdapter,
   useAiAssistant = true,
-  // 라우트가 모두 루트 직하에 있는 단일 앱(init-setup 등)은 false 로 끈다.
-  // 켜져 있으면 사이드바가 '첫 세그먼트가 다르면 다른 앱' 으로 보고 <a href> 로 전체 리로드한다.
   crossAppLinks = true
 }) => {
   const location = useLocation()
@@ -90,7 +87,11 @@ const MainLayout = ({
         <Footer routes={footerRoutes} />
       </ScrollArea>
 
-      {useAiAssistant && <AiAssistantPanel className="aiAssistantPanel" greetingExtra={aiGreetingExtra} />}
+      <AiAssistantPanel
+        className="aiAssistantPanel"
+        greetingExtra={aiGreetingExtra}
+        commandAdapter={aiAssistantCommandAdapter}
+      />
     </StyledLayout>
   )
 }

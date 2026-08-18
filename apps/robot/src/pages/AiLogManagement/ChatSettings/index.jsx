@@ -1,19 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  createCommonChatScreenTool,
   createChatGuidance,
   getChatHistory,
+  getGuidanceList,
+  getRagList,
+  listPrompts,
   createChatPrompt,
   createChatRagDoc,
-  createChatScreenTool,
   getChatSettings,
   createCommonChatRagDoc,
-  deleteChatScreenTool,
   deleteChatRagDoc,
   updateChatGuidance,
   updateChatPrompt,
   updateChatRagDoc,
-  updateChatScreenTool,
   updateChatSettings,
   upsertCommonChatPrompt,
 } from '@repo/apis/ai/chatSettings.js'
@@ -44,7 +43,7 @@ import {
 import { TopTabs } from './components/TopTabs'
 import { AppSideTabs } from './components/AppSideTabs'
 import { CommonSettingsTab } from './sections/CommonSettingsTab'
-import { AppScreenSettingsTab } from './sections/AppScreenSettingsTab'
+import { AppScopeSettingsCard, AppScreenSettingsTab } from './sections/AppScreenSettingsTab'
 import { HistoryTab } from './sections/HistoryTab'
 
 const normalizeKeywordArray = (value) => {
@@ -78,9 +77,20 @@ const normalizeRagIntentType = (value) => {
   return 'both'
 }
 
+const isCommonScopeRecord = (item) => {
+  const appKey = String(item?.appKey ?? item?.app_key ?? '').trim().toLowerCase()
+  const screenKey = String(item?.screenKey ?? item?.screen_key ?? item?.key ?? '').trim().toLowerCase()
+  const legacyKey = String(item?.key ?? '').trim().toLowerCase()
+
+  return (
+    (appKey === 'common' && (screenKey === 'common' || screenKey === 'common_info' || screenKey === 'common_action')) ||
+    legacyKey === 'common'
+  )
+}
+
 const normalizeCommonRagIntentType = (item) => {
   const intentType = normalizeRagIntentType(item?.intentType)
-  if (String(item?.key ?? '') !== 'common' || intentType !== 'both') return intentType
+  if (!isCommonScopeRecord(item) || intentType !== 'both') return intentType
 
   const hint = `${String(item?.title ?? '')} ${String(item?.chunkKey ?? '')}`.toLowerCase()
   if (hint.includes('action') || hint.includes('액션')) return 'action'
@@ -94,21 +104,6 @@ const normalizeImageAttachMode = (value) => {
   if (normalized === 'always' || normalized === 'never' || normalized === 'auto') return normalized
   return 'auto'
 }
-
-const INTENT_HINT_PROMPT_TEMPLATE = `너는 화면 기반 챗봇의 분기 분류기다.
-사용자 발화를 intent 하나로만 분류한다: info | data | action.
-
-판단 규칙:
-1) 설명, 정책, 사용법, 비교, 요약 같은 정보 질문은 info.
-2) 목록 조회, 검색, 필터 확인 같은 읽기성 요청은 data.
-3) 추가/생성/수정/삭제/실행/이동/저장/정렬/모드변경 같은 동작 요청은 action.
-4) 태스크플로우/노드/연결/parallel/ifthenelse/repeat/or/병렬/반복 관련 요청은 action 우선.
-5) 직전 질문이 명확화(예: 어떤 노드 추가?)이고 짧은 후속 답변이면 action.
-
-출력 형식:
-JSON 한 줄만 반환한다.
-{"intent":"info|data|action","reason":"짧은 근거","confidence":0.0}
-`
 
 const UNIFIED_MODAL_STYLE = {
   width: 'min(760px, 100%)',
@@ -143,13 +138,18 @@ const ChatSettings = () => {
     enabled: true,
   })
   const [commonIntentPromptDraft, setCommonIntentPromptDraft] = useState({
-    label: '공통 분기 프롬프트',
-    content: INTENT_HINT_PROMPT_TEMPLATE,
+    label: '공통 인텐트 분류 프롬프트',
+    content: '',
+    enabled: true,
+  })
+  const [commonRagPromptDraft, setCommonRagPromptDraft] = useState({
+    label: '공통 RAG 프롬프트',
+    content: '',
     enabled: true,
   })
   const [commonInputHintPromptDraft, setCommonInputHintPromptDraft] = useState({
     label: '공통 입력 힌트',
-    content: '현재 화면에 대해 질문해 보세요.',
+    examples: [],
     enabled: true,
   })
   const [newCommonInfoRagDraft, setNewCommonInfoRagDraft] = useState({
@@ -171,7 +171,6 @@ const ChatSettings = () => {
   const [promptDrafts, setPromptDrafts] = useState({})
   const [guidanceDrafts, setGuidanceDrafts] = useState({})
   const [ragDrafts, setRagDrafts] = useState({})
-  const [toolDrafts, setToolDrafts] = useState({})
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -191,6 +190,7 @@ const ChatSettings = () => {
   const [creatingPromptRouteKey, setCreatingPromptRouteKey] = useState('')
   const [savingCommonPrompt, setSavingCommonPrompt] = useState(false)
   const [savingCommonIntentPrompt, setSavingCommonIntentPrompt] = useState(false)
+  const [savingCommonRagPrompt, setSavingCommonRagPrompt] = useState(false)
   const [savingCommonInputHintPrompt, setSavingCommonInputHintPrompt] = useState(false)
   const [savingGuidanceKey, setSavingGuidanceKey] = useState('')
   const [creatingGuidanceRouteKey, setCreatingGuidanceRouteKey] = useState('')
@@ -198,11 +198,7 @@ const ChatSettings = () => {
   const [savingCreateCommonInfoRag, setSavingCreateCommonInfoRag] = useState(false)
   const [savingCreateCommonActionRag, setSavingCreateCommonActionRag] = useState(false)
   const [savingCreateScreenRag, setSavingCreateScreenRag] = useState(false)
-  const [savingCreateCommonTool, setSavingCreateCommonTool] = useState(false)
-  const [savingCreateScreenTool, setSavingCreateScreenTool] = useState(false)
   const [deletingCommonRagKey, setDeletingCommonRagKey] = useState('')
-  const [deletingToolKey, setDeletingToolKey] = useState('')
-  const [savingToolKey, setSavingToolKey] = useState('')
 
   const [savedOpen, setSavedOpen] = useState(false)
   const [savedMessage, setSavedMessage] = useState('')
@@ -269,8 +265,40 @@ const ChatSettings = () => {
     setError('')
 
     try {
-      const res = await getChatSettings()
-      const data = res?.data ?? {}
+      const [settingsRes, guidanceRes, commonPromptRes, commonRagRes] = await Promise.all([
+        getChatSettings(),
+        getGuidanceList(),
+        listPrompts({ appKey: 'common', screenKey: 'common' }),
+        getRagList({ appKey: 'common', screenKey: 'common' }),
+      ])
+      const data = settingsRes?.data ?? {}
+      const guidanceItems = Array.isArray(guidanceRes?.data?.items)
+        ? guidanceRes.data.items
+        : Array.isArray(guidanceRes?.items)
+          ? guidanceRes.items
+          : []
+      const promptItemsFromList = Array.isArray(commonPromptRes?.data?.items)
+        ? commonPromptRes.data.items
+        : Array.isArray(commonPromptRes?.items)
+          ? commonPromptRes.items
+          : []
+      const ragItemsFromList = Array.isArray(commonRagRes?.data?.items)
+        ? commonRagRes.data.items
+        : Array.isArray(commonRagRes?.items)
+          ? commonRagRes.items
+          : []
+
+      console.info('[chat-settings] common prompt listPrompts result', {
+        appKey: 'common',
+        screenKey: 'common',
+        system: true,
+        promptItemsFromList,
+      })
+      console.info('[chat-settings] common rag getRagList result', {
+        appKey: 'common',
+        screenKey: 'common',
+        ragItemsFromList,
+      })
 
       setSchema(Array.isArray(data.schema) ? data.schema : [])
       setValues(data.values ?? {})
@@ -281,11 +309,9 @@ const ChatSettings = () => {
 
       const normalizedManagement = {
         screens: Array.isArray(nextManagement.screens) ? nextManagement.screens : [],
-        prompts: Array.isArray(nextManagement.prompts) ? nextManagement.prompts : [],
-        guidance: Array.isArray(nextManagement.guidance) ? nextManagement.guidance : [],
-        ragDocs: Array.isArray(nextManagement.ragDocs) ? nextManagement.ragDocs : [],
-        screenTools: Array.isArray(nextManagement.screenTools) ? nextManagement.screenTools : [],
-        actionTypes: Array.isArray(nextManagement.actionTypes) ? nextManagement.actionTypes : [],
+        prompts: Array.isArray(nextManagement.prompts) && nextManagement.prompts.length > 0 ? nextManagement.prompts : promptItemsFromList,
+        guidance: guidanceItems,
+        ragDocs: Array.isArray(nextManagement.ragDocs) && nextManagement.ragDocs.length > 0 ? nextManagement.ragDocs : ragItemsFromList,
         history: Array.isArray(nextManagement.history) ? nextManagement.history : [],
       }
 
@@ -294,37 +320,106 @@ const ChatSettings = () => {
         prompts: normalizedManagement.prompts.length,
         guidance: normalizedManagement.guidance.length,
         ragDocs: normalizedManagement.ragDocs.length,
-        screenTools: normalizedManagement.screenTools.length,
-        actionTypes: normalizedManagement.actionTypes.length,
       })
 
       setManagement(normalizedManagement)
 
-      const nextCommonPrompt = normalizedManagement.prompts.find(
+      console.info('[chat-settings][management-loaded]', {
+        promptCount: normalizedManagement.prompts.length,
+        screenCount: normalizedManagement.screens.length,
+        activeAppTab,
+        promptRows: normalizedManagement.prompts.slice(0, 12).map((item) => ({
+          id: item?.id,
+          appKey: item?.appKey ?? item?.app_key,
+          screenKey: item?.screenKey ?? item?.screen_key ?? item?.key,
+          routeKey: item?.routeKey ?? item?.route_key,
+          type: item?.type ?? item?.promptType ?? item?.category,
+          contentLength: String(item?.content ?? item?.prompt ?? '').length,
+        })),
+      })
+
+      const nextCommonPrompt = normalizedManagement.prompts.find((item) => {
+        const appKey = String(item?.appKey ?? item?.app_key ?? '').trim().toLowerCase()
+        const screenKey = String(item?.screenKey ?? item?.screen_key ?? item?.key ?? '').trim().toLowerCase()
+        const type = String(item?.type ?? item?.promptType ?? item?.category ?? '').trim().toLowerCase()
+        return appKey === 'common' && screenKey === 'common' && type === 'system'
+      }) ?? normalizedManagement.prompts.find(
         (item) => String(item?.key ?? '') === 'common' && String(item?.promptType ?? item?.category ?? '').toLowerCase() === 'system'
       )
+
+      console.info('[chat-settings] common prompt resolved', {
+        promptCount: normalizedManagement.prompts.length,
+        matchedCommonPrompt: nextCommonPrompt,
+        promptKeys: normalizedManagement.prompts.map((item) => ({
+          id: item?.id,
+          appKey: item?.appKey ?? item?.app_key,
+          screenKey: item?.screenKey ?? item?.screen_key ?? item?.key,
+          type: item?.type ?? item?.promptType ?? item?.category,
+          content: item?.content,
+        })),
+      })
+
+      const nextCommonIntentPrompt = normalizedManagement.prompts.find((item) => {
+        const appKey = String(item?.appKey ?? item?.app_key ?? '').trim().toLowerCase()
+        const screenKey = String(item?.screenKey ?? item?.screen_key ?? item?.key ?? '').trim().toLowerCase()
+        const type = String(item?.type ?? item?.promptType ?? item?.category ?? '').trim().toLowerCase()
+        return appKey === 'common' && (screenKey === 'common' || screenKey === 'common_intent') && type === 'intent-hint'
+      }) ?? normalizedManagement.prompts.find(
+        (item) => String(item?.key ?? '') === 'common' && String(item?.promptType ?? item?.category ?? '').toLowerCase() === 'intent-hint'
+      ) ?? null
+
+      const nextCommonRagPrompt = normalizedManagement.prompts.find((item) => {
+        const appKey = String(item?.appKey ?? item?.app_key ?? '').trim().toLowerCase()
+        const screenKey = String(item?.screenKey ?? item?.screen_key ?? item?.key ?? '').trim().toLowerCase()
+        const type = String(item?.type ?? item?.promptType ?? item?.category ?? '').trim().toLowerCase()
+        return appKey === 'common' && screenKey === 'common' && type === 'rag-system'
+      }) ?? null
+
       setCommonPromptDraft({
         label: String(nextCommonPrompt?.label ?? '공통 프롬프트'),
-        content: String(nextCommonPrompt?.content ?? ''),
+        content: String(nextCommonPrompt?.content ?? nextCommonPrompt?.prompt ?? ''),
         enabled: nextCommonPrompt?.enabled !== false,
       })
-
-      const nextCommonIntentPrompt = normalizedManagement.prompts.find(
-        (item) => String(item?.key ?? '') === 'common' && String(item?.promptType ?? item?.category ?? '').toLowerCase() === 'intent-hint'
-      )
       setCommonIntentPromptDraft({
-        label: String(nextCommonIntentPrompt?.label ?? '공통 분기 프롬프트'),
-        content: String(nextCommonIntentPrompt?.content ?? '') || INTENT_HINT_PROMPT_TEMPLATE,
+        label: String(nextCommonIntentPrompt?.label ?? '기본 분류 LLM 프롬프트'),
+        content: String(nextCommonIntentPrompt?.content ?? nextCommonIntentPrompt?.prompt ?? ''),
         enabled: nextCommonIntentPrompt?.enabled !== false,
       })
+      setCommonRagPromptDraft({
+        label: String(nextCommonRagPrompt?.label ?? '공통 RAG 프롬프트'),
+        content: String(nextCommonRagPrompt?.content ?? nextCommonRagPrompt?.prompt ?? ''),
+        enabled: nextCommonRagPrompt?.enabled !== false,
+      })
 
-      const nextCommonInputHintPrompt = normalizedManagement.prompts.find(
-        (item) => String(item?.key ?? '') === 'common' && String(item?.promptType ?? item?.category ?? '').toLowerCase() === 'input-hint'
+      const nextCommonInputHintGuidance = normalizedManagement.guidance.find(
+        (item) => {
+          const appKey = String(item?.appKey ?? item?.app_key ?? '').trim().toLowerCase()
+          const screenKey = String(item?.screenKey ?? item?.screen_key ?? item?.key ?? item?.routeKey ?? item?.route_key ?? '').trim().toLowerCase()
+          return appKey === 'common' && (screenKey === 'common' || String(item?.key ?? '').trim().toLowerCase() === 'common')
+        }
       )
+      const nextExamples = Array.isArray(nextCommonInputHintGuidance?.examples)
+        ? nextCommonInputHintGuidance.examples
+            .map((item) => String(item ?? '').trim())
+            .filter(Boolean)
+        : []
+
+      console.info('[chat-settings] common guidance resolved', {
+        guidanceCount: normalizedManagement.guidance.length,
+        matchedCommonGuidance: nextCommonInputHintGuidance,
+        examples: nextExamples,
+        guidanceKeys: normalizedManagement.guidance.map((item) => ({
+          id: item?.id,
+          appKey: item?.appKey ?? item?.app_key,
+          screenKey: item?.screenKey ?? item?.screen_key ?? item?.key,
+          examples: Array.isArray(item?.examples) ? item.examples : [],
+        })),
+      })
+
       setCommonInputHintPromptDraft({
-        label: String(nextCommonInputHintPrompt?.label ?? '공통 입력 힌트'),
-        content: String(nextCommonInputHintPrompt?.content ?? '') || '현재 화면에 대해 질문해 보세요.',
-        enabled: nextCommonInputHintPrompt?.enabled !== false,
+        label: '공통 입력 힌트',
+        examples: nextExamples,
+        enabled: true,
       })
 
       setPromptDrafts(
@@ -333,7 +428,7 @@ const ChatSettings = () => {
             String(item.id),
             {
               id: item.id,
-              content: String(item.content ?? ''),
+              content: String(item.content ?? item.prompt ?? ''),
               enabled: item.enabled !== false,
             },
           ])
@@ -370,30 +465,6 @@ const ChatSettings = () => {
         )
       )
 
-      setToolDrafts(
-        Object.fromEntries(
-          normalizedManagement.screenTools.map((item) => [
-            String(item.id),
-            {
-              id: item.id,
-              enabled: item.enabled !== false,
-              displayName: String(item.displayName ?? ''),
-              description: String(item.description ?? ''),
-              apiName: String(item.apiName ?? ''),
-              method: String(item.method ?? ''),
-              endpoint: String(item.endpoint ?? ''),
-              baseUrl: String(item.baseUrl ?? ''),
-              requestHeadersText: JSON.stringify(item.requestHeaders ?? {}, null, 2),
-              requestQueryText: JSON.stringify(item.requestQuery ?? {}, null, 2),
-              requestBodyText: JSON.stringify(item.requestBody ?? {}, null, 2),
-              contextParamsText: JSON.stringify(item.contextParams ?? [], null, 2),
-              requestParamsText: JSON.stringify(item.requestParams ?? [], null, 2),
-              staticPayloadText: JSON.stringify(item.staticPayload ?? {}, null, 2),
-              path: String(item?.staticPayload?.path ?? item?.endpoint ?? ''),
-            },
-          ])
-        )
-      )
     } catch (e) {
       setError(e?.message || '설정을 불러오지 못했습니다.')
     } finally {
@@ -414,7 +485,12 @@ const ChatSettings = () => {
 
   const commonPromptItem = useMemo(
     () =>
-      management.prompts.find(
+      management.prompts.find((item) => {
+        const appKey = String(item?.appKey ?? item?.app_key ?? '').trim().toLowerCase()
+        const screenKey = String(item?.screenKey ?? item?.screen_key ?? item?.key ?? '').trim().toLowerCase()
+        const type = String(item?.type ?? item?.promptType ?? item?.category ?? '').trim().toLowerCase()
+        return appKey === 'common' && screenKey === 'common' && type === 'system'
+      }) ?? management.prompts.find(
         (item) =>
           String(item?.key ?? '') === 'common' &&
           String(item?.promptType ?? item?.category ?? '').toLowerCase() === 'system'
@@ -424,7 +500,12 @@ const ChatSettings = () => {
 
   const commonIntentPromptItem = useMemo(
     () =>
-      management.prompts.find(
+      management.prompts.find((item) => {
+        const appKey = String(item?.appKey ?? item?.app_key ?? '').trim().toLowerCase()
+        const screenKey = String(item?.screenKey ?? item?.screen_key ?? item?.key ?? '').trim().toLowerCase()
+        const type = String(item?.type ?? item?.promptType ?? item?.category ?? '').trim().toLowerCase()
+        return appKey === 'common' && (screenKey === 'common' || screenKey === 'common_intent') && type === 'intent-hint'
+      }) ?? management.prompts.find(
         (item) =>
           String(item?.key ?? '') === 'common' &&
           String(item?.promptType ?? item?.category ?? '').toLowerCase() === 'intent-hint'
@@ -432,50 +513,35 @@ const ChatSettings = () => {
     [management.prompts]
   )
 
-  const commonInputHintPromptItem = useMemo(
+  const commonRagPromptItem = useMemo(
     () =>
-      management.prompts.find(
-        (item) =>
-          String(item?.key ?? '') === 'common' &&
-          String(item?.promptType ?? item?.category ?? '').toLowerCase() === 'input-hint'
-      ) ?? null,
+      management.prompts.find((item) => {
+        const appKey = String(item?.appKey ?? item?.app_key ?? '').trim().toLowerCase()
+        const screenKey = String(item?.screenKey ?? item?.screen_key ?? item?.key ?? '').trim().toLowerCase()
+        const type = String(item?.type ?? item?.promptType ?? item?.category ?? '').trim().toLowerCase()
+        return appKey === 'common' && screenKey === 'common' && type === 'rag-system'
+      }) ?? null,
     [management.prompts]
   )
 
+  const commonInputHintPromptItem = useMemo(
+    () =>
+      management.guidance.find((item) => {
+        const appKey = String(item?.appKey ?? item?.app_key ?? '').trim().toLowerCase()
+        const screenKey = String(item?.screenKey ?? item?.screen_key ?? item?.key ?? item?.routeKey ?? item?.route_key ?? '').trim().toLowerCase()
+        return appKey === 'common' && (screenKey === 'common' || String(item?.key ?? '').trim().toLowerCase() === 'common')
+      }) ?? null,
+    [management.guidance]
+  )
+
   const commonRagDocs = useMemo(
-    () => management.ragDocs.filter((item) => String(item?.key ?? '') === 'common'),
+    () => management.ragDocs.filter((item) => isCommonScopeRecord(item)),
     [management.ragDocs]
   )
 
-  const commonTools = useMemo(
-    () =>
-      management.screenTools.filter(
-        (item) =>
-          String(item?.key ?? '') === 'common' &&
-          String(item?.method ?? '').trim().toUpperCase() !== 'NAVIGATE'
-      ),
-    [management.screenTools]
-  )
-
-  const commonActionTypes = useMemo(
-    () =>
-      (management.actionTypes ?? []).filter(
-        (item) => String(item?.method ?? '').trim().toUpperCase() !== 'NAVIGATE'
-      ),
-    [management.actionTypes]
-  )
-
-  const screenActionTypes = useMemo(
-    () =>
-      (management.actionTypes ?? []).filter(
-        (item) => String(item?.method ?? '').trim().toUpperCase() !== 'NAVIGATE'
-      ),
-    [management.actionTypes]
-  )
-
   const screenGroups = useMemo(
-    () => groupScreenSettings(management.screens, management.prompts, management.guidance, management.ragDocs, management.screenTools),
-    [management.guidance, management.prompts, management.ragDocs, management.screenTools, management.screens]
+    () => groupScreenSettings(management.screens, management.prompts, management.guidance, management.ragDocs),
+    [management.guidance, management.prompts, management.ragDocs, management.screens]
   )
 
   const appRouteTree = useMemo(
@@ -488,6 +554,17 @@ const ChatSettings = () => {
       if (activeRouteKey) setActiveRouteKey('')
       return
     }
+
+    console.info('[chat-settings][route-resolution]', {
+      activeAppTab,
+      currentActiveRouteKey: activeRouteKey,
+      appRouteTreeKeys: (Array.isArray(appRouteTree) ? appRouteTree : []).map((row) => ({
+        key: row?.key,
+        parentKey: row?.parentKey,
+        appKey: row?.appKey,
+      })),
+      hasCurrentRouteInTree: hasRouteKeyInTree(appRouteTree, activeRouteKey),
+    })
 
     if (!hasRouteKeyInTree(appRouteTree, activeRouteKey)) {
       setActiveRouteKey(getFirstRouteKeyFromTree(appRouteTree))
@@ -531,14 +608,14 @@ const ChatSettings = () => {
     try {
       const res = await upsertCommonChatPrompt({
         label: String(commonPromptDraft.label ?? ''),
-        content: String(commonPromptDraft.content ?? ''),
+        prompt: String(commonPromptDraft.content ?? ''),
         enabled: Boolean(commonPromptDraft.enabled),
       })
       const next = res?.data ?? {}
 
       setCommonPromptDraft({
         label: String(next.label ?? commonPromptDraft.label ?? '공통 프롬프트'),
-        content: String(next.content ?? commonPromptDraft.content ?? ''),
+        content: String(next.prompt ?? next.content ?? commonPromptDraft.content ?? ''),
         enabled: next.enabled !== false,
       })
       setSavedMessage(`${String(next.label ?? '공통 프롬프트')}가 저장되었습니다.`)
@@ -557,6 +634,84 @@ const ChatSettings = () => {
       [field]: nextValue,
     }))
   }, [])
+
+  const handleSaveCommonIntentPrompt = useCallback(async () => {
+    setSavingCommonIntentPrompt(true)
+    setError('')
+
+    try {
+      const content = String(commonIntentPromptDraft.content ?? '').trim()
+      const enabled = Boolean(commonIntentPromptDraft.enabled)
+
+      if (commonIntentPromptItem?.id) {
+        const res = await updateChatPrompt(commonIntentPromptItem.id, {
+          prompt: content,
+          enabled,
+        })
+        const next = res?.data ?? {}
+        setSavedMessage(`${String(next.label ?? '기본 분류 LLM 프롬프트')}가 저장되었습니다.`)
+      } else {
+        const res = await createChatPrompt({
+          appKey: 'common',
+          screenKey: 'common',
+          type: 'intent-hint',
+          prompt: content,
+          enabled,
+        })
+        if (Number(res?.code ?? 0) !== 200) {
+          throw new Error(String(res?.message ?? '기본 분류 LLM 프롬프트 생성 응답이 올바르지 않습니다.'))
+        }
+        setSavedMessage('기본 분류 LLM 프롬프트가 생성되었습니다.')
+      }
+
+      setSavedOpen(true)
+      await load()
+    } catch (e) {
+      setError(e?.message || '기본 분류 LLM 프롬프트 저장에 실패했습니다.')
+    } finally {
+      setSavingCommonIntentPrompt(false)
+    }
+  }, [commonIntentPromptDraft, commonIntentPromptItem, load])
+
+  const handleCommonRagPromptChange = useCallback((field, nextValue) => {
+    setCommonRagPromptDraft((prev) => ({
+      ...prev,
+      [field]: nextValue,
+    }))
+  }, [])
+
+  const handleSaveCommonRagPrompt = useCallback(async () => {
+    setSavingCommonRagPrompt(true)
+    setError('')
+
+    try {
+      const prompt = String(commonRagPromptDraft.content ?? '').trim()
+      const enabled = Boolean(commonRagPromptDraft.enabled)
+
+      if (commonRagPromptItem?.id) {
+        await updateChatPrompt(commonRagPromptItem.id, { prompt, enabled })
+      } else {
+        const res = await createChatPrompt({
+          appKey: 'common',
+          screenKey: 'common',
+          type: 'rag-system',
+          prompt,
+          enabled,
+        })
+        if (Number(res?.code ?? 0) !== 200) {
+          throw new Error(String(res?.message ?? '공통 RAG 프롬프트 생성 응답이 올바르지 않습니다.'))
+        }
+      }
+
+      setSavedMessage('공통 RAG 프롬프트가 저장되었습니다.')
+      setSavedOpen(true)
+      await load()
+    } catch (e) {
+      setError(e?.message || '공통 RAG 프롬프트 저장에 실패했습니다.')
+    } finally {
+      setSavingCommonRagPrompt(false)
+    }
+  }, [commonRagPromptDraft, commonRagPromptItem, load])
 
   const handleCommonInputHintPromptChange = useCallback((field, nextValue) => {
     setCommonInputHintPromptDraft((prev) => ({
@@ -592,77 +747,35 @@ const ChatSettings = () => {
     }
   }, [load])
 
-  const handleSaveCommonIntentPrompt = useCallback(async () => {
-    setSavingCommonIntentPrompt(true)
-    setError('')
-
-    try {
-      if (commonIntentPromptItem?.id) {
-        const res = await updateChatPrompt(commonIntentPromptItem.id, {
-          label: String(commonIntentPromptDraft.label ?? ''),
-          content: String(commonIntentPromptDraft.content ?? ''),
-          enabled: Boolean(commonIntentPromptDraft.enabled),
-        })
-        const next = res?.data ?? {}
-        setSavedMessage(`${String(next.label ?? '공통 분기 프롬프트')}가 저장되었습니다.`)
-      } else {
-        const res = await createChatPrompt({
-          appKey: 'common',
-          key: 'common',
-          routeKey: 'common',
-          promptType: 'intent-hint',
-          label: String(commonIntentPromptDraft.label ?? '공통 분기 프롬프트'),
-          content: String(commonIntentPromptDraft.content ?? ''),
-          enabled: Boolean(commonIntentPromptDraft.enabled),
-        })
-
-        if (Number(res?.code ?? 0) !== 200) {
-          throw new Error(String(res?.message ?? '공통 분기 프롬프트 생성 응답이 올바르지 않습니다.'))
-        }
-
-        const next = res?.data ?? {}
-        setSavedMessage(`${String(next.label ?? '공통 분기 프롬프트')}가 생성되었습니다.`)
-      }
-
-      setSavedOpen(true)
-      await load()
-    } catch (e) {
-      setError(e?.message || '공통 분기 프롬프트 저장에 실패했습니다.')
-    } finally {
-      setSavingCommonIntentPrompt(false)
-    }
-  }, [commonIntentPromptDraft, commonIntentPromptItem, load])
-
   const handleSaveCommonInputHintPrompt = useCallback(async () => {
     setSavingCommonInputHintPrompt(true)
     setError('')
 
     try {
+      const examples = Array.isArray(commonInputHintPromptDraft.examples)
+        ? commonInputHintPromptDraft.examples
+            .map((item) => String(item ?? '').trim())
+            .filter(Boolean)
+        : []
+
       if (commonInputHintPromptItem?.id) {
-        const res = await updateChatPrompt(commonInputHintPromptItem.id, {
-          label: String(commonInputHintPromptDraft.label ?? ''),
-          content: String(commonInputHintPromptDraft.content ?? ''),
-          enabled: Boolean(commonInputHintPromptDraft.enabled),
-        })
+        const res = await updateChatGuidance(commonInputHintPromptItem.id, { examples })
         const next = res?.data ?? {}
-        setSavedMessage(`${String(next.label ?? '공통 입력 힌트')}가 저장되었습니다.`)
+        setSavedMessage('저장되었습니다.')
       } else {
-        const res = await createChatPrompt({
+        const createRes = await createChatGuidance({
           appKey: 'common',
-          key: 'common',
-          routeKey: 'common',
-          promptType: 'input-hint',
-          label: String(commonInputHintPromptDraft.label ?? '공통 입력 힌트'),
-          content: String(commonInputHintPromptDraft.content ?? ''),
-          enabled: Boolean(commonInputHintPromptDraft.enabled),
+          screenKey: 'common',
         })
 
-        if (Number(res?.code ?? 0) !== 200) {
-          throw new Error(String(res?.message ?? '공통 입력 힌트 생성 응답이 올바르지 않습니다.'))
+        if (Number(createRes?.code ?? 0) !== 200) {
+          throw new Error(String(createRes?.message ?? '공통 입력 힌트 생성 응답이 올바르지 않습니다.'))
         }
 
-        const next = res?.data ?? {}
-        setSavedMessage(`${String(next.label ?? '공통 입력 힌트')}가 생성되었습니다.`)
+        const created = createRes?.data ?? {}
+        const updateRes = await updateChatGuidance(created.id, { examples })
+        const next = updateRes?.data ?? {}
+        setSavedMessage('저장되었습니다.')
       }
 
       setSavedOpen(true)
@@ -695,7 +808,7 @@ const ChatSettings = () => {
 
       try {
         await updateChatPrompt(item.id, {
-          content: draft.content,
+          prompt: draft.content,
           enabled: draft.enabled,
         })
 
@@ -721,11 +834,9 @@ const ChatSettings = () => {
     try {
       const res = await createChatPrompt({
         appKey: String(appKey ?? '').trim(),
-        key: normalizedRouteKey,
-        routeKey: String(routeParentKey ?? '').trim(),
-        promptType: String(promptType ?? 'system').trim() || 'system',
-        label: String(label ?? '화면 프롬프트').trim() || '화면 프롬프트',
-        content: String(content ?? ''),
+        screenKey: normalizedRouteKey,
+        type: String(promptType ?? 'system').trim() || 'system',
+        prompt: String(content ?? ''),
         enabled: Boolean(enabled),
       })
 
@@ -781,7 +892,7 @@ const ChatSettings = () => {
           throw new Error(String(res?.message ?? '가이드 저장 응답이 올바르지 않습니다.'))
         }
 
-        setSavedMessage(`${item.screenName || item.key} 가이드가 저장되었습니다.`)
+        setSavedMessage('가이드가 저장되었습니다.')
         setSavedOpen(true)
         await load()
         return true
@@ -805,8 +916,7 @@ const ChatSettings = () => {
     try {
       const res = await createChatGuidance({
         appKey: String(appKey ?? '').trim(),
-        key: normalizedRouteKey,
-        routeKey: String(routeParentKey ?? '').trim(),
+        screenKey: normalizedRouteKey,
       })
 
       if (Number(res?.code ?? 0) !== 200) {
@@ -1048,261 +1158,6 @@ const ChatSettings = () => {
     [load, ragDrafts]
   )
 
-  const handleToolChange = useCallback((id, field, nextValue) => {
-    setToolDrafts((prev) => ({
-      ...prev,
-      [id]: {
-        ...(prev[id] ?? {}),
-        [field]: nextValue,
-      },
-    }))
-  }, [])
-
-  const handleSaveTool = useCallback(
-    async (item, overrideDraft) => {
-      const draftKey = String(item.id)
-      const draft = overrideDraft ?? toolDrafts[draftKey] ?? {}
-
-      if (String(item?.key ?? '') === 'common') {
-        const path = String(draft.path ?? draft.endpoint ?? '').trim().replace(/^\/+/, '')
-        if (!path) {
-          setError('공통 액션 경로(path)는 필수입니다.')
-          return
-        }
-
-        setSavingToolKey(draftKey)
-        setError('')
-
-        try {
-          await updateChatScreenTool(item.id, {
-            enabled: Boolean(draft.enabled),
-            displayName: String(draft.displayName ?? ''),
-            description: null,
-            apiName: String(item.apiName ?? ''),
-            method: String(item.method ?? ''),
-            endpoint: path,
-            contextParams: [],
-            requestParams: [],
-            staticPayload: { path },
-          })
-
-          setSavedMessage(`${item.displayName || item.toolName} 공통 액션이 저장되었습니다.`)
-          setSavedOpen(true)
-          await load()
-          return true
-        } catch (e) {
-          setError(e?.message || '공통 액션 저장에 실패했습니다.')
-          return false
-        } finally {
-          setSavingToolKey('')
-        }
-        return false
-      }
-
-      let contextParams = []
-      let requestParams = []
-      let requestHeaders = {}
-      let requestQuery = {}
-      let requestBody = {}
-      let staticPayload = {}
-      try {
-        contextParams = JSON.parse(String(draft.contextParamsText ?? '[]'))
-        requestParams = JSON.parse(String(draft.requestParamsText ?? '[]'))
-        requestHeaders = JSON.parse(String(draft.requestHeadersText ?? '{}'))
-        requestQuery = JSON.parse(String(draft.requestQueryText ?? '{}'))
-        requestBody = JSON.parse(String(draft.requestBodyText ?? '{}'))
-        staticPayload = JSON.parse(String(draft.staticPayloadText ?? '{}'))
-      } catch {
-        setError('툴 JSON 필드(context/request/headers/query/body/staticPayload) 형식이 올바르지 않습니다.')
-        return
-      }
-
-      setSavingToolKey(draftKey)
-      setError('')
-
-      try {
-        await updateChatScreenTool(item.id, {
-          enabled: Boolean(draft.enabled),
-          displayName: String(draft.displayName ?? ''),
-          description: String(draft.description ?? ''),
-          apiName: String(draft.apiName ?? ''),
-          method: String(draft.method ?? ''),
-          endpoint: String(draft.endpoint ?? ''),
-          baseUrl: String(draft.baseUrl ?? ''),
-          requestHeaders,
-          requestQuery,
-          requestBody,
-          contextParams,
-          requestParams,
-          staticPayload,
-        })
-
-        setSavedMessage(`${item.toolName} 툴 설정이 저장되었습니다.`)
-        setSavedOpen(true)
-        await load()
-        return true
-      } catch (e) {
-        setError(e?.message || '툴 설정 저장에 실패했습니다.')
-        return false
-      } finally {
-        setSavingToolKey('')
-      }
-    },
-    [load, toolDrafts]
-  )
-
-  const handleCreateCommonTool = useCallback(async (overrideDraft) => {
-    const draft = overrideDraft ?? {}
-
-    const displayName = String(draft.displayName ?? '').trim()
-    if (!displayName) {
-      setError('공통 액션 표시명은 필수입니다.')
-      return
-    }
-
-    const path = String(draft.path ?? '').trim().replace(/^\/+/, '')
-    if (!path) {
-      setError('공통 액션 경로(path)는 필수입니다.')
-      return
-    }
-
-    const actionTypeKey = String(draft.actionTypeKey ?? '').trim()
-    if (!actionTypeKey) {
-      setError('액션 유형은 필수입니다.')
-      return false
-    }
-
-    setSavingCreateCommonTool(true)
-    setError('')
-
-    try {
-      const res = await createCommonChatScreenTool({
-        actionTypeKey,
-        displayName,
-        path,
-        enabled: Boolean(draft.enabled),
-      })
-      const next = res?.data ?? {}
-
-      setSavedMessage(`${String(next.displayName ?? '공통 액션')}이 추가되었습니다.`)
-      setSavedOpen(true)
-      await load()
-      return true
-    } catch (e) {
-      setError(e?.message || '공통 액션 추가에 실패했습니다.')
-      return false
-    } finally {
-      setSavingCreateCommonTool(false)
-    }
-  }, [load])
-
-  const handleDeleteTool = useCallback(async (item) => {
-    const id = Number(item?.id)
-    if (!Number.isFinite(id) || id <= 0) return
-
-    const targetKey = String(id)
-    setDeletingToolKey(targetKey)
-    setError('')
-
-    try {
-      await deleteChatScreenTool(id)
-      setSavedMessage(`${String(item?.displayName ?? item?.toolName ?? '공통 액션')}이 삭제되었습니다.`)
-      setSavedOpen(true)
-      await load()
-    } catch (e) {
-      setError(e?.message || '공통 액션 삭제에 실패했습니다.')
-    } finally {
-      setDeletingToolKey('')
-    }
-  }, [load])
-
-  const handleCreateScreenTool = useCallback(async (draft) => {
-    const appKey = String(draft?.appKey ?? '').trim()
-    const key = String(draft?.key ?? '').trim()
-    const displayName = String(draft?.displayName ?? '').trim()
-    const toolName = String(draft?.toolName ?? '').trim()
-    const actionTypeKey = String(draft?.actionTypeKey ?? '').trim()
-
-    if (!appKey) {
-      setError('앱 키(appKey)가 필요합니다.')
-      return false
-    }
-
-    if (!key) {
-      setError('화면 키(routeKey)가 필요합니다.')
-      return false
-    }
-
-    if (!actionTypeKey) {
-      setError('액션 유형은 필수입니다.')
-      return false
-    }
-
-    if (!toolName) {
-      setError('액션 키(tool_name)는 필수입니다.')
-      return false
-    }
-
-    if (!displayName) {
-      setError('표시명(display_name)은 필수입니다.')
-      return false
-    }
-
-    let contextParams = []
-    let requestParams = []
-    let requestHeaders = {}
-    let requestQuery = {}
-    let requestBody = {}
-    let staticPayload = {}
-
-    try {
-      contextParams = JSON.parse(String(draft?.contextParamsText ?? '[]'))
-      requestParams = JSON.parse(String(draft?.requestParamsText ?? '[]'))
-      requestHeaders = JSON.parse(String(draft?.requestHeadersText ?? '{}'))
-      requestQuery = JSON.parse(String(draft?.requestQueryText ?? '{}'))
-      requestBody = JSON.parse(String(draft?.requestBodyText ?? '{}'))
-      staticPayload = JSON.parse(String(draft?.staticPayloadText ?? '{}'))
-    } catch {
-      setError('신규 화면 액션 JSON 필드(context/request/headers/query/body/staticPayload) 형식이 올바르지 않습니다.')
-      return false
-    }
-
-    setSavingCreateScreenTool(true)
-    setError('')
-
-    try {
-      const res = await createChatScreenTool({
-        appKey,
-        key,
-        routeKey: String(draft?.routeKey ?? '').trim(),
-        actionTypeKey,
-        toolName,
-        displayName,
-        description: String(draft?.description ?? ''),
-        endpoint: String(draft?.endpoint ?? ''),
-        baseUrl: String(draft?.baseUrl ?? ''),
-        requestHeaders,
-        requestQuery,
-        requestBody,
-        contextParams,
-        requestParams,
-        staticPayload,
-        enabled: Boolean(draft?.enabled),
-      })
-
-      const next = res?.data ?? {}
-      setSavedMessage(`${String(next.displayName ?? next.toolName ?? '화면 액션')}이 추가되었습니다.`)
-      setSavedOpen(true)
-      await load()
-      return true
-    } catch (e) {
-      setError(e?.message || '화면 액션 추가에 실패했습니다.')
-      return false
-    } finally {
-      setSavingCreateScreenTool(false)
-    }
-  }, [load])
-
   const handleChangeAppTab = useCallback((nextApp) => {
     setActiveAppTab(nextApp)
     setActiveRouteKey('')
@@ -1348,6 +1203,11 @@ const ChatSettings = () => {
               savingCommonIntentPrompt={savingCommonIntentPrompt}
               onCommonIntentPromptChange={handleCommonIntentPromptChange}
               onSaveCommonIntentPrompt={handleSaveCommonIntentPrompt}
+              commonRagPromptItem={commonRagPromptItem}
+              commonRagPromptDraft={commonRagPromptDraft}
+              savingCommonRagPrompt={savingCommonRagPrompt}
+              onCommonRagPromptChange={handleCommonRagPromptChange}
+              onSaveCommonRagPrompt={handleSaveCommonRagPrompt}
               commonInputHintPromptItem={commonInputHintPromptItem}
               commonInputHintPromptDraft={commonInputHintPromptDraft}
               savingCommonInputHintPrompt={savingCommonInputHintPrompt}
@@ -1368,14 +1228,6 @@ const ChatSettings = () => {
               onCreateCommonInfoRag={handleCreateCommonInfoRag}
               onCreateCommonActionRag={handleCreateCommonActionRag}
               onDeleteCommonRag={handleDeleteCommonRag}
-              commonTools={commonTools}
-              actionTypes={commonActionTypes}
-              savingToolKey={savingToolKey}
-              savingCreateCommonTool={savingCreateCommonTool}
-              deletingToolKey={deletingToolKey}
-              onSaveTool={handleSaveTool}
-              onCreateCommonTool={handleCreateCommonTool}
-              onDeleteTool={handleDeleteTool}
             />
           ) : null}
 
@@ -1392,65 +1244,78 @@ const ChatSettings = () => {
           ) : null}
 
           {activeAppTab !== APP_TAB.COMMON && activeAppTab !== APP_TAB.HISTORY ? (
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '260px minmax(0, 1fr)',
-                gap: '20px',
-                alignItems: 'start',
-              }}
-            >
-              <AppSideTabs routeTree={appRouteTree} activeRouteKey={activeRouteKey} onChange={setActiveRouteKey} />
-
-              <AppScreenSettingsTab
+            <>
+              <AppScopeSettingsCard
                 appKey={activeAppTab}
-                activeRouteKey={activeRouteKey}
-                values={values}
-                settingDrafts={settingDrafts}
-                savingSettingScope={savingSettingScope}
-                screenGroups={screenGroups}
-                commonRagDocs={commonRagDocs}
-                commonTools={commonTools}
-                onGoToCommonTab={() => handleChangeAppTab(APP_TAB.COMMON)}
-                commonPromptItem={commonPromptItem}
-                commonPromptDraft={commonPromptDraft}
-                commonIntentPromptItem={commonIntentPromptItem}
-                commonIntentPromptDraft={commonIntentPromptDraft}
-                commonInputHintPromptItem={commonInputHintPromptItem}
-                commonInputHintPromptDraft={commonInputHintPromptDraft}
                 allPrompts={management.prompts}
-                actionTypes={screenActionTypes}
+                commonInputHintPromptDraft={commonInputHintPromptDraft}
                 promptDrafts={promptDrafts}
-                guidanceDrafts={guidanceDrafts}
-                ragDrafts={ragDrafts}
-                toolDrafts={toolDrafts}
-                savingPromptKey={savingPromptKey}
                 creatingPromptRouteKey={creatingPromptRouteKey}
-                savingGuidanceKey={savingGuidanceKey}
-                creatingGuidanceRouteKey={creatingGuidanceRouteKey}
+                ragDrafts={ragDrafts}
                 savingRagKey={savingRagKey}
                 deletingRagKey={deletingCommonRagKey}
                 savingCreateRag={savingCreateScreenRag}
-                savingCreateTool={savingCreateScreenTool}
-                savingToolKey={savingToolKey}
-                onSettingDraftChange={handleSettingDraftChange}
-                onSaveSettingGroup={handleSaveSettingGroup}
+                commonIntentPromptItem={commonIntentPromptItem}
+                commonIntentPromptDraft={commonIntentPromptDraft}
                 onPromptChange={handlePromptChange}
                 onSavePrompt={handleSavePrompt}
                 onCreatePrompt={handleCreatePrompt}
-                onGuidanceChange={handleGuidanceChange}
-                onSaveGuidance={handleSaveGuidance}
-                onCreateGuidance={handleCreateGuidance}
                 onRagChange={handleRagChange}
                 onSaveRag={handleSaveRag}
                 onCreateRag={handleCreateScreenRag}
                 onDeleteRag={handleDeleteRag}
-                onToolChange={handleToolChange}
-                onSaveTool={handleSaveTool}
-                onCreateTool={handleCreateScreenTool}
-                onDeleteTool={handleDeleteTool}
+                screenGroups={screenGroups}
               />
-            </div>
+
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '260px minmax(0, 1fr)',
+                  gap: '20px',
+                  alignItems: 'start',
+                }}
+              >
+                <AppSideTabs routeTree={appRouteTree} activeRouteKey={activeRouteKey} onChange={setActiveRouteKey} />
+
+                <AppScreenSettingsTab
+                  appKey={activeAppTab}
+                  activeRouteKey={activeRouteKey}
+                  values={values}
+                  settingDrafts={settingDrafts}
+                  savingSettingScope={savingSettingScope}
+                  screenGroups={screenGroups}
+                  commonRagDocs={commonRagDocs}
+                  onGoToCommonTab={() => handleChangeAppTab(APP_TAB.COMMON)}
+                  commonPromptItem={commonPromptItem}
+                  commonPromptDraft={commonPromptDraft}
+                  commonInputHintPromptItem={commonInputHintPromptItem}
+                  commonInputHintPromptDraft={commonInputHintPromptDraft}
+                  allPrompts={management.prompts}
+                  promptDrafts={promptDrafts}
+                  guidanceDrafts={guidanceDrafts}
+                  ragDrafts={ragDrafts}
+                  savingPromptKey={savingPromptKey}
+                  creatingPromptRouteKey={creatingPromptRouteKey}
+                  savingGuidanceKey={savingGuidanceKey}
+                  creatingGuidanceRouteKey={creatingGuidanceRouteKey}
+                  savingRagKey={savingRagKey}
+                  deletingRagKey={deletingCommonRagKey}
+                  savingCreateRag={savingCreateScreenRag}
+                  onSettingDraftChange={handleSettingDraftChange}
+                  onSaveSettingGroup={handleSaveSettingGroup}
+                  onPromptChange={handlePromptChange}
+                  onSavePrompt={handleSavePrompt}
+                  onCreatePrompt={handleCreatePrompt}
+                  onGuidanceChange={handleGuidanceChange}
+                  onSaveGuidance={handleSaveGuidance}
+                  onCreateGuidance={handleCreateGuidance}
+                  onRagChange={handleRagChange}
+                  onSaveRag={handleSaveRag}
+                  onCreateRag={handleCreateScreenRag}
+                  onDeleteRag={handleDeleteRag}
+                />
+              </div>
+            </>
           ) : null}
         </>
       )}
@@ -1458,7 +1323,7 @@ const ChatSettings = () => {
       {savedOpen ? (
         <ModalBackdrop onClick={() => setSavedOpen(false)}>
           <ModalCard style={UNIFIED_MODAL_STYLE} onClick={(e) => e.stopPropagation()}>
-            <ModalTitle>저장되었습니다</ModalTitle>
+            <ModalTitle>저장 완료</ModalTitle>
             <ModalDescription>{savedMessage || '설정이 적용되었습니다. 이후 대화부터 반영됩니다.'}</ModalDescription>
             <ModalActions>
               <PrimaryButton type="button" onClick={() => setSavedOpen(false)}>

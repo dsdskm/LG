@@ -429,7 +429,10 @@ export const HistoryTab = ({
               : []
             const effectivePrimaryChunkKey = primaryChunkKey || usedChunks[0] || ''
             const ragScores = Array.isArray(debugMeta?.ragScores) ? debugMeta.ragScores : []
-            const ragMinScore = toFiniteNumber(debugMeta?.ragMinScore)
+            const ragMatchScore = toFiniteNumber(debugMeta?.ragMatchScore)
+            const ragAdjustedScore = toFiniteNumber(debugMeta?.ragAdjustedScore)
+            const ragThresholdScore = toFiniteNumber(debugMeta?.ragThresholdScore)
+            const ragMinScore = ragThresholdScore ?? toFiniteNumber(debugMeta?.ragMinScore)
             const defaultLlmFallback = Boolean(debugMeta?.defaultLlmFallback)
             const source = String(debugMeta?.source ?? '').trim()
             const isRuleHandled = source === 'rule-first' || source === 'front-rule'
@@ -551,7 +554,8 @@ export const HistoryTab = ({
                       <DebugChip $tone={matchedRuleKey ? 'amber' : 'slate'}>
                         Rule: {matchedRuleKey ? '매칭' : '미매칭'}
                       </DebugChip>
-                      <DebugChip $tone="slate">점수: {ragScores.length}개</DebugChip>
+                      <DebugChip $tone="slate">매칭 점수: {formatScore(ragMatchScore)}</DebugChip>
+                      <DebugChip $tone="slate">채택 기준: {formatScore(ragMinScore)}</DebugChip>
                     </DebugSummaryBar>
 
                     <DebugGrid>
@@ -656,7 +660,7 @@ export const HistoryTab = ({
                         <DebugDetailPanel>
                           <DebugDetailTitle>RAG 판단 요약</DebugDetailTitle>
                           <DebugMonoBlock>
-                            {`기준 점수(minScore): ${ragMinScore !== undefined ? ragMinScore.toFixed(2) : '-'}\n최종 처리: ${finalProcessingLabel}\n\ntopScore: 검색 매칭 원점수\nadjustedScore: 우선순위 가중치(화면 보너스 등) 반영 점수\nhitCount: 해당 컬렉션에서 매칭된 청크 개수\ntopChunks: 상위 매칭 chunk_key`}
+                            {`채택된 매칭 점수(topScore): ${formatScore(ragMatchScore)}\n채택된 보정 점수(adjustedScore): ${formatScore(ragAdjustedScore)}\n채택 기준 점수(minScore): ${formatScore(ragMinScore)}\n최종 처리: ${finalProcessingLabel}\n\ntopScore: 검색 매칭 원점수\nadjustedScore: 우선순위 가중치(화면 보너스 등) 반영 점수\nhitCount: 해당 컬렉션에서 매칭된 청크 개수\ntopChunks: 상위 매칭 chunk_key`}
                           </DebugMonoBlock>
                         </DebugDetailPanel>
 

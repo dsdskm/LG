@@ -150,25 +150,57 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
       paletteMaxWidth: paletteMeasure.maxWidth,
       paletteGridCompact,
       maxVisibleGridItems,
-      visibleTasks: tasks.map((task) => ({
-        id: task.id,
-        name: task.name,
-        taskType: task.taskType,
-        contentsCount: Array.isArray(task.contents) ? task.contents.length : 0
-      }))
+      visibleGrid: {
+        controlTasks: controlTasks.map((task) => ({
+          id: task.id,
+          name: task.name,
+          taskType: task.taskType
+        })),
+        directActionTasks: directActionTasks.map((task) => ({
+          id: task.id,
+          name: task.name,
+          taskType: task.taskType
+        })),
+        expandableTasks: expandableTasks.map((task) => ({
+          id: task.id,
+          name: task.name,
+          taskType: task.taskType,
+          contents: (task.contents ?? []).map((content) => ({
+            id: content.id,
+            name: content.name,
+            type: content.type
+          }))
+        }))
+      }
     })
   }, [
     loading,
     tasks,
-    controlTasks.length,
-    otherTasks.length,
-    directActionTasks.length,
-    expandableTasks.length,
+    controlTasks,
+    directActionTasks,
+    expandableTasks,
     paletteMeasure.width,
     paletteMeasure.maxWidth,
     paletteGridCompact,
     maxVisibleGridItems
   ])
+
+  useEffect(() => {
+    if (expandableTasks.length === 0) return
+
+    console.log('[TASK_PANEL][EXPANDABLE_SUBLIST]', {
+      sublist: expandableTasks.map((task) => ({
+        taskId: task.id,
+        taskName: task.name,
+        contentCount: Array.isArray(task.contents) ? task.contents.length : 0,
+        contents: (task.contents ?? []).map((content) => ({
+          id: content.id,
+          name: content.name,
+          type: content.type
+        }))
+      }))
+    })
+  }, [expandableTasks])
 
   return (
     <PanelRoot ref={panelRef}>

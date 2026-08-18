@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAiAssistantStore, useUserStore, useOrganizationStore, useAiLogEventStore } from '@repo/stores'
 import { getAppPrefix } from '@repo/utils'
-import { getChatSettings } from '@repo/apis/ai/chatSettings.js'
+import { getChatSettings, getGuidanceList, saveLocalChatHistory } from '@repo/apis/ai/chatSettings.js'
 import Icon from '../../common/Icon'
 import {
   StyledAiAssistantComposer,
@@ -44,16 +44,22 @@ import {
   StyledAiActionCard,
   StyledAiActionCardTitle,
   StyledAiActionCardKeyword,
-  StyledAiStopButton,
+  StyledAiStopButton
 } from './styles'
 import { postSiteAssistantChat } from '@repo/apis/ai/chat.js'
+import { isTmsCanvasPath } from './taskflowCommandRules.js'
+import {
+  AI_TASKFLOW_CANVAS_CLARIFY_EVENT,
+  AI_TASKFLOW_CANVAS_COMMAND_EVENT,
+  AI_TASKFLOW_CANVAS_DRAFT_EVENT,
+  AI_TASKFLOW_CANVAS_RESULT_EVENT
+} from './taskflowEvents.js'
 
 const ENABLE_QUICK_COMMANDS = true
 const ENABLE_MESSAGE_SUGGESTED_ACTIONS = false
-const AI_TASKFLOW_CANVAS_EVENT = 'ai-assistant:taskflow-canvas-draft'
-const AI_TASKFLOW_CANVAS_CLARIFY_EVENT = 'ai-assistant:taskflow-canvas-clarify'
-const AI_TASKFLOW_CANVAS_COMMAND_EVENT = 'ai-assistant:taskflow-canvas-command'
-const AI_CHAT_SERVICE_URL = String(import.meta.env.VITE_AI_CHAT_SERVICE_URL ?? '').trim().replace(/\/$/, '')
+const AI_CHAT_SERVICE_URL = String(import.meta.env.VITE_AI_CHAT_SERVICE_URL ?? '')
+  .trim()
+  .replace(/\/$/, '')
 
 const SENDING_STAGE = {
   IDLE: 'idle',
@@ -65,6 +71,7 @@ const SENDING_STAGE = {
   TOOL: 'tool',
   ASSEMBLING: 'assembling',
   COMPLETED: 'completed',
+  NODE_WORKING: 'node-working'
 }
 
 const SENDING_STAGE_LABEL = {
@@ -76,13 +83,18 @@ const SENDING_STAGE_LABEL = {
   [SENDING_STAGE.TOOL]: '공통 action 툴 확인중...',
   [SENDING_STAGE.ASSEMBLING]: '응답 조립중...',
   [SENDING_STAGE.COMPLETED]: '응답완료',
+  [SENDING_STAGE.NODE_WORKING]: '노드 작업을 진행중입니다.'
 }
 
 const inferSendingMode = (message) => {
   const text = String(message ?? '').trim()
   if (!text) return 'info'
 
-  if (/\b(taskflow|parallel|ifthenelse|repeat|move|navigate|node|노드|이동|연결|병렬|반복|추가|생성|수정|삭제|저장|실행|바꿔|변경)\b/i.test(text)) {
+  if (
+    /\b(taskflow|parallel|ifthenelse|repeat|move|navigate|node|노드|이동|연결|병렬|반복|추가|생성|수정|삭제|저장|실행|바꿔|변경)\b/i.test(
+      text
+    )
+  ) {
     return 'action'
   }
 
@@ -100,7 +112,7 @@ const buildSendingStagePlan = (message) => {
       SENDING_STAGE.INFO_RAG,
       SENDING_STAGE.COMMON_RAG,
       SENDING_STAGE.TOOL,
-      SENDING_STAGE.ASSEMBLING,
+      SENDING_STAGE.ASSEMBLING
     ]
   }
 
@@ -110,13 +122,12 @@ const buildSendingStagePlan = (message) => {
     SENDING_STAGE.INTENT,
     SENDING_STAGE.INFO_RAG,
     SENDING_STAGE.COMMON_RAG,
-    SENDING_STAGE.ASSEMBLING,
+    SENDING_STAGE.ASSEMBLING
   ]
 }
 
 const TYPEWRITER_INTERVAL_MS = 110
 const ASSISTANT_TYPEWRITER_INTERVAL_MS = 24
-const DEFAULT_CHAT_INPUT_PLACEHOLDER = '현재 화면에 대해 질문해 보세요.'
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -143,9 +154,7 @@ const parseInputHintCandidates = (value) => {
   try {
     const parsed = JSON.parse(raw)
     if (Array.isArray(parsed)) {
-      return parsed
-        .map((item) => String(item ?? '').trim())
-        .filter(Boolean)
+      return parsed.map((item) => String(item ?? '').trim()).filter(Boolean)
     }
   } catch {
     // JSON 배열이 아니면 일반 텍스트로 처리
@@ -157,12 +166,16 @@ const parseInputHintCandidates = (value) => {
     .filter(Boolean)
 }
 
-const normalizeRouteKey = (value) => String(value ?? '').trim().replace(/^\/+/, '')
+const normalizeRouteKey = (value) =>
+  String(value ?? '')
+    .trim()
+    .replace(/^\/+/, '')
 
 const routeTemplateMatches = (templateKey, currentPath) => {
   const template = normalizeRouteKey(templateKey)
   const target = normalizeRouteKey(currentPath)
   if (!template || !target) return false
+  if (template === 'common') return true
 
   const templateSegments = template.split('/').filter(Boolean)
   const targetSegments = target.split('/').filter(Boolean)
@@ -202,19 +215,29 @@ const findGuidanceExamplesForPath = (guidanceItems, pathname) => {
 
   const entries = (Array.isArray(guidanceItems) ? guidanceItems : [])
     .map((item) => {
-      const key = normalizeRouteKey(item?.key ?? item?.routeKey)
+      const key = normalizeRouteKey(item?.screenKey ?? item?.key ?? item?.routeKey ?? item?.screenName ?? '')
       const examples = Array.isArray(item?.examples) ? item.examples : []
-      return { key, examples }
+      return {
+        key,
+        examples,
+        appKey: String(item?.appKey ?? '').trim().toLowerCase(),
+        isCommon: String(item?.appKey ?? '').trim().toLowerCase() === 'common' || key === 'common'
+      }
     })
     .filter((item) => item.key && item.examples.length > 0)
 
-  const candidates = entries
-    .filter((item) => routeTemplateMatches(item.key, normalizedPath))
+  const scopedCandidates = entries
+    .filter((item) => item.key !== 'common' && routeTemplateMatches(item.key, normalizedPath))
     .sort((left, right) => right.key.length - left.key.length)
 
-  const matched = candidates[0]
-  if (matched) {
-    return extractExampleTexts(matched.examples)
+  for (const candidate of scopedCandidates) {
+    const texts = uniqueTexts(extractExampleTexts(candidate.examples))
+    if (texts.length > 0) return texts
+  }
+
+  const commonHint = entries.find((item) => item.isCommon)
+  if (commonHint) {
+    return uniqueTexts(extractExampleTexts(commonHint.examples))
   }
 
   // 설정 페이지에서는 추천어를 노출하지 않는다.
@@ -225,38 +248,48 @@ const findGuidanceExamplesForPath = (guidanceItems, pathname) => {
   return []
 }
 
-const findInputHintForPath = (promptItems, pathname) => {
+const findInputHintForPath = (guidanceItems, pathname) => {
   const normalizedPath = normalizeRouteKey(pathname)
-  const list = Array.isArray(promptItems) ? promptItems : []
-
-  const hintRows = list
-    .filter((item) => {
-      const type = String(item?.promptType ?? item?.category ?? '').trim().toLowerCase()
-      return type === 'input-hint' && item?.enabled !== false
-    })
+  const entries = (Array.isArray(guidanceItems) ? guidanceItems : [])
     .map((item) => {
-      const key = normalizeRouteKey(item?.key ?? item?.routeKey)
-      const content = String(item?.content ?? '').trim()
-      return { key, content }
+      const key = normalizeRouteKey(item?.screenKey ?? item?.key ?? item?.routeKey ?? item?.screenName ?? '')
+      const examples = Array.isArray(item?.examples) ? item.examples : []
+      return {
+        key,
+        examples,
+        appKey: String(item?.appKey ?? '').trim().toLowerCase(),
+        isCommon: String(item?.appKey ?? '').trim().toLowerCase() === 'common' || key === 'common'
+      }
     })
-    .filter((item) => item.content)
+    .filter((item) => item.key && item.examples.length > 0)
 
-  const scopedCandidates = hintRows
-    .filter((item) => item.key && item.key !== 'common' && routeTemplateMatches(item.key, normalizedPath))
+  const pickExampleText = (examples) => {
+    const texts = (Array.isArray(examples) ? examples : [])
+      .map((item) => {
+        if (typeof item === 'string') return item.trim()
+        return String(item?.q ?? '').trim()
+      })
+      .filter(Boolean)
+
+    return pickRandomItem(texts) || texts[0] || ''
+  }
+
+  const scopedCandidates = entries
+    .filter((item) => item.key !== 'common' && routeTemplateMatches(item.key, normalizedPath))
     .sort((left, right) => right.key.length - left.key.length)
 
-  if (scopedCandidates[0]?.content) {
-    const picks = parseInputHintCandidates(scopedCandidates[0].content)
-    return pickRandomItem(picks) || scopedCandidates[0].content
+  if (scopedCandidates[0]) {
+    const picked = pickExampleText(scopedCandidates[0].examples)
+    if (picked) return picked
   }
 
-  const commonHint = hintRows.find((item) => item.key === 'common')
-  if (commonHint?.content) {
-    const picks = parseInputHintCandidates(commonHint.content)
-    return pickRandomItem(picks) || commonHint.content
+  const commonHint = entries.find((item) => item.isCommon)
+  if (commonHint) {
+    const picked = pickExampleText(commonHint.examples)
+    if (picked) return picked
   }
 
-  return DEFAULT_CHAT_INPUT_PLACEHOLDER
+  return ''
 }
 
 const buildMessageId = () => {
@@ -275,13 +308,13 @@ const buildRouteContext = (location) => ({
   search: location.search,
   hash: location.hash,
   appPrefix: normalizeAppPrefix(location.pathname),
-  title: typeof document !== 'undefined' ? document.title : '',
+  title: typeof document !== 'undefined' ? document.title : ''
 })
 
-const isTmsCanvasPath = (pathname) => /^\/tms\/taskflows\/[^/]+\/canvas(?:\/|$)/.test(String(pathname ?? '').trim())
-
 const parseTaskflowIdFromPath = (pathname) => {
-  const matched = String(pathname ?? '').trim().match(/^\/tms\/taskflows\/(\d+)\/canvas(?:\/|$)/)
+  const matched = String(pathname ?? '')
+    .trim()
+    .match(/^\/tms\/taskflows\/(\d+)\/canvas(?:\/|$)/)
   if (!matched) return null
   const id = Number(matched[1])
   return Number.isFinite(id) && id > 0 ? id : null
@@ -328,7 +361,7 @@ const buildLinearOrderLabels = (nodes, edges) => {
 const buildTaskListFromTaskPanel = (items) => {
   const uniq = new Map()
 
-  for (const item of (Array.isArray(items) ? items : [])) {
+  for (const item of Array.isArray(items) ? items : []) {
     const taskId = Number(item?.taskId)
     if (!Number.isFinite(taskId) || taskId <= 0) continue
 
@@ -340,7 +373,7 @@ const buildTaskListFromTaskPanel = (items) => {
     uniq.set(key, {
       taskId,
       label,
-      taskName: taskName || undefined,
+      taskName: taskName || undefined
     })
   }
 
@@ -350,7 +383,7 @@ const buildTaskListFromTaskPanel = (items) => {
 const buildTaskContentsFromTaskPanel = (items) => {
   const uniq = new Map()
 
-  for (const item of (Array.isArray(items) ? items : [])) {
+  for (const item of Array.isArray(items) ? items : []) {
     const taskId = Number(item?.taskId)
     const label = String(item?.label ?? '').trim()
     if (!Number.isFinite(taskId) || taskId <= 0 || !label) continue
@@ -370,7 +403,7 @@ const buildTaskContentsFromTaskPanel = (items) => {
       taskName: taskName || undefined,
       label,
       contentId,
-      contentName,
+      contentName
     })
   }
 
@@ -395,9 +428,7 @@ const buildTaskflowFlowContext = (pathname) => {
     const edges = Array.isArray(runtimeContext?.edges) ? runtimeContext.edges : []
     if (nodes.length === 0) return undefined
 
-    const addableNodes = Array.isArray(runtimeContext?.addableNodes)
-      ? runtimeContext.addableNodes
-      : []
+    const addableNodes = Array.isArray(runtimeContext?.addableNodes) ? runtimeContext.addableNodes : []
     const taskList = Array.isArray(runtimeContext?.taskList)
       ? runtimeContext.taskList
       : buildTaskListFromTaskPanel(addableNodes)
@@ -405,7 +436,7 @@ const buildTaskflowFlowContext = (pathname) => {
       ? runtimeContext.taskContents
       : Array.isArray(runtimeContext?.taskcontents)
         ? runtimeContext.taskcontents
-      : buildTaskContentsFromTaskPanel(addableNodes)
+        : buildTaskContentsFromTaskPanel(addableNodes)
 
     const outgoingCount = new Map(nodes.map((node) => [String(node.id), 0]))
     for (const edge of edges) {
@@ -438,28 +469,31 @@ const buildTaskflowFlowContext = (pathname) => {
           label: normalizeNodeLabel(node) || (String(node?.id ?? '') === 'start' ? 'start' : ''),
           nodeType: String(node?.type ?? '').trim(),
           taskName: String(node?.data?.taskName ?? '').trim(),
-          contentName: String(node?.data?.contentName ?? '').trim(),
+          contentName: String(node?.data?.contentName ?? '').trim()
         }))
-        .filter((node) => node.id)
-        ,
+        .filter((node) => node.id),
       flowDefinition: {
         nodes,
         edges,
         viewport:
-          runtimeContext?.viewport && typeof runtimeContext.viewport === 'object' && !Array.isArray(runtimeContext.viewport)
+          runtimeContext?.viewport &&
+          typeof runtimeContext.viewport === 'object' &&
+          !Array.isArray(runtimeContext.viewport)
             ? runtimeContext.viewport
             : { x: 0, y: 0, zoom: 1 },
-        flowMode: runtimeContext?.flowMode === 'tree' ? 'tree' : 'default',
+        flowMode: runtimeContext?.flowMode === 'tree' ? 'tree' : 'default'
       },
       fullFlow: {
         nodes,
         edges,
         viewport:
-          runtimeContext?.viewport && typeof runtimeContext.viewport === 'object' && !Array.isArray(runtimeContext.viewport)
+          runtimeContext?.viewport &&
+          typeof runtimeContext.viewport === 'object' &&
+          !Array.isArray(runtimeContext.viewport)
             ? runtimeContext.viewport
             : { x: 0, y: 0, zoom: 1 },
-        flowMode: runtimeContext?.flowMode === 'tree' ? 'tree' : 'default',
-      },
+        flowMode: runtimeContext?.flowMode === 'tree' ? 'tree' : 'default'
+      }
     }
   } catch {
     return undefined
@@ -469,9 +503,12 @@ const buildTaskflowFlowContext = (pathname) => {
 const buildTaskflowRequestContext = (flowContext) => {
   if (!flowContext || typeof flowContext !== 'object') return undefined
 
+  const flowForEdges = flowContext?.fullFlow ?? flowContext?.flowDefinition
+  const flowModeSource = flowContext?.fullFlow ?? flowContext?.flowDefinition ?? flowContext
+
   return {
     taskFlowId: Number(flowContext?.taskFlowId ?? 0) || undefined,
-    flowMode: String(flowContext?.flowDefinition?.flowMode ?? flowContext?.flowMode ?? 'default'),
+    flowMode: String(flowModeSource?.flowMode ?? 'default'),
     nodeCount: Number(flowContext?.nodeCount ?? 0),
     edgeCount: Number(flowContext?.edgeCount ?? 0),
     branchingCount: Number(flowContext?.branchingCount ?? 0),
@@ -481,26 +518,17 @@ const buildTaskflowRequestContext = (flowContext) => {
     taskList: Array.isArray(flowContext?.taskList) ? flowContext.taskList : [],
     taskContents: Array.isArray(flowContext?.taskContents) ? flowContext.taskContents : [],
     currentNodeList: Array.isArray(flowContext?.nodes) ? flowContext.nodes : [],
-    currentEdgeList: Array.isArray(flowContext?.flowDefinition?.edges)
-      ? flowContext.flowDefinition.edges.map((edge) => ({
+    currentEdgeList: Array.isArray(flowForEdges?.edges)
+      ? flowForEdges.edges.map((edge) => ({
           id: String(edge?.id ?? ''),
           source: String(edge?.source ?? ''),
           target: String(edge?.target ?? ''),
           sourceHandle: String(edge?.sourceHandle ?? ''),
-          targetHandle: String(edge?.targetHandle ?? ''),
+          targetHandle: String(edge?.targetHandle ?? '')
         }))
       : [],
-    nodes: Array.isArray(flowContext?.nodes) ? flowContext.nodes : [],
-    edges: Array.isArray(flowContext?.flowDefinition?.edges) ? flowContext.flowDefinition.edges : [],
-    flowDefinition:
-      flowContext?.flowDefinition && typeof flowContext.flowDefinition === 'object'
-        ? flowContext.flowDefinition
-        : undefined,
-    fullFlow:
-      flowContext?.fullFlow && typeof flowContext.fullFlow === 'object'
-        ? flowContext.fullFlow
-        : undefined,
-    addableNodes: Array.isArray(flowContext?.addableNodes) ? flowContext.addableNodes : [],
+    fullFlow: flowContext?.fullFlow && typeof flowContext.fullFlow === 'object' ? flowContext.fullFlow : undefined,
+    addableNodes: Array.isArray(flowContext?.addableNodes) ? flowContext.addableNodes : []
   }
 }
 
@@ -554,22 +582,7 @@ const extractAssistantText = (result) => {
   if (typeof payload?.content === 'string' && payload.content.trim()) return payload.content.trim()
   if (typeof payload?.text === 'string' && payload.text.trim()) return payload.text.trim()
   if (typeof payload?.answer === 'string' && payload.answer.trim()) return payload.answer.trim()
-
-  const chatAction = String(payload?.chat_action ?? '').trim()
-  const actionParam = payload?.chat_action_param && typeof payload.chat_action_param === 'object'
-    ? payload.chat_action_param
-    : undefined
-
-  if (chatAction === 'navigation') {
-    const path = String(actionParam?.path ?? '').trim().replace(/^\/+/, '')
-    return path ? `${path} 화면으로 이동을 준비했어요.` : '화면 이동을 준비했어요.'
-  }
-
-  if (Array.isArray(actionParam?.suggested_actions) && actionParam.suggested_actions.length > 0) {
-    return '요청을 처리했지만 답변 문장을 만들지 못했습니다. 같은 내용을 한 번 더 질문해 주세요.'
-  }
-
-  return '요청을 처리했지만 답변 문장을 만들지 못했습니다. 다시 질문해 주세요.'
+  return '응답을 받았지만 표시할 수 있는 내용이 없습니다.'
 }
 
 const extractPipelineTrace = (result) => {
@@ -619,8 +632,8 @@ const extractRagMatchInfo = (result) => {
       topChunkIds: Array.isArray(item?.topChunkIds)
         ? item.topChunkIds.map((chunkId) => String(chunkId ?? '').trim()).filter(Boolean)
         : [],
-      relaxed: Boolean(item?.relaxed),
-    })),
+      relaxed: Boolean(item?.relaxed)
+    }))
   }
 }
 
@@ -632,16 +645,15 @@ const extractMatchedRuleInfo = (result) => {
       ruleKey: '',
       ruleType: '',
       reason: '',
-      confidence: undefined,
+      confidence: undefined
     }
   }
 
-  const direct = payload?.matchedRule && typeof payload.matchedRule === 'object'
-    ? payload.matchedRule
-    : undefined
-  const nested = payload?.chat_action_param?.matchedRule && typeof payload.chat_action_param.matchedRule === 'object'
-    ? payload.chat_action_param.matchedRule
-    : undefined
+  const direct = payload?.matchedRule && typeof payload.matchedRule === 'object' ? payload.matchedRule : undefined
+  const nested =
+    payload?.chat_action_param?.matchedRule && typeof payload.chat_action_param.matchedRule === 'object'
+      ? payload.chat_action_param.matchedRule
+      : undefined
   const row = direct ?? nested ?? {}
 
   const confidence = Number(row?.confidence)
@@ -650,7 +662,7 @@ const extractMatchedRuleInfo = (result) => {
     ruleKey: String(row?.ruleKey ?? '').trim() || String(payload?.chat_action_param?.matchedRuleKey ?? '').trim(),
     ruleType: String(row?.ruleType ?? '').trim(),
     reason: String(row?.reason ?? '').trim(),
-    confidence: Number.isFinite(confidence) ? confidence : undefined,
+    confidence: Number.isFinite(confidence) ? confidence : undefined
   }
 }
 
@@ -676,7 +688,7 @@ const extractAssistantImages = (result) => {
         src,
         alt: String(item?.alt ?? item?.title ?? 'assistant image').trim(),
         title: String(item?.title ?? '').trim(),
-        caption: String(item?.caption ?? '').trim(),
+        caption: String(item?.caption ?? '').trim()
       }
     })
     .filter(Boolean)
@@ -696,9 +708,8 @@ const extractSuggestedActions = (result) => {
       const label = String(item?.label ?? '').trim()
       const keyword = String(item?.keyword ?? '').trim()
       const chatAction = String(item?.chat_action ?? '').trim()
-      const chatActionParam = item?.chat_action_param && typeof item.chat_action_param === 'object'
-        ? item.chat_action_param
-        : undefined
+      const chatActionParam =
+        item?.chat_action_param && typeof item.chat_action_param === 'object' ? item.chat_action_param : undefined
 
       if (!label || !chatAction) return null
 
@@ -707,7 +718,7 @@ const extractSuggestedActions = (result) => {
         label,
         keyword,
         chatAction,
-        chatActionParam,
+        chatActionParam
       }
     })
     .filter(Boolean)
@@ -715,11 +726,13 @@ const extractSuggestedActions = (result) => {
 }
 
 const PATH_PARAM_LABELS = {
-  robotId: '로봇 아이디',
+  robotId: '로봇 아이디'
 }
 
 const extractPathParams = (path) => {
-  const normalized = String(path ?? '').trim().replace(/^\/+/, '')
+  const normalized = String(path ?? '')
+    .trim()
+    .replace(/^\/+/, '')
   if (!normalized) return []
 
   return normalized
@@ -737,7 +750,9 @@ const resolveParamLabel = (paramName) => {
 }
 
 const fillPathTemplate = (pathTemplate, params) => {
-  const normalized = String(pathTemplate ?? '').trim().replace(/^\/+/, '')
+  const normalized = String(pathTemplate ?? '')
+    .trim()
+    .replace(/^\/+/, '')
   if (!normalized) return ''
 
   return normalized.replace(/:([a-zA-Z0-9_]+)/g, (_, name) => {
@@ -768,7 +783,9 @@ const parseNavigationParamInput = (text, paramNames) => {
 }
 
 const buildNavigationFallbackActions = (pathTemplate) => {
-  const normalized = String(pathTemplate ?? '').trim().replace(/^\/+/, '')
+  const normalized = String(pathTemplate ?? '')
+    .trim()
+    .replace(/^\/+/, '')
 
   if (normalized.startsWith('robot/robots/:robotId/detail')) {
     return [
@@ -777,8 +794,8 @@ const buildNavigationFallbackActions = (pathTemplate) => {
         label: '로봇 목록 화면으로 이동',
         keyword: '로봇 상세 이동이 어려우면 목록에서 직접 선택',
         chatAction: 'navigation',
-        chatActionParam: { path: 'robot/management', app: 'robot' },
-      },
+        chatActionParam: { path: 'robot/management', app: 'robot' }
+      }
     ]
   }
 
@@ -791,7 +808,7 @@ const getInitialY = () => {
   try {
     const saved = localStorage.getItem(STORAGE_KEY)
     if (saved) return Math.max(60, Math.min(window.innerHeight - 60, parseInt(saved, 10)))
-  } catch { }
+  } catch {}
   return Math.floor((typeof window !== 'undefined' ? window.innerHeight : 600) / 2)
 }
 
@@ -817,7 +834,7 @@ function FloatingTrigger({ onClick }) {
     isDragging.current = false
     try {
       localStorage.setItem(STORAGE_KEY, String(posYRef.current))
-    } catch { }
+    } catch {}
     document.removeEventListener('mousemove', onMouseMove)
     document.removeEventListener('mouseup', onMouseUp)
   }, [onMouseMove])
@@ -848,7 +865,7 @@ function FloatingTrigger({ onClick }) {
   )
 }
 
-const AiAssistantPanel = ({ greetingExtra, className }) => {
+const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
   const navigate = useNavigate()
   const location = useLocation()
   const session = useUserStore((state) => state.session)
@@ -872,7 +889,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
   const [pageContextOn, setPageContextOn] = useState(true)
   const [pendingNavigation, setPendingNavigation] = useState(null)
   const [screenSuggestions, setScreenSuggestions] = useState([])
-  const [chatInputPlaceholder, setChatInputPlaceholder] = useState(DEFAULT_CHAT_INPUT_PLACEHOLDER)
+  const [chatInputPlaceholder, setChatInputPlaceholder] = useState('')
   const [isAssistantTyping, setIsAssistantTyping] = useState(false)
 
   const messageListRef = useRef(null)
@@ -880,6 +897,13 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
   const abortRef = useRef(null)
   const sendingStartedAtRef = useRef(null)
   const assistantTypingTimerRef = useRef(null)
+  const assistantMessageContentRef = useRef(
+    new Map(
+      messages
+        .filter((message) => message?.role === 'assistant' && message?.id)
+        .map((message) => [String(message.id), String(message.content ?? '')])
+    )
+  )
   const sendingStagePlanRef = useRef(buildSendingStagePlan(''))
   const displayedStageRef = useRef(SENDING_STAGE.IDLE)
   const stageQueueRef = useRef([])
@@ -939,9 +963,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
 
   const hasConversation = messages.some((m) => m.role === 'user')
 
-  const userName = session?.email
-    ? session.email.split('@')[0].replace(/[._-]/g, ' ')
-    : null
+  const userName = session?.email ? session.email.split('@')[0].replace(/[._-]/g, ' ') : null
 
   useEffect(() => {
     if (messageListRef.current) {
@@ -974,9 +996,10 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
 
     const tick = () => {
       const elapsedMs = Math.max(0, Date.now() - startedAt)
-      const plan = Array.isArray(sendingStagePlanRef.current) && sendingStagePlanRef.current.length > 0
-        ? sendingStagePlanRef.current
-        : buildSendingStagePlan('')
+      const plan =
+        Array.isArray(sendingStagePlanRef.current) && sendingStagePlanRef.current.length > 0
+          ? sendingStagePlanRef.current
+          : buildSendingStagePlan('')
       const thresholds = [0, 450, 1100, 1800, 2600, 3600, 4800]
 
       let nextIndex = 0
@@ -1056,6 +1079,9 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
     const fullText = String(latestAssistantMessage.content ?? '')
     if (!targetId || !fullText) return undefined
 
+    if (assistantMessageContentRef.current.get(targetId) === fullText) return undefined
+    assistantMessageContentRef.current.set(targetId, fullText)
+
     const currentTyped = String(typedAssistantMessages[targetId] ?? '')
     if (currentTyped.length >= fullText.length) return undefined
 
@@ -1066,7 +1092,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
 
     setTypedAssistantMessages((prev) => ({
       ...prev,
-      [targetId]: '',
+      [targetId]: ''
     }))
     setIsAssistantTyping(true)
 
@@ -1076,7 +1102,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
       const next = fullText.slice(0, index)
       setTypedAssistantMessages((prev) => ({
         ...prev,
-        [targetId]: next,
+        [targetId]: next
       }))
 
       if (index >= fullText.length) {
@@ -1112,19 +1138,45 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
 
     const loadSuggestions = async () => {
       try {
-        const response = await getChatSettings()
+        const [settingsResponse, guidanceResponse] = await Promise.all([
+          getChatSettings(),
+          getGuidanceList(),
+        ])
         if (cancelled) return
 
-        const guidanceItems = response?.data?.management?.guidance ?? []
-        const promptItems = response?.data?.management?.prompts ?? []
+        const settingsGuidance = Array.isArray(settingsResponse?.data?.management?.guidance)
+          ? settingsResponse.data.management.guidance
+          : []
+        const guidanceItems = Array.isArray(guidanceResponse?.data?.items)
+          ? guidanceResponse.data.items
+          : settingsGuidance
+
+        console.info('[AI_CHAT][COMMON_HINT_SOURCE]', {
+          pathname: routeContext.pathname,
+          settingsGuidanceCount: settingsGuidance.length,
+          guidanceCount: guidanceItems.length,
+          guidanceSample: guidanceItems.slice(0, 5),
+        })
+
         const examples = findGuidanceExamplesForPath(guidanceItems, routeContext.pathname)
-        const inputHint = findInputHintForPath(promptItems, routeContext.pathname)
+        const inputHint = findInputHintForPath(guidanceItems, routeContext.pathname)
+        const commonHint = guidanceItems.find(
+          (item) => String(item?.appKey ?? '').trim().toLowerCase() === 'common' && String(item?.screenKey ?? item?.key ?? '').trim().toLowerCase() === 'common',
+        )
+
+        console.info('[AI_CHAT][COMMON_HINT_RESULT]', {
+          pathname: routeContext.pathname,
+          examplesCount: examples.length,
+          inputHint,
+          selectedCommonHint: commonHint,
+        })
+
         setScreenSuggestions(examples)
-        setChatInputPlaceholder(inputHint || DEFAULT_CHAT_INPUT_PLACEHOLDER)
+        setChatInputPlaceholder(inputHint || '')
       } catch {
         if (!cancelled) {
           setScreenSuggestions([])
-          setChatInputPlaceholder(DEFAULT_CHAT_INPUT_PLACEHOLDER)
+          setChatInputPlaceholder('')
         }
       }
     }
@@ -1165,7 +1217,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
         updateMessageById(replaceMessageId, {
           content: message,
           createdAt: new Date().toISOString(),
-          context: routeContext,
+          context: routeContext
         })
         return
       }
@@ -1175,13 +1227,64 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
         role: 'assistant',
         content: message,
         createdAt: new Date().toISOString(),
-        context: routeContext,
+        context: routeContext
       })
     }
 
     window.addEventListener(AI_TASKFLOW_CANVAS_CLARIFY_EVENT, onTaskflowClarify)
     return () => {
       window.removeEventListener(AI_TASKFLOW_CANVAS_CLARIFY_EVENT, onTaskflowClarify)
+    }
+  }, [appendMessage, updateMessageById, routeContext])
+
+  useEffect(() => {
+    const onTaskflowCommandResult = (event) => {
+      const detail = event?.detail
+      const message = String(detail?.message ?? '').trim()
+      if (!message) return
+
+      if (detail?.kind === 'draft') {
+        const assistantMessageId = String(detail?.assistantMessageId ?? '').trim()
+        if (!assistantMessageId) return
+        updateMessageById(assistantMessageId, {
+          content: message,
+          createdAt: new Date().toISOString(),
+          context: routeContext
+        })
+        return
+      }
+
+      if (detail?.kind !== 'command') return
+
+      appendMessage({
+        id: buildMessageId(),
+        role: 'assistant',
+        content: message,
+        createdAt: new Date().toISOString(),
+        context: routeContext
+      })
+
+      const historyContext = detail?.historyContext
+      if (historyContext && typeof historyContext === 'object') {
+        void saveLocalChatHistory({
+          ...historyContext,
+          assistantText: message,
+          chatAction: 'taskflow-command',
+          debugMeta: {
+            source: 'local-command',
+            commandType: String(detail?.commandType ?? '').trim() || undefined,
+            success: Boolean(detail?.success),
+            didApply: Boolean(detail?.didApply)
+          }
+        }).catch((error) => {
+          console.warn('[AI_CHAT][LOCAL_COMMAND_HISTORY_SAVE_FAILED]', error)
+        })
+      }
+    }
+
+    window.addEventListener(AI_TASKFLOW_CANVAS_RESULT_EVENT, onTaskflowCommandResult)
+    return () => {
+      window.removeEventListener(AI_TASKFLOW_CANVAS_RESULT_EVENT, onTaskflowCommandResult)
     }
   }, [appendMessage, updateMessageById, routeContext])
 
@@ -1197,7 +1300,32 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
         hasTaskflowCommand: Boolean(taskflowCommand),
         isTmsCanvas: isTmsCanvasPath(location.pathname),
         paramKeys: param && typeof param === 'object' ? Object.keys(param) : [],
+        rawParamPreview: param && typeof param === 'object' ? JSON.stringify(param) : param,
+        taskflowDraftPreview:
+          taskflowDraft && typeof taskflowDraft === 'object' ? JSON.stringify(taskflowDraft) : taskflowDraft
       })
+      const finalMessage = String(assistantMessage ?? '').trim()
+      const finalMessageId = String(assistantMessageId ?? '').trim()
+
+      const emitFinalMessage = (message, messageId) => {
+        if (!message) return
+        if (messageId) {
+          updateMessageById(messageId, {
+            content: message,
+            createdAt: new Date().toISOString(),
+            context: routeContext
+          })
+          return
+        }
+        appendMessage({
+          id: buildMessageId(),
+          role: 'assistant',
+          content: message,
+          createdAt: new Date().toISOString(),
+          context: routeContext
+        })
+      }
+
       if (taskflowCommand && isTmsCanvasPath(location.pathname)) {
         window.dispatchEvent(
           new CustomEvent(AI_TASKFLOW_CANVAS_COMMAND_EVENT, {
@@ -1205,14 +1333,15 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
               command: taskflowCommand,
               chatAction,
               rawParam: param,
-              message: String(assistantMessage ?? '').trim(),
-              assistantMessageId: String(assistantMessageId ?? '').trim(),
-            },
+              message: finalMessage,
+              assistantMessageId: finalMessageId
+            }
           })
         )
       }
       if (taskflowDraft && isTmsCanvasPath(location.pathname)) {
         let handled = false
+        let appliedSuccessfully = false
         try {
           const applyDraft = window.__AI_TASKFLOW_CANVAS_APPLY__
           if (typeof applyDraft === 'function') {
@@ -1220,15 +1349,39 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
               chatAction,
               pathname: location.pathname,
               draftKeys: Object.keys(taskflowDraft || {}),
+              draftPayload: JSON.stringify({
+                ...taskflowDraft,
+                message: finalMessage
+              })
             })
             applyDraft({
               ...taskflowDraft,
-              message: String(assistantMessage ?? '').trim(),
+              message: finalMessage
             })
             handled = true
+            appliedSuccessfully = true
           }
         } catch (error) {
           console.warn('[AI_TASKFLOW][SETTER_DISPATCH_FAIL]', error)
+        }
+
+        if (!handled) {
+          try {
+            window.dispatchEvent(
+              new CustomEvent(AI_TASKFLOW_CANVAS_DRAFT_EVENT, {
+                detail: {
+                  draft: taskflowDraft,
+                  chatAction,
+                  rawParam: param,
+                  message: finalMessage,
+                  assistantMessageId: finalMessageId
+                }
+              })
+            )
+            appliedSuccessfully = true
+          } catch (error) {
+            console.warn('[AI_TASKFLOW][DRAFT_DISPATCH_FAIL]', error)
+          }
         }
 
         console.log('[AI_TASKFLOW][DISPATCH_DRAFT]', {
@@ -1236,27 +1389,31 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
           pathname: location.pathname,
           draftKeys: Object.keys(taskflowDraft || {}),
           handledBySetter: handled,
+          appliedSuccessfully,
+          draftPayload: JSON.stringify({
+            ...taskflowDraft,
+            message: finalMessage
+          })
         })
-        if (!handled) {
-          window.dispatchEvent(
-            new CustomEvent(AI_TASKFLOW_CANVAS_EVENT, {
-              detail: {
-                draft: taskflowDraft,
-                chatAction,
-                rawParam: param,
-                message: String(assistantMessage ?? '').trim(),
-                assistantMessageId: String(assistantMessageId ?? '').trim(),
-              },
-            })
-          )
+
+        if (!appliedSuccessfully) {
+          const failureReason = '캔버스 적용 중 오류가 발생했습니다.'
+          const failureMessage = finalMessage
+            ? `${finalMessage}\n\n실패 이유: ${failureReason}`
+            : `실패 이유: ${failureReason}`
+          emitFinalMessage(failureMessage, finalMessageId)
         }
         return
       }
 
+      emitFinalMessage(finalMessage, finalMessageId)
+
       switch (chatAction) {
         // 화면 이동
         case 'navigation': {
-          const path = String(param?.path ?? '').trim().replace(/^\/+/, '')
+          const path = String(param?.path ?? '')
+            .trim()
+            .replace(/^\/+/, '')
           if (!path) break
           const pathParams = extractPathParams(path)
 
@@ -1269,7 +1426,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
               app: String(param?.app ?? '').trim() || undefined,
               paramNames: pathParams,
               screenName: String(param?.screenName ?? '').trim() || undefined,
-              fallbackActions,
+              fallbackActions
             })
 
             appendMessage({
@@ -1278,7 +1435,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
               content: `${primaryParamLabel}를 알려주세요.`,
               suggestedActions: fallbackActions,
               createdAt: new Date().toISOString(),
-              context: routeContext,
+              context: routeContext
             })
             break
           }
@@ -1332,6 +1489,35 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
 
     appendMessage({ id: buildMessageId(), role: 'user', content, createdAt, context })
 
+    let localCommandRule = null
+    if (commandAdapter?.isActive?.(routeContext.pathname)) {
+      try {
+        localCommandRule = await commandAdapter.match(content, routeContext.pathname)
+      } catch (error) {
+        console.warn('[AI_CHAT][LOCAL_COMMAND_MATCH_FAILED]', error)
+      }
+    }
+    if (localCommandRule) {
+      window.dispatchEvent(
+        new CustomEvent(AI_TASKFLOW_CANVAS_COMMAND_EVENT, {
+          detail: {
+            command: localCommandRule.command,
+            replyText: localCommandRule.replyText,
+            historyContext: {
+              author: session?.email || undefined,
+              conversationId,
+              currentApp: routeContext.appPrefix || undefined,
+              currentPath: routeContext.pathname,
+              userMessage: content
+            }
+          }
+        })
+      )
+      setDraft('')
+      submitInFlightRef.current = false
+      return
+    }
+
     if (pendingNavigation) {
       const parsedParams = parseNavigationParamInput(content, pendingNavigation.paramNames)
 
@@ -1343,7 +1529,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
           content: `${primaryParamLabel}를 다시 알려주세요.`,
           suggestedActions: pendingNavigation.fallbackActions ?? [],
           createdAt: new Date().toISOString(),
-          context,
+          context
         })
         submitInFlightRef.current = false
         return
@@ -1357,7 +1543,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
           content: '상세 화면 이동이 어려워서 대체 화면을 제안드릴게요.',
           suggestedActions: pendingNavigation.fallbackActions ?? [],
           createdAt: new Date().toISOString(),
-          context,
+          context
         })
         submitInFlightRef.current = false
         return
@@ -1369,7 +1555,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
         content: '네 상세화면으로 이동하겠습니다.',
         suggestedActions: pendingNavigation.fallbackActions ?? [],
         createdAt: new Date().toISOString(),
-        context,
+        context
       })
 
       setPendingNavigation(null)
@@ -1386,14 +1572,27 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
     sendingStartedAtRef.current = Date.now()
     setSendingElapsedSec(0)
     setIsSending(true)
+    setSendingStage(SENDING_STAGE.NODE_WORKING)
+    sendingStagePlanRef.current = [SENDING_STAGE.NODE_WORKING]
+    stageQueueRef.current = []
+    displayedStageRef.current = SENDING_STAGE.NODE_WORKING
+    if (stageAdvanceTimerRef.current) {
+      clearTimeout(stageAdvanceTimerRef.current)
+      stageAdvanceTimerRef.current = null
+    }
+
+    setDraft('')
+    sendingStartedAtRef.current = Date.now()
+    setSendingElapsedSec(0)
+    setIsSending(true)
     setSendingStage(SENDING_STAGE.REQUESTING)
     sendingStagePlanRef.current = buildSendingStagePlan(content)
     stageQueueRef.current = buildSendingStagePlan(content).slice(1)
     displayedStageRef.current = SENDING_STAGE.IDLE
-      if (stageAdvanceTimerRef.current) {
-        clearTimeout(stageAdvanceTimerRef.current)
-        stageAdvanceTimerRef.current = null
-      }
+    if (stageAdvanceTimerRef.current) {
+      clearTimeout(stageAdvanceTimerRef.current)
+      stageAdvanceTimerRef.current = null
+    }
 
     const controller = new AbortController()
     abortRef.current = controller
@@ -1417,26 +1616,28 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
           : 0,
         taskList: Array.isArray(flowContext?.taskList) ? flowContext.taskList : [],
         taskContents: Array.isArray(flowContext?.taskContents) ? flowContext.taskContents : [],
-        currentNodeList: Array.isArray(flowContext?.nodes) ? flowContext.nodes : [],
+        currentNodeList: Array.isArray(flowContext?.nodes) ? flowContext.nodes : []
       })
 
       console.log('[AI_TASKFLOW][2단계:요청페이로드_검증]', {
         hasTaskflowContext: Boolean(taskflowContext),
-        hasFlowDefinition: Boolean(taskflowContext?.flowDefinition),
+        hasFlowDefinition: false,
         hasFullFlow: Boolean(taskflowContext?.fullFlow),
-        taskflowNodeCount: Array.isArray(taskflowContext?.flowDefinition?.nodes)
-          ? taskflowContext.flowDefinition.nodes.length
-          : 0,
-        taskflowEdgeCount: Array.isArray(taskflowContext?.flowDefinition?.edges)
-          ? taskflowContext.flowDefinition.edges.length
-          : 0,
-        taskflowFlowDefinition: taskflowContext?.flowDefinition,
+        taskflowNodeCount: Array.isArray(taskflowContext?.fullFlow?.nodes) ? taskflowContext.fullFlow.nodes.length : 0,
+        taskflowEdgeCount: Array.isArray(taskflowContext?.fullFlow?.edges) ? taskflowContext.fullFlow.edges.length : 0,
+        taskflowFlowDefinition: undefined
+      })
+
+      console.log('[AI_CHAT][RULE_MATCH][요청]', {
+        message: content,
+        currentPath: pageContextOn ? routeContext.pathname : undefined,
+        currentApp: pageContextOn ? routeContext.appPrefix || undefined : undefined
       })
 
       const result = await postSiteAssistantChat({
         message: content,
         currentPath: pageContextOn ? routeContext.pathname : undefined,
-        currentApp: pageContextOn ? (routeContext.appPrefix || undefined) : undefined,
+        currentApp: pageContextOn ? routeContext.appPrefix || undefined : undefined,
         conversationId,
         // 작성자(대화기록 저장용)
         author: session?.email || undefined,
@@ -1452,16 +1653,15 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
           siteId: selectedOrgs?.[1],
           // 이벤트 화면의 현재 필터(기간 포함). 백엔드가 기간 미지정 질의 처리 시 참고할 수 있다.
           eventFilters:
-            currentEventFilters
-            && typeof currentEventFilters === 'object'
-            && currentEventFilters.startDate
-            && currentEventFilters.endDate
+            currentEventFilters &&
+            typeof currentEventFilters === 'object' &&
+            currentEventFilters.startDate &&
+            currentEventFilters.endDate
               ? currentEventFilters
               : undefined,
-          taskflow: taskflowContext,
-          flowContext,
+          taskflow: taskflowContext
         },
-        signal: controller.signal,
+        signal: controller.signal
       })
 
       console.log(`result`, result)
@@ -1479,14 +1679,39 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
         console.log(`[AI_CHAT][PIPELINE_TRACE] ${pipelineTrace}`)
       }
       console.log('[AI_CHAT][RAG_MATCH]', {
-        usedCollection: ragMatchInfo.usedCollection || '-'
-        , usedChunkKeys: ragMatchInfo.usedChunkKeys,
+        usedCollection: ragMatchInfo.usedCollection || '-',
+        usedChunkKeys: ragMatchInfo.usedChunkKeys
       })
       console.log('[AI_CHAT][RAG_SCORES]', ragMatchInfo.ragScores)
       if (matchedRuleInfo.ruleKey || matchedRuleInfo.reason) {
         console.log('[AI_CHAT][MATCHED_RULE]', matchedRuleInfo)
       }
-      const navigationPath = String(chat_action_param?.path ?? '').trim().replace(/^\/+/, '')
+
+      const ruleCanvasDraft = extractTaskflowDraftParam(chat_action_param)
+
+      console.log('[AI_CHAT][RULE_MATCH][응답]', {
+        matched: Boolean(matchedRuleInfo.ruleKey || matchedRuleInfo.reason),
+        source: matchedRuleInfo.source || '-',
+        ruleKey: matchedRuleInfo.ruleKey || '-',
+        ruleType: matchedRuleInfo.ruleType || '-',
+        confidence: matchedRuleInfo.confidence,
+        reason: matchedRuleInfo.reason || '-',
+        chatAction: chat_action || '-',
+        hasCanvasDraft: Boolean(ruleCanvasDraft),
+        canvasDraft: ruleCanvasDraft,
+        pipelineTrace: pipelineTrace || '-'
+      })
+
+      if (!matchedRuleInfo.ruleKey && !matchedRuleInfo.reason) {
+        console.warn('[AI_CHAT][RULE_MATCH][미매칭] 룰 매칭 없이 LLM 파이프라인으로 처리됨', {
+          message: content,
+          currentPath: pageContextOn ? routeContext.pathname : undefined,
+          pipelineTrace: pipelineTrace || '-'
+        })
+      }
+      const navigationPath = String(chat_action_param?.path ?? '')
+        .trim()
+        .replace(/^\/+/, '')
       const hasNavigationParams = chat_action === 'navigation' && extractPathParams(navigationPath).length > 0
       const suggestedActions = chat_action === 'ailog/event/filter' ? [] : extractSuggestedActions(result)
       const images = extractAssistantImages(result)
@@ -1506,19 +1731,13 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
           images,
           suggestedActions,
           createdAt: new Date().toISOString(),
-          context,
+          context
         })
 
-        handleChatAction(
-          chat_action,
-          chat_action_param,
-          extractAssistantText(result),
-          assistantMessageId,
-        )
+        handleChatAction(chat_action, chat_action_param, extractAssistantText(result), assistantMessageId)
       } else {
         handleChatAction(chat_action, chat_action_param, extractAssistantText(result))
       }
-
     } catch (error) {
       // 사용자가 "중지" 를 눌러 취소한 경우: 에러 메시지 대신 안내만.
       if (error?.name === 'AbortError') {
@@ -1529,7 +1748,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
           role: 'assistant',
           content: '답변 생성을 중지했습니다.',
           createdAt: new Date().toISOString(),
-          context,
+          context
         })
       } else {
         setSendingStage(SENDING_STAGE.COMPLETED)
@@ -1539,7 +1758,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
           role: 'assistant',
           content: error?.message || '답변을 가져오지 못했습니다.',
           createdAt: new Date().toISOString(),
-          context,
+          context
         })
       }
     } finally {
@@ -1608,20 +1827,12 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
 
           <StyledAiBotAvatar>✦</StyledAiBotAvatar>
 
-          {isOpen && (
-            <StyledAiAssistantPanelTitle>
-              AI Assistant
-            </StyledAiAssistantPanelTitle>
-          )}
+          {isOpen && <StyledAiAssistantPanelTitle>AI Assistant</StyledAiAssistantPanelTitle>}
         </StyledAiHeaderLeft>
 
         <StyledAiHeaderActions>
           {isOpen && (
-            <StyledAiAssistantDockToggle
-              onClick={handleOpenSettings}
-              title="채팅 설정"
-              type="button"
-            >
+            <StyledAiAssistantDockToggle onClick={handleOpenSettings} title="채팅 설정" type="button">
               <Icon name="settings" size={16} />
             </StyledAiAssistantDockToggle>
           )}
@@ -1655,15 +1866,9 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
                   )}
                 </StyledAiGreetingLine>
 
-                {greetingExtra && (
-                  <div style={{ margin: '8px 0' }}>
-                    {greetingExtra}
-                  </div>
-                )}
+                {greetingExtra && <div style={{ margin: '8px 0' }}>{greetingExtra}</div>}
 
-                <StyledAiGreetingCta>
-                  무엇을 도와드릴까요?
-                </StyledAiGreetingCta>
+                <StyledAiGreetingCta>무엇을 도와드릴까요?</StyledAiGreetingCta>
               </StyledAiGreeting>
 
               {ENABLE_QUICK_COMMANDS && quickCommands.length > 0 ? (
@@ -1674,11 +1879,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
                     </div>
                     <StyledAiActionCards>
                       {quickCommands.map((command) => (
-                        <StyledAiActionCard
-                          key={command}
-                          type="button"
-                          onClick={() => handleSubmit(command)}
-                        >
+                        <StyledAiActionCard key={command} type="button" onClick={() => handleSubmit(command)}>
                           <StyledAiActionCardTitle>{command}</StyledAiActionCardTitle>
                         </StyledAiActionCard>
                       ))}
@@ -1696,9 +1897,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
                   </StyledAiAssistantMessageMeta>
 
                   <StyledAiAssistantMessageBubble $role={m.role}>
-                    {m.role === 'assistant'
-                      ? (typedAssistantMessages[m.id] ?? m.content)
-                      : m.content}
+                    {m.role === 'assistant' ? (typedAssistantMessages[m.id] ?? m.content) : m.content}
                   </StyledAiAssistantMessageBubble>
 
                   {m.role === 'assistant' && (m?.matchedRule?.ruleKey || m?.matchedRule?.reason || m?.pipelineTrace) ? (
@@ -1712,58 +1911,62 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
                   {m.role === 'assistant' && Array.isArray(m.images) && m.images[0] ? (
                     <StyledAiAssistantImageList>
                       <StyledAiAssistantImageCard key={m.images[0].id || m.images[0].src}>
-                        <StyledAiAssistantImage src={m.images[0].src} alt={m.images[0].alt || m.images[0].title || 'assistant image'} loading="lazy" />
-                        {(m.images[0].title || m.images[0].caption) ? (
+                        <StyledAiAssistantImage
+                          src={m.images[0].src}
+                          alt={m.images[0].alt || m.images[0].title || 'assistant image'}
+                          loading="lazy"
+                        />
+                        {m.images[0].title || m.images[0].caption ? (
                           <StyledAiAssistantImageCaption>
-                            {m.images[0].title ? <StyledAiAssistantImageTitle>{m.images[0].title}</StyledAiAssistantImageTitle> : null}
-                            {m.images[0].caption ? <StyledAiAssistantImageText>{m.images[0].caption}</StyledAiAssistantImageText> : null}
+                            {m.images[0].title ? (
+                              <StyledAiAssistantImageTitle>{m.images[0].title}</StyledAiAssistantImageTitle>
+                            ) : null}
+                            {m.images[0].caption ? (
+                              <StyledAiAssistantImageText>{m.images[0].caption}</StyledAiAssistantImageText>
+                            ) : null}
                           </StyledAiAssistantImageCaption>
                         ) : null}
                       </StyledAiAssistantImageCard>
                     </StyledAiAssistantImageList>
                   ) : null}
 
-                  {ENABLE_MESSAGE_SUGGESTED_ACTIONS && m.role === 'assistant' && Array.isArray(m.suggestedActions) && m.suggestedActions.length > 0 && (
-                    <>
-                      <div style={{ marginTop: '8px', fontSize: '12px', color: '#6b7280', fontWeight: 700 }}>
-                        아래 명령어를 추천드려요.
-                      </div>
-                      <StyledAiActionCards>
-                        {m.suggestedActions.map((item) => (
-                          <StyledAiActionCard
-                            key={item.id}
-                            type="button"
-                            onClick={() => handleChatAction(item.chatAction, item.chatActionParam)}
-                          >
-                            <StyledAiActionCardTitle>{item.label}</StyledAiActionCardTitle>
-                            {item.keyword ? <StyledAiActionCardKeyword>{item.keyword}</StyledAiActionCardKeyword> : null}
-                          </StyledAiActionCard>
-                        ))}
-                      </StyledAiActionCards>
-                    </>
-                  )}
+                  {ENABLE_MESSAGE_SUGGESTED_ACTIONS &&
+                    m.role === 'assistant' &&
+                    Array.isArray(m.suggestedActions) &&
+                    m.suggestedActions.length > 0 && (
+                      <>
+                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#6b7280', fontWeight: 700 }}>
+                          아래 명령어를 추천드려요.
+                        </div>
+                        <StyledAiActionCards>
+                          {m.suggestedActions.map((item) => (
+                            <StyledAiActionCard
+                              key={item.id}
+                              type="button"
+                              onClick={() => handleChatAction(item.chatAction, item.chatActionParam)}
+                            >
+                              <StyledAiActionCardTitle>{item.label}</StyledAiActionCardTitle>
+                              {item.keyword ? (
+                                <StyledAiActionCardKeyword>{item.keyword}</StyledAiActionCardKeyword>
+                              ) : null}
+                            </StyledAiActionCard>
+                          ))}
+                        </StyledAiActionCards>
+                      </>
+                    )}
                 </StyledAiAssistantMessage>
               ))}
 
               {isSending && (
                 <StyledAiAssistantMessage $role="assistant">
-                  <StyledAiAssistantLoadingBubble
-                    $stage={sendingStage}
-                    $elapsed={sendingElapsedSec}
-                  >
+                  <StyledAiAssistantLoadingBubble $stage={sendingStage} $elapsed={sendingElapsedSec}>
                     <StyledAiAssistantLoadingRow>
-                      <StyledAiAssistantLoadingDots
-                        $stage={sendingStage}
-                        $elapsed={sendingElapsedSec}
-                      >
+                      <StyledAiAssistantLoadingDots $stage={sendingStage} $elapsed={sendingElapsedSec}>
                         <span />
                         <span />
                         <span />
                       </StyledAiAssistantLoadingDots>
-                      <StyledAiAssistantLoadingText
-                        $stage={sendingStage}
-                        $elapsed={sendingElapsedSec}
-                      >
+                      <StyledAiAssistantLoadingText $stage={sendingStage} $elapsed={sendingElapsedSec}>
                         {(typedStageLabel || '...') + ` · ${sendingElapsedSec}초`}
                       </StyledAiAssistantLoadingText>
                     </StyledAiAssistantLoadingRow>
@@ -1794,11 +1997,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
               <StyledAiComposerFooter>
                 <StyledAiContextChips>
                   {hasConversation && (
-                    <StyledAiContextChip
-                      type="button"
-                      onClick={handleBackToInitial}
-                      disabled={isSending}
-                    >
+                    <StyledAiContextChip type="button" onClick={handleBackToInitial} disabled={isSending}>
                       대화 초기화
                     </StyledAiContextChip>
                   )}
@@ -1813,11 +2012,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
                     정지
                   </StyledAiStopButton>
                 ) : (
-                  <StyledAiSendButton
-                    type="submit"
-                    disabled={!draft.trim()}
-                    title="전송"
-                  >
+                  <StyledAiSendButton type="submit" disabled={!draft.trim()} title="전송">
                     ↑
                   </StyledAiSendButton>
                 )}
@@ -1825,9 +2020,7 @@ const AiAssistantPanel = ({ greetingExtra, className }) => {
             </StyledAiComposerBox>
           </StyledAiAssistantComposer>
 
-          <StyledAiDisclaimer>
-            AI 답변은 오류가 포함될 수 있습니다. 내용을 확인 후 활용해 주세요.
-          </StyledAiDisclaimer>
+          <StyledAiDisclaimer>AI 답변은 오류가 포함될 수 있습니다. 내용을 확인 후 활용해 주세요.</StyledAiDisclaimer>
         </StyledAiAssistantDockBody>
       )}
     </StyledAiAssistantDock>

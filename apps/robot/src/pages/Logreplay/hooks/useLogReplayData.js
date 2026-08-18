@@ -56,6 +56,16 @@ function dedupeSortedByTSec(arr) {
   return out
 }
 
+function dedupeSortedLogEntries(arr) {
+  const out = []
+  for (let i = 0; i < arr.length; i++) {
+    const cur = arr[i]
+    const prev = out.length > 0 ? out[out.length - 1] : null
+    if (prev && prev.tSec === cur.tSec && prev.level === cur.level && prev.text === cur.text) out[out.length - 1] = cur
+    else out.push(cur)
+  }
+  return out
+}
 const EMPTY_OPTION = { id: '__empty__', labelKey: 'logreplay.header.noFile' }
 
 // ✅ 맵 통합 로더: pose 윈도우를 읽는 "같은 청크 스캔"에 costmap/path/goal을 편승시켜
@@ -331,7 +341,12 @@ export default function useLogReplayData({
   }, [loadPhase, setLoadPhase])
   const rightOverlayVisible = useMemo(() => loadPhase === 'init' || loadPhase === 'error', [loadPhase])
   const rightOverlayText = useMemo(
-    () => (loadPhase === 'init' ? t('logreplay.map.initialHint') : loadPhase === 'error' ? t('logreplay.map.loadFailed') : ''),
+    () =>
+      loadPhase === 'init'
+        ? t('logreplay.map.initialHint')
+        : loadPhase === 'error'
+          ? t('logreplay.map.loadFailed')
+          : '',
     [loadPhase, t]
   )
   // presigned URL
@@ -1104,7 +1119,6 @@ export default function useLogReplayData({
       // ✅ pose 캐시는 "항상 누적"한다("지나온 경로" 보존). 과거엔 logAccModeRef(로그 전용 ref)에
       //    묶여 있었는데, 재생 중 이 값이 seek/accumulate로 flip되면서 로드 완료 시점에 seek이면
       //    캐시를 통째로 REPLACE해 궤적이 사라졌다(정지 시 특히 두드러짐). flippy 신호에서 분리.
-      const isAcc = true
       const startSec = Math.max(0, centerSec - HALF)
       const endSec = exp > 0 ? Math.min(exp, centerSec + HALF) : centerSec + HALF
 
@@ -1125,12 +1139,10 @@ export default function useLogReplayData({
       // ✅ 누적 모드: pose "자체 캐시"가 이미 center를 충분히 덮으면 skip
       //   ⚠️ 과거 버그: log window 전용 accEndCoveredRef를 참조해 pose 요청이 막혀
       //      재생 중 로봇 위치가 초기 윈도우(~12s)에 고정되던 문제 → pose 캐시 range 기준으로 수정.
-      if (isAcc) {
         const pc = poseWindowCacheRef.current
         const maxCachedT = Array.isArray(pc) && pc.length ? Number(pc[pc.length - 1]?.tSec) : NaN
         if (Number.isFinite(maxCachedT) && centerSec <= maxCachedT - 2) {
           return
-        }
       }
 
       activePoseWindowRef.current = { startSec, endSec }
@@ -1348,13 +1360,13 @@ export default function useLogReplayData({
         let norm = Array.isArray(res.entries) ? res.entries : []
 
         norm.sort((a, b) => a.tSec - b.tSec)
-        norm = dedupeSortedByTSec(norm)
+        norm = dedupeSortedLogEntries(norm)
 
         if (isAcc) {
           // 누적: 기존 캐시에 append → sort → dedupe
           const merged = logWindowCacheRef.current.concat(norm)
           merged.sort((a, b) => a.tSec - b.tSec)
-          logWindowCacheRef.current = dedupeSortedByTSec(merged)
+          logWindowCacheRef.current = dedupeSortedLogEntries(merged)
           accEndCoveredRef.current = endSec
         } else {
           // seek: 기존 로직 (REPLACE)
