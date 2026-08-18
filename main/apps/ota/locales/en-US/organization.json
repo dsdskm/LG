@@ -22,5 +22,7 @@
   "appliedDevice": "Applied Device",
   "all": "All",
   "admin": "Admin",
-  "member": "Member"
+  "member": "Member",
+  "organizationDetail": "Organization Detail",
+  "organizationCreation": "Organization Creation"
 }

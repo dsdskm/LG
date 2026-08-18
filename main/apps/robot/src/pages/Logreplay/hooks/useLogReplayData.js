@@ -56,6 +56,16 @@ function dedupeSortedByTSec(arr) {
   return out
 }
 
+function dedupeSortedLogEntries(arr) {
+  const out = []
+  for (let i = 0; i < arr.length; i++) {
+    const cur = arr[i]
+    const prev = out.length > 0 ? out[out.length - 1] : null
+    if (prev && prev.tSec === cur.tSec && prev.level === cur.level && prev.text === cur.text) out[out.length - 1] = cur
+    else out.push(cur)
+  }
+  return out
+}
 const EMPTY_OPTION = { id: '__empty__', labelKey: 'logreplay.header.noFile' }
 
 // ✅ 맵 통합 로더: pose 윈도우를 읽는 "같은 청크 스캔"에 costmap/path/goal을 편승시켜
@@ -130,6 +140,10 @@ export default function useLogReplayData({
   const activePoseWindowRef = useRef({ startSec: null, endSec: null })
   const poseInflightRef = useRef(false) // pose 윈도우 로드 in-flight 가드(중복/파일업 방지 — finally에서 반드시 해제)
   const poseTopicUnavailableRef = useRef(false) // ✅ 이 mcap엔 pose 토픽이 없음(또는 메시지 0개)이 확정되면 true — 이후 requestPoseWindow 호출 자체를 차단
+  // ✅ grid가 크기 제한 초과로 폐기됨이 확정되면 true — 지도 위에 그릴 배경이 없으므로 그 위에 렌더링되는
+  //    토픽(경로선/costmap/planned path/goal, 모두 requestPoseWindow 편승분)도 더 이상 요청하지 않음.
+  //    (센서차트/로그 뷰어는 지도와 무관하게 그대로 로드됨 — requestChartOverview/requestLogWindow는 영향 없음)
+  const gridOversizedRef = useRef(false)
   const poseWindowSeqRef = useRef(0)
   const lastPollCenterRef = useRef(null) // ✅ 폴링 게이트: 사용자 seek 감지용
   // ✅ [ADD][Option A] pose window 결과 캐시(플레이바 이동 시 네트워크 없이 여기서 선택)
@@ -150,6 +164,9 @@ export default function useLogReplayData({
   //    UI가 "계속 기다리는 중" 스피너 대신 "이 로그엔 데이터가 없다" 안내를 보여줄 수 있도록 별도 state로 노출.
   const [poseUnavailable, setPoseUnavailable] = useState(false)
   const [gridUnavailable, setGridUnavailable] = useState(false)
+  // ✅ [ADD] grid 토픽/메시지는 있었지만 전부 크기 제한(MAX_GRID_DIMENSION/MAX_GRID_CELLS) 초과로 폐기된 경우.
+  //    gridUnavailable(=토픽 자체가 없음)과 원인이 달라 UI 안내 문구를 구분하기 위해 별도로 둔다.
+  const [gridOversized, setGridOversized] = useState(false)
 
   // ✅ [ADD] pose window -> chart data 변환 유틸
   const buildOdomChartsFromPoses = useCallback((poses) => {
@@ -324,7 +341,12 @@ export default function useLogReplayData({
   }, [loadPhase, setLoadPhase])
   const rightOverlayVisible = useMemo(() => loadPhase === 'init' || loadPhase === 'error', [loadPhase])
   const rightOverlayText = useMemo(
-    () => (loadPhase === 'init' ? t('logreplay.map.initialHint') : loadPhase === 'error' ? t('logreplay.map.loadFailed') : ''),
+    () =>
+      loadPhase === 'init'
+        ? t('logreplay.map.initialHint')
+        : loadPhase === 'error'
+          ? t('logreplay.map.loadFailed')
+          : '',
     [loadPhase, t]
   )
   // presigned URL
@@ -1034,8 +1056,10 @@ export default function useLogReplayData({
     activePoseWindowRef.current = { startSec: null, endSec: null }
     poseInflightRef.current = false
     poseTopicUnavailableRef.current = false
+    gridOversizedRef.current = false
     setPoseUnavailable(false)
     setGridUnavailable(false)
+    setGridOversized(false)
     poseWindowSeqRef.current = 0
     poseWindowCacheRef.current = []
     lastPoseApplyIdxRef.current = -1
@@ -1084,6 +1108,8 @@ export default function useLogReplayData({
       // ✅ 이 mcap엔 pose 토픽이 없음(또는 메시지 0개)이 이미 확정됨 — 더 이상 요청하지 않음
       //    (파일 전체 요약 통계 기준 판정이라 재생 위치와 무관하게 항상 유효하다)
       if (poseTopicUnavailableRef.current) return
+      // ✅ grid가 크기 제한 초과로 폐기됨 — 그 위에 그릴 배경 자체가 없으므로 경로선/costmap/path/goal도 요청 중단
+      if (gridOversizedRef.current) return
 
       const exp = Number(expectedDurationSecRef.current) || 0
       if (!Number.isFinite(centerSec)) return
@@ -1093,7 +1119,6 @@ export default function useLogReplayData({
       // ✅ pose 캐시는 "항상 누적"한다("지나온 경로" 보존). 과거엔 logAccModeRef(로그 전용 ref)에
       //    묶여 있었는데, 재생 중 이 값이 seek/accumulate로 flip되면서 로드 완료 시점에 seek이면
       //    캐시를 통째로 REPLACE해 궤적이 사라졌다(정지 시 특히 두드러짐). flippy 신호에서 분리.
-      const isAcc = true
       const startSec = Math.max(0, centerSec - HALF)
       const endSec = exp > 0 ? Math.min(exp, centerSec + HALF) : centerSec + HALF
 
@@ -1114,12 +1139,10 @@ export default function useLogReplayData({
       // ✅ 누적 모드: pose "자체 캐시"가 이미 center를 충분히 덮으면 skip
       //   ⚠️ 과거 버그: log window 전용 accEndCoveredRef를 참조해 pose 요청이 막혀
       //      재생 중 로봇 위치가 초기 윈도우(~12s)에 고정되던 문제 → pose 캐시 range 기준으로 수정.
-      if (isAcc) {
         const pc = poseWindowCacheRef.current
         const maxCachedT = Array.isArray(pc) && pc.length ? Number(pc[pc.length - 1]?.tSec) : NaN
         if (Number.isFinite(maxCachedT) && centerSec <= maxCachedT - 2) {
           return
-        }
       }
 
       activePoseWindowRef.current = { startSec, endSec }
@@ -1337,13 +1360,13 @@ export default function useLogReplayData({
         let norm = Array.isArray(res.entries) ? res.entries : []
 
         norm.sort((a, b) => a.tSec - b.tSec)
-        norm = dedupeSortedByTSec(norm)
+        norm = dedupeSortedLogEntries(norm)
 
         if (isAcc) {
           // 누적: 기존 캐시에 append → sort → dedupe
           const merged = logWindowCacheRef.current.concat(norm)
           merged.sort((a, b) => a.tSec - b.tSec)
-          logWindowCacheRef.current = dedupeSortedByTSec(merged)
+          logWindowCacheRef.current = dedupeSortedLogEntries(merged)
           accEndCoveredRef.current = endSec
         } else {
           // seek: 기존 로직 (REPLACE)
@@ -1435,6 +1458,12 @@ export default function useLogReplayData({
               expectedDurationSecRef.current = durationSec
               setDurationMs?.(Math.round(durationSec * 1000))
             }
+          },
+
+          // ✅ grid 메시지는 있었지만 전부 크기 제한 초과로 폐기된 경우: "이 로그엔 지도가 없음"과 구분해 안내
+          onOversized: () => {
+            gridOversizedRef.current = true
+            setGridOversized(true)
           }
         })
       })()
@@ -1566,6 +1595,7 @@ export default function useLogReplayData({
     // ✅ [ADD] "이 로그엔 데이터가 없다"가 확정된 상태(로딩 중과 구분)
     poseUnavailable,
     gridUnavailable,
+    gridOversized,
 
     clearReplaySession
   }

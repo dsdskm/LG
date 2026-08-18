@@ -12,10 +12,10 @@ type FlowMode = 'default' | 'tree'
 
 type ViewportLike =
   | {
-      x?: number
-      y?: number
-      zoom?: number
-    }
+    x?: number
+    y?: number
+    zoom?: number
+  }
   | [number, number, number]
   | null
   | undefined
@@ -94,9 +94,9 @@ function normalizeNode(node: any) {
     data: node?.data ?? {},
     measured: node?.measured
       ? {
-          width: node.measured.width,
-          height: node.measured.height
-        }
+        width: node.measured.width,
+        height: node.measured.height
+      }
       : undefined,
     selected: !!node?.selected,
     dragging: !!node?.dragging,
@@ -126,6 +126,7 @@ function normalizeCanvasNote(note: any) {
     id: note?.id,
     x: Number(note?.x ?? 0),
     y: Number(note?.y ?? 0),
+    title: String(note?.title ?? '메모'),
     text: String(note?.text ?? ''),
     width: Number(note?.width ?? 240),
     height: Number(note?.height ?? 150),
@@ -213,23 +214,47 @@ function getBaseFlowMode(baseFlow: any): FlowMode {
   )
 }
 
-// 최종 버전을 갱신할 때 기존 Behavior Tree가 변경되면 버전을 하나 올린다.
-function resolveVersion(mode: SaveMode, baseFlow: any, behaviorTree?: string): number {
+// 최종 버전 저장 시, BT XML 뿐 아니라 전체 taskflow snapshot이 실제로 변경된 경우에만 버전을 올린다.
+function normalizeComparableSnapshot(value: any) {
+  if (value == null) return null
+
+  if (typeof value === 'string') return value.trim()
+
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeComparableSnapshot(item))
+  }
+
+  if (typeof value === 'object') {
+    return Object.keys(value)
+      .sort()
+      .reduce((acc, key) => {
+        if (key === 'version' || key === 'name' || key === 'description') return acc
+        const child = value[key]
+        acc[key] = normalizeComparableSnapshot(child)
+        return acc
+      }, {} as Record<string, any>)
+  }
+
+  return value
+}
+
+function hasMeaningfulTaskFlowChange(baseFlow: any, snapshot: any) {
+  const prevSnapshot = normalizeComparableSnapshot(baseFlow?.flowDefinition ?? baseFlow ?? null)
+  const nextSnapshot = normalizeComparableSnapshot(snapshot)
+  return JSON.stringify(prevSnapshot) !== JSON.stringify(nextSnapshot)
+}
+
+function resolveVersion(mode: SaveMode, baseFlow: any, snapshot: any): number {
   const baseVersion = baseFlow?.version ?? 0
 
   // 최종 버전을 갱신하지 않는 저장은 버전을 유지한다.
   if (!writesFinal(mode)) return baseVersion
 
-  const prevBt = String(baseFlow?.behaviorTree ?? '').trim()
-  const nextBt = String(behaviorTree ?? '').trim()
+  // 최초 저장 시 이전 snapshot이 없거나 비어 있으면 그대로 유지한다.
+  if (!baseFlow) return baseVersion
 
-  // 이전 BT가 존재하고 내용이 실제로 바뀐 경우에만 +1
-  // (최초 저장 시 prevBt는 placeholder ' ' → trim 후 '' 이므로 증가하지 않음)
-  if (prevBt && nextBt && prevBt !== nextBt) {
-    return baseVersion + 1
-  }
-
-  return baseVersion
+  const changed = hasMeaningfulTaskFlowChange(baseFlow, snapshot)
+  return changed ? baseVersion + 1 : baseVersion
 }
 
 export function buildTaskFlowPersistPayload({
@@ -258,7 +283,6 @@ export function buildTaskFlowPersistPayload({
   const resolvedGroupId = normalizeOrgId(groupId) ?? normalizeOrgId(baseFlow?.groupId)
   const resolvedSiteId = normalizeOrgId(siteId) ?? normalizeOrgId(baseFlow?.siteId)
   const resolvedStatus = getSnapshotStatus(mode)
-  const resolvedVersion = resolveVersion(mode, baseFlow, behaviorTree)
 
   const snapshot = {
     id: flowId ?? baseFlow?.id ?? 0,
@@ -266,7 +290,7 @@ export function buildTaskFlowPersistPayload({
     groupId: resolvedGroupId,
     siteId: resolvedSiteId,
     status: resolvedStatus,
-    version: resolvedVersion,
+    version: baseFlow?.version ?? 0,
     createdAt: baseFlow?.createdAt ?? '',
     updatedAt: baseFlow?.updatedAt ?? '',
     description: flowDescription || '',
@@ -276,7 +300,14 @@ export function buildTaskFlowPersistPayload({
     edges: normalizedEdges,
     canvasNotes: normalizedCanvasNotes,
     viewport: resolvedViewport,
-    flowMode: resolvedFlowMode
+    flowMode: resolvedFlowMode,
+    behaviorTree: behaviorTree?.trim() || ' '
+  }
+  const resolvedVersion = resolveVersion(mode, baseFlow, snapshot)
+  const persistedSnapshot = {
+    ...snapshot,
+    status: resolvedStatus,
+    version: resolvedVersion
   }
 
   // 갱신하지 않는 쪽(최종 버전)은 기존 값을 그대로 되돌려 보내 보존한다.
@@ -293,8 +324,8 @@ export function buildTaskFlowPersistPayload({
     status: resolvedStatus,
     createdAt: baseFlow?.createdAt ?? '',
     updatedAt: baseFlow?.updatedAt ?? '',
-    flowDefinition: isFinal ? snapshot : previousFinal,
-    flowDefinitionDraft: snapshot,
+    flowDefinition: isFinal ? persistedSnapshot : previousFinal,
+    flowDefinitionDraft: persistedSnapshot,
     robotSkillIds: baseFlow?.robotSkillIds ?? [],
     robotSkillInfos: baseFlow?.robotSkillInfos ?? [],
     // BT 는 최종 버전(배포 대상)과 짝을 이룬다. 최종 버전을 갱신하지 않으면 이전 BT 를 그대로 유지한다.

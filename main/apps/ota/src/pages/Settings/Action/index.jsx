@@ -18,6 +18,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'react-toastify'
 import { convertDateToString } from '@repo/utils'
 import { useOrganizationStore, useUserStore } from '@repo/stores'
+import { useOrgIds } from '@/hooks/useOrgIds'
 import { ButtonWrap } from '@/components/common/styles'
 
 const hoverStyles = {
@@ -33,6 +34,7 @@ const hoverStyles = {
 const Action = () => {
   const navigate = useNavigate()
   const session = useUserStore((state) => state.session)
+  const userRole = session?.userRole
   const [processedData, setProcessedData] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const { t } = useTranslation('settings')
@@ -57,7 +59,8 @@ const Action = () => {
   const [filterQuery, setFilterQuery] = useState('all')
   const [selectedActions, setSelectedActions] = useState([])
   const [deleteMode, setDeleteMode] = useState(false)
-  const { actualOrgs, allOrgs, defaultOrg } = useOrganizationStore()
+  const { actualOrgs, allOrgs } = useOrganizationStore()
+  const { orgIds, primaryOrgId } = useOrgIds()
   const [orgFilter, setOrgFilter] = useState({
     actualOrgs: [],
     matchesOrg: () => false
@@ -144,24 +147,20 @@ const Action = () => {
   }
 
   const handleCreate = () => {
-    navigate(
-      `/ota/settings/action/detail/?orgId=${orgFilter.actualOrgs.length === 0 ? defaultOrg.id : orgFilter.actualOrgs[0].id}`
-    )
+    const orgId = orgFilter.actualOrgs.length === 0 ? primaryOrgId : orgFilter.actualOrgs[0].id
+    if (!orgId) return
+    navigate(`/ota/settings/action/detail/?orgId=${orgId}`)
   }
 
   const fetchData = useCallback(async () => {
-    if (actualOrgs.length === 0 && session?.userRole !== 'SYSTEM_MANAGER') {
+    if (orgIds.length === 0) {
       setIsLoading(false)
       return
     }
 
     setIsLoading(true)
     try {
-      const orgIds =
-        session?.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
-          ? [...allOrgs, defaultOrg].map((org) => org.id).join(',')
-          : actualOrgs.map((org) => org.id).join(',')
-      const response = await actionApis.retrieveAction(orgIds.split(',').sort((a, b) => a - b))
+      const response = await actionApis.retrieveAction(orgIds)
       const mappedData = response.results.map((item) => ({
         ...item,
         action: item.displayName,
@@ -174,7 +173,7 @@ const Action = () => {
     } finally {
       setIsLoading(false)
     }
-  }, [orgFilter])
+  }, [orgIds])
 
   const handleDelete = () => {
     deleteMode
@@ -188,7 +187,7 @@ const Action = () => {
           })
           .catch((error) => {
             console.error(error)
-            toast.error(tCommon('error'), { autoClose: 2000 })
+            toast.error(tCommon('error.description'), { autoClose: 2000 })
           })
       : setDeleteMode((prev) => !prev)
   }
@@ -235,7 +234,7 @@ const Action = () => {
               <Button
                 variant="contained"
                 onClick={handleCreate}
-                disabled={actualOrgs.length !== 1 && session?.userRole !== 'SYSTEM_MANAGER'}
+                disabled={actualOrgs.length !== 1 && userRole !== 'SYSTEM_MANAGER'}
               >
                 {t('create')}
               </Button>

@@ -73,6 +73,49 @@ export const modifyMapping = async (payload) => {
 }
 
 /**
+ * 저장 산출물 확인 (GET /robot-hub/save-map/artifacts).
+ *
+ * save_map 응답은 3D 맵 저장까지만 보장한다 — 2D 격자맵(grid_map.yaml/.png)은 lio_node 가
+ * 응답을 돌려준 뒤 save_grid_map 을 fire-and-forget 으로 호출하므로 파일로만 확인할 수 있다.
+ *
+ * @param {string} name 확인할 맵 이름
+ * @returns {Promise<{success: boolean, data: {name: string, savePath: string, readable: boolean,
+ *   exists: boolean, gridMap: {ready: boolean, yaml: string|null, image: string|null}, files: string[]}}>}
+ */
+export const getSaveArtifacts = async (name) => {
+  return await axiosApi.get('/robot-hub/save-map/artifacts', { params: { name } })
+}
+
+/**
+ * 2D 격자맵 파일이 생길 때까지 폴링한다. 저장 완료 모달에서 "격자맵까지 떨어졌는지" 표시용.
+ *
+ * 판정 불가(readable=false — 백엔드가 맵 루트를 마운트하지 않은 환경)나 타임아웃은
+ * 실패로 다루지 않는다 — 3D 맵 저장 자체는 이미 성공한 상태이므로 상태만 구분해 돌려준다.
+ *
+ * @param {string} name 맵 이름
+ * @param {{timeoutMs?: number, intervalMs?: number}} [options]
+ * @returns {Promise<{state: 'ready'|'pending'|'unknown', artifacts: object|null}>}
+ */
+export const waitForGridMap = async (name, { timeoutMs = 20000, intervalMs = 1000 } = {}) => {
+  const deadline = Date.now() + timeoutMs
+  let artifacts = null
+
+  for (;;) {
+    try {
+      const response = await getSaveArtifacts(name)
+      artifacts = response?.data ?? null
+      if (artifacts?.readable === false) return { state: 'unknown', artifacts }
+      if (artifacts?.gridMap?.ready) return { state: 'ready', artifacts }
+    } catch {
+      // 확인 API 실패는 저장 실패가 아니다 — 판정 불가로 끝낸다.
+      return { state: 'unknown', artifacts }
+    }
+    if (Date.now() >= deadline) return { state: 'pending', artifacts }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs))
+  }
+}
+
+/**
  * 매핑 재시작 (POST /robot-hub/mapping/start). 수집 중인 맵 데이터를 버리고 새 세션을 시작한다.
  * @returns {Promise<{success: boolean, data: {message: string}}>}
  */

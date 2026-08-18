@@ -5,7 +5,8 @@ import { useSideBarStore, useUserStore, useResponsiveStore } from '@repo/stores'
 import GnbButton from '../GnbButton'
 import { memo, useEffect } from 'react'
 
-const SideBar = ({ routes, t }) => {
+// crossAppLinks=false 면 사이드바 링크를 항상 SPA 이동(NavLink)으로 다룬다 — GnbButton 주석 참고.
+const SideBar = ({ routes, t, crossAppLinks = true }) => {
   const { session } = useUserStore.getState()
   const userLevel = Number(session?.userLevel) || 0
   const { gnb } = routes
@@ -21,7 +22,7 @@ const SideBar = ({ routes, t }) => {
     }
   }, [setCompactSideBar])
 
-  const DepthList = memo(({ depth, prefix, userLevel, t }) => (
+  const DepthList = memo(({ depth, prefix, userLevel, t, crossAppLinks }) => (
     <ul className="gnbList">
       {depth
         .filter((item) => !item.hide)
@@ -36,6 +37,7 @@ const SideBar = ({ routes, t }) => {
                   hideIcon={hideIcon}
                   path={path}
                   prefix={prefix}
+                  crossAppLinks={crossAppLinks}
                   onClick={() => {
                     if (window.innerWidth <= 767) {
                       useSideBarStore.getState().setCompactSideBar(true)
@@ -67,15 +69,28 @@ const SideBar = ({ routes, t }) => {
                         name={t(`SideBar.gnb.${name}`)}
                         prefix={name}
                         path={path}
+                        crossAppLinks={crossAppLinks}
                       />
                       {!compactSideBar && openDepth === name && (
-                        <DepthList depth={depth} prefix={name} userLevel={userLevel} t={t} />
+                        <DepthList
+                          depth={depth}
+                          prefix={name}
+                          userLevel={userLevel}
+                          t={t}
+                          crossAppLinks={crossAppLinks}
+                        />
                       )}
                       {compactSideBar && (
                         <StyledGnbTooltip className="gnbTooltip">
                           <div className="content">
                             <h2 className="tooltipTitle typographyHeading6">{t(`SideBar.gnb.${name}`)}</h2>
-                            <DepthList depth={depth} prefix={name} userLevel={userLevel} t={t} />
+                            <DepthList
+                              depth={depth}
+                              prefix={name}
+                              userLevel={userLevel}
+                              t={t}
+                              crossAppLinks={crossAppLinks}
+                            />
                           </div>
                         </StyledGnbTooltip>
                       )}
@@ -89,6 +104,7 @@ const SideBar = ({ routes, t }) => {
                         name={t(`SideBar.gnb.${name}`)}
                         prefix={prefix}
                         path={path}
+                        crossAppLinks={crossAppLinks}
                         onClick={() => {
                           if (typeof window !== 'undefined' && window.innerWidth <= 767) {
                             setCompactSideBar(true)

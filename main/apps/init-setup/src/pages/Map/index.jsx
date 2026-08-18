@@ -67,6 +67,15 @@ const resolveMappingTarget = ({ buildings, floors, areas, location, language }) 
   return { mapName: parts.filter(Boolean).join('-') || 'Default', canStart: true }
 }
 
+/**
+ * 목록을 받아온 계층을 첫 항목으로 자동 선택한다 (이미 선택된 값은 덮어쓰지 않는다).
+ * 컴포넌트 밖에 두어 effect 의 의존성에 들어가지 않게 한다 — setLocation 은 항상 같은 참조다.
+ */
+const selectFirstIfEmpty = (setLocation, key, items) => {
+  if (!items.length) return
+  setLocation((prev) => (prev[key] ? prev : { ...prev, [key]: items[0].id }))
+}
+
 export default function Map() {
   const { t, i18n } = useTranslation('map')
   const [wsUrl, setWsUrl] = useState(resolveWsUrl)
@@ -78,10 +87,19 @@ export default function Map() {
 
   // 위치 계층 목록 조회. 상위 선택이 바뀌면 하위 목록을 다시 받아온다
   // (하위 선택 초기화는 LocationBar 의 onChange 가 넘겨주는 값으로 처리된다).
+  //
+  // 목록을 받아온 계층은 첫 항목으로 자동 선택한다 — 셋 다 선택돼야 매핑을 시작할 수 있고(맵 이름이 곧 위치),
+  // 상위가 정해지면 하위 조회가 이어지므로 Building → Floor → Area 가 차례로 채워진다.
+  // 이미 선택된 값은 덮어쓰지 않아 사용자가 고른 값이 되돌아가지 않는다.
   useEffect(() => {
     let alive = true
     listBuildings()
-      .then((res) => alive && setBuildings(res?.data || []))
+      .then((res) => {
+        if (!alive) return
+        const items = res?.data || []
+        setBuildings(items)
+        selectFirstIfEmpty(setLocation, 'buildingId', items)
+      })
       .catch(() => alive && setBuildings([]))
     return () => {
       alive = false
@@ -95,7 +113,12 @@ export default function Map() {
     }
     let alive = true
     listFloors({ buildingId: location.buildingId })
-      .then((res) => alive && setFloors(res?.data || []))
+      .then((res) => {
+        if (!alive) return
+        const items = res?.data || []
+        setFloors(items)
+        selectFirstIfEmpty(setLocation, 'floorId', items)
+      })
       .catch(() => alive && setFloors([]))
     return () => {
       alive = false
@@ -109,7 +132,12 @@ export default function Map() {
     }
     let alive = true
     listAreas({ floorId: location.floorId })
-      .then((res) => alive && setAreas(res?.data || []))
+      .then((res) => {
+        if (!alive) return
+        const items = res?.data || []
+        setAreas(items)
+        selectFirstIfEmpty(setLocation, 'areaId', items)
+      })
       .catch(() => alive && setAreas([]))
     return () => {
       alive = false
@@ -126,6 +154,7 @@ export default function Map() {
     mapData,
     odomData,
     scanData,
+    robotPose,
     topics,
     subscribedTopics,
     customTopicsData,
@@ -177,6 +206,7 @@ export default function Map() {
             mapData={mapData}
             scanData={scanData}
             odomData={odomData}
+            robotPose={robotPose}
             subscribedTopics={subscribedTopics}
             customTopicsData={customTopicsData}
             t={t}

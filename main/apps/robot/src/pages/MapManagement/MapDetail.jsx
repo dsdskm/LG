@@ -125,18 +125,20 @@ const MapDetail = () => {
 
   useEffect(() => {
     let canceled = false
-    Promise.allSettled([groupApis.getGroups({}), siteApis.getSites({}), deviceApis.getDevices({})]).then(
-      ([g, s, d]) => {
-        if (canceled) return
-        const val = (r) => (r.status === 'fulfilled' ? r.value : null)
-        setNames((prev) => ({
-          ...prev,
-          group: buildNameMap(val(g), ['groupId', 'id', 'code'], ['groupName', 'name', 'displayName']),
-          site: buildNameMap(val(s), ['siteId', 'id', 'code'], ['siteName', 'name', 'displayName']),
-          device: buildNameMap(val(d), ['deviceId', 'id'], ['deviceName', 'name'])
-        }))
-      }
-    )
+    Promise.allSettled([
+      groupApis.getGroups({}),
+      siteApis.getSites({}),
+      deviceApis.getDevices({ includeTaskFlowState: false })
+    ]).then(([g, s, d]) => {
+      if (canceled) return
+      const val = (r) => (r.status === 'fulfilled' ? r.value : null)
+      setNames((prev) => ({
+        ...prev,
+        group: buildNameMap(val(g), ['groupId', 'id', 'code'], ['groupName', 'name', 'displayName']),
+        site: buildNameMap(val(s), ['siteId', 'id', 'code'], ['siteName', 'name', 'displayName']),
+        device: buildNameMap(val(d), ['deviceId', 'id'], ['deviceName', 'name'])
+      }))
+    })
     return () => {
       canceled = true
     }

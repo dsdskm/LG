@@ -18,7 +18,9 @@ const MainLayout = ({
   LogoComponent,
   HeaderComponent,
   aiGreetingExtra,
-  aiAssistantCommandAdapter
+  aiAssistantCommandAdapter,
+  useAiAssistant = true,
+  crossAppLinks = true
 }) => {
   const location = useLocation()
   const { pathname } = location
@@ -77,7 +79,7 @@ const MainLayout = ({
         <Header headerRoutes={headerRoutes || appRoutes} t={t} LogoComponent={LogoComponent} />
       )}
 
-      <SideBar routes={finalSideBarRoutes} t={t} />
+      <SideBar routes={finalSideBarRoutes} t={t} crossAppLinks={crossAppLinks} />
 
       <ScrollArea ref={scrollAreaRef} onClick={handleContentClick}>
         {/* 실제로 스크롤되는 건 이 요소 (#contents는 overflow:hidden이라 스크롤 이벤트가 안 발생) */}

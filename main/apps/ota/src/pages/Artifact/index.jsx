@@ -20,6 +20,7 @@ import { Button } from '@repo/ui'
 import { convertDateToString } from '@repo/utils'
 import { useMqtt } from '@repo/hooks'
 import { useOrganizationStore, useUserStore } from '@repo/stores'
+import { useOrgIds } from '@/hooks/useOrgIds'
 import { ButtonWrap } from '@/components/common/styles'
 import { statusToColor, statusToBgColor } from '@/utils/common'
 
@@ -36,6 +37,7 @@ const hoverStyles = {
 const Artifact = () => {
   const navigate = useNavigate()
   const session = useUserStore((state) => state.session)
+  const userRole = session?.userRole
   const [processedData, setProcessedData] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const { t } = useTranslation('artifact')
@@ -44,7 +46,8 @@ const Artifact = () => {
   const [filterQuery, setFilterQuery] = useState('all')
   const [moduleOptions, setModuleOptions] = useState([])
   const [orgFilter, setOrgFilter] = useState({ actualOrgs: [], matchesOrg: () => true })
-  const { actualOrgs, company, allOrgs, defaultOrg } = useOrganizationStore()
+  const { actualOrgs, company, allOrgs } = useOrganizationStore()
+  const { orgIds, primaryOrgId } = useOrgIds()
 
   const brokerUrl = import.meta.env.VITE_MQTT_BROKER_URL
   const region = import.meta.env.VITE_AWS_REGION
@@ -76,7 +79,7 @@ const Artifact = () => {
     const matchesModule = filterQuery === 'all' || artifact.Module?.id === filterQuery
     const matchesSearch = artifact.displayName.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesOrg =
-      session?.userRole === 'SYSTEM_MANAGER' && orgFilter.actualOrgs.length === 0
+      userRole === 'SYSTEM_MANAGER' && orgFilter.actualOrgs.length === 0
         ? true
         : artifact.Organization
           ? orgFilter.matchesOrg(artifact.Organization)
@@ -170,9 +173,8 @@ const Artifact = () => {
   }
 
   const handleCreate = () => {
-    navigate(
-      `/ota/artifact/detail?orgId=${session?.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0 ? defaultOrg.id : actualOrgs[0].id}`
-    )
+    if (!primaryOrgId) return
+    navigate(`/ota/artifact/detail?orgId=${primaryOrgId}`)
   }
 
   useEffect(() => {
@@ -188,13 +190,8 @@ const Artifact = () => {
     retrieveModules()
   }, [company, t])
 
-  const orgIds =
-    session?.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
-      ? [...allOrgs, defaultOrg].map((org) => org.id).join(',')
-      : actualOrgs.map((org) => org.id).join(',')
-
   useEffect(() => {
-    if (actualOrgs.length === 0 && session?.userRole !== 'SYSTEM_MANAGER') {
+    if (orgIds.length === 0) {
       setIsLoading(false)
       return
     }
@@ -202,7 +199,7 @@ const Artifact = () => {
     setIsLoading(true)
     const retrieveArtifacts = async () => {
       try {
-        const response = await artifactApis.retrieveArtifacts(orgIds.split(',').sort((a, b) => a - b))
+        const response = await artifactApis.retrieveArtifacts(orgIds)
         const mappedData = response.results.map((item) => ({
           ...item,
           target: 'N/A', // or some other field if available
@@ -247,7 +244,7 @@ const Artifact = () => {
             <Button
               variant="contained"
               onClick={handleCreate}
-              disabled={actualOrgs.length !== 1 && session?.userRole !== 'SYSTEM_MANAGER'}
+              disabled={actualOrgs.length !== 1 && userRole !== 'SYSTEM_MANAGER'}
             >
               {t('create')}
             </Button>

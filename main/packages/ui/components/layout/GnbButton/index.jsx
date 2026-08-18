@@ -5,7 +5,20 @@ import { StyledGnbButton, StyledGnbLink, StyledGnbExternalLink } from './styles'
 import { memo } from 'react'
 import { getAppPrefix } from '@repo/utils'
 
-const GnbButton = ({ as = 'NavLink', name, icon, path, depthLevel = 0, prefix, onClick, hideIcon = false }) => {
+// crossAppLinks: 첫 경로 세그먼트를 '앱 이름'으로 보고, 다른 앱이면 <a href> 로 전체 리로드한다.
+// 모든 라우트가 루트 직하에 있는 단일 앱(init-setup 등)은 세그먼트가 곧 메뉴라 이 판정이 항상 참이 되어
+// 사이드바 클릭마다 브라우저가 페이지를 다시 로드한다. 그런 앱은 false 로 끄고 NavLink(SPA 이동)를 쓴다.
+const GnbButton = ({
+  as = 'NavLink',
+  name,
+  icon,
+  path,
+  depthLevel = 0,
+  prefix,
+  onClick,
+  hideIcon = false,
+  crossAppLinks = true
+}) => {
   const location = useLocation()
   const { pathname } = location
   const { compactSideBar, openDepth, setOpenDepth } = useSideBarStore()
@@ -37,7 +50,7 @@ const GnbButton = ({ as = 'NavLink', name, icon, path, depthLevel = 0, prefix, o
   const targetAppPrefix = path?.startsWith('/') ? getAppPrefix(path) : currentAppPrefix
 
   // A link is cross-app if its target prefix is different from current app prefix
-  const isCrossApp = targetAppPrefix !== currentAppPrefix && path && !path.startsWith('#')
+  const isCrossApp = crossAppLinks && targetAppPrefix !== currentAppPrefix && path && !path.startsWith('#')
 
   let finalAs = as
   if (as === 'NavLink' && isCrossApp) {

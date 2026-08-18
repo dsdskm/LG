@@ -20,11 +20,8 @@ const config: Config = {
   testMatch: ['<rootDir>/src/**/*.spec.ts'],
 
   moduleNameMapper: {
-    '^@/(.*)$': '<rootDir>/src/$1',
-    '^@repo/(.*)$': '<rootDir>/../../packages/$1/index.js'
-  },
-  // workspace 패키지의 ESM 문법을 ts-jest가 변환하도록 허용한다.
-  transformIgnorePatterns: ['node_modules/(?!(@repo)/)']
+    '^@/(.*)$': '<rootDir>/src/$1'
+  }
 
   /* globals: {
     'ts-jest': {

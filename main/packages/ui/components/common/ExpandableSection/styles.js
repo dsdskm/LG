@@ -10,7 +10,7 @@ export const StyledSelectButton = styled.button`
   outline-offset: -2px;
   background: var(--color-neutral-10);
   border: 1px solid var(--color-secondary-20);
-  color: #7d776a;
+  color: var(--t-primary-btn-bg);
   border-radius: ${({ $size }) => ($size === 'sm' ? 'var(--radius-xs)' : 'var(--radius-sm)')};
   height: ${({ $size }) => `${$size === 'sm' ? 2.8 : 3.6}rem`};
   ${({ $isOpen, $error }) =>

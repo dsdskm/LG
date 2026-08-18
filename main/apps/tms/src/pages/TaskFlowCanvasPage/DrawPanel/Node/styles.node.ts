@@ -353,7 +353,22 @@ export const TickCountBadge = styled.span`
   z-index: 4;
 `
 
-export const execStyle: Record<string, { border: string; bg: string; text: string; sub: string; handle: string }> = {
+export type TaskExecStatus = 'IDLE' | 'RUNNING' | 'SUCCESS' | 'FAILURE' | 'SKIPPED'
+
+export const DEFAULT_TASK_STATUS: TaskExecStatus = 'IDLE'
+
+export const TASK_STATUS_ALIASES: Record<string, TaskExecStatus> = {
+  IDLE: 'IDLE',
+  RUNNING: 'RUNNING',
+  SUCCESS: 'SUCCESS',
+  FAILURE: 'FAILURE',
+  FAILED: 'FAILURE',
+  FAIL: 'FAILURE',
+  SKIPPED: 'SKIPPED',
+  SKIP: 'SKIPPED'
+}
+
+export const execStyle: Record<TaskExecStatus, { border: string; bg: string; text: string; sub: string; handle: string }> = {
   IDLE: {
     border: '#cbd5e1',
     bg: '#ffffff',
@@ -381,5 +396,12 @@ export const execStyle: Record<string, { border: string; bg: string; text: strin
     text: '#be123c',
     sub: '#fb7185',
     handle: '#fb7185'
+  },
+  SKIPPED: {
+    border: '#cbd5e1',
+    bg: '#f8fafc',
+    text: '#64748b',
+    sub: '#94a3b8',
+    handle: '#cbd5e1'
   }
 }

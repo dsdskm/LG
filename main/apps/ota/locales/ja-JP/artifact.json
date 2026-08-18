@@ -54,5 +54,6 @@
   "taskInstruction": "タスク指示",
   "subtaskInstruction": "サブタスク指示",
   "selectFoundationModel": "基盤モデル選択",
-  "searchTaskName": "タスク名"
+  "searchTaskName": "タスク名",
+  "artifactCreation": "アーティファクト作成"
 }

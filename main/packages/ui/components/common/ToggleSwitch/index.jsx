@@ -11,7 +11,7 @@ const ToggleLabel = styled.label`
   display: inline-block;
   width: ${(props) => props.$width || '120px'};
   height: 32px;
-  background-color: ${(props) => (props.$checked ? 'var(--color-primary-70)' : 'var(--color-neutral-40)')};
+  background-color: ${(props) => (props.$checked ? 'var(--t-toggle-active-bg)' : 'var(--color-neutral-40)')};
   border-radius: 32px;
   cursor: pointer;
   transition: background-color 0.4s;
@@ -61,7 +61,7 @@ const ToggleLabel = styled.label`
   }
 
   input:focus-visible ~ .thumb {
-    outline: 2px solid var(--color-primary-60);
+    outline: 2px solid var(--t-toggle-active-bg);
     outline-offset: 2px;
   }
 

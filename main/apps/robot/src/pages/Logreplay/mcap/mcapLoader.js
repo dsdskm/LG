@@ -10,6 +10,8 @@ import * as lz4ns from 'lz4js' // lz4: browser CJS -> ESM 호환 네임스페이
 const lz4 = lz4ns && lz4ns.default ? lz4ns.default : lz4ns
 const textDecoder = new TextDecoder()
 
+const MAX_GRID_DIMENSION = 8192
+const MAX_GRID_CELLS = 16 * 1024 * 1024
 // ===== [Step1] HTTP Range Readable (real impl) =====
 // - BlobReadable과 동일한 시그니처: read(offset: bigint, size: bigint), size(): Promise<bigint>
 //   [1](https://mcap.dev/docs/typescript/classes/_mcap_browser.BlobReadable)
@@ -408,13 +410,26 @@ function pickOccupancyGridTopic(reader) {
 }
 
 // ---- nav_ros_msgs/msg/OccupancyGrid 전용 최소 normalizer ----
-function normalizeOccupancyGrid(raw) {
+// outFlags: 호출자가 "왜 null이 나왔는지"(크기 초과 vs 그 외 손상/누락)를 구분하고 싶을 때 { oversized } 를 채워준다.
+function normalizeOccupancyGrid(raw, outFlags) {
   // 1) 메타/치수 추출 (여러 변형 허용)
   const info = raw?.info
   const res = Number(info?.resolution)
   const width = Number(info?.width)
   const height = Number(info?.height)
   if (!(res > 0 && width > 0 && height > 0)) return null
+
+  if (
+    !Number.isSafeInteger(width) ||
+    !Number.isSafeInteger(height) ||
+    width > MAX_GRID_DIMENSION ||
+    height > MAX_GRID_DIMENSION ||
+    width * height > MAX_GRID_CELLS
+  ) {
+    console.warn('[Logreplay] OccupancyGrid size exceeds limit', { width, height })
+    if (outFlags) outFlags.oversized = true
+    return null
+  }
   // 2) data 추출 (다양한 케이스)
   const originPose = info?.origin || {}
   // (a) { data: <TypedArray|Array> } 래핑
@@ -459,6 +474,14 @@ async function gridToImageBitmap(grid) {
   if (!grid?.data || !grid.width || !grid.height) return null
   const w = grid.width | 0
   const h = grid.height | 0
+
+  if (w <= 0 || h <= 0 || w > MAX_GRID_DIMENSION || h > MAX_GRID_DIMENSION || w * h > MAX_GRID_CELLS) {
+    console.warn('[Logreplay] grid ImageBitmap size exceeds limit', {
+      width: w,
+      height: h
+    })
+    return null
+  }
 
   let u8 = grid.data
   if (!(u8 instanceof Uint8Array)) {
@@ -1152,7 +1175,8 @@ export async function loadOccupancyGridFromMcapUrl(
     // 선택 전략: 점수 기반이므로 기본은 'score'로 두되, 'first'도 지원
     select = 'first', // 'first' | 'latest'
     maxMessages = 1200,
-    onTimeBounds // ✅ [ADD] (bounds) => void
+    onTimeBounds, // ✅ [ADD] (bounds) => void
+    onOversized // ✅ [ADD] grid 토픽은 있지만 전부 크기 제한 초과로 폐기된 경우 1회 호출 → UI가 "없음"과 "크기 초과"를 구분해 안내할 수 있게 함
   } = {}
 ) {
   // ✅ Step1: map(OccupancyGrid)만 HTTP Range로 테스트
@@ -1229,8 +1253,13 @@ export async function loadOccupancyGridFromMcapUrl(
     console.warn('[Logreplay] grid 스키마 디코더 생성 실패(generic 디코드로 폴백):', e)
   }
 
+  let anyOversized = false
   function normalizeGrid(obj) {
-    return obj ? normalizeOccupancyGrid(obj) : null
+    if (!obj) return null
+    const flags = {}
+    const grid = normalizeOccupancyGrid(obj, flags)
+    if (flags.oversized) anyOversized = true
+    return grid
   }
 
   // 토픽 성격
@@ -1263,6 +1292,8 @@ export async function loadOccupancyGridFromMcapUrl(
   const resultGrid = select === 'latest' ? (lastValid ?? firstValid) : (firstValid ?? lastValid)
   if (!resultGrid) {
     console.warn('[Logreplay] 유효한 OccupancyGrid 없음:', chosenTopic)
+    // ✅ 메시지가 있었지만 전부 크기 제한에 걸려 폐기된 경우: "토픽/데이터 없음"과는 다른 상태이므로 별도로 알림
+    if (anyOversized && typeof onOversized === 'function') onOversized()
   }
 
   // ✅ ImageBitmap 사전 생성 → 렌더러에서 drawImage 1회로 완료

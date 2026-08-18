@@ -47,5 +47,21 @@
   "dynamicModeDescription": "Define rules and let the robots in this group update automatically. Best for large or changing fleets.",
   "all": "All",
   "targetGroupLimitPerOrg": "Target groups can be created up to {{limit}} per organization.",
-  "selectMode": "Select Mode"
+  "selectMode": "Select Mode",
+  "targetGroupCreation": "Target Group Creation",
+  "targetGroupDetails": "Target Group Details",
+  "targetGroupName": "Target Group Name",
+  "description": "Description (Optional)",
+  "enterDescription": "Brief purpose, operating context, or notes for operators",
+  "stepInformation": "Target Group Information",
+  "stepInformationDescription": "Enter the group details and choose how robots will be selected.",
+  "stepTargets": "Configure Targets",
+  "stepTargetsDescription": "Select robots directly or define dynamic selection rules.",
+  "selectedRobots": "Selected Robots",
+  "noRobotsSelected": "No robots selected",
+  "noRobotsSelectedDescription": "Add robots to this Target Group to continue.",
+  "dynamicRules": "Dynamic Selection Rules",
+  "next": "Next",
+  "back": "Back",
+  "refresh": "Refresh"
 }

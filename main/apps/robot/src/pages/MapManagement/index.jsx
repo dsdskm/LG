@@ -88,24 +88,26 @@ const MapManagement = () => {
   // 사이트→그룹 매핑 + 로봇 이름
   useEffect(() => {
     let canceled = false
-    Promise.allSettled([siteApis.getSites({}), deviceApis.getDevices({})]).then(([s, d]) => {
-      if (canceled) return
-      const val = (r) => (r.status === 'fulfilled' ? r.value : null)
-      const siteList = Array.isArray(val(s)) ? val(s) : val(s)?.content || []
-      const sg = {}
-      siteList.forEach((site) => {
-        const sid = site?.siteId ?? site?.id
-        if (sid && site?.groupId) sg[sid] = site.groupId
-      })
-      setSiteGroupMap(sg)
-      const devList = Array.isArray(val(d)) ? val(d) : val(d)?.content || []
-      const dn = {}
-      devList.forEach((dev) => {
-        const id = dev?.deviceId ?? dev?.id
-        if (id) dn[id] = dev?.deviceName ?? dev?.name ?? id
-      })
-      setDeviceNames(dn)
-    })
+    Promise.allSettled([siteApis.getSites({}), deviceApis.getDevices({ includeTaskFlowState: false })]).then(
+      ([s, d]) => {
+        if (canceled) return
+        const val = (r) => (r.status === 'fulfilled' ? r.value : null)
+        const siteList = Array.isArray(val(s)) ? val(s) : val(s)?.content || []
+        const sg = {}
+        siteList.forEach((site) => {
+          const sid = site?.siteId ?? site?.id
+          if (sid && site?.groupId) sg[sid] = site.groupId
+        })
+        setSiteGroupMap(sg)
+        const devList = Array.isArray(val(d)) ? val(d) : val(d)?.content || []
+        const dn = {}
+        devList.forEach((dev) => {
+          const id = dev?.deviceId ?? dev?.id
+          if (id) dn[id] = dev?.deviceName ?? dev?.name ?? id
+        })
+        setDeviceNames(dn)
+      }
+    )
     return () => {
       canceled = true
     }

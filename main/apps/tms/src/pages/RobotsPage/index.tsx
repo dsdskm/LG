@@ -10,7 +10,7 @@ import RobotList from '@/pages/components/robot/RobotList'
 import { toRobotInfo } from '@/pages/components/robot/toRobotInfo'
 import { useMemo, useState } from 'react'
 import { useDeviceList } from '@/api/deviceApis'
-import { DeviceParams } from '@/types/api/device'
+import { useOrgFilter } from '@/pages/hooks/useOrgFilter'
 
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -37,10 +37,9 @@ const RobotsPage = () => {
   const [firstFilter, setFirstFlilter] = useState('all')
   const [secondFilter, setSecondFlilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
-  const [groupSite, setGroupSite] = useState({ value: ['all', 'all'] })
-  const [deviceParams, setDeviceParams] = useState<DeviceParams | undefined>(undefined)
-
+  const { onOrgChanged, deviceParams, matchesOrgFilter } = useOrgFilter()
   const { data: devicesData, error: devicesError, isLoading: devicesLoading } = useDeviceList(deviceParams)
+
   const robotList: RobotInfo[] = useMemo(() => {
     const targetRobots = devicesData?.content ?? []
     const robots = targetRobots.map((device) => {
@@ -64,11 +63,8 @@ const RobotsPage = () => {
     })
 
     const filtered = robots.filter((robot) => {
-      const [group, site] = groupSite.value
-      if (group == 'none' && robot.group !== '') {
-        return false
-      }
-      if (site == 'none' && robot.site !== '') {
+      // 'none'(미지정) 선택은 서버 파라미터로 표현할 수 없어 여기서 걸러진다.
+      if (!matchesOrgFilter(robot)) {
         return false
       }
       if (firstFilter !== 'all' && robot.runningTaskFlowName !== firstFilter) {
@@ -95,64 +91,17 @@ const RobotsPage = () => {
 
       return (a.name ?? '').localeCompare(b.name ?? '', 'ko')
     })
-  }, [devicesData, firstFilter, secondFilter, groupSite])
+  }, [devicesData, firstFilter, secondFilter, matchesOrgFilter])
 
   if (devicesLoading) return <p>Loading...</p>
   if (devicesError) return <p>error: {devicesError.message}</p>
 
-  console.log('data = ', devicesData)
-  /* 
-  const toggleRobotSelection = (robotId: string) => {
-    const item = robotList.find((i) => i.id === robotId)
-    if (!item) return
-    setSelectedRobotId((prev) => (prev.includes(robotId) ? prev.filter((id) => id !== robotId) : [...prev, robotId]))
-  }
- 
-  const handleSelectAll = () => {
-    if (selectAll) {
-      setSelectedRobotId([])
-    } else {
-      setSelectedRobotId(robotList.map((item) => item.id))
-    }
-    setSelectAll(!selectAll)
-  }
-*/
   const onSearchQueryChaged = (e: any) => {
     setSearchQuery(e.target.value)
   }
 
   const resetSearchQuery = () => {
     setSearchQuery('')
-  }
-
-  const onOrgChanged = (e: any) => {
-    setGroupSite({ value: e.values })
-    const [group, site] = e.values
-
-    console.log('org info', e.values)
-
-    let nextParams: DeviceParams | undefined = undefined
-
-    if (group !== 'all' || site !== 'all') {
-      nextParams = {}
-    }
-
-    if (group !== 'all' && group !== 'none') {
-      nextParams = {
-        ...nextParams,
-        groupId: [group]
-      }
-    }
-
-    if (site !== 'all' && site !== 'none') {
-      nextParams = {
-        ...nextParams,
-        siteId: [site]
-      }
-    }
-
-    setDeviceParams(nextParams)
-    console.log('nextParams = ', nextParams)
   }
 
   const onTaskFlowStatusChaged = (value: string) => {

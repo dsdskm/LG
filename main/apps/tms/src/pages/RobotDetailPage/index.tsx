@@ -25,7 +25,7 @@ const RobotDetailPage = () => {
   const { robotId } = useParams()
   const initialized = useRef(false)
   const [selectedId, setSelectedId] = useState(-1)
-  const { data: robotData, error: robotDataError, isLoading: robotDataLoading } = useDevice(robotId, 3000)
+  const { data: robotData, error: robotDataError, isLoading: robotDataLoading } = useDevice(robotId, 1500)
   const { selectedOrgs } = useOrganizationStore()
   const { session } = useUserStore()
   const { mutate, isPending } = useInstantAction()

@@ -14,7 +14,13 @@
 export const MAP_TOPICS = ['/lio/grid_map', '/map']
 
 // 로봇 위치 (nav_msgs/Odometry)
+// ★ 이 토픽의 pose 는 lio_odom 프레임 기준이다 — 지도(map) 기준 위치가 아니다.
+//   지도 위에 로봇을 그릴 때는 TF_TOPICS 를 합성한 map->base_link 를 쓴다(@/utils/tf).
+//   여기서는 속도/원본 값 표시용으로만 유지한다.
 export const ODOM_TOPICS = ['/lio/odom', '/odom']
+
+// 좌표 변환 트리 (tf2_msgs/TFMessage). 후보 중 하나가 아니라 둘 다 구독한다.
+export const TF_TOPICS = ['/tf', '/tf_static']
 
 // 3D 라이다 점군 (sensor_msgs/PointCloud2)
 // 센서 원본(hesai_lidar 프레임)만 사용한다 — MapCanvas가 odom pose로 월드 변환하므로
@@ -29,8 +35,7 @@ export const SPATIAL_TOPICS = [
   ...MAP_TOPICS,
   ...ODOM_TOPICS,
   ...SCAN_TOPICS,
-  '/tf',
-  '/tf_static',
+  ...TF_TOPICS,
   '/lio/path',
   '/scan_matched_points2',
   '/trajectory_node_list',
@@ -49,7 +54,8 @@ const CDR_SCHEMAS = new Set([
   'nav_msgs/msg/Path',
   'sensor_msgs/msg/LaserScan',
   'sensor_msgs/msg/PointCloud2',
-  'std_msgs/msg/String'
+  'std_msgs/msg/String',
+  'tf2_msgs/msg/TFMessage'
 ])
 
 /**
@@ -66,6 +72,7 @@ export function topicCategory(topic) {
   if (MAP_TOPICS.includes(topic)) return 'map'
   if (ODOM_TOPICS.includes(topic)) return 'odom'
   if (SCAN_TOPICS.includes(topic)) return 'scan'
+  if (TF_TOPICS.includes(topic)) return 'tf'
   return null
 }
 

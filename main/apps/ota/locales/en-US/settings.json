@@ -71,5 +71,10 @@
   "download": "Download",
   "downloadComplete": "Download complete. Please check the CI/CD integration settings.",
   "templateDownload": "Template Download",
-  "selectOneOrg": "Please select one organization."
+  "selectOneOrg": "Please select one organization.",
+  "actionCreation": "Action Creation",
+  "deviceTypeDetail": "Device Type Detail",
+  "deviceTypeCreation": "Device Type Creation",
+  "moduleDetail": "Module Detail",
+  "moduleCreation": "Module Creation"
 }

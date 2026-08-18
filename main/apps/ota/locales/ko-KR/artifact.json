@@ -54,5 +54,6 @@
   "taskInstruction": "작업 지침",
   "subtaskInstruction": "세부 작업 지침",
   "selectFoundationModel": "기반 모델 선택",
-  "searchTaskName": "작업 이름"
+  "searchTaskName": "작업 이름",
+  "artifactCreation": "아티팩트 생성"
 }

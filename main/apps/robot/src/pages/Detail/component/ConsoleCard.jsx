@@ -3,6 +3,7 @@ import styled from 'styled-components'
 import config from '../config'
 import { getClientId } from '../config/clientId'
 import { useTranslation } from 'react-i18next'
+import { useUserStore } from '@repo/stores'
 
 const CardContainer = styled.div`
   border: 1px solid #e0e0e0;
@@ -226,6 +227,7 @@ const LoadingOverlay = styled.div`
 
 const ConsoleCard = forwardRef(({ robotId, card, onExpand, onControlOpen }, ref) => {
   const { t, i18n } = useTranslation('robot')
+  const session = useUserStore((state) => state.session)
   const [connectionStatus, setConnectionStatus] = useState('standby')
   const [lastUpdate, setLastUpdate] = useState(null)
   const [iframeError, setIframeError] = useState(null)
@@ -485,6 +487,12 @@ const ConsoleCard = forwardRef(({ robotId, card, onExpand, onControlOpen }, ref)
     if (safeCard.isRealtime) {
       url += `&wsSource=parent`
     }
+    if (session?.accessToken) {
+      url += `&accessToken=${encodeURIComponent(session.accessToken)}`
+    }
+    if (session?.userId) {
+      url += `&userId=${encodeURIComponent(session.userId)}`
+    }
     return url
   }
 
@@ -515,6 +523,12 @@ const ConsoleCard = forwardRef(({ robotId, card, onExpand, onControlOpen }, ref)
     let expandUrl = `${config.proxyServerUrl}${safeCard.targetPath}?_deviceId=${robotId}&_port=${safeCard.targetPort}&_cid=${cid}&mode=${mode}&expanded=true&lang=${lang}`
     if (safeCard.realtimePort && String(safeCard.realtimePort) !== safeCard.targetPort) {
       expandUrl += `&_wsPort=${safeCard.realtimePort}`
+    }
+    if (session?.accessToken) {
+      expandUrl += `&accessToken=${encodeURIComponent(session.accessToken)}`
+    }
+    if (session?.userId) {
+      expandUrl += `&userId=${encodeURIComponent(session.userId)}`
     }
     const w = window.open(
       expandUrl,

@@ -22,5 +22,7 @@
   "appliedDevice": "적용 디바이스",
   "all": "전체",
   "admin": "관리자",
-  "member": "멤버"
+  "member": "멤버",
+  "organizationDetail": "조직 상세",
+  "organizationCreation": "조직 생성"
 }

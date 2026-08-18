@@ -1,0 +1,9 @@
+{
+  "orderGuard": {
+    "title": "Complete the previous step first",
+    "description": "The selected step is not available until the previous steps are finished.",
+    "step": "Setup step: {{step}}",
+    "confirm": "Go to {{step}}",
+    "cancel": "Cancel"
+  }
+}

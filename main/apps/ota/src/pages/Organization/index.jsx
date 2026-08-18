@@ -26,6 +26,7 @@ const Organization = () => {
   const { t } = useTranslation('organization')
   const { t: tCommon } = useTranslation('common')
   const { session } = useUserStore()
+  const userId = session?.email
 
   const navigate = useNavigate()
   const { allOrgs, company, setAllOrgs, setForcedNone } = useOrganizationStore()
@@ -94,7 +95,7 @@ const Organization = () => {
     if (isMemberOrAdmin) {
       setIsProcessing(true)
       try {
-        await organizationApis.withdraw({ id: row.id, userId: session?.email })
+        await organizationApis.withdraw({ id: row.id, userId })
       } catch (error) {
         console.error('Failed to leave:', error)
       } finally {
@@ -110,7 +111,7 @@ const Organization = () => {
   const confirmJoin = async () => {
     setIsProcessing(true)
     try {
-      await organizationApis.requestJoin({ id: selectedRow.id, userId: session?.email })
+      await organizationApis.requestJoin({ id: selectedRow.id, userId })
     } catch (error) {
       console.error('Failed to join:', error)
     } finally {

@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import styled from 'styled-components'
 import { Table, Modal, Button, ExpandableSection, SectionRobot as Section } from '@repo/ui'
+import { useNavigate } from 'react-router-dom'
 import { toYmdHmKST } from '@/utils/dateUtils'
 import {
   parseDeviceInfo,
@@ -23,7 +24,7 @@ import { useUserStore } from '@repo/stores'
 import SiteMap3D from '../../../common/SiteMap3D'
 import PartsStatusPanel from '../component/PartsStatusPanel'
 import RobotControlPanel from '../component/RobotControlPanel'
-import { Play, GamePad, Battery, Wifi, Clock, Upload, OperationStatus, StopCircle } from '@/assets/icon'
+import { Play, GamePad, Battery, Wifi, Clock, Upload, OperationStatus, StopCircle, Trash } from '@/assets/icon'
 
 const MajorActionButton = styled(Button)`
   background: var(--t-major-action-btn-bg) !important;
@@ -71,6 +72,8 @@ const AssetInfo = ({ t, deviceId }) => {
   const { t: tCommon, i18n } = useTranslation('common')
   const MoveLocationModal = useModalState()
   const SelectTaskFlowModal = useModalState()
+  const DeleteRobotModal = useModalState()
+  const navigate = useNavigate()
   const { session } = useUserStore()
   const [isLive, setIsLive] = useState(false)
   const liveIntervalRef = useRef(null)
@@ -239,6 +242,43 @@ const AssetInfo = ({ t, deviceId }) => {
   const conformModal = () => {
     setIsConfirmModalOpen(false)
     loadDeviceInfo()
+  }
+
+  // 로봇 삭제 버튼 클릭 — 실시간(Live) 상태와 무관하게 API로 최신 상태를 조회하여
+  // 운영 중(OPERATION)이면 삭제 불가 안내 팝업을 띄우고, 그 외에는 삭제 확인 모달을 연다.
+  const handleDeleteClick = async () => {
+    try {
+      const data = await deviceApis.getDeviceInfo(deviceId)
+      setDeviceInfo({
+        ...parseDeviceInfo(data),
+        wifi: getWifiStatus(data.state)
+      })
+      if (data?.deviceState === 'OPERATION') {
+        setConfirmMessage(t('robotDeleteBlockedOperating'))
+        setIsConfirmModalOpen(true)
+        return
+      }
+      DeleteRobotModal.onOpen()
+    } catch (err) {
+      console.error('로봇 상태 확인 실패:', err)
+      setConfirmMessage(t('errorReport'))
+      setIsConfirmModalOpen(true)
+    }
+  }
+
+  // 로봇(기기) 즉시 삭제 — 확인 모달에서 "삭제" 선택 시 호출
+  const handleDeleteDevice = async () => {
+    try {
+      await deviceApis.deleteDeviceForce(deviceId)
+      DeleteRobotModal.onClose()
+      // 삭제 완료 후 로봇 목록으로 이동
+      navigate('/robot/management')
+    } catch (err) {
+      console.error('로봇 삭제 실패:', err)
+      DeleteRobotModal.onClose()
+      setConfirmMessage(t('errorReport'))
+      setIsConfirmModalOpen(true)
+    }
   }
 
   const handleLogPlayClick = () => {
@@ -726,6 +766,11 @@ const AssetInfo = ({ t, deviceId }) => {
                   }
                 ])}
               />
+              <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: '1rem' }}>
+                <MajorActionButton onClick={handleDeleteClick}>
+                  <Trash className="w-[14px] h-[14px]" /> {t('deleteRobot')}
+                </MajorActionButton>
+              </div>
             </Section>
           </ExpandableSection>
         </NoUnderlineExpandable>
@@ -920,6 +965,31 @@ const AssetInfo = ({ t, deviceId }) => {
         taskFlows={taskFlows}
         t={t}
       />
+      <Modal
+        isOpen={DeleteRobotModal.isOpen}
+        title={t('robotDeleteConfirm')}
+        onClose={DeleteRobotModal.onClose}
+        closeButton
+        renderButtonComponent={
+          <div style={{ display: 'flex', gap: '1rem', width: '100%', justifyContent: 'center' }}>
+            <Button variant="contained" theme="tertiary" onClick={DeleteRobotModal.onClose}>
+              {t('cancel')}
+            </Button>
+            <Button variant="contained" theme="primary" onClick={handleDeleteDevice}>
+              {t('delete')}
+            </Button>
+          </div>
+        }
+      >
+        <div style={{ maxHeight: '400px' }}>
+          <p className="typographyBody4" style={{ whiteSpace: 'pre-wrap', marginBottom: '2rem' }}>
+            {t('robotDeleteMessage')}
+          </p>
+          <p className="typographyBody3" style={{ whiteSpace: 'pre-wrap', marginLeft: '10px' }}>
+            {deviceInfo.name}
+          </p>
+        </div>
+      </Modal>
     </>
   )
 }

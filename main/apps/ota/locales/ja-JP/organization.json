@@ -22,5 +22,7 @@
   "appliedDevice": "適用デバイス",
   "all": "すべて",
   "admin": "管理者",
-  "member": "メンバー"
+  "member": "メンバー",
+  "organizationDetail": "組織詳細",
+  "organizationCreation": "組織作成"
 }

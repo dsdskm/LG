@@ -19,5 +19,6 @@
   "batteryLevel": "Battery Level (% or more)",
   "wifiOnly": "Wifi Only",
   "deleteConfirm": "Are you sure you want to delete?",
-  "confirm": "Confirm"
+  "confirm": "Confirm",
+  "policyCreation": "Policy Creation"
 }

@@ -40,7 +40,7 @@ const buttonStyles = css`
           `
       case 'primary':
         return `
-            background-color: var(--color-primary-80);
+            background-color: var(--t-primary-btn-active-bg);
             color: var(--color-neutral-10);
           `
       case 'tertiary':

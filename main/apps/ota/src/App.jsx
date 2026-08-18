@@ -16,6 +16,7 @@ const App = () => {
   const { t: layoutT } = useTranslation('layout')
   const { t: appT } = useTranslation('route')
   const { session } = useUserStore()
+  const userRole = session?.userRole
   const { company } = useOrganizationStore()
 
   const appPrefix = useMemo(() => getAppPrefix(pathname), [pathname])
@@ -24,9 +25,9 @@ const App = () => {
     const processRoutes = (routes) => {
       return routes.map((route) => {
         let hide = route.hide
-        if (!hide && session?.userRole === 'SYSTEM_ADMIN') {
+        if (!hide && userRole === 'SYSTEM_ADMIN') {
           hide = false
-        } else if (session?.userRole === 'GROUP_MANAGER') {
+        } else if (userRole === 'GROUP_MANAGER') {
           if (!hide && route.showForGroupManager) {
             hide = false
           }
@@ -40,7 +41,7 @@ const App = () => {
     }
 
     return processRoutes(getAppRoutes(company))
-  }, [session?.userRole, company])
+  }, [userRole, company])
 
   const allRoutes = useMemo(() => flattenRoutes(processedAppRoutes), [processedAppRoutes])
 

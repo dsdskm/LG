@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import { moduleApis, deviceTypeApis, packageTypeApis } from '@/apis'
 import { toast } from 'react-toastify'
-import { ButtonWrap } from '@/components/common/styles'
+import { ButtonWrap, DetailHead } from '@/components/common/styles'
 import { useOrganizationStore } from '@repo/stores'
 
 const ModuleSettingsDetail = () => {
@@ -120,17 +120,19 @@ const ModuleSettingsDetail = () => {
   return (
     <StyledPageContent className="column">
       {/* Section 1: Top Buttons + Title, Memo */}
-      <Title>
-        {t('moduleSettingsTitle', 'Module Settings')} &gt; {tCommon('detail')}
-      </Title>
-      <ButtonWrap className="alignRight">
-        <Button variant="contained" onClick={handleSave} disabled={isLoading || isDisabled()}>
-          {id ? t('modify') : t('create')}
-        </Button>
-        <Button variant="contained" onClick={handleCancel} disabled={isLoading}>
-          {t('cancel')}
-        </Button>
-      </ButtonWrap>
+      <DetailHead>
+        <div className="titleGroup">
+          <Title>{id ? t('moduleDetail') : t('moduleCreation')}</Title>
+        </div>
+        <ButtonWrap className="alignRight">
+          <Button variant="contained" onClick={handleSave} disabled={isLoading || isDisabled()}>
+            {id ? t('modify') : t('create')}
+          </Button>
+          <Button variant="contained" onClick={handleCancel} disabled={isLoading}>
+            {t('cancel')}
+          </Button>
+        </ButtonWrap>
+      </DetailHead>
       <Section horizontal gap="2.4rem">
         <Section horizontal gap="2.4rem">
           <div style={{ flex: 1 }}>

@@ -56,6 +56,16 @@ export const putDeviceAssignment = async (deviceId, body) => {
 }
 
 /**
+ * 기기 즉시 삭제 (웹 관리자용)
+ * DELETE [Base URL]/api/v1/web/devices/{deviceId}/force
+ * @returns {Promise<any>}
+ */
+export const deleteDeviceForce = async (deviceId) => {
+  const response = await axiosRobot.delete(pathDevices + '/' + deviceId + '/force')
+  return response
+}
+
+/**
  * 에러 리스트
  * @returns {Promise<any>}
  */

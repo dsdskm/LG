@@ -15,6 +15,7 @@ const OrganizationSelector = ({
 }) => {
   const { t } = useTranslation('common')
   const { session } = useUserStore()
+  const userRole = session?.userRole
   const { company, isLoading } = useOrganizationSelector(session?.email)
 
   const [isAlls, setIsAlls] = useState(supportAlls)
@@ -83,23 +84,23 @@ const OrganizationSelector = ({
   useEffect(() => {
     if (supportAlls?.length > 0) {
       setIsAlls(supportAlls)
-    } else if (session.userRole === 'SYSTEM_MANAGER' || session.userRole === 'SYSTEM_ADMIN') {
+    } else if (userRole === 'SYSTEM_MANAGER' || userRole === 'SYSTEM_ADMIN') {
       setIsAlls([true, true])
-    } else if (session.userRole === 'GROUP_MANAGER') {
+    } else if (userRole === 'GROUP_MANAGER') {
       setIsAlls([false, true])
-    } else if (session.userRole === 'SITE_MANAGER') {
+    } else if (userRole === 'SITE_MANAGER') {
       setIsAlls([false, false])
     }
     if (supportNone?.length > 0) {
       setIsNones(supportNone)
-    } else if (session.userRole === 'SYSTEM_MANAGER' || session.userRole === 'SYSTEM_ADMIN') {
+    } else if (userRole === 'SYSTEM_MANAGER' || userRole === 'SYSTEM_ADMIN') {
       setIsNones([true, true])
-    } else if (session.userRole === 'GROUP_MANAGER') {
+    } else if (userRole === 'GROUP_MANAGER') {
       setIsNones([false, true])
-    } else if (session.userRole === 'SITE_MANAGER') {
+    } else if (userRole === 'SITE_MANAGER') {
       setIsNones([false, false])
     }
-  }, [session.userRole])
+  }, [userRole])
 
   const getOptionsForLevel = (levelIndex, parentCode, currentItems) => {
     if (allOrgs.length === 0) {

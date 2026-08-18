@@ -19,11 +19,12 @@ import {
   StateStatusCard
 } from '@repo/ui'
 import { useTranslation } from 'react-i18next'
-import { campaignApis, deviceApis, mqttApis } from '@/apis'
+import { campaignApis, mqttApis } from '@/apis'
 import CampaignTable from '@/components/Campaign/CampaignTable'
 import { useNavigate } from 'react-router-dom'
 import { convertDateToString } from '@repo/utils'
 import { useOrganizationStore, useUserStore } from '@repo/stores'
+import { useOrgIds } from '@/hooks/useOrgIds'
 import { CAMPAIGN_STATUS, DEPLOYMENT_STATUS } from '@/constants/campaign'
 import { useMqtt } from '@repo/hooks'
 import { ButtonWrap } from '@/components/common/styles'
@@ -63,8 +64,12 @@ const Campaign = () => {
   const { t } = useTranslation('campaign')
   const { t: tCommon } = useTranslation('common')
   const navigate = useNavigate()
-  const { actualOrgs, allOrgs, defaultOrg } = useOrganizationStore()
+  const { actualOrgs, allOrgs } = useOrganizationStore()
+  const { orgIds, primaryOrgId } = useOrgIds()
   const { session } = useUserStore()
+  // 로그아웃 시 session이 null이 되므로 항상 옵셔널 체이닝으로 접근한다
+  const userId = session?.email
+  const userRole = session?.userRole
   const [isProcessing, setIsProcessing] = useState(false)
   const [countOfStatus, setCountOfStatus] = useState({})
 
@@ -162,10 +167,6 @@ const Campaign = () => {
   const [orgFilter, setOrgFilter] = useState({ actualOrgs: [], matchesOrg: () => false })
   const [initialOrg, setInitialOrg] = useState(false)
 
-  const orgIds =
-    session?.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0
-      ? [...allOrgs, defaultOrg].map((org) => org?.id).join(',')
-      : actualOrgs.map((org) => org?.id).join(',')
   const fetchData = useCallback(async () => {
     try {
       setIsLoading(true)
@@ -174,7 +175,7 @@ const Campaign = () => {
         return
       }
 
-      const response = await campaignApis.retrieveCampaign(orgIds.split(',').sort((a, b) => a - b))
+      const response = await campaignApis.retrieveCampaign(orgIds)
       const { numberOfStatus, pageCampaign } = response.results
       setCountOfStatus(numberOfStatus)
       const newData = pageCampaign
@@ -211,7 +212,7 @@ const Campaign = () => {
         const searchQueryStr = searchQuery || ''
         const matchesSearch = displayNameStr.toLowerCase().includes(searchQueryStr.toLowerCase())
         const matchesOrg =
-          session?.userRole === 'SYSTEM_MANAGER' && orgFilter.actualOrgs.length === 0
+          userRole === 'SYSTEM_MANAGER' && orgFilter.actualOrgs.length === 0
             ? true
             : campaign.Organization
               ? orgFilter.matchesOrg(campaign.Organization)
@@ -231,6 +232,7 @@ const Campaign = () => {
 
   const handleAbort = useCallback(
     async (devices) => {
+      if (!userId) return
       setIsProcessing(true)
       try {
         const groupedByCampaignId = devices.reduce((acc, device) => {
@@ -247,7 +249,7 @@ const Campaign = () => {
             id: Number(campaignId),
             deviceIds,
             rollback: devices[0].isRollback,
-            userId: session.email
+            userId
           })
         })
         await Promise.all(promises)
@@ -258,11 +260,12 @@ const Campaign = () => {
         setIsProcessing(false)
       }
     },
-    [processedData, session.email, fetchData]
+    [userId, fetchData]
   )
 
   const handleRollback = useCallback(
     async (devices) => {
+      if (!userId) return
       setIsProcessing(true)
       try {
         const groupedByCampaignId = devices.reduce((acc, device) => {
@@ -276,7 +279,7 @@ const Campaign = () => {
           return campaignApis.rollbackDeployment({
             id: Number(campaignId),
             deviceIds,
-            userId: session.email
+            userId
           })
         })
         await Promise.all(promises)
@@ -286,7 +289,7 @@ const Campaign = () => {
         setIsProcessing(false)
       }
     },
-    [processedData, session.email, fetchData]
+    [userId]
   )
 
   const brokerUrl = import.meta.env.VITE_MQTT_BROKER_URL
@@ -348,7 +351,7 @@ const Campaign = () => {
   }, [])
 
   useEffect(() => {
-    if (!initialOrg || (session?.userRole !== 'SYSTEM_MANAGER' && actualOrgs.length === 0) || allOrgs.length === 0) {
+    if (!initialOrg || (userRole !== 'SYSTEM_MANAGER' && actualOrgs.length === 0) || allOrgs.length === 0) {
       setIsLoading(false)
       return
     }
@@ -403,14 +406,8 @@ const Campaign = () => {
           </SearchContainer>
           <ButtonWrap className="alignRight" style={{ marginBottom: '-2rem' }}>
             <Button
-              onClick={() =>
-                navigate(
-                  `/ota/campaign/detail/?orgId=${
-                    session?.userRole === 'SYSTEM_MANAGER' && actualOrgs.length === 0 ? defaultOrg.id : actualOrgs[0].id
-                  }`
-                )
-              }
-              disabled={orgFilter.actualOrgs.length !== 1 && session?.userRole !== 'SYSTEM_MANAGER'}
+              onClick={() => primaryOrgId && navigate(`/ota/campaign/detail/?orgId=${primaryOrgId}`)}
+              disabled={orgFilter.actualOrgs.length !== 1 && userRole !== 'SYSTEM_MANAGER'}
             >
               {t('create')}
             </Button>

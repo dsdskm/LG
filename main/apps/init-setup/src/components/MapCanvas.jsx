@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from 'react'
+import React, { useEffect, useRef, useCallback, useState } from 'react'
 import { SPATIAL_TOPICS, subscribedTopicOf } from '@/constants/topics'
 
 // OccupancyGrid의 장애물 확률(0~100)에 따른 밝기(0~255) 값을 미리 계산한 캐시 배열
@@ -7,29 +7,79 @@ for (let i = 0; i <= 100; i++) {
   BRIGHTNESS_CACHE[i] = Math.round(255 * (1 - i / 100))
 }
 
+// 뷰 조작 한계 — fit 배율 대비 상대값이라 지도 크기와 무관하게 동작한다
+const ZOOM_MIN_RATIO = 0.5 // fit 대비 최소 배율(전체보기보다 조금 더 축소 가능)
+const ZOOM_MAX_RATIO = 40 // fit 대비 최대 배율
+const ZOOM_STEP = 1.1 // 휠 한 칸당 배율
+const KEEP_VISIBLE = 0.3 // 팬 시 지도가 뷰포트와 최소로 겹쳐야 하는 비율
+
 /**
  * MapCanvas
  *
- * OccupancyGrid(지도) + PointCloud2/LaserScan(라이다) + Odometry(로봇 위치)를
+ * OccupancyGrid(지도) + PointCloud2/LaserScan(라이다) + 로봇 위치를
  * HTML Canvas 2D API로 렌더링하는 컴포넌트.
  * 토픽 이름은 로봇 구성에 따라 다르므로(@/constants/topics) 역할로 판단한다.
+ *
+ * 로봇 위치는 지도와 같은 프레임이어야 하므로 TF 합성 결과(robotPose, map->base_link)를
+ * 쓴다. Odometry 토픽의 pose 는 lio_odom 프레임 기준이라 TF 부재 시 폴백으로만 쓴다.
  *
  * 렌더링 레이어 순서 (아래에서 위로):
  *   1. OccupancyGrid 격자 지도  (회색/흰색/검정)
  *   2. LaserScan 포인트          (빨간 점들)
  *   3. 로봇 위치 마커             (파란 원 + 방향 화살표)
  */
-function MapCanvas({
-  mapData,
-  scanData,
-  odomData,
-  subscribedTopics = [],
-  customTopicsData = {}
-}) {
+function MapCanvas({ mapData, scanData, odomData, robotPose = null, subscribedTopics = [], customTopicsData = {} }) {
   const canvasRef = useRef(null)
+  const wrapperRef = useRef(null)
   const mapCacheCanvasRef = useRef(null)
   const mapCacheValidRef = useRef(false)
   const lastMapDataRef = useRef(null)
+
+  // 뷰 변환 — scale: 격자 1칸당 화면 픽셀 수, tx/ty: 지도 좌상단의 캔버스 좌표
+  const viewRef = useRef({ scale: 0, tx: 0, ty: 0 })
+  const fitScaleRef = useRef(0)
+  // 현재 뷰가 어떤 격자 크기에 맞춰졌는지 — 지도가 바뀌면 다시 fit 한다
+  const fitKeyRef = useRef('')
+  // 사용자가 휠/드래그로 뷰를 건드렸는지 — 건드린 뒤에는 리사이즈 시 자동 fit 하지 않는다
+  const userAdjustedRef = useRef(false)
+  // 격자 크기 캐시 — 휠/드래그 핸들러가 render 없이도 클램프할 수 있게 한다
+  const gridSizeRef = useRef({ w: 0, h: 0 })
+  const dragRef = useRef(null)
+  // 최신 render 를 이벤트 핸들러에서 호출하기 위한 ref
+  const renderRef = useRef(() => {})
+
+  // 래퍼는 구독 상태에 따라 마운트/언마운트되므로, 리스너를 다시 붙이도록 state 로도 보관한다
+  const [wrapperEl, setWrapperEl] = useState(null)
+  const setWrapperNode = useCallback((node) => {
+    wrapperRef.current = node
+    setWrapperEl(node)
+  }, [])
+
+  /** 지도 전체가 보이도록 배율/위치를 계산해 뷰에 반영 */
+  const applyFit = useCallback((canvasW, canvasH, gridW, gridH) => {
+    if (!canvasW || !canvasH || !gridW || !gridH) return
+    const scale = Math.min(canvasW / gridW, canvasH / gridH) * 0.95
+    fitScaleRef.current = scale
+    viewRef.current = {
+      scale,
+      tx: (canvasW - gridW * scale) / 2,
+      ty: (canvasH - gridH * scale) / 2
+    }
+  }, [])
+
+  /** 드래그로 지도를 화면 밖으로 완전히 밀어내지 못하도록 이동량 제한 */
+  const clampView = useCallback(() => {
+    const canvas = canvasRef.current
+    const { w: gridW, h: gridH } = gridSizeRef.current
+    if (!canvas || !gridW || !gridH) return
+    const view = viewRef.current
+    const mapW = gridW * view.scale
+    const mapH = gridH * view.scale
+    const keepX = Math.min(mapW, canvas.width) * KEEP_VISIBLE
+    const keepY = Math.min(mapH, canvas.height) * KEEP_VISIBLE
+    view.tx = Math.min(Math.max(view.tx, keepX - mapW), canvas.width - keepX)
+    view.ty = Math.min(Math.max(view.ty, keepY - mapH), canvas.height - keepY)
+  }, [])
 
   // mapData가 업데이트되면 백그라운드 캐시 캔버스에 지도를 미리 그림 (Double Buffering)
   useEffect(() => {
@@ -127,12 +177,10 @@ function MapCanvas({
     const height = hasMap ? mapData.info.height : 500
     const resolution = hasMap ? mapData.info.resolution : 0.05 // 기본 5cm
 
-    // 캔버스 크기를 컨테이너 크기 기반으로 계산
-    const maxSize = Math.min(canvas.parentElement?.clientWidth || 600, 700)
-    const CELL_SIZE = hasMap ? Math.max(1, Math.floor(maxSize / Math.max(width, height))) : 1
-
-    const targetWidth = width * CELL_SIZE
-    const targetHeight = height * CELL_SIZE
+    // 캔버스는 컨테이너(뷰포트)를 가득 채우고, 지도는 뷰 변환(scale/tx/ty)으로 배치한다
+    const wrapper = wrapperRef.current
+    const targetWidth = Math.max(1, Math.floor(wrapper?.clientWidth || canvas.clientWidth || 600))
+    const targetHeight = Math.max(1, Math.floor(wrapper?.clientHeight || canvas.clientHeight || 400))
 
     // 크기가 실제로 변경되었을 때만 가로/세로 속성을 할당하여 Canvas 초기화 오버헤드 방지
     if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
@@ -143,17 +191,26 @@ function MapCanvas({
       ctx.clearRect(0, 0, targetWidth, targetHeight)
     }
 
+    // 지도(또는 기본 격자)가 바뀌면 화면 가운데에 전체가 보이도록 다시 맞춘다
+    gridSizeRef.current = { w: width, h: height }
+    const fitKey = `${width}x${height}`
+    if (fitKeyRef.current !== fitKey || viewRef.current.scale <= 0) {
+      fitKeyRef.current = fitKey
+      userAdjustedRef.current = false
+      applyFit(targetWidth, targetHeight, width, height)
+    }
+
+    const { scale: CELL_SIZE, tx, ty } = viewRef.current
+
     // ROS 월드 좌표(미터) → 캔버스 픽셀 좌표 변환
     // 지도 원점 또는 임의의 중앙 원점 (-12.5m, -12.5m) 사용해 (0,0)을 중앙에 오게 함
-    const origin = hasMap
-      ? (mapData.info.origin?.position ?? { x: 0, y: 0 })
-      : { x: -12.5, y: -12.5 }
+    const origin = hasMap ? (mapData.info.origin?.position ?? { x: 0, y: 0 }) : { x: -12.5, y: -12.5 }
 
     const worldToCanvas = (wx, wy) => {
       const col = (wx - origin.x) / resolution
       const row = (wy - origin.y) / resolution
-      const px = col * CELL_SIZE
-      const py = (height - row) * CELL_SIZE
+      const px = col * CELL_SIZE + tx
+      const py = (height - row) * CELL_SIZE + ty
       return { px, py }
     }
 
@@ -166,21 +223,11 @@ function MapCanvas({
         ctx.webkitImageSmoothingEnabled = false
         ctx.msImageSmoothingEnabled = false
 
-        ctx.drawImage(
-          mapCacheCanvasRef.current,
-          0,
-          0,
-          width,
-          height,
-          0,
-          0,
-          canvas.width,
-          canvas.height
-        )
+        ctx.drawImage(mapCacheCanvasRef.current, 0, 0, width, height, tx, ty, width * CELL_SIZE, height * CELL_SIZE)
       } else {
         // 캐시 준비중인 경우의 대체 렌더링
         ctx.fillStyle = '#cccccc'
-        ctx.fillRect(0, 0, canvas.width, canvas.height)
+        ctx.fillRect(tx, ty, width * CELL_SIZE, height * CELL_SIZE)
       }
     } else {
       // 맵이 없는 경우 격자 판 그리기
@@ -269,12 +316,25 @@ function MapCanvas({
     }
 
     // ── Layer 3: 로봇 위치 마커 렌더링 ──────────────────────────────────
-    if (subscribedTopicOf(subscribedTopics, 'odom') && odomData) {
-      const pos = odomData.pose?.pose?.position ?? { x: 0, y: 0 }
-      const quat = odomData.pose?.pose?.orientation ?? { x: 0, y: 0, z: 0, w: 1 }
-      const yaw = Math.atan2(2 * (quat.w * quat.z + quat.x * quat.y), 1 - 2 * (quat.y * quat.y + quat.z * quat.z))
+    // 지도와 같은 프레임(map)인 robotPose 를 우선 사용한다. TF 가 아직 안 모였을 때만
+    // /lio/odom 으로 폴백한다 — 이 값은 lio_odom 프레임이라 보정량이 반영되지 않는다.
+    const markerPose =
+      robotPose ??
+      (subscribedTopicOf(subscribedTopics, 'odom') && odomData
+        ? (() => {
+            const pos = odomData.pose?.pose?.position ?? { x: 0, y: 0 }
+            const quat = odomData.pose?.pose?.orientation ?? { x: 0, y: 0, z: 0, w: 1 }
+            return {
+              x: pos.x,
+              y: pos.y,
+              yaw: Math.atan2(2 * (quat.w * quat.z + quat.x * quat.y), 1 - 2 * (quat.y * quat.y + quat.z * quat.z))
+            }
+          })()
+        : null)
 
-      const { px, py } = worldToCanvas(pos.x, pos.y)
+    if (markerPose) {
+      const { yaw } = markerPose
+      const { px, py } = worldToCanvas(markerPose.x, markerPose.y)
       const ROBOT_R = Math.max(6, CELL_SIZE * 2)
 
       ctx.beginPath()
@@ -482,19 +542,120 @@ function MapCanvas({
     if (subscribedTopics.includes('/tf_static')) {
       drawTF(customTopicsData['/tf_static'])
     }
-  }, [mapData, scanData, odomData, subscribedTopics, customTopicsData])
+  }, [mapData, scanData, odomData, robotPose, subscribedTopics, customTopicsData, applyFit])
 
   // 데이터 변경 시 리렌더링
   useEffect(() => {
     render()
   }, [render])
 
-  // 창 크기 변경 시 리렌더링
+  // 이벤트 핸들러가 항상 최신 render 를 쓰도록 ref 로 유지
   useEffect(() => {
-    const handleResize = () => render()
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
+    renderRef.current = render
   }, [render])
+
+  // 컨테이너 크기 변경 시 — 사용자가 뷰를 건드리지 않았으면 다시 가운데 맞춤
+  useEffect(() => {
+    const wrapper = wrapperEl
+    if (!wrapper || typeof ResizeObserver === 'undefined') {
+      const handleResize = () => renderRef.current()
+      window.addEventListener('resize', handleResize)
+      return () => window.removeEventListener('resize', handleResize)
+    }
+
+    const observer = new ResizeObserver(() => {
+      if (!userAdjustedRef.current) {
+        // fitKey 를 비워 render 가 새 캔버스 크기로 다시 fit 하게 한다
+        fitKeyRef.current = ''
+      } else {
+        clampView()
+      }
+      renderRef.current()
+    })
+    observer.observe(wrapper)
+    return () => observer.disconnect()
+  }, [wrapperEl, clampView])
+
+  // 휠 확대/축소(커서 기준) + 드래그 이동
+  useEffect(() => {
+    const wrapper = wrapperEl
+    if (!wrapper) return
+
+    const zoomAt = (mx, my, factor) => {
+      const view = viewRef.current
+      const fitScale = fitScaleRef.current || view.scale
+      if (!view.scale || !fitScale) return
+      const next = Math.min(Math.max(view.scale * factor, fitScale * ZOOM_MIN_RATIO), fitScale * ZOOM_MAX_RATIO)
+      if (next === view.scale) return
+      // 커서 아래의 지도 지점이 그대로 유지되도록 이동량 보정
+      const ratio = next / view.scale
+      viewRef.current = {
+        scale: next,
+        tx: mx - (mx - view.tx) * ratio,
+        ty: my - (my - view.ty) * ratio
+      }
+      userAdjustedRef.current = true
+      clampView()
+      renderRef.current()
+    }
+
+    // 브라우저가 React 의 onWheel 을 passive 로 등록해 preventDefault 가 먹지 않으므로
+    // 네이티브 리스너를 passive: false 로 직접 붙인다(페이지 스크롤 방지).
+    const handleWheel = (e) => {
+      e.preventDefault()
+      const rect = (canvasRef.current ?? wrapper).getBoundingClientRect()
+      if (!rect.width || !rect.height) return
+      zoomAt(e.clientX - rect.left, e.clientY - rect.top, e.deltaY > 0 ? 1 / ZOOM_STEP : ZOOM_STEP)
+    }
+
+    const handleMouseDown = (e) => {
+      if (e.button !== 0) return
+      e.preventDefault()
+      dragRef.current = { x: e.clientX, y: e.clientY }
+      wrapper.style.cursor = 'grabbing'
+    }
+
+    const handleMouseMove = (e) => {
+      const drag = dragRef.current
+      if (!drag) return
+      const view = viewRef.current
+      view.tx += e.clientX - drag.x
+      view.ty += e.clientY - drag.y
+      dragRef.current = { x: e.clientX, y: e.clientY }
+      userAdjustedRef.current = true
+      clampView()
+      renderRef.current()
+    }
+
+    const handleMouseUp = () => {
+      if (!dragRef.current) return
+      dragRef.current = null
+      wrapper.style.cursor = 'grab'
+    }
+
+    // 더블클릭 → 전체보기로 초기화
+    const handleDoubleClick = () => {
+      const canvas = canvasRef.current
+      const { w, h } = gridSizeRef.current
+      if (!canvas || !w || !h) return
+      applyFit(canvas.width, canvas.height, w, h)
+      userAdjustedRef.current = false
+      renderRef.current()
+    }
+
+    wrapper.addEventListener('wheel', handleWheel, { passive: false })
+    wrapper.addEventListener('mousedown', handleMouseDown)
+    wrapper.addEventListener('dblclick', handleDoubleClick)
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      wrapper.removeEventListener('wheel', handleWheel)
+      wrapper.removeEventListener('mousedown', handleMouseDown)
+      wrapper.removeEventListener('dblclick', handleDoubleClick)
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [wrapperEl, applyFit, clampView])
 
   const hasSpatialSubscription = subscribedTopics.some((t) => SPATIAL_TOPICS.includes(t))
 
@@ -516,26 +677,29 @@ function MapCanvas({
   }
 
   return (
-    <div style={styles.wrapper}>
+    <div ref={setWrapperNode} style={styles.wrapper} title="휠: 확대/축소 · 드래그: 이동 · 더블클릭: 전체보기">
       <canvas ref={canvasRef} style={styles.canvas} />
     </div>
   )
 }
 
 const styles = {
+  // 지도를 담는 고정 뷰포트 — 스크롤 대신 캔버스 내부 뷰 변환(줌/팬)으로 탐색한다
   wrapper: {
-    overflow: 'auto',
+    position: 'relative',
+    overflow: 'hidden',
     flex: 1,
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'flex-start',
-    padding: 12,
-    background: '#e8e8e8'
+    // 부모 높이가 확정되지 않는 레이아웃에서도 캔버스가 찌그러지지 않도록 최소 높이 확보
+    minHeight: 400,
+    background: '#e8e8e8',
+    cursor: 'grab',
+    touchAction: 'none'
   },
   canvas: {
     display: 'block',
-    imageRendering: 'pixelated', // 픽셀 선명하게
-    boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+    width: '100%',
+    height: '100%',
+    imageRendering: 'pixelated' // 픽셀 선명하게
   },
   placeholder: {
     flex: 1,
@@ -555,6 +719,7 @@ const MemoizedMapCanvas = React.memo(MapCanvas, (prevProps, nextProps) => {
   if (prevProps.mapData !== nextProps.mapData) return false
   if (prevProps.scanData !== nextProps.scanData) return false
   if (prevProps.odomData !== nextProps.odomData) return false
+  if (prevProps.robotPose !== nextProps.robotPose) return false
   if (prevProps.subscribedTopics !== nextProps.subscribedTopics) return false
 
   // Check spatial keys in customTopicsData

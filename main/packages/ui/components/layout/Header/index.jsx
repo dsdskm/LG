@@ -15,6 +15,7 @@ import Logo from '../Logo'
 import SvgMenu from '../../../assets/svgs/gnb_header_menu.svg'
 import SvgNotification from '../../../assets/svgs/notification.svg'
 import { useAiAssistantStore, useResponsiveStore, useSideBarStore, useUserStore, useThemeStore } from '@repo/stores'
+import { logout as requestLogout } from '@repo/apis'
 import ServiceMenuIcon from '../ServiceMenuIcon'
 import LearningNotification from './LearningNotification'
 import { getAppPrefix } from '@repo/utils'
@@ -40,7 +41,15 @@ const Header = () => {
   const profileRef = useRef(null)
   useClickOutSide(profileRef, closeProfile)
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const refreshToken = useUserStore.getState().session?.refreshToken
+
+    try {
+      await requestLogout(refreshToken)
+    } catch (error) {
+      // 무효화 실패 여부와 관계없이 로그아웃은 계속 진행
+    }
+
     useUserStore.getState().logout()
     window.location.href = '/login'
   }

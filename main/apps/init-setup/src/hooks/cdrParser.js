@@ -69,6 +69,21 @@ export function parseCDR(buffer, schemaName) {
       return { data: readString() }
     }
 
+    // ── tf2_msgs/msg/TFMessage ──────────────────────────────────────
+    // /tf, /tf_static — map->lio_odom->base_link 합성으로 로봇의 지도 기준 pose 를 구한다.
+    if (schemaName === 'tf2_msgs/msg/TFMessage') {
+      const transformsLen = readU32()
+      const transforms = []
+      for (let i = 0; i < transformsLen; i++) {
+        const header = readHeader()
+        const child_frame_id = readString()
+        const translation = readPoint()
+        const rotation = readQuaternion()
+        transforms.push({ header, child_frame_id, transform: { translation, rotation } })
+      }
+      return { transforms }
+    }
+
     // ── nav_msgs/msg/OccupancyGrid ──────────────────────────────────
     if (schemaName === 'nav_msgs/msg/OccupancyGrid') {
       const header = readHeader()
