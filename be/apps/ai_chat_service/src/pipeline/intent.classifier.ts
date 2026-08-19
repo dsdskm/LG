@@ -1,16 +1,27 @@
 /**
- * 인텐트 분류기. 사용자 발화를 info | data | action 중 하나로 분류한다.
+ * 인텐트 분류기. 사용자 발화를 info | action 두 가지로 분류한다.
  *
  *  - info   : 개념/사용법/의미에 대한 정보 문의 (매뉴얼·문서로 답할 수 있는 것)
- *  - data   : 데이터 조회 (건수/목록/통계 등 실제 값을 가져와야 하는 것)
- *  - action : 액션 명령 (재부팅/조치 실행 등 즉시 수행해야 하는 것)
+ *  - action : 액션 명령 또는 데이터 조회 요청(실행/이동/필터/조회 요구 등)
+ *
+ *  NOTE:
+ *  - 기존 data 분류는 action으로 통합 처리한다.
+ *  - LLM은 JSON 하나만 반환하고, 다른 텍스트는 금지한다.
  */
 import type { LlmClient } from '../llm/llm.types'
+import { getPromptStore } from '../features/chat/service/prompt-store.service'
 import { safeJsonParse } from '../utils/utils'
 import type { ChatIntent, ChatTurn, IntentResult } from './pipeline.types'
 
 function buildSystemPrompt(screenName: string, hints?: string): string {
-  return [hints ? String(hints) : ''].filter(Boolean).join('\n')
+  const commonSystem = getPromptStore()?.getPromptContent('common', 'system')?.trim() ?? ''
+  const extras = [
+    commonSystem,
+    screenName ? `screen=${String(screenName)}` : '',
+    hints ? String(hints) : '',
+  ].filter(Boolean)
+
+  return extras.join('\n')
 }
 
 export class IntentClassifier {
@@ -40,7 +51,7 @@ export class IntentClassifier {
   }
 }
 
-const VALID: ChatIntent[] = ['info', 'data', 'action']
+const VALID: ChatIntent[] = ['info', 'action']
 
 function parseIntent(text?: string): IntentResult {
   const raw = String(text ?? '').trim()
@@ -49,7 +60,10 @@ function parseIntent(text?: string): IntentResult {
 
   if (obj && typeof obj === 'object') {
     const candidateIntent = String(obj?.intent ?? obj?.classification ?? '').trim().toLowerCase()
-    const intent: ChatIntent = VALID.includes(candidateIntent as ChatIntent) ? candidateIntent as ChatIntent : 'info'
+    const normalizedIntent = candidateIntent === 'data' ? 'action' : candidateIntent
+    const intent: ChatIntent = VALID.includes(normalizedIntent as ChatIntent)
+      ? (normalizedIntent as ChatIntent)
+      : 'info'
     const rawConf = Number(obj?.confidence ?? obj?.score)
     const confidence = Number.isFinite(rawConf)
       ? Math.min(1, Math.max(0, rawConf))
@@ -60,18 +74,18 @@ function parseIntent(text?: string): IntentResult {
 
   const direct = stripped.match(/\b(info|data|action)\b/i)
   if (direct) {
-    const intent = direct[1].toLowerCase() as ChatIntent
+    const normalizedIntent = direct[1].toLowerCase() === 'data' ? 'action' : direct[1].toLowerCase()
     const confidenceMatch = stripped.match(/(?:confidence|신뢰도|score)\s*[:=]\s*([0-9]*\.?[0-9]+)/i)
     const confidence = confidenceMatch ? Math.min(1, Math.max(0, Number(confidenceMatch[1]))) : 0.8
-    return { intent: VALID.includes(intent) ? intent : 'info', confidence, reason: stripped }
+    return { intent: VALID.includes(normalizedIntent as ChatIntent) ? (normalizedIntent as ChatIntent) : 'info', confidence, reason: stripped }
   }
 
   const intentByPattern = stripped.match(/(?:intent|의도)\s*[:=]\s*(info|data|action)/i)
   if (intentByPattern) {
-    const intent = intentByPattern[1].toLowerCase() as ChatIntent
+    const normalizedIntent = intentByPattern[1].toLowerCase() === 'data' ? 'action' : intentByPattern[1].toLowerCase()
     const confidenceMatch = stripped.match(/(?:confidence|신뢰도|score)\s*[:=]\s*([0-9]*\.?[0-9]+)/i)
     const confidence = confidenceMatch ? Math.min(1, Math.max(0, Number(confidenceMatch[1]))) : 0.8
-    return { intent: VALID.includes(intent) ? intent : 'info', confidence, reason: stripped }
+    return { intent: VALID.includes(normalizedIntent as ChatIntent) ? (normalizedIntent as ChatIntent) : 'info', confidence, reason: stripped }
   }
 
   return { intent: 'info', confidence: 0, reason: stripped }

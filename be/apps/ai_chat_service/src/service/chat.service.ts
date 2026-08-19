@@ -18,6 +18,7 @@ import { ChatSettingService } from '../features/chat-settings/service/chat-setti
 import { getPromptStore, type RagChunkData } from '../features/chat/service/prompt-store.service'
 import { ChatOrchestrator } from '../pipeline/chat.orchestrator'
 import { loadChatPipelineConfig } from '../pipeline/pipeline.config'
+import { safeJsonParse } from '../utils/utils'
 import type { ChatReply, ChatReplyImage, ChatTurn, SuggestedAction } from '../pipeline/pipeline.types'
 import {
   includesConfiguredPhrase,
@@ -70,8 +71,10 @@ type ChatLogDebugMeta = {
   ragMinScore?: number
   ragSelectionRule?: string
   usedCollection?: string
+  actionRagCollection?: string
   primaryChunkKey?: string
   usedChunks?: string[]
+  actionRagChunks?: string[]
   ragScores?: unknown[]
   executed?: unknown[]
   loginUser?: {
@@ -152,9 +155,37 @@ export class ChatService {
       const selectedScore = selected ? Number(selected.topScore ?? 0).toFixed(2) : '-'
       const selectedAdjustedScore = selected ? Number(selected.adjustedScore ?? selected.topScore ?? 0).toFixed(2) : '-'
       const threshold = Number(this.pipelineCfg.infoRagMinScore ?? 0).toFixed(2)
+      const comparisonSummary = ragScores
+        .map((item) => {
+          const collection = String(item.collection ?? '-').trim() || '-'
+          const topScore = Number(item.topScore ?? 0).toFixed(2)
+          const adjustedScore = Number(item.adjustedScore ?? 0).toFixed(2)
+          const hits = Number(item.hitCount ?? 0)
+          const chunkDetails = Array.isArray(item.topChunks) && item.topChunks.length > 0
+            ? item.topChunks
+                .map((chunk) => {
+                  const chunkKey = String(chunk?.chunkKey ?? '').trim() || '-'
+                  const title = String(chunk?.title ?? '').trim()
+                  const finalScore = Number(chunk?.finalScore ?? 0).toFixed(2)
+                  const rawScore = Number(chunk?.rawScore ?? 0).toFixed(2)
+                  const titleSuffix = title ? `, title=${title}` : ''
+                  return `${chunkKey}(final=${finalScore}, raw=${rawScore}${titleSuffix})`
+                })
+                .join('; ')
+            : '[]'
+          return `${collection}(top=${topScore}, adjusted=${adjustedScore}, hits=${hits}, topChunks=[${chunkDetails}])`
+        })
+        .join(' | ') || 'none'
+
+      const selectedChunkSummary = Array.isArray(reply.usedChunks) && reply.usedChunks.length > 0
+        ? reply.usedChunks
+            .map((chunkId) => String(chunkId ?? '').trim())
+            .filter(Boolean)
+            .join(', ')
+        : 'none'
 
       this.logger.warn(
-        `[chatSiteAssitant] [2단계:RAG점수] [reqId=${reqId}] matchScore=${selectedScore} adjustedScore=${selectedAdjustedScore} thresholdScore=${threshold} selected=${usedCollection} common=${commonScore} screen(${screenCollection})=${screenScore}`,
+        `[chatSiteAssitant] [2단계:RAG점수] [reqId=${reqId}] matchScore=${selectedScore} adjustedScore=${selectedAdjustedScore} thresholdScore=${threshold} selected=${usedCollection} selectedChunks=[${selectedChunkSummary}] comparison=${comparisonSummary} common=${commonScore} screen(${screenCollection})=${screenScore}`,
       )
     }
 
@@ -226,16 +257,81 @@ export class ChatService {
     return ''
   }
 
+  private normalizeUserFacingText(rawText: string): string {
+    const text = String(rawText ?? '').trim()
+    if (!text) return ''
+
+    const stripCodeBlock = text.replace(/^```(?:json)?\s*|\s*```$/gi, '').trim()
+    const parsed = safeJsonParse(stripCodeBlock) as Record<string, unknown> | null
+    if (parsed && typeof parsed === 'object') {
+      const preferred = [
+        parsed.text,
+        parsed.answer,
+        parsed.content,
+        parsed.summary,
+        parsed.message,
+        parsed.reason,
+      ]
+        .map((value) => (typeof value === 'string' ? value.trim() : ''))
+        .filter(Boolean)
+        .find((value) => !/^\s*\{/.test(value))
+
+      if (preferred) return preferred
+    }
+
+    const reasonMatch = stripCodeBlock.match(/"reason"\s*:\s*"((?:\\.|[^"\\])*)"/i)
+    if (reasonMatch?.[1]) {
+      return reasonMatch[1]
+        .replace(/\\n/g, '\n')
+        .replace(/\\"/g, '"')
+        .replace(/\\'/g, "'")
+        .replace(/\\\\/g, '\\')
+    }
+
+    const singleQuoteReasonMatch = stripCodeBlock.match(/'reason'\s*:\s*'((?:\\.|[^'\\])*)'/i)
+    if (singleQuoteReasonMatch?.[1]) {
+      return singleQuoteReasonMatch[1]
+        .replace(/\\n/g, '\n')
+        .replace(/\\"/g, '"')
+        .replace(/\\'/g, "'")
+        .replace(/\\\\/g, '\\')
+    }
+
+    return text
+  }
+
+  private summarizeRagDebugText(text: string): string {
+    const raw = String(text ?? '').trim()
+    if (!raw) return ''
+
+    const isRagDebugText = /(?:matchScore=|adjustedScore=|thresholdScore=|selected=|selectedChunks=|comparison=|common=|screen\()/i.test(raw)
+    if (!isRagDebugText) return raw
+
+    return '질문과 관련된 내용을 확인해서 답변을 정리해봤어요.'
+  }
+
   private ensureUserFacingReply(reply: ChatReply): ChatReply {
     const text = String(reply?.text ?? '').trim()
     if (text) {
-      const sanitized = this.sanitizeLeadingAssistantPreface(text)
-      if (sanitized && sanitized !== text) {
+      const normalizedText = this.normalizeUserFacingText(text)
+      const ragFriendlyText = this.summarizeRagDebugText(normalizedText)
+      const finalTextCandidate = this.sanitizeLeadingAssistantPreface(ragFriendlyText)
+      const finalText = finalTextCandidate || ragFriendlyText || normalizedText
+
+      if (finalText !== text) {
         return {
           ...reply,
-          text: sanitized,
+          text: finalText,
         }
       }
+
+      if (normalizedText !== text) {
+        return {
+          ...reply,
+          text: normalizedText,
+        }
+      }
+
       return reply
     }
 
@@ -1310,13 +1406,19 @@ export class ChatService {
       const pipelineConfidence = this.extractPipelineConfidence(out.meta)
       const meta = out.meta && typeof out.meta === 'object' ? (out.meta as Record<string, unknown>) : undefined
       const usedCollection = String(meta?.['usedCollection'] ?? '').trim()
+      const actionRagCollection = String(meta?.['actionRagCollection'] ?? '').trim()
       const primaryChunkKey = String(meta?.['primaryChunkKey'] ?? '').trim()
       const usedChunksRaw = meta?.['usedChunks']
+      const actionRagChunksRaw = meta?.['actionRagChunks']
       const usedChunks = Array.isArray(usedChunksRaw)
         ? usedChunksRaw
             .map((item) => String(item ?? '').trim())
             .filter(Boolean)
-        : []
+        : Array.isArray(actionRagChunksRaw)
+          ? actionRagChunksRaw
+              .map((item) => String(item ?? '').trim())
+              .filter(Boolean)
+          : []
       const ragScoresRaw = meta?.['ragScores']
       const ragScores = Array.isArray(ragScoresRaw) ? ragScoresRaw : []
       const tracedReply = this.attachPipelineTrace(
@@ -1327,8 +1429,8 @@ export class ChatService {
       if (pipelineConfidence !== undefined) {
         normalizedReply.pipelineConfidence = pipelineConfidence
       }
-      if (usedCollection) {
-        normalizedReply.usedCollection = usedCollection
+      if (usedCollection || actionRagCollection) {
+        normalizedReply.usedCollection = usedCollection || actionRagCollection
       }
       if (primaryChunkKey) {
         normalizedReply.primaryChunkKey = primaryChunkKey
@@ -1346,6 +1448,7 @@ export class ChatService {
             ? ((item as Record<string, unknown>)?.topChunks as unknown[])
               .map((row) => ({
                 chunkKey: String((row as Record<string, unknown>)?.chunkKey ?? '').trim(),
+                title: String((row as Record<string, unknown>)?.title ?? '').trim() || undefined,
                 finalScore: Number((row as Record<string, unknown>)?.finalScore ?? 0),
                 rawScore: Number((row as Record<string, unknown>)?.rawScore ?? 0),
               }))
@@ -1830,11 +1933,14 @@ export class ChatService {
     const pipelineTrace = String(reply?.pipelineTrace ?? '').trim() || undefined
     const pipelineConfidence = Number(reply?.pipelineConfidence)
     const usedCollection = String(reply?.usedCollection ?? '').trim() || undefined
+    const actionRagCollection = String(meta?.['actionRagCollection'] ?? '').trim() || undefined
     const primaryChunkKey = String(reply?.primaryChunkKey ?? '').trim() || undefined
     const assistantText = String(reply?.text ?? '').trim()
     const usedChunks = Array.isArray(reply?.usedChunks)
       ? reply.usedChunks.map((item) => String(item ?? '').trim()).filter(Boolean)
-      : []
+      : Array.isArray(meta?.['actionRagChunks'])
+        ? (meta['actionRagChunks'] as unknown[]).map((item) => String(item ?? '').trim()).filter(Boolean)
+        : []
     const ragScores = Array.isArray(reply?.ragScores) ? reply.ragScores : []
     const selectedRagScore = usedCollection
       ? ragScores.find((item) => String(item?.collection ?? '').trim() === usedCollection)
@@ -1892,9 +1998,11 @@ export class ChatService {
       ragThresholdScore: ragMinScore,
       ragMinScore,
       ragSelectionRule,
-      usedCollection,
+      usedCollection: usedCollection || actionRagCollection,
+      actionRagCollection: actionRagCollection || usedCollection,
       primaryChunkKey,
       usedChunks: usedChunks.length > 0 ? usedChunks : undefined,
+      actionRagChunks: usedChunks.length > 0 ? usedChunks : undefined,
       ragScores: ragScores.length > 0 ? ragScores : undefined,
       executed: executed.length > 0 ? executed : undefined,
       loginUser,

@@ -52,6 +52,78 @@ export class PromptStoreService implements OnModuleInit {
     return 'both'
   }
 
+  private serializeRagBody(value: unknown): string {
+    const normalizeText = (raw: unknown): string => {
+      if (raw === undefined || raw === null) return ''
+      if (typeof raw === 'string') return raw.trim()
+      if (typeof raw === 'number' || typeof raw === 'boolean') return String(raw)
+      if (Array.isArray(raw)) {
+        return raw
+          .map((item) => normalizeText(item))
+          .filter(Boolean)
+          .join(', ')
+      }
+      if (typeof raw === 'object') {
+        const record = raw as Record<string, unknown>
+        const parts: string[] = []
+        for (const [key, nextValue] of Object.entries(record)) {
+          const text = normalizeText(nextValue)
+          if (!text) continue
+          const shouldSkip = ['title', 'summary', 'description', 'text', 'content', 'message', 'name', 'features', 'sections', 'items'].includes(key)
+          if (shouldSkip) {
+            parts.push(text)
+          }
+        }
+        return parts.join(' ')
+      }
+      return ''
+    }
+
+    if (value === undefined || value === null) return ''
+    if (typeof value === 'string') return value.trim()
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+
+    const record = value as Record<string, unknown>
+    const summary: string[] = []
+
+    if (record.title) summary.push(String(record.title).trim())
+    if (record.summary) summary.push(String(record.summary).trim())
+    if (record.description) summary.push(String(record.description).trim())
+    if (record.text) summary.push(String(record.text).trim())
+    if (record.content) summary.push(String(record.content).trim())
+
+    const featureList = Array.isArray(record.features) ? record.features : []
+    const featureText = featureList.map((item) => normalizeText(item)).filter(Boolean).join(', ')
+    if (featureText) summary.push(`주요 기능: ${featureText}.`)
+
+    const sectionList = Array.isArray(record.sections) ? record.sections : []
+    for (const section of sectionList) {
+      if (!section || typeof section !== 'object') continue
+      const row = section as Record<string, unknown>
+      const sectionName = normalizeText(row.name)
+      const sectionText = normalizeText(row.text)
+      if (sectionName && sectionText) summary.push(`${sectionName}: ${sectionText}`)
+      else if (sectionText) summary.push(sectionText)
+    }
+
+    const itemList = Array.isArray(record.items) ? record.items : []
+    for (const item of itemList) {
+      const itemText = normalizeText(item)
+      if (itemText) summary.push(itemText)
+    }
+
+    const combined = summary.filter(Boolean).join(' ')
+    return combined || normalizeText(value)
+  }
+
+  private normalizeRagBody(value: unknown): string {
+    return this.serializeRagBody(value)
+  }
+
+  refreshFromDb(): Promise<void> {
+    return this.reload()
+  }
+
   constructor(
     @InjectRepository(Screen) private readonly screenRepo: Repository<Screen>,
     @InjectRepository(Prompt) private readonly promptRepo: Repository<Prompt>,
@@ -89,18 +161,28 @@ export class PromptStoreService implements OnModuleInit {
     const byCollection = new Map<string, RagCollectionData>()
     for (const r of rag) {
       if (r.enabled === false) continue
-      const collectionKey = String(r.screenKey ?? '').trim()
-      if (!collectionKey) continue
-      const col = byCollection.get(collectionKey) ?? { key: collectionKey, chunks: [] }
-      col.chunks.push({
-        id: r.chunkKey,
-        title: r.title ?? '',
-        keywords: r.keywords ?? [],
-        body: r.body,
-        imageUrl: String(r.imageUrl ?? '').trim() || undefined,
-        intentType: this.normalizeRagIntentType(r.intentType),
-      })
-      byCollection.set(collectionKey, col)
+      const collectionKeys = new Set<string>()
+      const screenKey = String(r.screenKey ?? '').trim()
+      const appKey = String(r.appKey ?? '').trim()
+      if (screenKey) collectionKeys.add(screenKey)
+      if (appKey) collectionKeys.add(appKey)
+      if (collectionKeys.size === 0) continue
+
+      for (const collectionKey of collectionKeys) {
+        const col = byCollection.get(collectionKey) ?? { key: collectionKey, chunks: [] }
+        const existingIds = new Set(col.chunks.map((chunk) => String(chunk.id ?? '').trim()).filter(Boolean))
+        if (!existingIds.has(String(r.chunkKey ?? '').trim())) {
+          col.chunks.push({
+            id: r.chunkKey,
+            title: r.title ?? '',
+            keywords: r.keywords ?? [],
+            body: this.normalizeRagBody(r.body),
+            imageUrl: String(r.imageUrl ?? '').trim() || undefined,
+            intentType: this.normalizeRagIntentType(r.intentType),
+          })
+        }
+        byCollection.set(collectionKey, col)
+      }
     }
     this.collections = byCollection
   }
@@ -301,7 +383,7 @@ export class PromptStoreService implements OnModuleInit {
     patch: {
       title?: string
       keywords?: string[]
-      body?: string
+      body?: string | Record<string, unknown> | unknown[] | null
       imageUrl?: string | null
       enabled?: boolean
       intentType?: string
@@ -309,13 +391,20 @@ export class PromptStoreService implements OnModuleInit {
   ) {
     const row = await this.ragRepo.findOne({ where: { id } })
     if (!row) throw new Error('rag chunk not found')
-    Object.assign(row, patch)
+
+    if (patch.title !== undefined) row.title = patch.title
+    if (patch.keywords !== undefined) row.keywords = patch.keywords
+    if (patch.body !== undefined) row.body = this.serializeRagBody(patch.body)
     if (patch.imageUrl !== undefined) {
       row.imageUrl = String(patch.imageUrl ?? '').trim() || null
     }
     if (patch.intentType !== undefined) {
       row.intentType = this.normalizeRagIntentType(patch.intentType)
     }
+    if (patch.enabled !== undefined) {
+      row.enabled = patch.enabled
+    }
+
     await this.ragRepo.save(row)
     await this.reload()
     return row
@@ -325,7 +414,7 @@ export class PromptStoreService implements OnModuleInit {
     patch: {
       title?: string
       keywords?: string[]
-      body?: string
+      body?: string | Record<string, unknown> | unknown[] | null
       imageUrl?: string | null
       intentType?: string
       enabled?: boolean
@@ -346,7 +435,7 @@ export class PromptStoreService implements OnModuleInit {
 
     if (patch.title !== undefined) row.title = patch.title
     if (patch.keywords !== undefined) row.keywords = patch.keywords
-    if (patch.body !== undefined) row.body = patch.body
+    if (patch.body !== undefined) row.body = this.serializeRagBody(patch.body)
     if (patch.imageUrl !== undefined) row.imageUrl = String(patch.imageUrl ?? '').trim() || null
     if (patch.intentType !== undefined) row.intentType = this.normalizeRagIntentType(patch.intentType)
     if (patch.enabled !== undefined) row.enabled = patch.enabled
@@ -360,7 +449,7 @@ export class PromptStoreService implements OnModuleInit {
     chunkKey?: string
     title?: string
     keywords?: string[]
-    body?: string
+    body?: string | Record<string, unknown> | unknown[] | null
     imageUrl?: string | null
     intentType?: string
     enabled?: boolean
@@ -382,7 +471,7 @@ export class PromptStoreService implements OnModuleInit {
       chunkKey,
       title: title || chunkKey,
       keywords: input.keywords ?? [],
-      body: input.body ?? '',
+      body: this.serializeRagBody(input.body ?? ''),
       imageUrl: String(input.imageUrl ?? '').trim() || null,
       intentType: this.normalizeRagIntentType(input.intentType),
       enabled: input.enabled !== false,
@@ -399,7 +488,7 @@ export class PromptStoreService implements OnModuleInit {
     chunkKey?: string
     title?: string
     keywords?: string[]
-    body?: string
+    body?: string | Record<string, unknown> | unknown[] | null
     imageUrl?: string | null
     intentType?: string
     enabled?: boolean
@@ -420,7 +509,7 @@ export class PromptStoreService implements OnModuleInit {
       chunkKey,
       title: title || chunkKey,
       keywords: Array.isArray(input.keywords) ? input.keywords : [],
-      body: String(input.body ?? ''),
+      body: this.serializeRagBody(input.body ?? ''),
       imageUrl: String(input.imageUrl ?? '').trim() || null,
       intentType: this.normalizeRagIntentType(input.intentType),
       enabled: input.enabled !== false,

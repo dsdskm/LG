@@ -7,6 +7,7 @@ import { ChatSettingEntity } from '../db/chat-setting.entity'
 export const CHAT_SETTING_KEYS = {
   llmProvider: 'llmProvider',
   llmProviderSchema: 'llmProviderSchema',
+  tmsInfoOnly: 'tmsInfoOnly',
 } as const
 
 export type ChatSettingSchemaItem = {
@@ -95,6 +96,20 @@ export class ChatSettingService implements OnModuleInit {
   async getLlmProvider(): Promise<ChatLlmProvider> {
     const raw = await this.get(CHAT_SETTING_KEYS.llmProvider)
     return this.normalizeProvider(raw)
+  }
+
+  async getBoolean(key: string, fallback = false): Promise<boolean> {
+    const raw = await this.get(key)
+    if (raw === undefined || raw === null || raw === '') return fallback
+
+    if (typeof raw === 'boolean') return raw
+    if (typeof raw === 'number') return raw !== 0
+
+    const v = String(raw).trim().toLowerCase()
+    if (['true', '1', 'yes', 'y', 'on'].includes(v)) return true
+    if (['false', '0', 'no', 'n', 'off'].includes(v)) return false
+
+    return Boolean(raw) && fallback === true
   }
 
   normalizeProvider(raw: unknown): ChatLlmProvider {

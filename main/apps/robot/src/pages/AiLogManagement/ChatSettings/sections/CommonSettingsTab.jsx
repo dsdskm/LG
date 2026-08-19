@@ -302,6 +302,8 @@ export const CommonSettingsTab = ({
     setDraftProvider,
     isDirty,
     saving,
+    tmsInfoOnlyEnabled,
+    onTmsInfoOnlyToggle,
     onSaveProvider,
     commonPromptItem,
     commonPromptDraft,
@@ -349,6 +351,11 @@ export const CommonSettingsTab = ({
                 isDirty={isDirty}
                 saving={saving}
                 onSaveProvider={onSaveProvider}
+            />
+
+            <TmsInfoOnlySettingCard
+                enabled={Boolean(tmsInfoOnlyEnabled)}
+                onToggle={onTmsInfoOnlyToggle}
             />
 
             <CommonInputHintPromptManagementCard
@@ -631,6 +638,24 @@ const ProviderSettingCard = ({
                 <PrimaryButton type="button" onClick={onSaveProvider} disabled={!isDirty || saving}>
                     {saving ? '저장 중...' : '저장'}
                 </PrimaryButton>
+            </ActionRow>
+        </SettingCard>
+    )
+}
+
+const TmsInfoOnlySettingCard = ({ enabled, onToggle }) => {
+    return (
+        <SettingCard>
+            <CardHeader>
+                <CardTitle>정보 인텐트용만 사용하기</CardTitle>
+            </CardHeader>
+
+            <PageDescription>TMS 앱에서 분류된 intent가 무엇이든 정보 RAG를 우선으로 사용할지 여부를 설정합니다.</PageDescription>
+
+            <ActionRow>
+                <ToggleButton type="button" $active={Boolean(enabled)} onClick={onToggle}>
+                    {enabled ? '활성화' : '비활성화'}
+                </ToggleButton>
             </ActionRow>
         </SettingCard>
     )

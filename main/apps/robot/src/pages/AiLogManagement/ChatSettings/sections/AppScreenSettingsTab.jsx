@@ -78,6 +78,7 @@ const normalizeKeywordArray = (value) => {
 
 const RAG_INTENT_OPTIONS = [
     { key: 'info', label: '정보 인텐트용' },
+    { key: 'action', label: '액션 인텐트용' },
 ]
 
 const normalizeRagIntentType = (value) => {
@@ -101,7 +102,9 @@ const IMAGE_ATTACH_MODE_OPTIONS = [
 const getRagIntentLabel = (value) => {
     const intentType = normalizeRagIntentType(value)
     if (intentType === 'info') return '정보 인텐트'
-    return '공용(정보)'
+    if (intentType === 'action') return '액션 인텐트'
+    if (intentType === 'both') return '정보/액션 공용'
+    return '정보/액션 공용'
 }
 
 const normalizeCommonRagKey = (value) => {
@@ -615,13 +618,34 @@ const ScreenSettingGroup = ({
                 onCreatePrompt={onCreatePrompt}
                 promptType="intent-hint"
                 title="상세 화면 분류 LLM 프롬프트"
-                description="이 화면이 info 분기를 결정할 때 사용할 상세 룰입니다. 기본값, 화면별 값, 또는 둘을 병합해서 적용할지 선택할 수 있습니다."
+                description="이 화면이 info / action 분기를 결정할 때 사용할 상세 룰입니다. 기본값, 화면별 값, 또는 둘을 병합해서 적용할지 선택할 수 있습니다."
                 createLabel="분류 프롬프트 추가"
                 emptyText="등록된 상세 화면 분류 프롬프트가 없습니다."
                 expandedView
                 allowCreate
                 singleOnly
             />
+
+            <PromptCard>
+                <PromptMeta>
+                    <span>분류 결과 리턴 포맷</span>
+                    <span>read only</span>
+                </PromptMeta>
+
+                <PageDescription>
+                    LLM은 아래 JSON 형식만 반환하도록 고정하며, 다른 텍스트나 마크다운은 허용하지 않습니다.
+                </PageDescription>
+
+                <PromptTextarea
+                    value={`{
+  "intent": "info",
+  "confidence": 0.92,
+  "reason": "설명/가이드 질문으로 판단"
+}`}
+                    readOnly
+                    style={{ minHeight: '140px', background: '#f8fafc', color: '#334155' }}
+                />
+            </PromptCard>
 
             <ScreenGuidanceList
                 appKey={String(group.routeKey ?? '').split('/')[0] || ''}
@@ -1965,7 +1989,33 @@ const ScreenRagList = ({
                                 <span>updated: {formatDateTime(activeRagDoc.updatedAt)}</span>
                             </PromptMeta>
 
-                            <FieldHint>화면별 RAG는 무조건 정보 인텐트용으로 사용됩니다.</FieldHint>
+                            {!isIntentFixed ? (
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                    {RAG_INTENT_OPTIONS.map((option) => {
+                                        const active = newRagDraft.intentType === option.key
+                                        return (
+                                            <button
+                                                key={option.key}
+                                                type="button"
+                                                onClick={() => setNewRagDraft((prev) => ({ ...prev, intentType: option.key }))}
+                                                style={{
+                                                    height: '34px',
+                                                    padding: '0 12px',
+                                                    borderRadius: '999px',
+                                                    border: active ? '1px solid #2563eb' : '1px solid #dbe3ef',
+                                                    background: active ? '#eff6ff' : '#ffffff',
+                                                    color: active ? '#1d4ed8' : '#475569',
+                                                    fontSize: '12px',
+                                                    fontWeight: 700,
+                                                    cursor: 'pointer',
+                                                }}
+                                            >
+                                                {option.label}
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            ) : null}
 
                             <FieldLabel>제목</FieldLabel>
                             <input
@@ -2051,7 +2101,33 @@ const ScreenRagList = ({
                                 onChange={(e) => setNewRagDraft((prev) => ({ ...prev, title: e.target.value }))}
                             />
 
-                            <FieldHint>화면별 RAG는 무조건 정보 인텐트용으로 저장됩니다.</FieldHint>
+                            {!isIntentFixed ? (
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '6px' }}>
+                                    {RAG_INTENT_OPTIONS.map((option) => {
+                                        const active = newRagDraft.intentType === option.key
+                                        return (
+                                            <button
+                                                key={option.key}
+                                                type="button"
+                                                onClick={() => setNewRagDraft((prev) => ({ ...prev, intentType: option.key }))}
+                                                style={{
+                                                    height: '34px',
+                                                    padding: '0 12px',
+                                                    borderRadius: '999px',
+                                                    border: active ? '1px solid #2563eb' : '1px solid #dbe3ef',
+                                                    background: active ? '#eff6ff' : '#ffffff',
+                                                    color: active ? '#1d4ed8' : '#475569',
+                                                    fontSize: '12px',
+                                                    fontWeight: 700,
+                                                    cursor: 'pointer',
+                                                }}
+                                            >
+                                                {option.label}
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            ) : null}
 
                             <FieldLabel>keywords</FieldLabel>
                             <KeywordListEditor

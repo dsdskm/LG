@@ -28,8 +28,8 @@
 
 1. `ChatOrchestrator`가 화면 설정(`ScreenConfig`)을 로드한다.
 2. 멀티턴 보정(`buildContinuationMessage`)으로 clarification 후속 발화를 실행 가능한 문장으로 재작성할 수 있다.
-3. intent classifier 결과 또는 fallback 키워드로 `info | data | action` 라벨을 확정한다.
-4. 최종 처리 경로는 `info | action` 두 갈래다. (`data` 라벨은 action 경로로 통합 처리)
+3. intent classifier 결과 또는 fallback 키워드로 `info | action` 라벨을 확정한다.
+4. 최종 처리 경로는 `info | action` 두 갈래다. (기존 `data` 분류는 action으로 통합 처리)
 5. 경로별 처리:
 	 - `info`: RAG 조회 -> RAG 미충족 시 기본 LLM 호출 -> 응답 생성
 	 - `action`: 통합 액션 프롬프트 적용 -> 통합 액션 툴 실행

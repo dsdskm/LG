@@ -202,6 +202,7 @@ const RobotItem = ({
                 </span>
               </div>
             </div>
+       
             <div
               style={{
                 display: 'flex',
@@ -228,6 +229,14 @@ const RobotItem = ({
                     style={{ color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                   >
                     {robot.site?.length > 0 ? robot.site : t('deploy.robot.unassigned')}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'row', minWidth: 0, flex: '0 1 auto' }}>
+                  <span style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>로봇ID:</span>
+                  <span
+                    style={{ color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  >
+                    {robot.id}
                   </span>
                 </div>
 

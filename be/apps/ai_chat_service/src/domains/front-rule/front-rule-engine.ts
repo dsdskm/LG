@@ -67,13 +67,15 @@ async function getCachedScreenRules(
   const key = screenCacheKey(appKey, screenKey)
   const cached = screenRuleCache.get(key)
   if (cached) {
-    logger.log(`[front-rule] cache hit key=${key} rules=${cached.length}`)
+    logger.log(`[front-rule] cache hit appKey=${appKey} screenKey=${screenKey} key=${key} rules=${cached.length}`)
+    console.log(`[front-rule] cache hit appKey=${appKey} screenKey=${screenKey} key=${key} rules=${cached.length}`)
     return cached
   }
 
   const rules = await loadRules(appKey, screenKey)
   screenRuleCache.set(key, rules)
-  logger.log(`[front-rule] cache miss key=${key} loaded=${rules.length}`)
+  logger.log(`[front-rule] cache miss appKey=${appKey} screenKey=${screenKey} key=${key} loaded=${rules.length} source=screen-load`)
+  console.log(`[front-rule] cache miss appKey=${appKey} screenKey=${screenKey} key=${key} loaded=${rules.length} source=screen-load`)
   return rules
 }
 
@@ -116,16 +118,41 @@ function canCompileRegex(pattern: string): RegExp | null {
   }
 }
 
+function normalizeSparseReplyText(value: string, captures: string[]): string {
+  const collapsed = value.replace(/\s+/g, ' ').trim()
+  const fallback = captures.filter(Boolean).at(-1) ?? ''
+
+  if (!fallback) return collapsed
+
+  if (/^로봇\s+에서\s+태스크플로우\s+.*$/.test(collapsed)) {
+    return collapsed.replace(/^로봇\s+에서\s+태스크플로우\s+/, `태스크플로우 ${fallback} `)
+  }
+
+  return collapsed
+}
+
 function interpolateTemplateValue(value: unknown, message: string, captures: string[]): unknown {
   if (typeof value === 'string') {
-    return value.replace(/\$message|\$(\d+)/g, (token, captureIndex: string | undefined) => {
+    const interpolated = value.replace(/\$message|\$(\d+)/g, (token, captureIndex: string | undefined) => {
       if (token === '$message') return message
-      return captures[Number(captureIndex) - 1] ?? ''
+
+      const index = Number(captureIndex)
+      if (!Number.isFinite(index) || index < 1) return ''
+      return captures[index - 1] ?? ''
     })
+
+    if (value.includes('$1') || value.includes('$2') || value.includes('$3')) {
+      return normalizeSparseReplyText(interpolated, captures)
+    }
+
+    return interpolated
   }
 
   if (Array.isArray(value)) {
-    return value.map((item) => interpolateTemplateValue(item, message, captures))
+    // 매칭되지 않은 캡처 그룹(빈 문자열)은 후보 목록에서 제거한다.
+    return value
+      .map((item) => interpolateTemplateValue(item, message, captures))
+      .filter((item) => !(typeof item === 'string' && item === ''))
   }
 
   if (value && typeof value === 'object') {
@@ -264,8 +291,10 @@ export function matchFrontRuleRows(
     )
     if (!matched) continue
 
-    const captures = matched.slice(1).map((v) => String(v ?? '').trim()).filter(Boolean)
-    const interpolatedTemplate = toRecord(interpolateTemplateValue(templateForRule(rule), message, captures))
+    // 정규식 그룹 위치($1, $2, ...)를 그대로 보존해야 템플릿의 $N 치환이 어긋나지 않는다.
+    const rawCaptures = matched.slice(1).map((v) => String(v ?? '').trim())
+    const captures = rawCaptures.filter(Boolean)
+    const interpolatedTemplate = toRecord(interpolateTemplateValue(templateForRule(rule), message, rawCaptures))
     const meta = parseTemplateMeta(interpolatedTemplate)
 
     const intent = inferIntent(rule, meta)

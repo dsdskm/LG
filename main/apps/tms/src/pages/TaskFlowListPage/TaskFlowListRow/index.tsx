@@ -19,7 +19,8 @@ import {
   UpdatedAtText,
   RightTopRow,
   RightBottomRow,
-  RightInfoColumn
+  RightInfoColumn,
+  FlowId
 } from './styles'
 import { TaskFlowWithDeployment, TaskFlowStatus, DeploymentStatus } from '@/types/taskflow'
 import { getTaskFlowStatusLabel } from '@/utils/taskflowStatus'
@@ -175,7 +176,7 @@ export default function TaskFlowListRow({
             <FlowVersionBadge>{getVersionText(flow)}</FlowVersionBadge>
             {renderFlowStatusBadge(flow, t)}
           </FlowTitleRow>
-
+          <FlowId>{flow.id || <EmptyValue />}</FlowId>
           {flow.description && <FlowDesc>{flow.description}</FlowDesc>}
         </FlowMain>
       </CardLeft>

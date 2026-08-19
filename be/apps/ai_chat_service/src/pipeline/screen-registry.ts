@@ -43,6 +43,42 @@ function normalizeGuidanceExamples(value: unknown): string[] {
     .filter(Boolean)))
 }
 
+function matchRouteTemplate(template: string, actual: string): boolean {
+  const tpl = String(template ?? '').trim().replace(/^\/+/, '')
+  const act = String(actual ?? '').trim().replace(/^\/+/, '')
+  if (!tpl || !act) return false
+
+  const tplSeg = tpl.split('/').filter(Boolean)
+  const actSeg = act.split('/').filter(Boolean)
+  if (tplSeg.length !== actSeg.length) return false
+
+  for (let i = 0; i < tplSeg.length; i += 1) {
+    const t = tplSeg[i]
+    const a = actSeg[i]
+    if (!t || !a) return false
+    if (t.startsWith(':')) continue
+    if (t !== a) return false
+  }
+
+  return true
+}
+
+function findParameterizedScreenKey(routeKey: string): string | null {
+  const normalized = String(routeKey || '').trim().replace(/^\/+/, '')
+  if (!normalized) return null
+
+  const store = getPromptStore()
+  const screens = store?.getEnabledScreens() ?? []
+
+  const matched = screens
+    .map((screen) => String(screen.screenKey ?? '').trim())
+    .filter((key) => key && key.includes('/:'))
+    .filter((key) => matchRouteTemplate(key, normalized))
+    .sort((a, b) => b.length - a.length)[0]
+
+  return matched || null
+}
+
 function toChatAction(routeKey: string) {
   const normalized = String(routeKey || '').replace(/^\//, '').replace(/^robot\//, '')
   return normalized || 'default'
@@ -64,25 +100,33 @@ export function getScreenConfig(routeKey: string, reqId?: string): ScreenConfig 
   const appKey = normalizedRouteKey.split('/').filter(Boolean)[0] || normalizedRouteKey
 
   const store = getPromptStore()
-  const screen = store?.getScreen(normalizedRouteKey)
+  let screen = store?.getScreen(normalizedRouteKey)
+  if (!screen || screen.enabled === false) {
+    const matchedTemplate = findParameterizedScreenKey(normalizedRouteKey)
+    if (matchedTemplate) {
+      screen = store?.getScreen(matchedTemplate)
+    }
+  }
+
   if (!screen || screen.enabled === false) {
     return undefined
   }
 
+  const effectiveRouteKey = screen.screenKey
   const commonSystem = store?.getPromptContent('common', 'system') ?? ''
   const commonIntentHint = store?.getPromptContent('common', 'intent-hint') ?? ''
-  const screenIntentHint = store?.getPromptContent(normalizedRouteKey, 'intent-hint') ?? ''
-  const screenDataSystem = store?.getPromptContent(normalizedRouteKey, 'data-system') ?? ''
-  const screenActionSystem = store?.getPromptContent(normalizedRouteKey, 'action-system') ?? ''
-  const screenFallback = store?.getPromptContent(normalizedRouteKey, 'fallback') ?? ''
-  const guidanceExamples = normalizeGuidanceExamples(store?.getGuidance(normalizedRouteKey)?.examples)
+  const screenIntentHint = store?.getPromptContent(effectiveRouteKey, 'intent-hint') ?? ''
+  const screenDataSystem = store?.getPromptContent(effectiveRouteKey, 'data-system') ?? ''
+  const screenActionSystem = store?.getPromptContent(effectiveRouteKey, 'action-system') ?? ''
+  const screenFallback = store?.getPromptContent(effectiveRouteKey, 'fallback') ?? ''
+  const guidanceExamples = normalizeGuidanceExamples(store?.getGuidance(effectiveRouteKey)?.examples)
 
   const appIntentHint = store?.getPromptContent(appKey, 'intent-hint') ?? ''
   const appDataSystem = store?.getPromptContent(appKey, 'data-system') ?? ''
   const appActionSystem = store?.getPromptContent(appKey, 'action-system') ?? ''
   const appFallback = store?.getPromptContent(appKey, 'fallback') ?? ''
 
-  const resolvedIntentHintMode = resolveIntentHintMode(normalizedRouteKey)
+  const resolvedIntentHintMode = resolveIntentHintMode(effectiveRouteKey)
   const resolvedIntentHint = (() => {
     if (resolvedIntentHintMode === 'default') {
       return commonIntentHint || appIntentHint || screenIntentHint
@@ -105,14 +149,14 @@ export function getScreenConfig(routeKey: string, reqId?: string): ScreenConfig 
 
   const commonActionTools: ToolDefinition[] = []
 
-  const baseAction = toChatAction(normalizedRouteKey)
+  const baseAction = toChatAction(effectiveRouteKey)
   return {
-    key: normalizedRouteKey,
+    key: effectiveRouteKey,
     appKey,
     screenName: screen.screenName,
     intentHints: resolvedIntentHint,
     intentHintMode: resolvedIntentHintMode,
-    ragCollection: normalizedRouteKey,
+    ragCollection: effectiveRouteKey,
     dataTools,
     actionTools,
     dataSystemPrompt: mergedDataSystemPrompt,

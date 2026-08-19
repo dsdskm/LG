@@ -280,12 +280,31 @@ export async function listChatRules({ appKey, screenKey } = {}) {
 }
 
 export async function matchChatRule({ appKey, screenKey, message } = {}) {
+  const payload = { appKey, screenKey, message }
+  console.info('[AI_CHAT][TMS_RULE_FETCH]', {
+    appKey: appKey ?? null,
+    screenKey: screenKey ?? null,
+    message: String(message ?? '').trim(),
+    source: 'matchChatRule',
+  })
+
   const response = await fetch(`${BASE_URL}/chat/settings/rules/match`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ appKey, screenKey, message }),
+    body: JSON.stringify(payload),
   })
-  return response.json()
+
+  const json = await response.json()
+  console.info('[AI_CHAT][TMS_RULE_FETCH_RESULT]', {
+    appKey: appKey ?? null,
+    screenKey: screenKey ?? null,
+    status: response.status,
+    ok: response.ok,
+    matched: Boolean(json?.data?.match ?? json?.match),
+    ruleKey: json?.data?.match?.ruleKey ?? json?.match?.ruleKey ?? null,
+    source: 'matchChatRule',
+  })
+  return json
 }
 
 export async function upsertChatRule(payload) {

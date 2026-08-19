@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 
 import { useGetTaskFlow, useDeleteTaskFlow, useDeployTaskFlowAction } from '@/api/taskFlowApis'
+import { useInstantAction } from '@/api/deviceControlApis'
 import { DeployActionRequest, DeployActionType, DeploymentStatus, TaskFlowStatus, Deployment } from '@/types/taskflow'
 import ConfirmModal from '@/pages/components/modal/ConfirmModal'
 import { getTaskFlowStatusLabel } from '@/utils/taskflowStatus'
@@ -61,10 +62,16 @@ import {
   getSuccessDialogContent,
   getErrorDialogTitle
 } from './util'
-import { useOrganizationStore, useResponsiveStore } from '@repo/stores'
+import { useOrganizationStore, useResponsiveStore, useUserStore } from '@repo/stores'
 import { DeviceParams, DeviceResponse } from '@/types/api/device'
 import { useDeviceList } from '@/api/deviceApis'
+import type { InstantActionsRequest } from '@/types/api/deviceControl'
+import { toast } from 'react-toastify'
 import { CenteredContent } from '../RobotDetailPage/styles'
+import {
+  AI_TASKFLOW_CANVAS_COMMAND_EVENT,
+  AI_TASKFLOW_CANVAS_RESULT_EVENT
+} from '@repo/ui/components/layout/AiAssistantPanel/taskflowEvents.js'
 
 function formatDateTime(value?: string | null) {
   if (!value) return ''
@@ -109,10 +116,32 @@ function getDeployStatusLabel(status: string | null | undefined, t: TFunction) {
   return ''
 }
 
+const normalizeCommandCandidates = (value: unknown) => {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item ?? '').trim()).filter(Boolean)
+  }
+
+  const single = String(value ?? '').trim()
+  return single ? [single] : []
+}
+
+const resolveAiCommandTarget = (command: Record<string, unknown>, routeRobotId: string, routeTaskFlowId: number) => {
+  const robotCandidates = normalizeCommandCandidates(command?.robotId ?? command?.robot)
+  const taskFlowCandidates = normalizeCommandCandidates(command?.taskFlowId ?? command?.taskflowId ?? command?.id)
+
+  const explicitRobotId = robotCandidates.find((candidate) => !/^\d+$/.test(candidate)) || ''
+  const explicitTaskFlowId = taskFlowCandidates.find((candidate) => /^\d+$/.test(candidate)) || ''
+
+  return {
+    resolvedRobotId: explicitRobotId || routeRobotId || '',
+    taskFlowIdValue: Number(explicitTaskFlowId || (Number.isFinite(routeTaskFlowId) ? String(routeTaskFlowId) : ''))
+  }
+}
+
 const TaskFlowListDetailPage = () => {
   const { t } = useTranslation(['tms', 'common'])
   const navigate = useNavigate()
-  const { taskFlowId } = useParams()
+  const { taskFlowId, robotId } = useParams()
 
   const id = Number(taskFlowId)
   const isValidId = Number.isFinite(id) && id > 0
@@ -175,11 +204,13 @@ const TaskFlowListDetailPage = () => {
   const [errorTitle, setErrorTitle] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const { selectedOrgs } = useOrganizationStore()
+  const { session } = useUserStore()
 
   const moreMenuRef = useRef<HTMLDivElement | null>(null)
 
   const { mutateAsync: deployActionMutateAsync } = useDeployTaskFlowAction()
   const { mutateAsync: deleteTaskFlowAsync } = useDeleteTaskFlow()
+  const { mutateAsync: sendInstantActionAsync } = useInstantAction()
 
   const deviceRequest = useMemo(() => {
     let nextParams: DeviceParams | undefined = undefined
@@ -227,6 +258,117 @@ const TaskFlowListDetailPage = () => {
 
   const { responsiveMode } = useResponsiveStore()
   const isMobile = responsiveMode !== 'PC' ? true : false
+
+  useEffect(() => {
+    const onTaskflowCanvasCommand = async (event: Event) => {
+      const custom = event as CustomEvent<any>
+      const command = custom?.detail?.command
+      if (!command || typeof command !== 'object') return
+
+      const type = String(command?.type ?? '').trim().toLowerCase()
+      if (!['deploy-taskflow', 'run-taskflow', 'pause-taskflow', 'resume-taskflow', 'stop-taskflow'].includes(type)) {
+        return
+      }
+
+      const routeTaskFlowId = Number.isFinite(Number(taskFlowId)) ? Number(taskFlowId) : NaN
+      const routeRobotId = String(robotId ?? '').trim()
+      const { resolvedRobotId, taskFlowIdValue } = resolveAiCommandTarget(command, routeRobotId, routeTaskFlowId)
+
+      const resolvedGroupId = String(selectedOrgs?.[0] ?? '').trim() || String((taskFlow as any)?.groupId ?? '').trim() || null
+      const resolvedSiteId = String(selectedOrgs?.[1] ?? '').trim() || String((taskFlow as any)?.siteId ?? '').trim() || null
+
+      const dispatchResult = (success: boolean, message?: string) => {
+        const finalMessage = String(message ?? '').trim() || custom?.detail?.replyText || ''
+        if (success) {
+          // AI chat commands should only show the chat reply; manual button clicks keep the original toast UX.
+        } else {
+          toast.warning(finalMessage || '명령을 처리하지 못했습니다.')
+        }
+
+        window.dispatchEvent(
+          new CustomEvent(AI_TASKFLOW_CANVAS_RESULT_EVENT, {
+            detail: {
+              kind: 'command',
+              commandType: type,
+              success,
+              didApply: success,
+              message: finalMessage,
+              assistantMessageId: String(custom?.detail?.assistantMessageId ?? '').trim() || undefined,
+              historyContext: custom?.detail?.historyContext
+            }
+          })
+        )
+      }
+
+      if (!resolvedRobotId || !Number.isFinite(taskFlowIdValue) || taskFlowIdValue <= 0 || (!resolvedGroupId && type === 'deploy-taskflow') || (!resolvedSiteId && type === 'deploy-taskflow')) {
+        dispatchResult(false, String(command?.notFoundText ?? '배포/실행 대상 정보를 찾지 못했습니다.'))
+        return
+      }
+
+      try {
+        if (type === 'deploy-taskflow') {
+          const deployGroupId = String(resolvedGroupId ?? '')
+          const deploySiteId = String(resolvedSiteId ?? '')
+
+          const deployPayload: DeployActionRequest = {
+            taskFlowId: taskFlowIdValue,
+            param: {
+              action: 'DEPLOY',
+              groupId: deployGroupId,
+              siteId: deploySiteId,
+              robotInfos: [{ groupId: deployGroupId, siteId: deploySiteId, id: resolvedRobotId }],
+              description: String(command?.description ?? 'AI command deploy taskflow')
+            }
+          }
+          console.info('[AI_TASKFLOW][DEPLOY_API_CALL]', { type, robotId: resolvedRobotId, taskFlowId: taskFlowIdValue, groupId: resolvedGroupId, siteId: resolvedSiteId, payload: deployPayload })
+          const deployResult = await deployActionMutateAsync(deployPayload)
+          console.info('[AI_TASKFLOW][DEPLOY_API_RESULT]', { type, robotId: resolvedRobotId, taskFlowId: taskFlowIdValue, result: deployResult })
+          dispatchResult(true, String(custom?.detail?.replyText || `${resolvedRobotId} 로봇에서 ${taskFlowIdValue} 태스크플로우 배포를 요청했습니다.`))
+          return
+        }
+
+        const userId = String(session?.userId ?? '')
+        if (!userId) {
+          dispatchResult(false, '실행/제어를 요청하려면 로그인된 사용자 정보가 필요합니다.')
+          return
+        }
+
+        const instantActionTypeMap: Record<string, 'start' | 'startPause' | 'stopPause' | 'stop'> = {
+          'run-taskflow': 'start',
+          'pause-taskflow': 'startPause',
+          'resume-taskflow': 'stopPause',
+          'stop-taskflow': 'stop'
+        }
+
+        const instantPayload: InstantActionsRequest = {
+          deviceId: resolvedRobotId,
+          body: {
+            userId,
+            actions: [{ actionType: instantActionTypeMap[type] ?? 'start', actionId: crypto.randomUUID(), blockingType: 'HARD', actionParameters: [{ key: 'tms_id', value: String(taskFlowIdValue) }] }]
+          }
+        }
+
+        console.info('[AI_TASKFLOW][INSTANT_ACTION_CALL]', { type, robotId: resolvedRobotId, taskFlowId: taskFlowIdValue, actionType: instantPayload.body.actions[0].actionType, payload: instantPayload })
+        const instantResult = await sendInstantActionAsync(instantPayload)
+        console.info('[AI_TASKFLOW][INSTANT_ACTION_RESULT]', { type, robotId: resolvedRobotId, taskFlowId: taskFlowIdValue, result: instantResult })
+
+        const defaultReplyMap: Record<string, string> = {
+          'run-taskflow': `${resolvedRobotId} 로봇에서 ${taskFlowIdValue} 태스크플로우 실행을 요청했습니다.`,
+          'pause-taskflow': `${resolvedRobotId} 로봇에서 ${taskFlowIdValue} 태스크플로우 일시정지를 요청했습니다.`,
+          'resume-taskflow': `${resolvedRobotId} 로봇에서 ${taskFlowIdValue} 태스크플로우 재개를 요청했습니다.`,
+          'stop-taskflow': `${resolvedRobotId} 로봇에서 ${taskFlowIdValue} 태스크플로우 정지를 요청했습니다.`
+        }
+
+        dispatchResult(true, String(custom?.detail?.replyText || defaultReplyMap[type] || `${resolvedRobotId} 로봇에서 ${taskFlowIdValue} 태스크플로우 제어를 요청했습니다.`))
+      } catch (error) {
+        console.error('[AI_TASKFLOW][COMMAND_RUN_FAILED]', error)
+        dispatchResult(false, String(command?.notFoundText ?? '배포/실행 요청에 실패했습니다.'))
+      }
+    }
+
+    window.addEventListener(AI_TASKFLOW_CANVAS_COMMAND_EVENT, onTaskflowCanvasCommand)
+    return () => window.removeEventListener(AI_TASKFLOW_CANVAS_COMMAND_EVENT, onTaskflowCanvasCommand)
+  }, [deployActionMutateAsync, selectedOrgs, sendInstantActionAsync, session?.userId, taskFlow])
 
   // 어느 탭을 보고 있든 수정은 항상 저장 버전(flowDefinitionDraft)을 연다.
   const handleEdit = () => {
@@ -282,12 +424,12 @@ const TaskFlowListDetailPage = () => {
     setErrorMessage(message)
     setErrorOpen(true)
   }
-  function makeActionRequest(action: string, deivces?: DeviceResponse[]): DeployActionRequest {
+  function makeActionRequest(action: DeployActionType, deivces?: DeviceResponse[]): DeployActionRequest {
     const [selectedGroupId, selectedSiteId] = selectedOrgs
     return {
       taskFlowId: id,
       param: {
-        action: action as DeployActionType,
+        action,
         groupId: selectedGroupId ?? null,
         siteId: selectedSiteId ?? null,
         robotInfos: null,

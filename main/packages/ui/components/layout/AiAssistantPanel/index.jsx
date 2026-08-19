@@ -916,6 +916,8 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
   const lastFiltersRef = useRef(null)
 
   const routeContext = useMemo(() => buildRouteContext(location), [location])
+  const routeMetadataCacheRef = useRef(new Map())
+  const routeAnswerCacheRef = useRef(new Map())
 
   const quickCommands = useMemo(
     () => pickRandomItems(screenSuggestions, Math.min(3, screenSuggestions.length)),
@@ -1137,6 +1139,14 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
     let cancelled = false
 
     const loadSuggestions = async () => {
+      const cacheKey = String(routeContext.pathname ?? '').trim()
+      const cached = routeMetadataCacheRef.current.get(cacheKey)
+      if (cached) {
+        setScreenSuggestions(cached.examples)
+        setChatInputPlaceholder(cached.inputHint || '')
+        return
+      }
+
       try {
         const [settingsResponse, guidanceResponse] = await Promise.all([
           getChatSettings(),
@@ -1171,6 +1181,7 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
           selectedCommonHint: commonHint,
         })
 
+        routeMetadataCacheRef.current.set(cacheKey, { examples, inputHint })
         setScreenSuggestions(examples)
         setChatInputPlaceholder(inputHint || '')
       } catch {
@@ -1256,14 +1267,9 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
 
       if (detail?.kind !== 'command') return
 
-      appendMessage({
-        id: buildMessageId(),
-        role: 'assistant',
-        content: message,
-        createdAt: new Date().toISOString(),
-        context: routeContext
-      })
-
+      // AI chat commands already append the rule-generated assistant reply before dispatching.
+      // Do not overwrite that message with a later success payload; keep the original answer text
+      // and use the result event only for chat history persistence.
       const historyContext = detail?.historyContext
       if (historyContext && typeof historyContext === 'object') {
         void saveLocalChatHistory({
@@ -1475,6 +1481,28 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
     if (!content || isSending || submitInFlightRef.current) return
     submitInFlightRef.current = true
 
+    const cacheKey = `${String(routeContext.pathname ?? '').trim()}::${content}`
+    const cachedAnswer = routeAnswerCacheRef.current.get(cacheKey)
+    if (cachedAnswer) {
+      appendMessage({
+        id: buildMessageId(),
+        role: 'user',
+        content,
+        createdAt: new Date().toISOString(),
+        context: { ...routeContext, sentAt: new Date().toISOString() }
+      })
+      appendMessage({
+        id: buildMessageId(),
+        role: 'assistant',
+        content: cachedAnswer.text,
+        createdAt: new Date().toISOString(),
+        context: { ...routeContext, sentAt: new Date().toISOString() }
+      })
+      setDraft('')
+      submitInFlightRef.current = false
+      return
+    }
+
     const latestAssistantMessage = [...(Array.isArray(messages) ? messages : [])]
       .reverse()
       .find((item) => item?.role === 'assistant' && String(item?.content ?? '').trim())?.content
@@ -1498,11 +1526,30 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
       }
     }
     if (localCommandRule) {
+      const localReplyText = String(localCommandRule.replyText ?? '').trim()
+      const localAssistantMessageId = localReplyText ? buildMessageId() : ''
+      if (localReplyText) {
+        appendMessage({
+          id: localAssistantMessageId,
+          role: 'assistant',
+          content: localReplyText,
+          createdAt: new Date().toISOString(),
+          context
+        })
+      }
+
+      if (!localCommandRule.command) {
+        setDraft('')
+        submitInFlightRef.current = false
+        return
+      }
+
       window.dispatchEvent(
         new CustomEvent(AI_TASKFLOW_CANVAS_COMMAND_EVENT, {
           detail: {
             command: localCommandRule.command,
             replyText: localCommandRule.replyText,
+            assistantMessageId: localAssistantMessageId,
             historyContext: {
               author: session?.email || undefined,
               conversationId,

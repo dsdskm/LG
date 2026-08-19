@@ -63,6 +63,7 @@ const Router = ({ allRoutes, appPrefix, processedAppRoutes, headerRoutes, appT }
                     appRoutes={processedAppRoutes}
                     headerRoutes={headerRoutes}
                     t={appT}
+                    aiAssistantCommandAdapter={taskflowCommandAdapter}
                   >
                     {item.element}
                   </MainLayout>

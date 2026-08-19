@@ -9,7 +9,7 @@ type ChatRagBody = {
   chunkKey?: string | null
   title?: string | null
   keywords?: string[] | null
-  body?: string | null
+  body?: string | Record<string, unknown> | unknown[] | null
   imageUrl?: string | null
   intentType?: string | null
   enabled?: boolean

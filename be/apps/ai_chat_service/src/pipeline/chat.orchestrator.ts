@@ -27,7 +27,7 @@ import {
 } from './taskflow-language-rules'
 import { ToolAgent, type ExecutedCall } from './agent/tool-agent'
 import { getScreenConfig, type ScreenConfig } from './screen-registry'
-import type { ChatIntent, ChatReply, ChatTurn } from './pipeline.types'
+import type { ChatIntent, ChatReply, ChatTurn, RagScoreEntry } from './pipeline.types'
 import type { ChatPipelineConfig } from './pipeline.config'
 import { getPromptStore } from '../features/chat/service/prompt-store.service'
 import { getChatSettingService } from '../features/chat-settings/service/chat-setting.service'
@@ -518,7 +518,7 @@ export class ChatOrchestrator {
       )
     }
 
-    if (pipelineIntent === 'data') {
+    if (String(pipelineIntent).toLowerCase() === 'data') {
       pipelineIntent = 'action'
       this.stageLog(
         '2-6-2단계:데이터의도_통합',
@@ -534,6 +534,22 @@ export class ChatOrchestrator {
         '2-6-3단계:가이드의도_강제',
         reqId,
         'status=forced reason=방법/설명/가이드성 질의로 판단되어 info(RAG) 경로로 강제 전환',
+      )
+    }
+
+    const settings = getChatSettingService()
+    const tmsInfoOnlyEnabled = settings
+      ? Boolean(await settings.getBoolean('tmsInfoOnly', false))
+      : false
+    const shouldForceInfoForTmsApp =
+      String(screen.appKey ?? '').trim().toLowerCase() === 'tms' && tmsInfoOnlyEnabled
+
+    if (shouldForceInfoForTmsApp && pipelineIntent !== 'info') {
+      pipelineIntent = 'info'
+      this.stageLog(
+        '2-6-4단계:TMS_앱의도_강제',
+        reqId,
+        'status=forced reason=tms app가 설정에 따라 info-only 모드로 동작',
       )
     }
 
@@ -735,18 +751,39 @@ export class ChatOrchestrator {
     }
   }
 
-  private looksLikeTaskflowEditMessage(message: string, rules: TaskflowClassifierRules): boolean {
+  private looksLikeTaskflowEditMessage(message: string, rules?: TaskflowClassifierRules): boolean {
     const text = String(message ?? '').trim()
     if (!text) return false
 
-    if (this.hasClassifierPhrase(text, rules.explanationBlockKeywords)) {
+    const safeRules = rules ?? {
+      explanationBlockKeywords: ['설명', '어떻게 쓰는지', '예시', '사용법'],
+      nodeEditDeletePrefixes: ['삭제', '제거', '지우기', 'remove', 'delete'],
+      arrowChainSeparators: ['->', '→', '=>', 'then', 'then->', 'and'],
+      composeMoveHintKeywords: ['구성', '생성', '추가', '연결', '배치', '배열', '정렬', '다음', '이동', '연결해', '설계', '틀', '노드'],
+      editSubjectKeywords: ['노드', 'taskflow', '태스크플로', '태스크 플로우', '플로우', '경로', '워크플로', '워크 플로우', 'flow'],
+      editVerbKeywords: ['구성', '생성', '추가', '수정', '변경', '삭제', '제거', '연결', '배치', '정렬', '설정', '편집', '만들', '고치', '바꾸'],
+      arrowSequenceEnabled: false,
+      explanationKeywords: ['설명', '예시', '사용법', '어떻게', '가이드'],
+      composeRequestKeywords: ['구성해', '구성해줘', '만들어', '만들어줘', '작성해', '작성해줘', '설계해', '설계해줘', '추가해', '추가해줘', '연결해', '연결해줘'],
+      explanationImageMinScore: 0,
+      explanationImageMinScoreAlways: 0,
+    } as TaskflowClassifierRules
+
+    if (this.hasClassifierPhrase(text, safeRules.explanationBlockKeywords ?? [])) {
+      return false
+    }
+
+    const isExplanationQuestion = this.hasClassifierPhrase(text, ['어떻게', '사용법', '예시', '설명', '가이드'])
+      && !this.hasClassifierPhrase(text, safeRules.composeRequestKeywords ?? [])
+      && !this.hasClassifierPhrase(text, safeRules.editVerbKeywords ?? [])
+    if (isExplanationQuestion) {
       return false
     }
 
     const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
 
-    const deletePrefixes = Array.isArray(rules.nodeEditDeletePrefixes) ? rules.nodeEditDeletePrefixes : []
-    const arrowSeps = Array.isArray(rules.arrowChainSeparators) ? rules.arrowChainSeparators : []
+    const deletePrefixes = Array.isArray(safeRules.nodeEditDeletePrefixes) ? safeRules.nodeEditDeletePrefixes : []
+    const arrowSeps = Array.isArray(safeRules.arrowChainSeparators) ? safeRules.arrowChainSeparators : []
 
     const hasSyntaxPattern = lines.some((line) => {
       if (deletePrefixes.some((p) => new RegExp(`(?:^|[\\s,;])${p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\w가-힣]`).test(line))) return true
@@ -756,13 +793,13 @@ export class ChatOrchestrator {
     if (hasSyntaxPattern) return true
 
     const hasArrowSequenceByRule =
-      Boolean(rules.arrowSequenceEnabled)
-      && this.hasClassifierPhrase(text, rules.composeMoveHintKeywords)
+      Boolean(safeRules.arrowSequenceEnabled)
+      && this.hasClassifierPhrase(text, safeRules.composeMoveHintKeywords ?? [])
     if (hasArrowSequenceByRule) return true
 
-    if (!this.hasClassifierPhrase(text, rules.editSubjectKeywords)) return false
+    if (!this.hasClassifierPhrase(text, safeRules.editSubjectKeywords ?? [])) return false
 
-    return this.hasClassifierPhrase(text, rules.editVerbKeywords)
+    return this.hasClassifierPhrase(text, safeRules.editVerbKeywords ?? [])
   }
 
   private resolveRuleFirstIntent(
@@ -908,7 +945,17 @@ export class ChatOrchestrator {
       usedChunks.length === 0 || !text?.trim()
         ? await this.generateDefaultLlmReply(screen, message, history, usedChunks.length === 0 ? 'no-rag-hit' : 'rag-empty-text', reqId)
         : undefined
-    const finalText = this.sanitizeInfoFinalText(defaultLlmText || text || '', usedCollection)
+
+    const ragBodyFallback = usedChunks.length > 0
+      ? this.resolveUsedChunkBodyText(ragCollections, usedChunks)
+      : ''
+    const fallbackText = defaultLlmText || text || ''
+    const finalText = this.sanitizeInfoFinalText(
+      this.shouldUseRagBodyFallback(fallbackText, ragBodyFallback)
+        ? ragBodyFallback
+        : (defaultLlmText || text || ''),
+      usedCollection,
+    )
 
     return {
       handled: true,
@@ -928,6 +975,37 @@ export class ChatOrchestrator {
         defaultLlmFallback: Boolean(defaultLlmText),
       },
     }
+  }
+
+  private shouldUseRagBodyFallback(text: string, ragBodyFallback: string): boolean {
+    const raw = String(text ?? '').trim()
+    const fallback = String(ragBodyFallback ?? '').trim()
+    if (!fallback) return false
+    if (!raw) return true
+
+    const looksLikeDeveloperStructuredJson = /^\s*\{.*\"(intent|confidence|reason|summary|message)\"\s*:/is.test(raw)
+    return looksLikeDeveloperStructuredJson
+  }
+
+  private resolveUsedChunkBodyText(collectionNames: string[], chunkIds: string[]): string {
+    const store = getPromptStore()
+    if (!store) return ''
+
+    const selected = new Set(chunkIds.map((chunkId) => String(chunkId ?? '').trim()).filter(Boolean))
+    const fragments: string[] = []
+
+    for (const collectionName of collectionNames) {
+      const collection = store.getCollection(collectionName)
+      if (!collection) continue
+
+      for (const chunk of collection.chunks) {
+        if (!selected.has(String(chunk.id ?? '').trim())) continue
+        const body = String(chunk.body ?? '').trim()
+        if (body) fragments.push(body)
+      }
+    }
+
+    return fragments.join('\n\n').trim()
   }
 
   private sanitizeInfoFinalText(value: string, usedCollection?: string): string {
@@ -985,27 +1063,45 @@ export class ChatOrchestrator {
       ...(Array.isArray(screen.commonActionTools) ? screen.commonActionTools : []),
     ].map((tool) => tool.declaration.name))
     const hasExecutionTool = executionTools.length > 0
+    const actionRag = this.retrieveActionRagContext(actionRagCollections, message)
 
     if (!hasExecutionTool) {
-      const fallbackText = this.buildScreenGuidanceReply(screen)
-      this.stageLog('3단계:ACTION처리_툴없음', reqId, 'status=blocked reason=현재 화면에 실행 가능한 tool이 없음')
+      const actionReply = await this.rag.answer(
+        actionRagCollections,
+        message,
+        history,
+        reqId,
+        { intentType: 'action' },
+      )
+
+      const finalText = actionReply.text?.trim()
+        ? this.sanitizeInfoFinalText(actionReply.text, actionReply.usedCollection)
+        : this.buildScreenGuidanceReply(screen)
+
+      this.stageLog(
+        '3단계:ACTION처리_툴없음',
+        reqId,
+        `status=${finalText === this.buildScreenGuidanceReply(screen) ? 'fallback' : 'rag'} reason=현재 화면에 실행 가능한 tool이 없음`,
+      )
+
       return {
         handled: true,
         reply: {
           chat_action: screen.chatActions.action,
-          text: fallbackText,
+          text: finalText,
         },
         meta: {
           screenTask,
           pipelineIntent: 'action',
           pipelineIntentResult,
           executed: [],
-          fallbackTextUsed: true,
+          fallbackTextUsed: !actionReply.text?.trim(),
+          actionRagCollection: actionReply.usedCollection ?? actionRag.usedCollection,
+          actionRagChunks: actionReply.usedChunks.length > 0 ? actionReply.usedChunks : actionRag.usedChunks,
+          ragScores: actionReply.ragScores.length > 0 ? actionReply.ragScores : actionRag.ragScores,
         },
       }
     }
-
-    const actionRag = this.retrieveActionRagContext(actionRagCollections, message)
     if (actionRag.usedChunks.length > 0) {
       this.stageLog(
         '3-0단계:ACTION처리_RAG조회',
@@ -1117,6 +1213,7 @@ export class ChatOrchestrator {
           hasSiteAction,
           actionRagCollection: actionRag.usedCollection,
           actionRagChunks: actionRag.usedChunks,
+          ragScores: actionRag.ragScores,
           actionAttemptSource: source,
           fallbackReason: noExecution && !navigation ? fallbackReason : undefined,
           fallbackTextUsed: Boolean(noExecution && !navigation),
@@ -1173,10 +1270,23 @@ export class ChatOrchestrator {
   }
 
   private retrieveActionRagContext(
-    collectionNames: string[],
+    collectionNames: string[] | string,
     query: string,
-  ): { context: string; usedCollection?: string; usedChunks: string[] } {
-    for (const name of collectionNames) {
+  ): { context: string; usedCollection?: string; usedChunks: string[]; ragScores: RagScoreEntry[] } {
+    const names = Array.isArray(collectionNames)
+      ? collectionNames
+      : [collectionNames]
+    const normalizedNames = Array.from(new Set((names ?? []).map((name) => String(name ?? '').trim()).filter(Boolean)))
+
+    const ragScores = this.rag.scoreCollections(normalizedNames, query, 'action')
+    const selected = [...ragScores]
+      .sort((a, b) => {
+        if (b.adjustedScore !== a.adjustedScore) return b.adjustedScore - a.adjustedScore
+        if (b.topScore !== a.topScore) return b.topScore - a.topScore
+        return a.collection.localeCompare(b.collection)
+      })[0]
+
+    for (const name of normalizedNames) {
       const hits = this.rag.retrieve(name, query, 'action')
       if (hits.length === 0) continue
 
@@ -1186,12 +1296,13 @@ export class ChatOrchestrator {
 
       return {
         context,
-        usedCollection: name,
+        usedCollection: selected?.collection ?? name,
         usedChunks: hits.map((hit) => hit.chunk.id),
+        ragScores,
       }
     }
 
-    return { context: '', usedChunks: [] }
+    return { context: '', usedChunks: [], ragScores }
   }
 
   private resolveExecutionFallbackReason(executed: ExecutedCall[]): 'tool-not-selected' | 'missing-params' | 'permission-denied' | 'tool-execution-failed' {

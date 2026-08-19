@@ -8,13 +8,20 @@ import { Title } from '@repo/ui'
 import { StyledPageContent } from '@repo/ui'
 import RobotList from '@/pages/components/robot/RobotList'
 import { toRobotInfo } from '@/pages/components/robot/toRobotInfo'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useDeviceList } from '@/api/deviceApis'
 import { useOrgFilter } from '@/pages/hooks/useOrgFilter'
 
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { SimpleRobotInfo } from '@/types/taskflow'
+import { useDeployTaskFlowAction } from '@/api/taskFlowApis'
+import { useInstantAction } from '@/api/deviceControlApis'
+import { useOrganizationStore, useUserStore } from '@repo/stores'
+import {
+  AI_TASKFLOW_CANVAS_COMMAND_EVENT,
+  AI_TASKFLOW_CANVAS_RESULT_EVENT
+} from '@repo/ui/components/layout/AiAssistantPanel/taskflowEvents.js'
 
 const taskFlowOptions = [{ value: 'all', name: 'all' }]
 
@@ -32,6 +39,10 @@ const taskFlowStatusOptions = [
 const RobotsPage = () => {
   const { t } = useTranslation('tms')
   const navigate = useNavigate()
+  const { selectedOrgs } = useOrganizationStore()
+  const { session } = useUserStore()
+  const { mutateAsync: deployTaskFlowActionAsync } = useDeployTaskFlowAction()
+  const { mutateAsync: sendInstantActionAsync } = useInstantAction()
   const [selectedRobotIds, setSelectedRobotId] = useState<SimpleRobotInfo[]>([])
   const [selectAll, setSelectAll] = useState(false)
   const [firstFilter, setFirstFlilter] = useState('all')
@@ -93,9 +104,6 @@ const RobotsPage = () => {
     })
   }, [devicesData, firstFilter, secondFilter, matchesOrgFilter])
 
-  if (devicesLoading) return <p>Loading...</p>
-  if (devicesError) return <p>error: {devicesError.message}</p>
-
   const onSearchQueryChaged = (e: any) => {
     setSearchQuery(e.target.value)
   }
@@ -107,6 +115,148 @@ const RobotsPage = () => {
   const onTaskFlowStatusChaged = (value: string) => {
     setSecondFlilter(value)
   }
+
+  useEffect(() => {
+    const onTaskflowCanvasCommand = async (event: Event) => {
+      const custom = event as CustomEvent<any>
+      const command = custom?.detail?.command
+      if (!command || typeof command !== 'object') return
+
+      const type = String(command?.type ?? '').trim().toLowerCase()
+      if (!['deploy-taskflow', 'run-taskflow', 'pause-taskflow', 'resume-taskflow', 'stop-taskflow'].includes(type)) {
+        return
+      }
+
+      const candidateList = (value: unknown) => {
+        if (Array.isArray(value)) {
+          return value.map((item) => String(item ?? '').trim()).filter(Boolean)
+        }
+        const single = String(value ?? '').trim()
+        return single ? [single] : []
+      }
+
+      const robotCandidates = candidateList(command?.robotId ?? command?.robot)
+      const taskFlowCandidates = candidateList(command?.taskFlowId ?? command?.taskflowId ?? command?.id)
+      const explicitRobotId = robotCandidates.find((candidate) => !/^\d+$/.test(candidate)) || ''
+      const explicitTaskFlowId = taskFlowCandidates.find((candidate) => /^\d+$/.test(candidate)) || ''
+      const robotId = explicitRobotId || ''
+      const taskFlowId = Number(explicitTaskFlowId)
+
+      const resolvedGroupId = String(selectedOrgs?.[0] ?? '').trim() || null
+      const resolvedSiteId = String(selectedOrgs?.[1] ?? '').trim() || null
+
+      const dispatchResult = (success: boolean, message?: string) => {
+        if (success) {
+          // AI chat commands should only show the chat reply; manual button clicks keep the original toast UX.
+        } else {
+          toast.warning(String(message ?? '').trim() || custom?.detail?.replyText || '명령을 처리하지 못했습니다.')
+        }
+
+        window.dispatchEvent(
+          new CustomEvent(AI_TASKFLOW_CANVAS_RESULT_EVENT, {
+            detail: {
+              kind: 'command',
+              commandType: type,
+              success,
+              didApply: success,
+              message: String(message ?? '').trim() || custom?.detail?.replyText || '',
+              assistantMessageId: String(custom?.detail?.assistantMessageId ?? '').trim() || undefined,
+              historyContext: custom?.detail?.historyContext
+            }
+          })
+        )
+      }
+
+      if (!robotId || !Number.isFinite(taskFlowId) || taskFlowId <= 0 || (!resolvedGroupId && type === 'deploy-taskflow') || (!resolvedSiteId && type === 'deploy-taskflow')) {
+        dispatchResult(false, String(command?.notFoundText ?? '배포/실행 대상 정보를 찾지 못했습니다.'))
+        return
+      }
+
+      try {
+        if (type === 'deploy-taskflow') {
+          const deployPayload = {
+            taskFlowId,
+            param: {
+              action: 'DEPLOY',
+              groupId: resolvedGroupId,
+              siteId: resolvedSiteId,
+              robotInfos: [{ groupId: resolvedGroupId, siteId: resolvedSiteId, id: robotId }],
+              description: String(command?.description ?? 'AI command deploy taskflow')
+            }
+          }
+
+          console.info('[AI_TASKFLOW][DEPLOY_API_CALL]', {
+            type,
+            robotId,
+            taskFlowId,
+            groupId: resolvedGroupId,
+            siteId: resolvedSiteId,
+            payload: deployPayload
+          })
+
+          const deployResult = await deployTaskFlowActionAsync(deployPayload)
+          console.info('[AI_TASKFLOW][DEPLOY_API_RESULT]', { type, robotId, taskFlowId, result: deployResult })
+          dispatchResult(true, String(custom?.detail?.replyText || `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 배포를 요청했습니다.`))
+          return
+        }
+
+        const userId = String(session?.userId ?? '')
+        if (!userId) {
+          dispatchResult(false, '실행/제어를 요청하려면 로그인된 사용자 정보가 필요합니다.')
+          return
+        }
+
+        const instantActionTypeMap: Record<string, string> = {
+          'run-taskflow': 'start',
+          'pause-taskflow': 'startPause',
+          'resume-taskflow': 'stopPause',
+          'stop-taskflow': 'stop'
+        }
+
+        const instantPayload = {
+          deviceId: robotId,
+          body: {
+            userId,
+            actions: [{
+              actionType: instantActionTypeMap[type] ?? 'start',
+              actionId: crypto.randomUUID(),
+              blockingType: 'HARD',
+              actionParameters: [{ key: 'tms_id', value: String(taskFlowId) }]
+            }]
+          }
+        }
+
+        console.info('[AI_TASKFLOW][INSTANT_ACTION_CALL]', {
+          type,
+          robotId,
+          taskFlowId,
+          actionType: instantPayload.body.actions[0].actionType,
+          payload: instantPayload
+        })
+
+        const instantResult = await sendInstantActionAsync(instantPayload)
+        console.info('[AI_TASKFLOW][INSTANT_ACTION_RESULT]', { type, robotId, taskFlowId, result: instantResult })
+
+        const defaultReplyMap: Record<string, string> = {
+          'run-taskflow': `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 실행을 요청했습니다.`,
+          'pause-taskflow': `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 일시정지를 요청했습니다.`,
+          'resume-taskflow': `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 재개를 요청했습니다.`,
+          'stop-taskflow': `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 정지를 요청했습니다.`
+        }
+
+        dispatchResult(true, String(custom?.detail?.replyText || defaultReplyMap[type] || `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 제어를 요청했습니다.`))
+      } catch (error) {
+        console.error('[AI_TASKFLOW][COMMAND_RUN_FAILED]', error)
+        dispatchResult(false, String(command?.notFoundText ?? '배포/실행 요청에 실패했습니다.'))
+      }
+    }
+
+    window.addEventListener(AI_TASKFLOW_CANVAS_COMMAND_EVENT, onTaskflowCanvasCommand)
+    return () => window.removeEventListener(AI_TASKFLOW_CANVAS_COMMAND_EVENT, onTaskflowCanvasCommand)
+  }, [deployTaskFlowActionAsync, sendInstantActionAsync, selectedOrgs, session?.userId])
+
+  if (devicesLoading) return <p>Loading...</p>
+  if (devicesError) return <p>error: {devicesError.message}</p>
 
   return (
     <>

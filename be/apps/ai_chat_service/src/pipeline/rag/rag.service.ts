@@ -82,7 +82,7 @@ type RagCollectionEval = {
   topScore: number
   adjustedScore: number
   hitCount: number
-  topChunks: Array<{ chunkKey: string; finalScore: number; rawScore: number }>
+  topChunks: Array<{ chunkKey: string; title?: string; finalScore: number; rawScore: number }>
   topChunkIds: string[]
   relaxed: boolean
 }
@@ -111,6 +111,7 @@ export class RagService {
           title: chunk.title,
           keywords: chunk.keywords,
           body: chunk.body,
+          intentType: (chunk.intentType ?? 'both') as RagIntentType | 'both',
         })),
       }
     }
@@ -139,29 +140,70 @@ export class RagService {
       .slice(0, this.selection.topK)
   }
 
+  scoreCollections(collectionNames: string | string[], query: string, intentType?: RagIntentType): RagScoreEntry[] {
+    const names = Array.isArray(collectionNames) ? collectionNames : [collectionNames]
+    const evaluated = names
+      .map((name) => this.evaluateCollection(name, query, intentType))
+      .filter((item): item is RagCollectionEval => Boolean(item))
+
+    const result = evaluated
+      .map((item) => ({
+        collection: item.collection,
+        topScore: item.topScore,
+        adjustedScore: item.adjustedScore,
+        hitCount: item.hitCount,
+        topChunks: item.topChunks,
+        topChunkIds: item.topChunkIds,
+        relaxed: item.relaxed,
+      }))
+      .filter((entry): entry is RagScoreEntry => Boolean(entry && entry.collection))
+
+    if (this.logger?.log) {
+      const comparison = result
+        .map((entry) => {
+          const collection = String(entry.collection ?? '-').trim() || '-'
+          const topScore = Number(entry.topScore ?? 0)
+          const adjustedScore = Number(entry.adjustedScore ?? 0)
+          const hitCount = Number(entry.hitCount ?? 0)
+          return `${collection}={top:${topScore.toFixed(2)}, adjusted:${adjustedScore.toFixed(2)}, hits:${hitCount}}`
+        })
+        .join(' | ')
+
+      this.logger.log(
+        `[ragService] scoreCollections query="${String(query ?? '').slice(0, 200)}" intent=${intentType ?? 'all'} collections=[${names.join(', ')}] comparison=${comparison || 'none'}`,
+      )
+    }
+
+    return result
+  }
+
   private evaluateCollection(collectionName: string, query: string, intentType?: RagIntentType): RagCollectionEval | null {
     const resolvedCollection = this.resolveCollection(collectionName)
-    if (!resolvedCollection) return null
-
-    let hits = this.retrieve(collectionName, query, intentType)
-    let relaxed = false
-
-    if (hits.length === 0 && intentType) {
-      const relaxedHits = this.retrieve(collectionName, query)
-      if (relaxedHits.length > 0) {
-        hits = relaxedHits
-        relaxed = true
-      }
-    }
+    const hits = this.retrieve(collectionName, query, intentType)
+    const relaxed = false
 
     const topScore = hits[0]?.score ?? 0
     const collectionBonus = collectionName === 'common' ? 0 : this.selection.screenBonus
     const adjustedScore = topScore + collectionBonus
     const topChunks = hits.slice(0, this.selection.topK).map((row) => ({
       chunkKey: row.chunk.id,
+      title: String(row.chunk.title ?? '').trim() || undefined,
       finalScore: row.score + collectionBonus,
       rawScore: row.score,
     }))
+
+    if (!resolvedCollection && hits.length === 0) {
+      return {
+        collection: collectionName,
+        hits: [],
+        topScore: 0,
+        adjustedScore: collectionBonus,
+        hitCount: 0,
+        topChunks: [],
+        topChunkIds: [],
+        relaxed,
+      }
+    }
 
     return {
       collection: collectionName,
@@ -234,10 +276,7 @@ export class RagService {
       return { text: '', usedChunks: [], ragScores: [] }
     }
 
-    let matchedChunks = this.resolveChunksByIds(names, targetChunkKeys, options?.intentType)
-    if (matchedChunks.length === 0 && options?.intentType) {
-      matchedChunks = this.resolveChunksByIds(names, targetChunkKeys)
-    }
+    const matchedChunks = this.resolveChunksByIds(names, targetChunkKeys, options?.intentType)
 
     if (matchedChunks.length === 0) {
       return { text: '', usedChunks: [], ragScores: [] }
@@ -293,6 +332,7 @@ export class RagService {
     options?: { intentType?: RagIntentType },
   ): Promise<{ text: string; usedCollection?: string; primaryChunkKey?: string; usedChunks: string[]; ragScores: RagScoreEntry[] }> {
     const names = Array.isArray(collectionNames) ? collectionNames : [collectionNames]
+    const intentLabel = options?.intentType ?? 'all'
 
     this.stageLog('3-1단계:RAG_컬렉션후보', 'loaded', `후보 컬렉션 ${names.length}개를 순차 탐색`, reqId)
     this.logger.log?.(
@@ -311,6 +351,16 @@ export class RagService {
       topChunkIds: item.topChunkIds,
       relaxed: item.relaxed,
     }))
+
+    if (this.logger?.log) {
+      const ranking = ragScores
+        .sort((a, b) => Number(b.adjustedScore ?? 0) - Number(a.adjustedScore ?? 0))
+        .map((item) => `${String(item.collection ?? '-')}(${Number(item.topScore ?? 0).toFixed(2)}/${Number(item.adjustedScore ?? 0).toFixed(2)})`)
+        .join(' -> ')
+      this.logger.log(
+        `[ragService][debug] request=${String(message ?? '').slice(0, 120)} intent=${intentLabel ?? 'all'} candidates=${ragScores.length} ranking=${ranking || 'none'}`,
+      )
+    }
 
     for (const item of evaluated) {
       const resolvedCollection = this.resolveCollection(item.collection)
@@ -357,8 +407,11 @@ export class RagService {
     const primaryChunkKey = hits[0]?.chunk?.id
 
     const referencedChunks = hits.map((h) => `${h.chunk.id}:${h.chunk.title}`).join(', ')
+    const detailedReferencedChunks = hits
+      .map((h) => `${h.chunk.id}(${h.chunk.title}, raw=${Number(h.score ?? 0).toFixed(2)})`)
+      .join(' | ')
     this.logger.log(
-      `================= [3-3-1단계:RAG_참조청크] [reqId=${reqId}] status=selected reason=collection=${usedCollection ?? '-'} referencedChunks=[${referencedChunks}]`,
+      `================= [3-3-1단계:RAG_참조청크] [reqId=${reqId}] status=selected reason=collection=${usedCollection ?? '-'} referencedChunks=[${referencedChunks}] detailed=[${detailedReferencedChunks || 'none'}]`,
     )
 
     const collection = usedCollection ? this.resolveCollection(usedCollection) : undefined
