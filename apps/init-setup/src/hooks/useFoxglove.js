@@ -1,18 +1,24 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import {
   MAP_TOPICS,
+  NAV_STATUS_TOPICS,
   ODOM_TOPICS,
   SCAN_TOPICS,
+  SPIN_STATUS_TOPICS,
   STATUS_TOPICS,
   TF_TOPICS,
   encodingFor,
   resolveTopic,
   topicCategory
 } from '@/constants/topics'
-import { mergeTransforms, resolveRobotPose } from '@/utils/tf'
+import { mergeTransforms, resolveFrameCorrections, resolveRobotPose } from '@/utils/tf'
 
 /**
  * useFoxglove
+ *
+ * 이름은 유지하지만 붙는 대상은 foxglove-bridge 가 아니라 init-setup-be 의 zenoh 릴레이다
+ * (utils/wsUrl.js → /telemetry). 릴레이가 foxglove 프로토콜의 최소 부분집합을 말하므로
+ * 워커/파서/이 훅의 구조는 그대로다 — 전송 경로만 zenoh-bridge-ros2dds 로 바뀐 것이다.
  *
  * Web Worker를 백그라운드에서 구동하여 WebSocket 연결 관리,
  * 구독 제어 및 CDR 바이너리 파싱을 백그라운드로 오프로드하고,
@@ -28,6 +34,8 @@ export function useFoxglove(wsUrl, throttleFps = 10) {
   const [odomData, setOdomData] = useState(null)
   const [scanData, setScanData] = useState(null)
   const [robotPose, setRobotPose] = useState(null)
+  // 오도메트리 프레임 기준으로 발행되는 토픽(매핑 중 /lio/path 등)을 지도에 겹칠 때 쓰는 보정량.
+  const [frameCorrections, setFrameCorrections] = useState({})
   const [topics, setTopics] = useState([])
   const [subscribedTopics, setSubscribedTopics] = useState([])
   const [customTopicsData, setCustomTopicsData] = useState({})
@@ -68,6 +76,7 @@ export function useFoxglove(wsUrl, throttleFps = 10) {
         // /tf 와 /tf_static 은 같은 트리를 채우므로, 한쪽만 끊겨도 트리를 비우고 다시 모은다.
         tfTreeRef.current = {}
         setRobotPose(null)
+        setFrameCorrections({})
         break
       default:
         delete customTopicsDataRef.current[topicName]
@@ -90,6 +99,7 @@ export function useFoxglove(wsUrl, throttleFps = 10) {
         setCustomTopicsData({ ...customTopicsDataRef.current })
         // TF 트리는 IMU rate 로 들어오므로 pose 합성도 렌더 주기에 맞춰 한 번만 한다.
         setRobotPose(resolveRobotPose(tfTreeRef.current))
+        setFrameCorrections(resolveFrameCorrections(tfTreeRef.current))
         hasNewDataRef.current = false
       }
     }
@@ -101,7 +111,7 @@ export function useFoxglove(wsUrl, throttleFps = 10) {
   // Web Worker 초기설정 및 수신 데이터 핸들러
   useEffect(() => {
     // Vite 환경에서의 Web Worker 생성 방식
-    workerRef.current = new Worker(new URL('./foxglove.worker.js', import.meta.url), {
+    workerRef.current = new Worker(new URL('./telemetry.worker.js', import.meta.url), {
       type: 'module'
     })
 
@@ -137,6 +147,8 @@ export function useFoxglove(wsUrl, throttleFps = 10) {
             resolveTopic(ODOM_TOPICS, allTopicsList),
             resolveTopic(SCAN_TOPICS, allTopicsList),
             resolveTopic(STATUS_TOPICS, allTopicsList),
+            resolveTopic(NAV_STATUS_TOPICS, allTopicsList),
+            resolveTopic(SPIN_STATUS_TOPICS, allTopicsList),
             ...TF_TOPICS.filter((topicName) => allTopicsList.includes(topicName))
           ].filter(Boolean)
 
@@ -240,6 +252,7 @@ export function useFoxglove(wsUrl, throttleFps = 10) {
     setOdomData(null)
     setScanData(null)
     setRobotPose(null)
+    setFrameCorrections({})
     setTopics([])
     setSubscribedTopics([])
     setCustomTopicsData({})
@@ -273,6 +286,7 @@ export function useFoxglove(wsUrl, throttleFps = 10) {
     setOdomData(null)
     setScanData(null)
     setRobotPose(null)
+    setFrameCorrections({})
     setCustomTopicsData({})
     mapDataRef.current = null
     odomDataRef.current = null
@@ -402,6 +416,7 @@ export function useFoxglove(wsUrl, throttleFps = 10) {
     odomData,
     scanData,
     robotPose, // 지도(map) 기준 로봇 pose { x, y, yaw, frame } — TF 합성 결과
+    frameCorrections, // { lio_odom: map->lio_odom, ... } — odom 기준 토픽을 지도에 겹칠 때 쓴다
     topics,
     subscribedTopics,
     customTopicsData,

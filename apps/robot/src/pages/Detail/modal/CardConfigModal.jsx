@@ -166,17 +166,18 @@ const CardConfigModal = ({ isOpen, onClose, onSave, cardTypes, currentCards }) =
 
   useEffect(() => {
     if (isOpen && currentCards) {
-      const currentPaths = new Set(currentCards.map((card) => card.targetPath))
-      setSelectedCards(currentPaths)
+      const currentKeys = new Set(currentCards.map((card) => card.cardKey))
+      setSelectedCards(currentKeys)
     }
   }, [isOpen, currentCards])
 
-  const handleCardToggle = (cardKey, cardInfo) => {
+  const handleCardToggle = (cardKey, categoryKey) => {
+    const uniqueKey = `${categoryKey}:${cardKey}`
     const newSelected = new Set(selectedCards)
-    if (newSelected.has(cardInfo.path)) {
-      newSelected.delete(cardInfo.path)
+    if (newSelected.has(uniqueKey)) {
+      newSelected.delete(uniqueKey)
     } else {
-      newSelected.add(cardInfo.path)
+      newSelected.add(uniqueKey)
     }
     setSelectedCards(newSelected)
   }
@@ -186,8 +187,10 @@ const CardConfigModal = ({ isOpen, onClose, onSave, cardTypes, currentCards }) =
 
     Object.entries(cardTypes).forEach(([categoryKey, category]) => {
       Object.entries(category).forEach(([cardKey, cardInfo]) => {
-        if (selectedCards.has(cardInfo.path)) {
+        const uniqueKey = `${categoryKey}:${cardKey}`
+        if (selectedCards.has(uniqueKey)) {
           cardsToSave.push({
+            cardKey,
             name: cardInfo.name,
             path: cardInfo.path,
             port: cardInfo.port,
@@ -222,8 +225,8 @@ const CardConfigModal = ({ isOpen, onClose, onSave, cardTypes, currentCards }) =
                 {Object.entries(category).map(([cardKey, cardInfo]) => (
                   <CardOption
                     key={cardKey}
-                    selected={selectedCards.has(cardInfo.path)}
-                    onClick={() => handleCardToggle(cardKey, cardInfo)}
+                    selected={selectedCards.has(`${categoryKey}:${cardKey}`)}
+                    onClick={() => handleCardToggle(cardKey, categoryKey)}
                   >
                     <CardOptionHeader>
                       <span className="icon">{cardInfo.icon}</span>

@@ -38,6 +38,14 @@ export const StyledDataTable = styled.div`
     }
   }
 
+  // 정렬 아이콘 SVG는 라이브러리가 svg 태그 자체를 대상으로 폭/높이를 강제하는데,
+  // 텍스트는 폰트 메트릭상 줄 중앙보다 살짝 아래로 그려져 두 요소가 align-items: center 로
+  // 감싸져도 미세하게 어긋나 보인다. 아이콘 wrapper만 살짝 내려서 타이틀과 눈높이를 맞춘다.
+  .__rdt_custom_sort_icon__ {
+    display: inline-flex;
+    transform: translateY(1px);
+  }
+
   .rdt_TableRow {
     position: relative;
     min-height: 4.5rem;

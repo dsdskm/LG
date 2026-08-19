@@ -250,8 +250,7 @@ export default function useLogReplayData({
 
   const timebaseReadyRef = useRef(false)
 
-  const gridDoneRef = useRef({ v: false })
-  const posesDoneRef = useRef({ v: false })
+  const gridDoneRef = useRef(false)
   const t0EpochMsRef = useRef(null) //ADD: playback 기준점(ms)
 
   // ✅ ADD: replay session clear (날짜/로그 변경 시)
@@ -1015,8 +1014,7 @@ export default function useLogReplayData({
       decodedSpanSecRef.current = 0
       t0RawRef.current = null
       tLastRawRef.current = -Infinity
-      gridDoneRef.current.v = false
-      posesDoneRef.current.v = false
+      gridDoneRef.current = false
     }
 
     const resetUiState = () => {
@@ -1090,7 +1088,7 @@ export default function useLogReplayData({
     //void prefetchTarGzForSelected(selected, logOptions, 'view-start')
 
     const maybeSetReady = () => {
-      if (gridDoneRef.current.v) {
+      if (gridDoneRef.current) {
         _setLoadPhase('ready')
         updateBuffer?.(1.0)
       }
@@ -1430,9 +1428,6 @@ export default function useLogReplayData({
     requestChartOverviewRef.current = requestChartOverview
 
     try {
-      // ✅ pose는 사용자가 playbar를 조작할 때만 on-demand 로딩
-      posesDoneRef.current.v = true
-
       const gridPromise = (async () => {
         return await loadOccupancyGridFromMcapUrl(downloadUrl, {
           topic: TOPICS.grid,
@@ -1476,7 +1471,7 @@ export default function useLogReplayData({
           }
 
           renderNow?.()
-          gridDoneRef.current.v = true
+          gridDoneRef.current = true
 
           // ✅ grid가 끝난 뒤(=readMessages 종료 후) 최초 0초 pose window 요청
 
@@ -1498,10 +1493,8 @@ export default function useLogReplayData({
         })
         .catch((e) => {
           console.warn('[Logreplay] grid 로드 실패:', e)
-          gridDoneRef.current.v = true
+          gridDoneRef.current = true
           setGridUnavailable(true)
-          // ✅ Step1(맵만 확인)에서는 grid가 들어오면 로딩 종료로 간주
-          posesDoneRef.current.v = true
           setIsLoadingLogs(false)
           // grid 실패 시엔 차트 overview가 호출되지 않으므로 로딩 상태를 직접 해제
           setChartLoading(false)

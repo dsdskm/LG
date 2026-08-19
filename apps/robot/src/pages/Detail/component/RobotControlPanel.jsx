@@ -114,6 +114,7 @@ const MotionButtonsWrap = styled.div`
 `
 
 const ROTATE_DEGREES = [15, 30, 45, 60, 90, 120, 150, 180]
+const MANUAL_MOVE_DISTANCES = [0.3, 0.5, 1]
 
 // 모션 정의 — 로봇 모션 제어 JSON 스펙에 매핑
 // nameKey: 모션명 i18n 키 / actionType·blockingType: 모션 단위 고정값
@@ -289,6 +290,7 @@ const MOTIONS = [
  * @param {boolean} props.canPause - taskFlows 중 RUNNING이 있을 때 true (일시정지 가능)
  * @param {boolean} props.canResume - taskFlows 중 PAUSED가 있을 때 true (재개 가능)
  * @param {Function} props.onAction - 기존 handleRobotAction (action 문자열 전달)
+ * @param {Function} props.onManualMove - 수동 이동 명령 전송 (direction: 'forward'|'backward', distance: number(m))
  * @param {Function} props.onMotion - 모션 명령 전송 ({ actionType, blockingType, actionParameters }, 표시명)
  * @param {Function} props.onMoveLocation - 장소 이동 모달 오픈
  */
@@ -302,10 +304,12 @@ const RobotControlPanel = ({
   canResume,
   onAction,
   onRotate,
+  onManualMove,
   onMotion,
   onMoveLocation
 }) => {
   const [rotateDir, setRotateDir] = useState('ccw') // cw: 시계, ccw: 반시계 (기본: 반시계방향)
+  const [moveDir, setMoveDir] = useState('forward') // forward: 전진, backward: 후진 (기본: 전진)
 
   // 모션 버튼 클릭 → params(object)를 actionParameters(key/value 배열)로 변환해 전송
   const handleMotionClick = (m, o) => {
@@ -402,6 +406,29 @@ const RobotControlPanel = ({
               </MotionButtonsWrap>
             </MotionRow>
           </MotionGrid>
+        </ExpandableSection>
+      </div>
+
+      {/* 수동 이동 — 신규 스캐폴딩 */}
+      <div className="ctrlHeaderPlain">
+        <ExpandableSection iconPosition="left" header={<span>{t('manualMove')}</span>}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <RowWrap>
+              <MiniBtn $lg $active={moveDir === 'forward'} onClick={() => setMoveDir('forward')}>
+                {t('moveForward')}
+              </MiniBtn>
+              <MiniBtn $lg $active={moveDir === 'backward'} onClick={() => setMoveDir('backward')}>
+                {t('moveBackward')}
+              </MiniBtn>
+            </RowWrap>
+            <RowWrap>
+              {MANUAL_MOVE_DISTANCES.map((dist) => (
+                <MiniBtn key={dist} $lg disabled={!isOnline} onClick={() => onManualMove(moveDir, dist)}>
+                  {dist}m
+                </MiniBtn>
+              ))}
+            </RowWrap>
+          </div>
         </ExpandableSection>
       </div>
 

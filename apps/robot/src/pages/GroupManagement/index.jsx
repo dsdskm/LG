@@ -350,7 +350,7 @@ const GroupManagement = () => {
               paginationRowsPerPageOptions={[10, 30, 50, 100]}
               expandableRows
               expandableRowsComponent={ExpandedSitesTable}
-              onRowClicked={(row) => setCurrentRow(row)}
+              onRowClicked={(row) => setCurrentRow(currentRow === row ? null : row)}
               expandableRowExpanded={(row) => row === currentRow}
               onRowExpandToggled={(expanded, row) => {
                 setCurrentRow(expanded ? row : null)

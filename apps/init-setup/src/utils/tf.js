@@ -111,6 +111,40 @@ export function lookupTransform(tree, targetFrame, sourceFrame) {
   return null
 }
 
+/**
+ * 점(m)을 변환한다 — tf 는 lookupTransform 이 준 target->source 변환이고,
+ * point 는 source 프레임 기준 좌표다. 결과는 target 프레임 좌표.
+ * tf 가 없으면 좌표를 그대로 돌려주므로 호출 측에서 분기하지 않아도 된다.
+ *
+ * @param {{t: {x,y,z}, q: {x,y,z,w}}|null} tf
+ * @param {{x: number, y: number, z?: number}} point
+ */
+export function transformPoint(tf, point) {
+  if (!tf) return point
+  const rotated = quatRotate(tf.q, { x: point.x, y: point.y, z: point.z ?? 0 })
+  return { x: tf.t.x + rotated.x, y: tf.t.y + rotated.y, z: tf.t.z + rotated.z }
+}
+
+/**
+ * 오도메트리 프레임 → map 보정량(map->lio_odom 등)을 미리 모아둔다.
+ *
+ * lio_node 는 매핑 중 궤적/경로 토픽을 lio_odom 기준으로 발행한다
+ * (lio_node.cpp: frame = (TC || localization) ? "map" : "lio_odom").
+ * 루프 클로저로 map->lio_odom 보정이 0이 아니게 되면 그 값을 지도에 그대로 찍을 수 없으므로,
+ * 소비 측이 프레임 이름으로 보정량을 찾아 transformPoint 할 수 있게 한다.
+ *
+ * @returns {Record<string, {t: object, q: object}>} 존재하는 오도메트리 프레임만 담긴 맵
+ */
+export function resolveFrameCorrections(tree) {
+  if (!tree) return {}
+  const corrections = {}
+  for (const odomFrame of ODOM_FRAMES) {
+    const tf = lookupTransform(tree, MAP_FRAME, odomFrame)
+    if (tf) corrections[odomFrame] = tf
+  }
+  return corrections
+}
+
 /** 쿼터니언에서 2D heading(yaw, rad). base_link X축을 XY 평면에 투영한 각도. */
 export function yawOf(q) {
   return Math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))

@@ -1,7 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
 import { Button } from '@repo/ui'
-import { startMapping, createMapping, resetMapping, cancelMapping, waitForGridMap } from '@/apis/mapApis'
+import {
+  startMapping,
+  createMapping,
+  resetMapping,
+  cancelMapping,
+  waitForGridMap,
+  create as createMapRecord
+} from '@/apis/mapApis'
+import { buildMapRecordBody } from '@/utils/mapRecord'
+import { isMappingSession } from '@/utils/lioStatus'
+import { resolveWsUrl } from '@/utils/wsUrl'
 import { toast } from 'react-toastify'
 import MapSaveCompleteModal from '@/components/MapSaveCompleteModal'
 
@@ -75,8 +85,15 @@ const StyledSlider = styled.input`
  * 매핑 버튼의 맵 이름은 여기서 입력받지 않는다 — 위치 계층(Building/Floor/Area)에서 만든
  * mapName 과 시작 가능 여부(canStartMapping)를 부모(pages/Map)에서 props 로 받는다.
  *
+ * 매핑 조작부의 구성은 이 컴포넌트의 로컬 state 가 아니라 로봇이 발행하는 모드로 결정한다
+ * (부모가 /lio_node/status 를 utils/lioStatus 로 접어 mode 로 내려준다) — 새로고침이나 다른
+ * 경로로 매핑이 시작·종료된 경우에도 버튼 구성이 로봇 실제 상태와 어긋나지 않는다.
+ *
  * @param {string} [mapName] 저장에 쓸 맵 이름 (Building명-Floor명-Area명 또는 'Default')
  * @param {boolean} [canStartMapping] 위치 선택이 끝나 매핑을 시작할 수 있는지
+ * @param {'mapping'|'saving'|'localization'|'failed'|'unknown'} [mode] 로봇 SLAM 모드
+ * @param {{siteId?: number|string, areaId?: number|string}} [mapOwner] 저장 후 만들 맵 레코드의 소속
+ * @param {object|null} [mapInfo] 살아 있는 OccupancyGrid 의 info — yaml 을 못 읽을 때의 폴백
  */
 export default function ConnectionBar({
   url,
@@ -88,11 +105,21 @@ export default function ConnectionBar({
   onFpsChange,
   mapName = '',
   canStartMapping = true,
+  mode = 'unknown',
+  mapOwner = {},
+  mapInfo = null,
   t
 }) {
   const isConnected = status === 'connected'
   const isConnecting = status === 'connecting'
-  const [isMapping, setIsMapping] = useState(false)
+
+  // 상태 토픽을 못 받는 구성(LIO 없음·미구독)에서도 조작은 가능해야 하므로, 그 경우에만
+  // 직전 시작 요청을 기억해 세션을 판단한다. mode 를 받는 동안에는 이 값을 쓰지 않는다.
+  const [startedLocally, setStartedLocally] = useState(false)
+  // 명령 왕복 중 중복 클릭 방지 — 세션 상태가 아니라 요청 진행 여부다.
+  const [isBusy, setIsBusy] = useState(false)
+  const hasMode = mode !== 'unknown'
+  const inMappingSession = hasMode ? isMappingSession(mode) : startedLocally
   // 저장 완료 모달 상태. savedMap 이 있으면 모달이 열린다.
   const [savedMap, setSavedMap] = useState(null)
   const [gridMapState, setGridMapState] = useState('checking')
@@ -116,11 +143,11 @@ export default function ConnectionBar({
 
   // 위치 계층을 받아온 경우에는 Building/Floor/Area 가 모두 선택돼야 매핑을 시작할 수 있다
   // (맵 이름이 곧 위치라서, 미선택 상태로 시작하면 어디를 그린 맵인지 남지 않는다).
-  // 매핑 중 중복 시작은 버튼 비활성이 아니라 시작 버튼 자체를 감추는 것으로 막는다.
 
   // init-setup-be → robot-hub gRPC 경유라 로봇이 거부하면 4xx/5xx 로 돌아온다.
-  // 실패 시 isMapping 을 되돌려야 버튼 상태가 실제 로봇 상태와 어긋나지 않는다.
+  // 버튼 구성은 로봇 모드에서 오므로 여기서는 요청 진행 여부(isBusy)만 관리한다.
   const runMappingAction = async (action, { onSuccess, onError, successMessage } = {}) => {
+    setIsBusy(true)
     try {
       const response = await action()
       onSuccess?.(response)
@@ -130,13 +157,15 @@ export default function ConnectionBar({
       // init-setup-be 에러 응답 봉투: { success: false, error: { message } }
       const message = error?.response?.data?.error?.message || error?.message || 'Request failed'
       toast.error(message, { autoClose: 3000 })
+    } finally {
+      setIsBusy(false)
     }
   }
 
   const handleStart = async () => {
     await runMappingAction(startMapping, {
-      onSuccess: () => setIsMapping(true),
-      onError: () => setIsMapping(false),
+      onSuccess: () => setStartedLocally(true),
+      onError: () => setStartedLocally(false),
       successMessage: 'Mapping started'
     })
   }
@@ -147,26 +176,64 @@ export default function ConnectionBar({
     const name = mapName.trim()
     await runMappingAction(() => createMapping(name ? { name } : {}), {
       onSuccess: (response) => {
-        setIsMapping(false)
+        // 저장해도 lio_node 는 매핑 세션을 유지하지만(status 가 다시 mapping), 이 화면의 한 사이클은
+        // 끝났으므로 상태 토픽이 없는 구성에서는 시작 버튼으로 되돌린다.
+        setStartedLocally(false)
         // 저장 응답 성공 = 3D 맵(PCD + trajectory) 저장 완료 → 완료 모달을 띄운다.
         // 이름은 백엔드가 확정한 값을 쓴다(미지정 시 map_YYMMDD_HHMMSS 로 생성된다).
         const savedName = response?.data?.name || name
         setSavedMap({ name: savedName })
         setGridMapState('checking')
         // 2D 격자맵(grid_map.yaml/.png)은 lio_node 가 응답 뒤 비동기로 저장하므로 파일로 확인한다.
-        waitForGridMap(savedName).then(({ state }) => {
-          if (aliveRef.current) setGridMapState(state)
+        // 확인이 끝나면 그 산출물 메타로 맵 레코드(POST /maps)를 등록한다 — 레코드가 없으면
+        // 시맨틱 화면이 이 구역의 맵을 찾지 못한다.
+        const savedPath = response?.data?.savePath
+        waitForGridMap(savedName).then(({ state, artifacts }) => {
+          if (!aliveRef.current) return
+          setGridMapState(state)
+          registerMapRecord({ savePath: savedPath, name: savedName, artifacts })
         })
       },
       successMessage: 'Map saved'
     })
   }
+  /**
+   * 저장된 맵을 DB 에 등록한다(POST /maps). 실패해도 파일 저장 자체는 이미 끝난 상태이므로
+   * 매핑 흐름을 막지 않고 토스트로만 알린다.
+   */
+  const registerMapRecord = async ({ savePath, name, artifacts }) => {
+    const { body, missing } = buildMapRecordBody({
+      savePath,
+      name,
+      siteId: mapOwner.siteId,
+      areaId: mapOwner.areaId,
+      meta: artifacts?.gridMap?.meta ?? null,
+      info: mapInfo,
+      gridImageFile: artifacts?.gridMap?.image
+    })
+
+    if (!body) {
+      // resolution 을 못 구한 경우 — BE 가 400 으로 거부하므로 보내지 않는다.
+      toast.warn(t('mapRecordSkipped', { fields: missing.join(', ') }), { autoClose: 4000 })
+      return
+    }
+    try {
+      await createMapRecord(body)
+      if (missing.length > 0) {
+        toast.warn(t('mapRecordPartial', { fields: missing.join(', ') }), { autoClose: 4000 })
+      }
+    } catch (error) {
+      const message = error?.response?.data?.error?.message || error?.message || 'Request failed'
+      toast.error(`${t('mapRecordFailed')}: ${message}`, { autoClose: 4000 })
+    }
+  }
+
   const handleReset = async () => {
     await runMappingAction(resetMapping, { successMessage: 'Mapping reset' })
   }
   const handleCancel = async () => {
     await runMappingAction(cancelMapping, {
-      onSuccess: () => setIsMapping(false),
+      onSuccess: () => setStartedLocally(false),
       successMessage: 'Mapping canceled'
     })
   }
@@ -182,7 +249,8 @@ export default function ConnectionBar({
           type="text"
           value={url}
           onChange={(e) => onUrlChange(e.target.value)}
-          placeholder={import.meta.env.VITE_WEBSOCKET_URL}
+          // 기본값은 현재 페이지 기준으로 계산된다(utils/wsUrl.js) — 빌드에 박힌 주소가 없다
+          placeholder={resolveWsUrl()}
           disabled={isConnected || isConnecting}
         />
 
@@ -222,17 +290,18 @@ export default function ConnectionBar({
           <span style={styles.mapName} title={mapName}>
             {mapName || '-'}
           </span>
-          {/* 저장 · 리셋 · 취소는 매핑이 시작된 뒤에만 의미가 있으므로 그때만 노출한다
-              (매핑 전에는 비활성 버튼도 두지 않아 시작 버튼만 남는다). */}
-          {isMapping ? (
+          {/* 저장 · 리셋 · 취소는 매핑 세션(로봇 모드 mapping/saving)에서만 의미가 있으므로 그때만 노출한다
+              (세션 전에는 비활성 버튼도 두지 않아 시작 버튼만 남는다). */}
+          {inMappingSession ? (
             <>
-              <Button size="md" onClick={handleSave}>
+              {/* 저장 중(mode === 'saving')에는 중복 호출을 막는다 — lio_node 가 블로킹으로 처리한다. */}
+              <Button size="md" onClick={handleSave} disabled={isBusy || mode === 'saving'}>
                 {t('save')}
               </Button>
-              <Button size="md" theme="tertiary" onClick={handleReset}>
+              <Button size="md" theme="tertiary" onClick={handleReset} disabled={isBusy}>
                 {t('reset')}
               </Button>
-              <Button size="md" theme="tertiary" onClick={handleCancel}>
+              <Button size="md" theme="tertiary" onClick={handleCancel} disabled={isBusy}>
                 {t('cancel')}
               </Button>
             </>
@@ -240,7 +309,7 @@ export default function ConnectionBar({
             <Button
               size="md"
               onClick={handleStart}
-              disabled={!isConnected || !canStartMapping}
+              disabled={!isConnected || !canStartMapping || isBusy}
               title={
                 (!isConnected && t('connectToStartMapping')) ||
                 (!canStartMapping && t('selectLocationForMapping')) ||

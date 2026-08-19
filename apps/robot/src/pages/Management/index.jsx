@@ -125,7 +125,8 @@ const Management = () => {
         {
           name: t('robotName'),
           width: '13%',
-          selector: (row) =>
+          selector: (row) => row.deviceName ?? '', // 정렬용 원시값
+          cell: (row) =>
             row.deviceRegStatus === 'DELETED' ? (
               row.deviceName
             ) : (
@@ -138,7 +139,8 @@ const Management = () => {
         {
           name: t('model'),
           width: '9%',
-          selector: (row) => <P>{row.deviceModelName ?? 'no model'}</P>,
+          selector: (row) => row.deviceModelName ?? '', // 정렬용 원시값
+          cell: (row) => <P>{row.deviceModelName ?? 'no model'}</P>,
           sortable: true
         },
         {

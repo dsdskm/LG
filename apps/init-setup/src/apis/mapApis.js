@@ -29,6 +29,28 @@ export const healthCheck = async () => {
 }
 
 /**
+ * 저장된 맵으로 측위 전환 (POST /robot-hub/switch-mode).
+ *
+ * lio_node 가 3D 맵을 로드하고 재정위를 시작한다 — 응답은 "맵 로드 완료" 시점에 돌아오고
+ * 재정위 완료는 /lio_node/status 가 "ready" 가 되는 것으로 판단한다(중간: loading_map →
+ * relocalizing_pose|relocalizing_gkr → loading_grid_map → ready).
+ * 이동(nav_goto)은 이 상태가 ready 여야 의미가 있다.
+ *
+ * @param {{mapPath: string, setInitialPose?: boolean, x?: number, y?: number, z?: number, yaw?: number}} payload
+ *   mapPath: lio_node 가 보는 맵 디렉터리 경로(맵 레코드의 imagePath 가 있는 폴더).
+ *   setInitialPose: true 면 x/y/z/yaw(도) 를 초기 추정 위치로 준다(생략 시 GKR 360° 재정위).
+ * @returns {Promise<{success: boolean, data: {message: string}}>}
+ */
+export const loadMapForLocalization = async ({ mapPath, setInitialPose, x, y, z, yaw } = {}) => {
+  if (!mapPath) throw new Error('mapPath is required to switch to localization')
+  return await axiosApi.post('/robot-hub/switch-mode', {
+    mode: 'localization',
+    map_path: mapPath,
+    ...(setInitialPose ? { set_initial_pose: true, x, y, z, yaw } : {})
+  })
+}
+
+/**
  * 저장된 맵 목록 조회 (GET /maps).
  * @param {object} [params] 페이징/필터 (기본 page=1, rows=5)
  * @returns {Promise<{success: boolean, data: object[], total?: number}>}

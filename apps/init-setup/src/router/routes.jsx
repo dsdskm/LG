@@ -66,20 +66,20 @@ export const appRoutes = [
     element: <SiteCode />
   },
   {
-    name: 'robotInfo',
-    path: '/robot-info',
-    prefix: '',
-    icon: 'robot',
-    group: SETUP_GROUP.INITIAL,
-    element: <RobotInfo />
-  },
-  {
     name: 'location',
     path: '/location',
     prefix: '',
     icon: 'location',
     group: SETUP_GROUP.INITIAL,
     element: <Location />
+  },
+  {
+    name: 'robotInfo',
+    path: '/robot-info',
+    prefix: '',
+    icon: 'robot',
+    group: SETUP_GROUP.INITIAL,
+    element: <RobotInfo />
   },
   {
     name: 'terms',

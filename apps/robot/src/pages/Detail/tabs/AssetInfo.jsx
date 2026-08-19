@@ -531,6 +531,24 @@ const AssetInfo = ({ t, deviceId }) => {
     sendActions(actions, `${degree}° ${t('sendCommand')}`)
   }
 
+  // 수동 이동 명령 — 전진(forward) → moveForward, 후진(backward) → moveBackward
+  const handleManualMove = (direction, distance) => {
+    if (!isOnline) {
+      alert(t('offlineStatue'))
+      return
+    }
+    const actionType = direction === 'forward' ? 'moveForward' : 'moveBackward'
+    const actions = [
+      {
+        actionType,
+        actionId: crypto.randomUUID(),
+        blockingType: 'HARD',
+        actionParameters: [{ key: 'distance', value: String(distance) }]
+      }
+    ]
+    sendActions(actions, `${distance}m ${t('sendCommand')}`)
+  }
+
   // 3초마다 실행할 polling 함수 (mapUrl 갱신 제외)
   const pollDeviceInfo = useCallback(async () => {
     try {
@@ -865,7 +883,7 @@ const AssetInfo = ({ t, deviceId }) => {
             <MajorActionButton onClick={handleLogPlayClick}>
               <Play className="w-[14px] h-[14px]" /> {t('drivingLogReplay')}
             </MajorActionButton>
-            <MajorActionButton onClick={handleLogPlayClick}>
+            <MajorActionButton onClick={handleClick}>
               <GamePad className="w-[14px] h-[14px]" /> {t('manipulationLogReplay')}
             </MajorActionButton>
             <MajorActionButton>
@@ -888,6 +906,7 @@ const AssetInfo = ({ t, deviceId }) => {
               canResume={taskFlowControl.canResume}
               onAction={handleRobotAction}
               onRotate={handleRotate}
+              onManualMove={handleManualMove}
               onMotion={handleMotion}
               onMoveLocation={MoveLocationModal.onOpen}
             />

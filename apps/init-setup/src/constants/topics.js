@@ -30,6 +30,15 @@ export const SCAN_TOPICS = ['/lidar_points']
 // 매핑/측위 진행 상태 (std_msgs/String)
 export const STATUS_TOPICS = ['/lio_node/status']
 
+// 주행(Nav2) 진행 상태 (std_msgs/String, JSON: { cruise, goto_status }).
+// corepath 의 nav_action_command_handler 가 액션 goal/feedback/result 를 추적해 재발행한다 —
+// 이동 명령은 gRPC(navApis)로 보내고 진행 상태는 이 토픽으로만 받는다(gRPC 상태 조회 금지 규칙).
+export const NAV_STATUS_TOPICS = ['/robot_hub/nav_action_status']
+
+// 제자리 회전 진행 상태 (std_msgs/String, JSON: { active, state, target_deg, actual_deg, message }).
+// motor-2wheel 의 WheelCommandHandler 가 /cmd_vel 제어 중 발행한다 — GKR 재정위 보조 회전용.
+export const SPIN_STATUS_TOPICS = ['/robot_hub/nav_spin_status']
+
 // MapCanvas가 그릴 수 있는 기하 토픽 전체
 export const SPATIAL_TOPICS = [
   ...MAP_TOPICS,

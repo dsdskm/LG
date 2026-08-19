@@ -37,7 +37,7 @@ function renderFlowStatusBadge(flow: TaskFlowWithDeployment, t: TFunction) {
   const status = flow?.status as TaskFlowStatus | undefined
   const statusText = getTaskFlowStatusLabel(status, t)
 
-  if (status === TaskFlowStatus.ACTIVE) {
+  if (status !== TaskFlowStatus.ACTIVE) {
     return (
       <FlowActiveBadge>
         <span className="dot" />
@@ -46,12 +46,12 @@ function renderFlowStatusBadge(flow: TaskFlowWithDeployment, t: TFunction) {
     )
   }
 
-  return (
-    <FlowInactiveBadge>
-      <span className="dot" />
-      {statusText}
-    </FlowInactiveBadge>
-  )
+  // return (
+  //   <FlowInactiveBadge>
+  //     <span className="dot" />
+  //     {statusText}
+  //   </FlowInactiveBadge>
+  // )
 }
 
 function renderDeployStatusBadge(flow: TaskFlowWithDeployment, t: TFunction) {

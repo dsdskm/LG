@@ -5,6 +5,17 @@ import NoData from '../../common/NoData'
 import { useMemo } from 'react'
 import TableLoading from '../TableLoading'
 
+// 위/아래 화살표를 항상 함께 보여주고 현재 정렬 방향만 진하게 강조하는 흔한 정렬 아이콘.
+// react-data-table-component는 asc일 때 이 아이콘 전체를 180도 회전시키므로,
+// 두 화살표를 뷰박스 중심(12,12) 기준 상하 대칭으로 배치해 회전만으로 강조 위치가 자동으로 바뀌게 한다.
+// (desc = 기본 상태: 아래 화살표 진하게 / asc = 회전 후: 위 화살표 진하게)
+const SortIcon = (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M12 6L17 10H7Z" opacity="0.35" />
+    <path d="M12 18L17 14H7Z" />
+  </svg>
+)
+
 /**
  * Common Table component based on react-data-table-component
  *
@@ -61,6 +72,7 @@ const Table = ({
         paginationComponent={Pagination}
         paginationRowsPerPageOptions={paginationRowsPerPageOptions || []}
         paginationPerPage={paginationPerPage || paginationRowsPerPageOptions?.[0]}
+        sortIcon={SortIcon}
         {...rest}
       />
     </StyledDataTable>

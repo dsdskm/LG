@@ -43,14 +43,23 @@ const UserList = () => {
     setFilteredUsers(loopList)
   }
 
-  const loadUserList = useCallback(async (searchParams = {}) => {
+  const loadUserList = useCallback(async () => {
     try {
-      const data = await userApis.getUsers({})
-      setUsers(data.content)
-      setTableList(data.content)
+      let page = 0
+      let allContent = []
+      let hasNext = true
+
+      while (hasNext) {
+        const data = await userApis.getUsers({ page })
+        allContent = allContent.concat(data.content)
+        hasNext = data.hasNext
+        page += 1
+      }
+
+      setUsers(allContent)
+      setTableList(allContent)
     } catch (err) {
       console.error('Error useCallback:', err)
-    } finally {
     }
   }, [])
 

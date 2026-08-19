@@ -58,6 +58,75 @@ export const EmptyMessage = styled.p`
   color: var(--color-neutral-70);
 `
 
+// 위치 선택 줄의 오른쪽 묶음 — 상태 배지들(Map) / 맵 로드 버튼 + 상태 배지들(Semantic).
+// LocationRow 가 space-between 이라 배지를 개별 자식으로 두면 가운데로 벌어진다 — 묶어서 오른쪽에 붙인다
+// (LocationBar 가 줄바꿈될 때도 오른쪽 정렬이 유지되도록 margin-left: auto 를 함께 준다).
+export const BadgeRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  margin-left: auto;
+
+  /* 배지가 자체 margin-bottom(2rem)을 갖고 있어 버튼에도 같은 여백을 줘 아래선을 맞춘다. */
+  & > button {
+    margin-bottom: 2rem;
+  }
+`
+
+// Semantic 지도 칸 — 캔버스 위에 이동 말풍선을 겹치기 위한 기준 컨테이너.
+// MapCanvas 의 래퍼가 flex:1 로 늘어나므로 여기서도 flex 를 유지한다.
+export const MapClickArea = styled.div`
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+`
+
+// 지도 클릭 위치에 뜨는 말풍선. 클릭 지점(canvasX/Y) 바로 위에 꼬리를 두고 가운데 정렬한다.
+// 지도 경계에서 잘리지 않도록 좌우는 clamp 로 캔버스 안쪽에 붙여 둔다.
+export const NavBubble = styled.div`
+  position: absolute;
+  left: clamp(9rem, ${({ $x }) => `${$x}px`}, calc(100% - 9rem));
+  top: ${({ $y }) => `${$y}px`};
+  transform: translate(-50%, calc(-100% - 1.2rem));
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding: 1.2rem;
+  border: 1px solid var(--color-secondary-20);
+  border-radius: var(--radius-sm);
+  background: var(--color-neutral-10);
+  box-shadow: 0 0.4rem 1.2rem rgba(0, 0, 0, 0.18);
+  white-space: nowrap;
+
+  /* 말풍선 꼬리 — 클릭 지점을 가리킨다. */
+  &::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: -0.7rem;
+    width: 1.2rem;
+    height: 1.2rem;
+    transform: translateX(-50%) rotate(45deg);
+    border-right: 1px solid var(--color-secondary-20);
+    border-bottom: 1px solid var(--color-secondary-20);
+    background: var(--color-neutral-10);
+  }
+
+  & > .coords {
+    color: var(--color-neutral-80);
+    font-weight: 700;
+  }
+
+  & > .actions {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+  }
+`
+
 // 좌: 지도 Section(남는 폭 전부) / 우: StatusPanel(자체 고정폭 열, 내부에 Section 3개).
 export const MapWorkspace = styled.div`
   display: flex;

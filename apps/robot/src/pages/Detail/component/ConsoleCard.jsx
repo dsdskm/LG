@@ -4,6 +4,7 @@ import config from '../config'
 import { getClientId } from '../config/clientId'
 import { useTranslation } from 'react-i18next'
 import { useUserStore } from '@repo/stores'
+import { deviceApis } from '@/apis'
 
 const CardContainer = styled.div`
   border: 1px solid #e0e0e0;
@@ -239,7 +240,13 @@ const ConsoleCard = forwardRef(({ robotId, card, onExpand, onControlOpen }, ref)
   const shouldReconnectRef = useRef(true)
 
   const [shouldConnect, setShouldConnect] = useState(false)
+  const [precheckPhase, setPrecheckPhase] = useState('idle')
+  // 'idle' | 'checking' | 'starting' | 'retrying' | 'unreachable'
+  //idle: 버튼 노출 (현재 !shouldConnect 분기)
+  //checking/starting/retrying: 로딩 문구 노출 (예: "연결 상태 확인 중...")
+  //unreachable: "로봇이 연결되지 않았습니다" + 재시도(=connectionStart) 버튼 다시 노출
 
+  const precheckAbortRef = useRef(false)
   const reconnectCountRef = useRef(0)
   const MAX_RECONNECT = 2
 
@@ -255,6 +262,56 @@ const ConsoleCard = forwardRef(({ robotId, card, onExpand, onControlOpen }, ref)
   }
 
   const cid = getClientId(robotId, safeCard.targetPort)
+
+  const getViewState = (deviceInfo) => {
+    const info = deviceInfo?.information?.find((i) => i.infoType === 'LGE_VIEW')
+    return info?.infoReferences?.find((r) => r.referenceKey === 'VIEW_STATE')?.referenceValue
+  }
+
+  const checkAndStartConnection = useCallback(async () => {
+    precheckAbortRef.current = false
+    setPrecheckPhase('checking')
+
+    try {
+      const res = await deviceApis.getDeviceInfo(robotId)
+      if (getViewState(res) === 'CONNECTED') {
+        setShouldConnect(true) // 기존 로직 그대로 실행
+        setConnectionStatus('connecting')
+        return
+      }
+
+      setPrecheckPhase('starting')
+      await deviceApis.postInstanceActions(robotId, {
+        userId: session?.userId,
+        actions: [{ actionType: 'startView', actionId: crypto.randomUUID(), blockingType: 'NONE' }]
+      })
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await new Promise((r) => setTimeout(r, 5000))
+        if (precheckAbortRef.current) return // 카드가 사라졌으면 중단
+
+        setPrecheckPhase('retrying')
+        const retryRes = await deviceApis.getDeviceInfo(robotId)
+        if (getViewState(retryRes) === 'CONNECTED') {
+          setShouldConnect(true)
+          setConnectionStatus('connecting')
+          return
+        }
+      }
+
+      setPrecheckPhase('unreachable')
+    } catch (err) {
+      console.error('[PRECHECK] failed:', err)
+      setPrecheckPhase('unreachable')
+    }
+  }, [robotId, session?.userId])
+
+  // ★ 카드 unmount 시 진행 중인 사전 점검 폴링 중단 (부모가 cleanup을 호출하지 않는 경로 방어)
+  useEffect(() => {
+    return () => {
+      precheckAbortRef.current = true
+    }
+  }, [])
 
   // ── 실시간 WebSocket (isRealtime 카드에서만) ───────────────────────
   const connectRealtimeWs = useCallback(() => {
@@ -361,6 +418,8 @@ const ConsoleCard = forwardRef(({ robotId, card, onExpand, onControlOpen }, ref)
   // ★ 리소스 정리 함수 (외부에서도 호출 가능)
   const cleanup = useCallback(() => {
     console.log(`� Cleanup card: ${safeCard.cardName}`)
+
+    precheckAbortRef.current = true // ★ 진행 중인 사전 점검(getDeviceInfo 재조회 루프) 중단
 
     shouldReconnectRef.current = false
 
@@ -573,15 +632,19 @@ const ConsoleCard = forwardRef(({ robotId, card, onExpand, onControlOpen }, ref)
       <CardBody>
         {!shouldConnect ? (
           <ConnectionError>
-            <p>{t('connectionWaiting')}</p>
-            <button
-              onClick={() => {
-                setShouldConnect(true)
-                setConnectionStatus('connecting')
-              }}
-            >
-              {t('connectionStart')}
-            </button>
+            {precheckPhase === 'unreachable' ? (
+              <>
+                <p>{t('robotNotConnected')}</p>
+                <button onClick={checkAndStartConnection}>{t('connectionStart')}</button>
+              </>
+            ) : precheckPhase !== 'idle' ? (
+              <p>{t('checkingConnection')}...</p>
+            ) : (
+              <>
+                <p>{t('connectionWaiting')}</p>
+                <button onClick={checkAndStartConnection}>{t('connectionStart')}</button>
+              </>
+            )}
           </ConnectionError>
         ) : connectionStatus === 'failed' ? (
           <ConnectionError>
