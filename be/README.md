@@ -24,3 +24,7 @@ GRANT ALL ON SCHEMA public TO public;
 # DB 터널링
 (로컬PC)
 scripts/db/db-tunnel-codespace.sh
+
+# gh auth 초기화
+cat ~/.config/gh/hosts.yml 에 oauth: github key 항목 추가 
+gh auth refresh
