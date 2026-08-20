@@ -6,11 +6,17 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR/../.."
 
 REPO="${CODESPACE_REPO:-dsdskm/lge}"
-CODESPACE_NAME="${CODESPACE_NAME:-${1:-}}"
 PORT_OFFSET="${PORT_OFFSET:-0}"
 TUNNEL_ALL_PORTS="${TUNNEL_ALL_PORTS:-0}"
 ALL_PORT_MIN="${ALL_PORT_MIN:-1024}"
 ALL_PORT_MAX="${ALL_PORT_MAX:-65535}"
+
+if [[ $# -gt 0 && "$1" =~ ^[0-9]+$ ]]; then
+  PORT_OFFSET="$1"
+  shift
+fi
+
+CODESPACE_NAME="fictional-lamp-x99gpvjw7963jv5"
 
 SERVICES=(
   config_manager
@@ -68,10 +74,6 @@ require_cmd() {
 if ! command -v gh >/dev/null 2>&1; then
   err "gh 명령을 찾을 수 없습니다. 먼저 'brew install gh' 로 설치하세요."
   exit 1
-fi
-
-if [[ -z "$CODESPACE_NAME" ]]; then
-  CODESPACE_NAME="$(gh codespace list -R "$REPO" --json name,state --jq '.[] | select(.state == "Available") | .name' | head -n1 || true)"
 fi
 
 if ! gh auth status >/dev/null 2>&1; then
