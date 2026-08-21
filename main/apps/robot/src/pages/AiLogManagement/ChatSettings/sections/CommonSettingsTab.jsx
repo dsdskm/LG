@@ -302,8 +302,6 @@ export const CommonSettingsTab = ({
     setDraftProvider,
     isDirty,
     saving,
-    tmsInfoOnlyEnabled,
-    onTmsInfoOnlyToggle,
     onSaveProvider,
     commonPromptItem,
     commonPromptDraft,
@@ -351,11 +349,6 @@ export const CommonSettingsTab = ({
                 isDirty={isDirty}
                 saving={saving}
                 onSaveProvider={onSaveProvider}
-            />
-
-            <TmsInfoOnlySettingCard
-                enabled={Boolean(tmsInfoOnlyEnabled)}
-                onToggle={onTmsInfoOnlyToggle}
             />
 
             <CommonInputHintPromptManagementCard
@@ -643,24 +636,6 @@ const ProviderSettingCard = ({
     )
 }
 
-const TmsInfoOnlySettingCard = ({ enabled, onToggle }) => {
-    return (
-        <SettingCard>
-            <CardHeader>
-                <CardTitle>정보 인텐트용만 사용하기</CardTitle>
-            </CardHeader>
-
-            <PageDescription>TMS 앱에서 분류된 intent가 무엇이든 정보 RAG를 우선으로 사용할지 여부를 설정합니다.</PageDescription>
-
-            <ActionRow>
-                <ToggleButton type="button" $active={Boolean(enabled)} onClick={onToggle}>
-                    {enabled ? '활성화' : '비활성화'}
-                </ToggleButton>
-            </ActionRow>
-        </SettingCard>
-    )
-}
-
 const DefaultIntentPromptManagementCard = ({
     commonIntentPromptItem,
     commonIntentPromptDraft,
@@ -755,6 +730,23 @@ const CommonRagPromptManagementCard = ({
                     style={{ minHeight: '180px' }}
                 />
 
+                <PromptCard style={{ marginTop: '12px', background: '#f8fafc' }}>
+                    <PromptMeta>
+                        <span>공통 RAG 결과 리턴 포맷</span>
+                        <span>read only</span>
+                    </PromptMeta>
+
+                    <PageDescription>
+                        여러 RAG 문서를 함께 참조해도 최종 응답은 단일 text JSON으로 요약해 반환합니다. score, app 구분, 마크다운은 표시하지 않습니다.
+                    </PageDescription>
+
+                    <PromptTextarea
+                        value={RAG_RETURN_FORMAT_JSON}
+                        readOnly
+                        style={{ minHeight: '140px', background: '#f8fafc', color: '#334155' }}
+                    />
+                </PromptCard>
+
                 <PromptFooter>
                     <ToggleButton
                         type="button"
@@ -784,6 +776,16 @@ const CommonRagPromptManagementCard = ({
         </SettingCard>
     )
 }
+
+const CLASSIFICATION_RETURN_FORMAT_JSON = `{
+  "intent": "info",
+  "confidence": 0.92,
+  "reason": "설명/가이드 질문으로 판단"
+}`
+
+const RAG_RETURN_FORMAT_JSON = `{
+  "text": "운영 관제는 로봇 관리, SOTA, CMS, TMS, 학습 기능 등을 제공해요"
+}`
 
 const PromptManagementCard = ({
     commonPromptItem,
@@ -823,7 +825,25 @@ const PromptManagementCard = ({
                         onCommonPromptChange('content', e.target.value)
                         onCommonIntentPromptChange('content', e.target.value)
                     }}
+                    style={{ minHeight: '210px' }}
                 />
+
+                <PromptCard style={{ marginTop: '12px', background: '#f8fafc' }}>
+                    <PromptMeta>
+                        <span>분류 결과 리턴 포맷</span>
+                        <span>read only</span>
+                    </PromptMeta>
+
+                    <PageDescription>
+                        LLM은 아래 JSON 형식만 반환하도록 고정하며, 설명 문구와 마크다운은 허용하지 않습니다.
+                    </PageDescription>
+
+                    <PromptTextarea
+                        value={CLASSIFICATION_RETURN_FORMAT_JSON}
+                        readOnly
+                        style={{ minHeight: '140px', background: '#f8fafc', color: '#334155' }}
+                    />
+                </PromptCard>
 
                 <PromptFooter>
                     <ToggleButton

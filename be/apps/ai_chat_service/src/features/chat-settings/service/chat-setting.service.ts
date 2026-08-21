@@ -7,7 +7,6 @@ import { ChatSettingEntity } from '../db/chat-setting.entity'
 export const CHAT_SETTING_KEYS = {
   llmProvider: 'llmProvider',
   llmProviderSchema: 'llmProviderSchema',
-  tmsInfoOnly: 'tmsInfoOnly',
 } as const
 
 export type ChatSettingSchemaItem = {

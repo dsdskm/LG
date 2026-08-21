@@ -551,18 +551,13 @@ export class ChatOrchestrator {
     }
 
     const settings = getChatSettingService()
-    const tmsInfoOnlyEnabled = settings
-      ? Boolean(await settings.getBoolean('tmsInfoOnly', false))
-      : false
-    const shouldForceInfoForTmsApp =
-      String(screen.appKey ?? '').trim().toLowerCase() === 'tms' && tmsInfoOnlyEnabled
-
-    if (shouldForceInfoForTmsApp && pipelineIntent !== 'info') {
+    const actionRagHasMatch = this.retrieveActionRagContext(actionRagCollections, effectiveMessage).usedChunks.length > 0
+    if (pipelineIntent === 'action' && !actionRagHasMatch && pipelineIntent !== 'info') {
       pipelineIntent = 'info'
       this.stageLog(
-        '2-6-4단계:TMS_앱의도_강제',
+        '2-6-4단계:액션RAG_미매칭_정보폴백',
         reqId,
-        'status=forced reason=tms app가 설정에 따라 info-only 모드로 동작',
+        'status=fallBack reason=action intent지만 action RAG 매칭이 없어 info 경로로 전환',
       )
     }
 

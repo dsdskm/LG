@@ -76,7 +76,7 @@ describe('ChatOrchestrator taskflow routing guard', () => {
     expect((store as any).refreshFromDb).toBeDefined()
   })
 
-  it('forces all tms app intents to info when the tmsInfoOnly setting is enabled', async () => {
+  it('falls back to info when the action intent has no matching action RAG', async () => {
     const orchestrator = new ChatOrchestrator(client, 1024, pipeline, { log: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any)
     const screen = {
       key: 'tms/taskflows/123/detail',
@@ -94,54 +94,21 @@ describe('ChatOrchestrator taskflow routing guard', () => {
       intentHints: '',
     }
 
-    const settings = { get: jest.fn(async (key) => (key === 'tmsInfoOnly' ? true : undefined)), getBoolean: jest.fn(async (key) => key === 'tmsInfoOnly') }
-    jest.spyOn(require('../features/chat-settings/service/chat-setting.service'), 'getChatSettingService').mockReturnValue(settings as any)
+    jest.spyOn(require('../features/chat-settings/service/chat-setting.service'), 'getChatSettingService').mockReturnValue(null)
     jest.spyOn(require('./screen-registry'), 'getScreenConfig').mockReturnValue(screen as any)
     jest.spyOn((orchestrator as any).classifier, 'classify').mockResolvedValue({ intent: 'action', confidence: 1, reason: 'action' })
+    jest.spyOn((orchestrator as any), 'retrieveActionRagContext').mockReturnValue({ context: '', usedChunks: [], ragScores: [] })
     const handleInfoSpy = jest.spyOn(orchestrator as any, 'handleInfo').mockResolvedValue({
       handled: true,
-      reply: { chat_action: 'info', text: 'TMS 정보 응답' },
+      reply: { chat_action: 'info', text: '정보 응답' },
       meta: { pipelineIntent: 'info' },
     })
 
-    const result = await orchestrator.handle('tms/taskflows/123/detail', '배포 방법 알려줘', { reqId: 'req-tms-info', history: [], screenTask: 'unknown' })
+    const result = await orchestrator.handle('tms/taskflows/123/detail', '배포 방법 알려줘', { reqId: 'req-action-fallback', history: [], screenTask: 'unknown' })
 
     expect(handleInfoSpy).toHaveBeenCalled()
     expect(result.reply?.chat_action).toBe('info')
-    expect(result.reply?.text).toBe('TMS 정보 응답')
-  })
-
-  it('keeps TMS action routing when the tmsInfoOnly setting is disabled', async () => {
-    const orchestrator = new ChatOrchestrator(client, 1024, pipeline, { log: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any)
-    const screen = {
-      key: 'tms/taskflows/123/detail',
-      appKey: 'tms',
-      screenName: 'TaskFlow Detail',
-      ragCollection: 'tms/taskflows/123/detail',
-      dataTools: [],
-      actionTools: [],
-      commonActionTools: [],
-      dataSystemPrompt: '',
-      actionSystemPrompt: '',
-      chatActions: { info: 'info', data: 'data', action: 'action' },
-      fallbackText: 'fallback',
-      guidanceExamples: [],
-      intentHints: '',
-    }
-
-    const settings = { get: jest.fn(async () => false), getBoolean: jest.fn(async () => false) }
-    jest.spyOn(require('../features/chat-settings/service/chat-setting.service'), 'getChatSettingService').mockReturnValue(settings as any)
-    jest.spyOn(require('./screen-registry'), 'getScreenConfig').mockReturnValue(screen as any)
-    jest.spyOn((orchestrator as any).classifier, 'classify').mockResolvedValue({ intent: 'action', confidence: 1, reason: 'action' })
-    const handleInfoSpy = jest.spyOn(orchestrator as any, 'handleInfo').mockResolvedValue({
-      handled: true,
-      reply: { chat_action: 'info', text: 'TMS 정보 응답' },
-      meta: { pipelineIntent: 'info' },
-    })
-
-    await orchestrator.handle('tms/taskflows/123/detail', '배포 방법 알려줘', { reqId: 'req-tms-default', history: [], screenTask: 'unknown' })
-
-    expect(handleInfoSpy).not.toHaveBeenCalled()
+    expect(result.reply?.text).toBe('정보 응답')
   })
 
   it('strips developer-format intent json before sending the message to chat users', () => {
@@ -152,7 +119,7 @@ describe('ChatOrchestrator taskflow routing guard', () => {
       text: '{"intent":"info","confidence":1.0,"reason":"TaskFlow 배포 방법을 설명합니다."}',
     })
 
-    expect(result.text).toBe('TaskFlow 배포 방법을 설명합니다.')
+    expect(result.text).toBe('TaskFlow 배포 방법을 설명해요.')
   })
 
   it('converts raw RAG debug output into natural user-facing text', () => {
@@ -164,6 +131,18 @@ describe('ChatOrchestrator taskflow routing guard', () => {
     })
 
     expect(result.text).toBe('질문과 관련된 내용을 확인해서 답변을 정리해봤어요.')
+  })
+
+  it('applies a polite Korean tone to plain RAG answer text', () => {
+    const service = new ChatService({} as any, {} as any, {} as any)
+
+    const result = (service as any).ensureUserFacingReply({
+      chat_action: 'info',
+      text: '운영 관제는 로봇 관리, SOTA, CMS, TMS, 학습 기능 등을 제공한다.',
+    })
+
+    expect(result.text).toContain('해요')
+    expect(result.text).toBe('운영 관제는 로봇 관리, SOTA, CMS, TMS, 학습 기능 등을 제공해요.')
   })
 
   it('includes chunk titles in the compact RAG warning log', () => {

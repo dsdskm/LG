@@ -310,13 +310,47 @@ export class ChatService {
     return '질문과 관련된 내용을 확인해서 답변을 정리해봤어요.'
   }
 
+  private applyPoliteKoreanTone(text: string): string {
+    const raw = String(text ?? '').trim()
+    if (!raw) return ''
+
+    const alreadyPolite = /(해요|어요|합니다|세요|네요|예요|이에요|았어요|었어요|겠어요)$/.test(raw)
+    if (alreadyPolite) {
+      return raw
+    }
+
+    let next = raw.replace(/\s+/g, ' ').replace(/[.!?]+$/, '')
+
+    if (/합니다$/.test(next)) {
+      return `${next.replace(/합니다$/, '해요')}.`
+    }
+
+    if (/습니까$/.test(next)) {
+      return `${next.replace(/습니까$/, '어요')}.`
+    }
+
+    if (/한다$/.test(next)) {
+      return `${next.replace(/한다$/, '해요')}.`
+    }
+
+    if (/이다$/.test(next)) {
+      return `${next.replace(/이다$/, '이에요')}.`
+    }
+
+    if (/다$/.test(next)) {
+      return `${next.replace(/다$/, '해요')}.`
+    }
+
+    return `${next}.`
+  }
+
   private ensureUserFacingReply(reply: ChatReply): ChatReply {
     const text = String(reply?.text ?? '').trim()
     if (text) {
       const normalizedText = this.normalizeUserFacingText(text)
       const ragFriendlyText = this.summarizeRagDebugText(normalizedText)
       const finalTextCandidate = this.sanitizeLeadingAssistantPreface(ragFriendlyText)
-      const finalText = finalTextCandidate || ragFriendlyText || normalizedText
+      const finalText = this.applyPoliteKoreanTone(finalTextCandidate || ragFriendlyText || normalizedText)
 
       if (finalText !== text) {
         return {

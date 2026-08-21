@@ -482,17 +482,6 @@ const ChatSettings = () => {
   }, [activeAppTab, loadHistoryPage, historyPagination.page, historyPagination.pageSize])
 
   const providerItem = useMemo(() => schema.find((s) => s.key === 'llmProvider'), [schema])
-  const tmsInfoOnlyEnabled = Boolean(values?.tmsInfoOnly === true || values?.tmsInfoOnly === 'true' || values?.tmsInfoOnly === 1 || values?.tmsInfoOnly === '1')
-
-  const handleTmsInfoOnlyToggle = useCallback(async () => {
-    const nextValue = !tmsInfoOnlyEnabled
-    const res = await updateChatSettings({ settings: [{ key: 'tmsInfoOnly', value: nextValue }] })
-    const next = res?.data?.values ?? {}
-    setValues(next)
-    setSavedMessage('TMS 정보 인텐트 전용 설정이 반영되었습니다.')
-    setSavedOpen(true)
-    await load()
-  }, [load, tmsInfoOnlyEnabled])
 
   const commonPromptItem = useMemo(
     () =>
@@ -1201,8 +1190,6 @@ const ChatSettings = () => {
               isDirty={isDirty}
               saving={saving}
               savingSettingScope={savingSettingScope}
-              tmsInfoOnlyEnabled={tmsInfoOnlyEnabled}
-              onTmsInfoOnlyToggle={handleTmsInfoOnlyToggle}
               onSaveProvider={handleSaveProvider}
               onSettingDraftChange={handleSettingDraftChange}
               onSaveSettingGroup={handleSaveSettingGroup}

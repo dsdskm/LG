@@ -599,7 +599,7 @@ const ScreenSettingGroup = ({
             <PageDescription>screenKey: {group.routeKey}</PageDescription>
 
             <PageDescription>
-                이 화면의 분류 LLM 프롬프트와 각종 상세 설정을 관리합니다. 앱 단위 설정은 기본값용으로만 두고, 실제 동작 분기는 화면마다 별도 지정해야 합니다.
+                이 화면의 분류 LLM 프롬프트와 각종 상세 설정을 관리합니다. 기본 리턴 포맷과 공통 분류 규칙은 공통 설정을 기준으로 적용하고, 화면별 프롬프트는 보완적인 추가 규칙만 넣습니다.
             </PageDescription>
 
             <ScreenPromptSection
@@ -625,27 +625,6 @@ const ScreenSettingGroup = ({
                 allowCreate
                 singleOnly
             />
-
-            <PromptCard>
-                <PromptMeta>
-                    <span>분류 결과 리턴 포맷</span>
-                    <span>read only</span>
-                </PromptMeta>
-
-                <PageDescription>
-                    LLM은 아래 JSON 형식만 반환하도록 고정하며, 다른 텍스트나 마크다운은 허용하지 않습니다.
-                </PageDescription>
-
-                <PromptTextarea
-                    value={`{
-  "intent": "info",
-  "confidence": 0.92,
-  "reason": "설명/가이드 질문으로 판단"
-}`}
-                    readOnly
-                    style={{ minHeight: '140px', background: '#f8fafc', color: '#334155' }}
-                />
-            </PromptCard>
 
             <ScreenGuidanceList
                 appKey={String(group.routeKey ?? '').split('/')[0] || ''}
@@ -1390,7 +1369,7 @@ const ScreenPromptSection = ({ appKey, routeKey, routeParentKey, prompts, allPro
                         value={singleDraft.content}
                         onChange={(e) => setSingleDraft((prev) => ({ ...prev, content: e.target.value }))}
                         placeholder={'이 화면에 적용할 프롬프트를 입력하세요.'}
-                        style={{ minHeight: expandedView ? '320px' : '160px' }}
+                        style={{ minHeight:  '160px' }}
                     />
 
                     <FieldHint>
