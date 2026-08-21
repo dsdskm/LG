@@ -43,6 +43,16 @@ function normalizeGuidanceExamples(value: unknown): string[] {
     .filter(Boolean)))
 }
 
+function logPromptMeta(routeKey: string, appKey: string, details: Record<string, { source: string; length: number; enabled: boolean }>) {
+  const promptEntries = Object.entries(details)
+    .map(([key, value]) => `${key}:${value.enabled ? value.length : 0}:${value.source}`)
+    .join(', ')
+
+  console.log(
+    `[prompt-meta] route=${routeKey} appKey=${appKey} promptInfo={${promptEntries}} mode=${details.intentHintMode?.source ?? 'unknown'}`,
+  )
+}
+
 function matchRouteTemplate(template: string, actual: string): boolean {
   const tpl = String(template ?? '').trim().replace(/^\/+/, '')
   const act = String(actual ?? '').trim().replace(/^\/+/, '')
@@ -142,6 +152,16 @@ export function getScreenConfig(routeKey: string, reqId?: string): ScreenConfig 
 
   const mergedDataSystemPrompt = [commonSystem, resolvedDataSystem].filter(Boolean).join('\n\n')
   const mergedActionSystemPrompt = [commonSystem, resolvedActionSystem].filter(Boolean).join('\n\n')
+
+  logPromptMeta(effectiveRouteKey, appKey, {
+    'common:system': { source: 'common', length: commonSystem.length, enabled: Boolean(commonSystem) },
+    'app:intent-hint': { source: appIntentHint ? 'app' : 'missing', length: appIntentHint.length, enabled: Boolean(appIntentHint) },
+    'screen:intent-hint': { source: screenIntentHint ? 'screen' : 'missing', length: screenIntentHint.length, enabled: Boolean(screenIntentHint) },
+    'resolved:intent-hint': { source: resolvedIntentHintMode, length: resolvedIntentHint.length, enabled: Boolean(resolvedIntentHint) },
+    'resolved:data-system': { source: resolvedDataSystem ? 'screen-or-app' : 'missing', length: mergedDataSystemPrompt.length, enabled: Boolean(mergedDataSystemPrompt) },
+    'resolved:action-system': { source: resolvedActionSystem ? 'screen-or-app' : 'missing', length: mergedActionSystemPrompt.length, enabled: Boolean(mergedActionSystemPrompt) },
+    'intentHintMode': { source: resolvedIntentHintMode, length: resolvedIntentHintMode.length, enabled: true },
+  })
 
   const dataTools: ToolDefinition[] = []
 

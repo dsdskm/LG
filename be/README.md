@@ -35,3 +35,8 @@ fictional-lamp-x99gpvjw7963jv5
 # codespace stop / start
 gh codespace stop -c fictional-lamp-x99gpvjw7963jv5
 gh codespace start -c fictional-lamp-x99gpvjw7963jv5
+
+# sql
+docker exec -it ai-chat-service-pg sh
+psql -U root -d ai_chat_service_db
+\dtse

@@ -2,7 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAiAssistantStore, useUserStore, useOrganizationStore, useAiLogEventStore } from '@repo/stores'
 import { getAppPrefix } from '@repo/utils'
-import { getChatSettings, getGuidanceList, saveLocalChatHistory } from '@repo/apis/ai/chatSettings.js'
+import {
+  getChatSettings,
+  getGuidanceList,
+  saveLocalChatHistory,
+  listChatRules,
+} from '@repo/apis/ai/chatSettings.js'
 import Icon from '../../common/Icon'
 import {
   StyledAiAssistantComposer,
@@ -48,6 +53,11 @@ import {
 } from './styles'
 import { postSiteAssistantChat } from '@repo/apis/ai/chat.js'
 import { isTmsCanvasPath } from './taskflowCommandRules.js'
+import {
+  isCommandHelpRequest,
+  extractCommandHelpEntries,
+  buildCommandHelpReplyText,
+} from './screenCommandHelp.js'
 import {
   AI_TASKFLOW_CANVAS_CLARIFY_EVENT,
   AI_TASKFLOW_CANVAS_COMMAND_EVENT,
@@ -931,6 +941,7 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
   const routeContext = useMemo(() => buildRouteContext(location), [location])
   const routeMetadataCacheRef = useRef(new Map())
   const routeAnswerCacheRef = useRef(new Map())
+  const routeRuleDataCacheRef = useRef(new Map())
 
   const quickCommands = useMemo(
     () => pickRandomItems(screenSuggestions, Math.min(3, screenSuggestions.length)),
@@ -1508,6 +1519,126 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
   const handleSubmit = async (text) => {
     const content = (text ?? draft).trim()
     if (!content || isSending || submitInFlightRef.current) return
+
+    if (isCommandHelpRequest(content)) {
+      const appKey = String(routeContext.appPrefix || '').trim() || 'common'
+      const screenKey = String(routeContext.pathname || '').trim() || appKey
+      const cacheKey = appKey
+      const cachedRuleEntries = routeRuleDataCacheRef.current.get(cacheKey)
+
+      try {
+        const appRuleResponse = cachedRuleEntries ?? await listChatRules({ appKey }).catch(() => ({ data: { items: [] } }))
+        const screenRuleResponse = await listChatRules({ appKey, screenKey }).catch(() => ({ data: { items: [] } }))
+
+        const appRows = Array.isArray(appRuleResponse?.data?.items)
+          ? appRuleResponse.data.items
+          : Array.isArray(appRuleResponse?.items)
+            ? appRuleResponse.items
+            : []
+
+        const screenRows = Array.isArray(screenRuleResponse?.data?.items)
+          ? screenRuleResponse.data.items
+          : Array.isArray(screenRuleResponse?.items)
+            ? screenRuleResponse.items
+            : []
+
+        const currentPath = normalizeRouteKey(screenKey)
+        const rowMatchesCurrentRoute = (row) => {
+          const ruleScreenKey = normalizeRouteKey(row?.screenKey ?? row?.screen_key ?? row?.routeKey ?? '')
+          if (!ruleScreenKey) return false
+          if (ruleScreenKey === 'common' || ruleScreenKey === appKey || ruleScreenKey === currentPath) return true
+          return routeTemplateMatches(ruleScreenKey, currentPath)
+        }
+
+        const screenMatchedRows = screenRows.filter((row) => rowMatchesCurrentRoute(row))
+        const appOnlyRows = appRows.length > 0 ? appRows : screenMatchedRows
+        const dedupedRows = []
+        const seen = new Set()
+
+        for (const row of appOnlyRows) {
+          const key = `${row?.appKey ?? row?.app_key ?? ''}::${row?.screenKey ?? row?.screen_key ?? ''}::${row?.ruleKey ?? row?.rule_key ?? ''}::${row?.ruleType ?? row?.rule_type ?? ''}`
+          if (!key || seen.has(key)) continue
+          seen.add(key)
+          dedupedRows.push(row)
+        }
+
+        console.info('[AI_CHAT][RULE_HELP_RAW_ROWS]', {
+          appKey,
+          screenKey,
+          rawRows: dedupedRows.map((row) => ({
+            appKey: row?.appKey ?? row?.app_key ?? '',
+            screenKey: row?.screenKey ?? row?.screen_key ?? '',
+            ruleKey: row?.ruleKey ?? row?.rule_key ?? '',
+            valueJson: row?.valueJson ?? row?.value_json ?? row?.value ?? null,
+            aliases: (row?.valueJson ?? row?.value_json ?? row?.value ?? {})?.aliases ?? null,
+            description: (row?.valueJson ?? row?.value_json ?? row?.value ?? {})?.description ?? null,
+          })),
+        })
+
+        const helpEntries = extractCommandHelpEntries(dedupedRows).map((entry) => ({
+          ...entry,
+          screenAvailable: true,
+        }))
+
+        console.info('[AI_CHAT][RULE_HELP_DEBUG]', {
+          appKey,
+          screenKey,
+          appRowCount: appRows.length,
+          screenRowCount: screenRows.length,
+          screenMatchedCount: screenMatchedRows.length,
+          mergedRowCount: dedupedRows.length,
+          appKeyOnlyMode: true,
+          helpEntries: helpEntries.map((entry) => ({
+            command: entry.command,
+            aliases: entry.aliases,
+            screenAvailable: entry.screenAvailable,
+            description: entry.description,
+          })),
+        })
+
+        routeRuleDataCacheRef.current.set(cacheKey, appRows)
+
+        const userMessage = {
+          id: buildMessageId(),
+          role: 'user',
+          content,
+          createdAt: new Date().toISOString(),
+          context: { ...routeContext, sentAt: new Date().toISOString() }
+        }
+        const helpText = buildCommandHelpReplyText(helpEntries)
+        const assistantMessage = {
+          id: buildMessageId(),
+          role: 'assistant',
+          content: helpText,
+          createdAt: new Date().toISOString(),
+          context: { ...routeContext, sentAt: new Date().toISOString() }
+        }
+
+        appendMessage(userMessage)
+        appendMessage(assistantMessage)
+        setDraft('')
+        return
+      } catch (error) {
+        console.warn('[AI_CHAT][RULE_HELP_FAILED]', error)
+        appendMessage({
+          id: buildMessageId(),
+          role: 'user',
+          content,
+          createdAt: new Date().toISOString(),
+          context: { ...routeContext, sentAt: new Date().toISOString() }
+        })
+        appendMessage({
+          id: buildMessageId(),
+          role: 'assistant',
+          content: '현재 화면의 룰 데이터를 불러오지 못했습니다. ai-chat-settings에서 rule을 등록해 주세요.',
+          createdAt: new Date().toISOString(),
+          context: { ...routeContext, sentAt: new Date().toISOString() }
+        })
+        setDraft('')
+        return
+      }
+    }
+
     submitInFlightRef.current = true
 
     const cacheKey = `${String(routeContext.pathname ?? '').trim()}::${content}`

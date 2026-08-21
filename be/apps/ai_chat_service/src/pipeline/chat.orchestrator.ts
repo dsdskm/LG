@@ -31,6 +31,7 @@ import type { ChatIntent, ChatReply, ChatTurn, RagScoreEntry } from './pipeline.
 import type { ChatPipelineConfig } from './pipeline.config'
 import { getPromptStore } from '../features/chat/service/prompt-store.service'
 import { getChatSettingService } from '../features/chat-settings/service/chat-setting.service'
+import { logLlmPromptMeta } from '../utils/utils'
 import { buildToolContextFromBody } from './tool-context.util'
 
 const COMMON_COLLECTION = 'common'
@@ -135,6 +136,18 @@ export class ChatOrchestrator {
     this.logger.log(
       `================= [5단계:기본LLM_폴백_추적] [reqId=${reqId}] route=${screen.key} systemPromptLen=${systemPrompt.length}`,
     )
+
+    logLlmPromptMeta({
+      stage: 'default-llm-fallback',
+      promptType: 'fallback',
+      route: screen.key,
+      appKey: screen.appKey,
+      systemPromptLen: systemPrompt.length,
+      messageLen: String(message ?? '').length,
+      historyTurns: history.length,
+      toolCount: 0,
+      isToolCall: false,
+    })
 
     const res = await this.client.generateContent({
       messages: [

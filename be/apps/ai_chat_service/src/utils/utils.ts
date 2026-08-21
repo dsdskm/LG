@@ -38,3 +38,31 @@ export function truncate(s: string, max: number) {
 
 export const sleep = (ms: number) =>
   new Promise((resolve) => setTimeout(resolve, ms));
+
+export function logLlmPromptMeta(payload: {
+  stage: string
+  promptType: string
+  route?: string | null
+  appKey?: string | null
+  systemPromptLen?: number
+  messageLen?: number
+  historyTurns?: number
+  toolCount?: number
+  isToolCall?: boolean
+  reqId?: string | null
+}) {
+  const details = {
+    stage: payload.stage,
+    promptType: payload.promptType,
+    route: payload.route ?? null,
+    appKey: payload.appKey ?? null,
+    reqId: payload.reqId ?? null,
+    systemPromptLen: Number(payload.systemPromptLen ?? 0),
+    messageLen: Number(payload.messageLen ?? 0),
+    historyTurns: Number(payload.historyTurns ?? 0),
+    toolCount: Number(payload.toolCount ?? 0),
+    isToolCall: Boolean(payload.isToolCall),
+  }
+
+  console.info('[LLM_PROMPT_META]', details)
+}

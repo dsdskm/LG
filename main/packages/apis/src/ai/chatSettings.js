@@ -252,15 +252,37 @@ export async function createCommonChatRagDoc(payload) {
   return response.json()
 }
 
+const SCREEN_RULE_LIST_CACHE = new Map()
+
+export function clearChatRuleListCache(appKey, screenKey) {
+  const normalizedAppKey = String(appKey ?? '').trim() || 'common'
+  const normalizedScreenKey = String(screenKey ?? '').trim() || 'common'
+  const cacheKey = `${normalizedAppKey}::${normalizedScreenKey}`
+  SCREEN_RULE_LIST_CACHE.delete(cacheKey)
+}
+
 export async function listChatRules({ appKey, screenKey } = {}) {
+  const normalizedAppKey = String(appKey ?? '').trim() || 'common'
+  const normalizedScreenKey = String(screenKey ?? '').trim() || 'common'
+  const cacheKey = `${normalizedAppKey}::${normalizedScreenKey}`
+  const cached = SCREEN_RULE_LIST_CACHE.get(cacheKey)
+  if (cached) {
+    console.info('[chat-settings] GET /chat/settings/rules cache-hit', {
+      appKey: normalizedAppKey,
+      screenKey: normalizedScreenKey,
+      itemCount: Array.isArray(cached?.data?.items) ? cached.data.items.length : Array.isArray(cached?.items) ? cached.items.length : 0,
+    })
+    return cached
+  }
+
   const query = new URLSearchParams()
   if (appKey) query.set('app_key', String(appKey))
   if (screenKey) query.set('screen_key', String(screenKey))
 
   const endpoint = query.toString() ? `${BASE_URL}/chat/settings/rules?${query.toString()}` : `${BASE_URL}/chat/settings/rules`
   console.info('[chat-settings] GET /chat/settings/rules request', {
-    appKey: appKey ?? null,
-    screenKey: screenKey ?? null,
+    appKey: normalizedAppKey,
+    screenKey: normalizedScreenKey,
     endpoint,
   })
 
@@ -269,12 +291,13 @@ export async function listChatRules({ appKey, screenKey } = {}) {
     headers: { 'Content-Type': 'application/json' },
   })
   const json = await response.json()
+  SCREEN_RULE_LIST_CACHE.set(cacheKey, json)
   console.info('[chat-settings] GET /chat/settings/rules response', {
     status: response.status,
     ok: response.ok,
     itemCount: Array.isArray(json?.data?.items) ? json.data.items.length : Array.isArray(json?.items) ? json.items.length : 0,
-    appKey: appKey ?? null,
-    screenKey: screenKey ?? null,
+    appKey: normalizedAppKey,
+    screenKey: normalizedScreenKey,
   })
   return json
 }

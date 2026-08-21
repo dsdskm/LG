@@ -7,6 +7,7 @@
 
 # rule & command
 ## tms
+/?
 /deploy {robot} {taskflow}
 /run {robot} {taskflow}
 /pause {robot} {taskflow}
@@ -18,7 +19,6 @@
 /modify {taskflow}
 
 ## tms/taskflows/:taskFlowId/canvas
-/?
 A->B
 A=>B
 A->B=>C

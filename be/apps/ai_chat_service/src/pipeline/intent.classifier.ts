@@ -10,7 +10,7 @@
  */
 import type { LlmClient } from '../llm/llm.types'
 import { getPromptStore } from '../features/chat/service/prompt-store.service'
-import { safeJsonParse } from '../utils/utils'
+import { logLlmPromptMeta, safeJsonParse } from '../utils/utils'
 import type { ChatIntent, ChatTurn, IntentResult } from './pipeline.types'
 
 function buildSystemPrompt(screenName: string, hints?: string): string {
@@ -36,10 +36,22 @@ export class IntentClassifier {
     hints?: string,
     history: ChatTurn[] = [],
   ): Promise<IntentResult> {
+    const systemPrompt = buildSystemPrompt(screenName, hints)
+    logLlmPromptMeta({
+      stage: 'intent-classifier',
+      promptType: 'intent-classifier',
+      route: screenName,
+      systemPromptLen: systemPrompt.length,
+      messageLen: String(message ?? '').length,
+      historyTurns: history.length,
+      toolCount: 0,
+      isToolCall: false,
+    })
+
     // 히스토리를 함께 넣어 "응", "그거 좁혀줘" 같은 문맥 의존 발화도 분류되게 한다.
     const res = await this.client.generateContent({
       messages: [
-        { role: 'system', content: buildSystemPrompt(screenName, hints) },
+        { role: 'system', content: systemPrompt },
         ...history.map((t) => ({ role: t.role, content: t.content })),
         { role: 'user', content: message },
       ],

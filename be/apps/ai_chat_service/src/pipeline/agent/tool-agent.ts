@@ -11,7 +11,7 @@ import type {
 } from '../../llm/llm.types'
 import type { ToolContext, ToolDefinition } from '../tool.type'
 import type { ChatTurn } from '../pipeline.types'
-import { safeJsonParse } from '../../utils/utils'
+import { logLlmPromptMeta, safeJsonParse } from '../../utils/utils'
 
 export type ExecutedCall = {
   name: string
@@ -75,6 +75,16 @@ export class ToolAgent {
     const executed: ExecutedCall[] = []
 
     for (let turn = 0; turn < this.maxToolTurns; turn++) {
+      logLlmPromptMeta({
+        stage: 'tool-agent',
+        promptType: 'tool-agent',
+        systemPromptLen: systemPrompt.length,
+        messageLen: String(userMessage ?? '').length,
+        historyTurns: history.length,
+        toolCount: llmTools.length,
+        isToolCall: true,
+      })
+
       const res = await this.client.generateContent({
         messages,
         maxOutputTokens: this.maxOutputTokens,

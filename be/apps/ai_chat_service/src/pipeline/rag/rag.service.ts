@@ -8,6 +8,7 @@ import type { LlmClient } from '../../llm/llm.types'
 import type { RagChunk } from './rag.docs'
 import type { ChatTurn, RagScoreEntry } from '../pipeline.types'
 import { getPromptStore } from '../../features/chat/service/prompt-store.service'
+import { logLlmPromptMeta } from '../../utils/utils'
 
 /** 한글/영문/숫자 토큰 추출(2글자 이상). */
 function tokenize(text: string): string[] {
@@ -300,6 +301,18 @@ export class RagService {
       `================= [3-3-2단계:RAG_청크강제폴백] [reqId=${reqId}] chunkKeys=${JSON.stringify(targetChunkKeys)} matchedChunks=${JSON.stringify(usedChunkIds)} collections=${JSON.stringify(uniqueCollections)}`,
     )
 
+    logLlmPromptMeta({
+      stage: 'rag-answer-from-chunk-keys',
+      promptType: 'rag-answer',
+      route: usedCollection ?? null,
+      systemPromptLen: system.length,
+      messageLen: String(message ?? '').length,
+      historyTurns: history.length,
+      toolCount: 0,
+      isToolCall: false,
+      reqId,
+    })
+
     const res = await this.client.generateContent({
       messages: [
         { role: 'system', content: system },
@@ -439,6 +452,18 @@ export class RagService {
     )
 
     // this.logger.log(`[ragService] system ${system}`)
+
+    logLlmPromptMeta({
+      stage: 'rag-answer',
+      promptType: 'rag-answer',
+      route: usedCollection ?? null,
+      systemPromptLen: system.length,
+      messageLen: String(message ?? '').length,
+      historyTurns: history.length,
+      toolCount: 0,
+      isToolCall: false,
+      reqId,
+    })
 
     const res = await this.client.generateContent({
       messages: [

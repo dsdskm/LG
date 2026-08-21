@@ -1934,7 +1934,7 @@ export class ChatService {
       `[chat] [reqId=${ctx.reqId}] status=fallback reason=guidance 경로에서 기본 LLM 호출`,
     )
     this.logger.log(
-      `[chat] [trace][reqId=${ctx.reqId}] commonSystemApplied=${Boolean(commonSystem)} route=${routeKey || '-'} routeHintApplied=${Boolean(routeHint)}`,
+      `[chat] [trace][reqId=${ctx.reqId}] route=${routeKey || '-'} promptMeta={commonSystem:${commonSystem.length}, routeHint:${routeHint.length}, routeHintApplied:${Boolean(routeHint)}}`,
     )
 
     const result = await ctx.llm.client.generateContent({

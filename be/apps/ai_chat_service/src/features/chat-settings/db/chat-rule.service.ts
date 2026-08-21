@@ -68,18 +68,23 @@ export class ChatRuleService {
     const rows = [...exactRows, ...appRows]
     const deduped = Array.from(new Map(rows.map((row) => [`${row.appKey}:${row.screenKey}:${row.ruleType}:${row.ruleKey}`, row])).values())
 
+    if (!normalizedScreenKey) {
+      const allRows = await this.repository.find({
+        where: baseWhere,
+        order: { priority: 'DESC', updatedAt: 'DESC', id: 'DESC' },
+      })
+      const finalRows = Array.from(new Map(allRows.map((row) => [`${row.appKey}:${row.screenKey}:${row.ruleType}:${row.ruleKey}`, row])).values())
+      this.logger.warn(
+        `[chat-rule] list appKey=${normalizedAppKey || '-'} screenKey=${normalizedScreenKey || '-'} count=${finalRows.length} keys=${JSON.stringify(finalRows.map((row) => `${row.ruleType}:${row.ruleKey}`))}`,
+      )
+      return finalRows
+    }
+
     if (rows.length > 0) {
       this.logger.warn(
         `[chat-rule] list appKey=${normalizedAppKey || '-'} screenKey=${normalizedScreenKey || '-'} count=${deduped.length} keys=${JSON.stringify(deduped.map((row) => `${row.ruleType}:${row.ruleKey}`))}`,
       )
       return deduped
-    }
-
-    if (!normalizedScreenKey) {
-      this.logger.warn(
-        `[chat-rule] list appKey=${normalizedAppKey || '-'} screenKey=${normalizedScreenKey || '-'} count=0 keys=[]`,
-      )
-      return []
     }
 
     const allRows = await this.repository.find({
