@@ -12,8 +12,10 @@
 /pause {robot} {taskflow}
 /resume {robot} {taskflow}
 /stop {robot} {taskflow}
+/create
 /copy {taskflow}
 /delete {taskflow}
+/modify {taskflow}
 
 ## tms/taskflows/:taskFlowId/canvas
 /?

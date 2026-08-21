@@ -6,17 +6,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR/../.."
 
 REPO="${CODESPACE_REPO:-dsdskm/lge}"
+CODESPACE_NAME="${CODESPACE_NAME:-${1:-}}"
 PORT_OFFSET="${PORT_OFFSET:-0}"
 TUNNEL_ALL_PORTS="${TUNNEL_ALL_PORTS:-0}"
 ALL_PORT_MIN="${ALL_PORT_MIN:-1024}"
 ALL_PORT_MAX="${ALL_PORT_MAX:-65535}"
-
-if [[ $# -gt 0 && "$1" =~ ^[0-9]+$ ]]; then
-  PORT_OFFSET="$1"
-  shift
-fi
-
-CODESPACE_NAME="fictional-lamp-x99gpvjw7963jv5"
 
 SERVICES=(
   config_manager
@@ -76,14 +70,12 @@ if ! command -v gh >/dev/null 2>&1; then
   exit 1
 fi
 
-# GH CLI는 GITHUB_TOKEN/GH_TOKEN 환경변수가 설정되어 있으면 저장된 인증을 무시한다.
-# 터널 스크립트는 로컬에 저장된 gh 인증을 우선 사용하도록 환경 변수를 비워준다.
-unset GITHUB_TOKEN GH_TOKEN 2>/dev/null || true
+if [[ -z "$CODESPACE_NAME" ]]; then
+  CODESPACE_NAME="$(gh codespace list -R "$REPO" --json name,state --jq '.[] | select(.state == "Available") | .name' | head -n1 || true)"
+fi
 
 if ! gh auth status >/dev/null 2>&1; then
-  err "gh 로그인이 필요합니다."
-  err "다음 명령으로 다시 로그인하세요: gh auth login -h github.com -w"
-  err "혹은 환경 변수 GITHUB_TOKEN / GH_TOKEN을 비운 뒤 다시 실행하세요."
+  err "gh 로그인이 필요합니다. 먼저 'gh auth login'을 실행하세요."
   exit 1
 fi
 
@@ -162,14 +154,4 @@ log ""
 warn "이 창을 닫지 마세요. 종료하려면 Ctrl+C."
 warn "문제가 있으면 로그를 확인하세요: $LOG_DIR"
 
-# 터널 프로세스가 살아있는 동안 스크립트가 종료되지 않도록 유지한다.
-while true; do
-  for pid in "${pids[@]:-}"; do
-    if ! kill -0 "$pid" 2>/dev/null; then
-      err "터널 프로세스가 종료되었습니다. PID=$pid"
-      err "로그를 확인하세요: $LOG_DIR"
-      exit 1
-    fi
-  done
-  sleep 5
-done
+wait

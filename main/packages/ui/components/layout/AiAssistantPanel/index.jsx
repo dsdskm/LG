@@ -171,6 +171,19 @@ const normalizeRouteKey = (value) =>
     .trim()
     .replace(/^\/+/, '')
 
+const normalizeNavigationPath = (value) => {
+  const raw = String(value ?? '').trim()
+  if (!raw) return ''
+
+  const withoutSlash = raw.replace(/^\/+/, '')
+  if (!withoutSlash) return '/'
+
+  const hasLeadingAppSegment = /^[a-z0-9_-]+\//i.test(withoutSlash)
+  if (hasLeadingAppSegment) return `/${withoutSlash}`
+
+  return `/${withoutSlash}`
+}
+
 const routeTemplateMatches = (templateKey, currentPath) => {
   const template = normalizeRouteKey(templateKey)
   const target = normalizeRouteKey(currentPath)
@@ -1414,21 +1427,28 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
 
       emitFinalMessage(finalMessage, finalMessageId)
 
+      console.log('[AI_CHAT][NAVIGATION_SWITCH_ENTER]', {
+        chatAction,
+        pathname: location.pathname,
+        param,
+        hasPath: Boolean(param?.path),
+        phase: 'before-navigation-switch'
+      })
+
       switch (chatAction) {
         // 화면 이동
         case 'navigation': {
-          const path = String(param?.path ?? '')
-            .trim()
-            .replace(/^\/+/, '')
-          if (!path) break
+          const path = normalizeNavigationPath(param?.path)
+          if (!path || path === '/') break
           const pathParams = extractPathParams(path)
 
           if (pathParams.length > 0) {
             const primaryParamLabel = resolveParamLabel(pathParams[0])
             const fallbackActions = buildNavigationFallbackActions(path)
+            const pathTemplate = normalizeNavigationPath(path)
 
             setPendingNavigation({
-              pathTemplate: path,
+              pathTemplate,
               app: String(param?.app ?? '').trim() || undefined,
               paramNames: pathParams,
               screenName: String(param?.screenName ?? '').trim() || undefined,
@@ -1447,9 +1467,18 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
           }
 
           setPendingNavigation(null)
-          const isCrossApp = getAppPrefix(path) !== getAppPrefix(location.pathname)
-          if (isCrossApp) window.location.href = '/' + path
-          else navigate(path)
+          const normalizedPath = normalizeNavigationPath(path)
+          console.log('[AI_CHAT][NAVIGATE_ATTEMPT]', {
+            rawPath: path,
+            normalizedPath,
+            currentPath: location.pathname,
+            currentApp: getAppPrefix(location.pathname),
+            targetApp: getAppPrefix(normalizedPath),
+            isCrossApp: getAppPrefix(normalizedPath) !== getAppPrefix(location.pathname)
+          })
+          const isCrossApp = getAppPrefix(normalizedPath) !== getAppPrefix(location.pathname)
+          if (isCrossApp) window.location.href = normalizedPath
+          else navigate(normalizedPath)
           break
         }
 
@@ -1518,9 +1547,27 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
     appendMessage({ id: buildMessageId(), role: 'user', content, createdAt, context })
 
     let localCommandRule = null
-    if (commandAdapter?.isActive?.(routeContext.pathname)) {
+    const localCommandGate = Boolean(commandAdapter?.isActive?.(routeContext.pathname))
+    console.log('[AI_CHAT][LOCAL_COMMAND_GATE]', {
+      pathname: routeContext.pathname,
+      isActive: localCommandGate,
+      hasAdapter: Boolean(commandAdapter),
+      message: content,
+      appPrefix: routeContext.appPrefix,
+      phase: 'before-local-match'
+    })
+    if (localCommandGate) {
       try {
         localCommandRule = await commandAdapter.match(content, routeContext.pathname)
+        console.log('[AI_CHAT][LOCAL_COMMAND_MATCH_RESULT]', {
+          pathname: routeContext.pathname,
+          message: content,
+          matched: Boolean(localCommandRule),
+          ruleKey: localCommandRule?.ruleKey ?? null,
+          commandType: localCommandRule?.command?.type ?? null,
+          replyText: localCommandRule?.replyText ?? null,
+          phase: 'after-local-match'
+        })
       } catch (error) {
         console.warn('[AI_CHAT][LOCAL_COMMAND_MATCH_FAILED]', error)
       }
@@ -1528,6 +1575,25 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
     if (localCommandRule) {
       const localReplyText = String(localCommandRule.replyText ?? '').trim()
       const localAssistantMessageId = localReplyText ? buildMessageId() : ''
+      const localChatAction = String(localCommandRule.chatAction ?? '').trim()
+      console.log('[AI_CHAT][LOCAL_COMMAND_EARLY_RETURN]', {
+        pathname: routeContext.pathname,
+        message: content,
+        ruleKey: localCommandRule?.ruleKey ?? null,
+        commandType: localCommandRule?.command?.type ?? null,
+        chatAction: localChatAction || null,
+        hasCommand: Boolean(localCommandRule?.command),
+        willReturn: true,
+        phase: 'before-early-return'
+      })
+
+      if (localChatAction === 'navigation') {
+        handleChatAction(localChatAction, localCommandRule.chatActionParam, localReplyText, localAssistantMessageId)
+        setDraft('')
+        submitInFlightRef.current = false
+        return
+      }
+
       if (localReplyText) {
         appendMessage({
           id: localAssistantMessageId,
@@ -1582,8 +1648,8 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
         return
       }
 
-      const resolvedPath = fillPathTemplate(pendingNavigation.pathTemplate, parsedParams)
-      if (!resolvedPath || extractPathParams(resolvedPath).length > 0) {
+      const resolvedPath = normalizeNavigationPath(fillPathTemplate(pendingNavigation.pathTemplate, parsedParams))
+      if (!resolvedPath || resolvedPath === '/' || extractPathParams(resolvedPath).length > 0) {
         appendMessage({
           id: buildMessageId(),
           role: 'assistant',
@@ -1608,8 +1674,17 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
       setPendingNavigation(null)
       setDraft('')
 
+      console.log('[AI_CHAT][NAVIGATE_ATTEMPT][PARAM]', {
+        pathTemplate: pendingNavigation.pathTemplate,
+        parsedParams,
+        resolvedPath,
+        currentPath: location.pathname,
+        currentApp: getAppPrefix(location.pathname),
+        targetApp: getAppPrefix(resolvedPath),
+        isCrossApp: getAppPrefix(resolvedPath) !== getAppPrefix(location.pathname)
+      })
       const isCrossApp = getAppPrefix(resolvedPath) !== getAppPrefix(location.pathname)
-      if (isCrossApp) window.location.href = '/' + resolvedPath
+      if (isCrossApp) window.location.href = resolvedPath
       else navigate(resolvedPath)
       submitInFlightRef.current = false
       return

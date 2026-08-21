@@ -255,7 +255,17 @@ export async function matchFrontRule(
 ): Promise<FrontRuleMatch | null> {
   const screenKey = normalize(ctx.screenKey)
   const appKey = screenKey.split('/').filter(Boolean)[0] || ''
-  const rules = await getCachedScreenRules(appKey, screenKey, loadRules)
+
+  let rules = await getCachedScreenRules(appKey, screenKey, loadRules)
+
+  if (appKey && screenKey !== appKey) {
+    const appRootRules = await getCachedScreenRules(appKey, appKey, loadRules)
+    if (appRootRules.length > 0) {
+      const merged = [...rules, ...appRootRules]
+      const deduped = Array.from(new Map(merged.map((row) => [`${row.appKey}:${row.screenKey}:${row.ruleType}:${row.ruleKey}`, row])).values())
+      rules = deduped
+    }
+  }
 
   return matchFrontRuleRows(ctx, rules)
 }

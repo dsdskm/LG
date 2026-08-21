@@ -9,6 +9,13 @@ export const resolveTmsCommandRouteKey = (pathname) => {
     .replace(/^\/+/, '')
     .replace(/\/+$/, '')
 
+  console.info('[AI_CHAT][TMS_RULE_ROUTE_DEBUG]', {
+    pathname,
+    normalized,
+    appKey: 'tms',
+    phase: 'resolve-start',
+  })
+
   if (!normalized) {
     console.info('[AI_CHAT][TMS_RULE_ROUTE_BOOT]', { pathname, routeKey: null, appKey: 'tms', phase: 'empty' })
     return null
@@ -38,7 +45,15 @@ export const resolveTmsCommandRouteKey = (pathname) => {
   return null
 }
 
-export const isTmsCanvasPath = (pathname) => Boolean(resolveTmsCommandRouteKey(pathname))
+export const isTmsCanvasPath = (pathname) => {
+  const routeKey = resolveTmsCommandRouteKey(pathname)
+  return routeKey === TASKFLOW_CANVAS_RULE_ROUTE_KEY
+}
+
+export const isTmsCommandRoutePath = (pathname) => {
+  const routeKey = resolveTmsCommandRouteKey(pathname)
+  return Boolean(routeKey && routeKey.startsWith('tms'))
+}
 
 const buildFallbackCommandReplyText = (command) => {
   if (!command || typeof command !== 'object') return '명령을 요청합니다.'
@@ -50,6 +65,10 @@ const buildFallbackCommandReplyText = (command) => {
     'pause-taskflow': '일시정지',
     'resume-taskflow': '재개',
     'stop-taskflow': '정지',
+    'copy-taskflow': '복제',
+    'delete-taskflow': '삭제',
+    'create-taskflow': '생성',
+    'modify-taskflow': '수정',
   }
 
   const robotValue = Array.isArray(command.robotId)
@@ -69,10 +88,37 @@ const buildFallbackCommandReplyText = (command) => {
 
 export const matchTaskflowCanvasCommand = async (message, pathname) => {
   const routeKey = resolveTmsCommandRouteKey(pathname)
-  if (!routeKey) return null
-
   const input = String(message ?? '').trim()
-  if (!input) return null
+
+  console.info('[AI_CHAT][TMS_RULE_MATCH_DEBUG]', {
+    pathname,
+    routeKey,
+    input,
+    appKey: 'tms',
+    phase: 'before-fetch',
+  })
+
+  if (!routeKey) {
+    console.warn('[AI_CHAT][TMS_RULE_MATCH_DEBUG]', {
+      pathname,
+      input,
+      appKey: 'tms',
+      phase: 'route-null',
+      reason: 'no-tms-route-resolved',
+    })
+    return null
+  }
+
+  if (!input) {
+    console.warn('[AI_CHAT][TMS_RULE_MATCH_DEBUG]', {
+      pathname,
+      routeKey,
+      input,
+      appKey: 'tms',
+      phase: 'empty-message',
+    })
+    return null
+  }
 
   const cacheKey = `${routeKey}::${input}`
   const cached = COMMAND_MATCH_CACHE.get(cacheKey)
@@ -119,6 +165,22 @@ export const matchTaskflowCanvasCommand = async (message, pathname) => {
     message: input,
     matched: Boolean(matched),
     rawMatch: matched ?? null,
+    responseStatus: response?.status ?? null,
+    responseOk: response?.ok ?? null,
+    responsePayload: response ?? null,
+  })
+
+  console.info('[AI_CHAT][TMS_RULE_MATCH_DEBUG]', {
+    appKey: 'tms',
+    screenKey: routeKey,
+    routeKey,
+    pathname,
+    cacheKey,
+    message: input,
+    matched: Boolean(matched),
+    rawMatch: matched ?? null,
+    responsePayload: response ?? null,
+    phase: 'after-fetch',
   })
 
   if (!matched || typeof matched !== 'object') {
@@ -159,6 +221,10 @@ export const matchTaskflowCanvasCommand = async (message, pathname) => {
   const result = {
     ruleKey: String(matched.ruleKey ?? '').trim(),
     command,
+    chatAction: String(matched.chatAction ?? '').trim() || undefined,
+    chatActionParam: matched.chatActionParam && typeof matched.chatActionParam === 'object'
+      ? matched.chatActionParam
+      : undefined,
     replyText: String(matched.replyText ?? '').trim() || buildFallbackCommandReplyText(command),
   }
 
@@ -181,6 +247,6 @@ export const matchTaskflowCanvasCommand = async (message, pathname) => {
 }
 
 export const taskflowCommandAdapter = {
-  isActive: isTmsCanvasPath,
+  isActive: isTmsCommandRoutePath,
   match: matchTaskflowCanvasCommand,
 }

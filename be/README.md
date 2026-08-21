@@ -25,6 +25,13 @@ GRANT ALL ON SCHEMA public TO public;
 (로컬PC)
 scripts/db/db-tunnel-codespace.sh
 
-# gh auth 초기화
-cat ~/.config/gh/hosts.yml 에 oauth: github key 항목 추가 
-gh auth refresh
+# gh
+echo "apiKey" | gh auth login --with-token --insecure-storage
+gh cs list
+
+# codespace name
+fictional-lamp-x99gpvjw7963jv5
+
+# codespace stop / start
+gh codespace stop -c fictional-lamp-x99gpvjw7963jv5
+gh codespace start -c fictional-lamp-x99gpvjw7963jv5

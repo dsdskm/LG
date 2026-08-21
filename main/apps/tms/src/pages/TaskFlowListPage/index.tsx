@@ -19,7 +19,7 @@ import { ButtonWrap, ListControls } from './styles'
 import { useOrganizationStore, useResponsiveStore, useUserStore } from '@repo/stores'
 import { TOTAL_GROUP_ID, TOTAL_SITE_ID } from '@/common/constants'
 import ConfirmModal from '@/pages/components/modal/ConfirmModal'
-import { useDeployTaskFlowAction } from '@/api/taskFlowApis'
+import { useDeployTaskFlowAction, deleteTaskFlow } from '@/api/taskFlowApis'
 import { useInstantAction } from '@/api/deviceControlApis'
 import type { DeployActionRequest } from '@/types/taskflow'
 import type { InstantActionsRequest } from '@/types/api/deviceControl'
@@ -43,6 +43,7 @@ export default function TaskFlowListPage() {
   const flows = useTaskFlowStore((state) => state.flows)
   const refreshFlows = useTaskFlowStore((state) => state.refreshFlows)
   const copyFlow = useTaskFlowStore((state) => state.copyFlow)
+  const newFlow = useTaskFlowStore((state) => state.newFlow)
   const { allOrgs, selectedOrgs } = useOrganizationStore()
   const { session } = useUserStore()
   const { mutateAsync: deployTaskFlowActionAsync } = useDeployTaskFlowAction()
@@ -202,7 +203,8 @@ ${firstError}`
       if (!command || typeof command !== 'object') return
 
       const type = String(command?.type ?? '').trim().toLowerCase()
-      if (!['deploy-taskflow', 'run-taskflow', 'pause-taskflow', 'resume-taskflow', 'stop-taskflow'].includes(type)) {
+      const supportedTypes = ['deploy-taskflow', 'run-taskflow', 'pause-taskflow', 'resume-taskflow', 'stop-taskflow', 'copy-taskflow', 'delete-taskflow', 'create-taskflow', 'modify-taskflow']
+      if (!supportedTypes.includes(type)) {
         return
       }
 
@@ -222,7 +224,6 @@ ${firstError}`
       const reversedRobotId = taskFlowCandidates.length > 0 && robotCandidates.length > 0 && /^\d+$/.test(robotCandidates[0]) && !/^\d+$/.test(taskFlowCandidates[0]) ? taskFlowCandidates[0] : ''
       const reversedTaskFlowId = taskFlowCandidates.length > 0 && robotCandidates.length > 0 && /^\d+$/.test(robotCandidates[0]) && !/^\d+$/.test(taskFlowCandidates[0]) ? Number(robotCandidates[0]) : NaN
 
-      const fallbackTaskFlowId = Number(explicitTaskFlowId || '')
       const robotId = reversedRobotId || explicitRobotId || ''
       const taskFlowId = Number.isFinite(reversedTaskFlowId) ? reversedTaskFlowId : Number(explicitTaskFlowId || '')
       const resolvedGroupId = String(selectedOrgs?.[0] ?? '').trim() || null
@@ -248,6 +249,74 @@ ${firstError}`
             }
           })
         )
+      }
+
+      if (type === 'create-taskflow') {
+        try {
+          const created = await newFlow('새 태스크플로우')
+          if (!created || !Number.isFinite(created.id) || created.id <= 0) {
+            dispatchResult(false, String(command?.notFoundText ?? '태스크플로우 생성에 실패했습니다.'))
+            return
+          }
+
+          navigate(`/tms/taskflows/${created.id}/canvas`)
+          dispatchResult(true, String(custom?.detail?.replyText || '새 태스크플로우를 생성했습니다.'))
+          return
+        } catch (error) {
+          console.error('[AI_TASKFLOW][CREATE_TASKFLOW_FAILED]', error)
+          dispatchResult(false, String(command?.notFoundText ?? '태스크플로우 생성에 실패했습니다.'))
+          return
+        }
+      }
+
+      if (type === 'modify-taskflow') {
+        const targetTaskFlowId = Number(explicitTaskFlowId || '')
+        if (!Number.isFinite(targetTaskFlowId) || targetTaskFlowId <= 0) {
+          dispatchResult(false, String(command?.notFoundText ?? '수정할 태스크플로우 정보를 찾지 못했습니다.'))
+          return
+        }
+
+        navigate(`/tms/taskflows/${targetTaskFlowId}/canvas`)
+        dispatchResult(true, String(custom?.detail?.replyText || `${targetTaskFlowId} 태스크플로우를 수정합니다.`))
+        return
+      }
+
+      if (type === 'copy-taskflow') {
+        const targetTaskFlowId = Number(explicitTaskFlowId || '')
+        if (!Number.isFinite(targetTaskFlowId) || targetTaskFlowId <= 0) {
+          dispatchResult(false, String(command?.notFoundText ?? '복사할 태스크플로우 정보를 찾지 못했습니다.'))
+          return
+        }
+
+        try {
+          await copyFlow(targetTaskFlowId)
+          await refreshFlows(selectedOrgs?.[0] ?? null, selectedOrgs?.[1] ?? null)
+          dispatchResult(true, String(custom?.detail?.replyText || `${targetTaskFlowId} 태스크플로우를 복제했습니다.`))
+          return
+        } catch (error) {
+          console.error('[AI_TASKFLOW][COPY_TASKFLOW_FAILED]', error)
+          dispatchResult(false, String(command?.notFoundText ?? '태스크플로우 복제에 실패했습니다.'))
+          return
+        }
+      }
+
+      if (type === 'delete-taskflow') {
+        const targetTaskFlowId = Number(explicitTaskFlowId || '')
+        if (!Number.isFinite(targetTaskFlowId) || targetTaskFlowId <= 0) {
+          dispatchResult(false, String(command?.notFoundText ?? '삭제할 태스크플로우 정보를 찾지 못했습니다.'))
+          return
+        }
+
+        try {
+          await deleteTaskFlow(targetTaskFlowId)
+          await refreshFlows(selectedOrgs?.[0] ?? null, selectedOrgs?.[1] ?? null)
+          dispatchResult(true, String(custom?.detail?.replyText || `${targetTaskFlowId} 태스크플로우를 삭제했습니다.`))
+          return
+        } catch (error) {
+          console.error('[AI_TASKFLOW][DELETE_TASKFLOW_FAILED]', error)
+          dispatchResult(false, String(command?.notFoundText ?? '태스크플로우 삭제에 실패했습니다.'))
+          return
+        }
       }
 
       if (!robotId || !Number.isFinite(taskFlowId) || taskFlowId <= 0 || (!resolvedGroupId && type === 'deploy-taskflow') || (!resolvedSiteId && type === 'deploy-taskflow')) {

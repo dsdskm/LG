@@ -76,6 +76,10 @@ export class ChatRuleController {
     return ok({
       match: {
         ruleKey: matched.ruleKey,
+        chatAction: matched.chatAction || undefined,
+        chatActionParam: matched.chatActionParam && typeof matched.chatActionParam === 'object'
+          ? matched.chatActionParam
+          : undefined,
         command,
         replyText: String(replyText ?? description ?? '').trim(),
       },

@@ -8,6 +8,22 @@ const {
 } = require('../../../../../packages/ui/components/layout/AiAssistantPanel/index.jsx')
 
 describe('fast taskflow command semantics', () => {
+  it('normalizes navigation targets to absolute app routes', () => {
+    const { normalizeNavigationPath } = require('../../../../../packages/ui/components/layout/AiAssistantPanel/index.jsx')
+
+    expect(normalizeNavigationPath('tms/taskflows')).toBe('/tms/taskflows')
+    expect(normalizeNavigationPath('/tms/robots')).toBe('/tms/robots')
+    expect(normalizeNavigationPath('robot/management')).toBe('/robot/management')
+  })
+
+  it('does not short-circuit navigation commands on non-canvas TMS pages', () => {
+    const { isTmsCanvasPath } = require('../../../../../packages/ui/components/layout/AiAssistantPanel/taskflowCommandRules.js')
+
+    expect(isTmsCanvasPath('/tms/taskflows/42/canvas')).toBe(true)
+    expect(isTmsCanvasPath('/tms/robots/AZ-y1xF6coSjREkJ1trnvw/detail')).toBe(false)
+    expect(isTmsCanvasPath('/tms/taskflows')).toBe(false)
+  })
+
   it('uses left-left handles for vertical => chains', () => {
     expect(resolveArrowHandleConfig('=>')).toEqual({
       sourceHandle: 'left',

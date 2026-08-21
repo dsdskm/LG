@@ -1821,6 +1821,45 @@ export class ChatService {
 
     const toolName = String(ruleMatch.toolName ?? '').trim()
     if (!toolName) {
+      if (ruleMatch.chatAction) {
+        const screen = getScreenConfig(matchedRouteKey)
+        const baseActionParam = ruleMatch.chatActionParam && typeof ruleMatch.chatActionParam === 'object'
+          ? (ruleMatch.chatActionParam as Record<string, unknown>)
+          : {}
+        const directReplyText = String(
+          (ruleMatch.toolArgs && typeof ruleMatch.toolArgs === 'object' && 'replyText' in ruleMatch.toolArgs
+            ? ruleMatch.toolArgs.replyText
+            : '') ?? '',
+        ).trim()
+        const reply: ChatReply = {
+          chat_action: ruleMatch.chatAction,
+          chat_action_param: {
+            ...baseActionParam,
+            matchedRuleKey: ruleMatch.ruleKey,
+          },
+          text: directReplyText
+            || String(ruleMatch.fallbackText ?? '').trim()
+            || String(screen?.fallbackText ?? '').trim()
+            || '요청을 처리합니다.',
+        }
+        reply.pipelineConfidence = ruleMatch.confidence
+        reply.matchedRule = {
+          source: 'front-rule',
+          ruleKey: ruleMatch.ruleKey,
+          ruleType: ruleMatch.ruleType,
+          reason: ruleMatch.reason,
+          confidence: Number.isFinite(Number(ruleMatch.confidence)) ? Number(ruleMatch.confidence) : undefined,
+        }
+
+        await this.saveLog(ctx.body, reply, ctx, this.buildChatLogDebugMeta(ctx, reply, {
+          pipelineIntent: 'action',
+          pipelineConfidence: ruleMatch.confidence,
+          pipelineTrace: `front-rule:${ruleMatch.ruleKey}`,
+        }, 'front-rule'))
+
+        return reply
+      }
+
       this.stageLog('3단계:룰우선처리', 'miss', `action 룰에 toolName 없음(ruleKey=${ruleMatch.ruleKey})`, ctx.reqId)
       return null
     }
