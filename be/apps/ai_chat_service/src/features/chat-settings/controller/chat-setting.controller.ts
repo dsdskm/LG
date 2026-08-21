@@ -48,7 +48,6 @@ export class ChatSettingController {
       },
     }
 
-    this.logger.log('[chat_settings] getAll response payload', JSON.stringify(payload, null, 2))
     this.logger.log(
       `[chat_settings] getAll summary history=${history.length} prompts=${prompts.length} guidance=${guidance.length} ragDocs=${ragDocs.length} screens=${screens.length} settings=${Object.keys(values).length}`,
     )

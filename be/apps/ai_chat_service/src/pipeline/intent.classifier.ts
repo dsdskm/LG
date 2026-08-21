@@ -36,11 +36,14 @@ export class IntentClassifier {
     hints?: string,
     history: ChatTurn[] = [],
   ): Promise<IntentResult> {
+    const commonSystemMeta = getPromptStore()?.getPromptMeta('common', 'system')
     const systemPrompt = buildSystemPrompt(screenName, hints)
     logLlmPromptMeta({
       stage: 'intent-classifier',
       promptType: 'intent-classifier',
       route: screenName,
+      appKey: screenName?.split('/')?.[0] ?? null,
+      promptId: commonSystemMeta?.id ?? null,
       systemPromptLen: systemPrompt.length,
       messageLen: String(message ?? '').length,
       historyTurns: history.length,

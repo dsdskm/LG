@@ -293,8 +293,10 @@ export class RagService {
       .join('\n\n')
 
     const promptStore = getPromptStore()
-    const commonSystem = promptStore?.getPromptContent('common', 'system') ?? ''
-    const commonRagSystem = promptStore?.getPromptContent('common', 'rag-system') ?? ''
+    const commonSystemMeta = promptStore?.getPromptMeta('common', 'system')
+    const commonRagSystemMeta = promptStore?.getPromptMeta('common', 'rag-system')
+    const commonSystem = commonSystemMeta?.prompt ?? ''
+    const commonRagSystem = commonRagSystemMeta?.prompt ?? ''
     const system = [commonSystem, commonRagSystem, context].filter(Boolean).join('\n\n')
 
     this.logger.log?.(
@@ -305,6 +307,8 @@ export class RagService {
       stage: 'rag-answer-from-chunk-keys',
       promptType: 'rag-answer',
       route: usedCollection ?? null,
+      appKey: String(usedCollection ?? '').split('/').filter(Boolean)[0] || null,
+      promptId: commonRagSystemMeta?.id ?? commonSystemMeta?.id ?? null,
       systemPromptLen: system.length,
       messageLen: String(message ?? '').length,
       historyTurns: history.length,
@@ -434,8 +438,10 @@ export class RagService {
       .join('\n\n')
 
     const promptStore = getPromptStore()
-    const commonSystem = promptStore?.getPromptContent('common', 'system') ?? ''
-    const commonRagSystem = promptStore?.getPromptContent('common', 'rag-system') ?? ''
+    const commonSystemMeta = promptStore?.getPromptMeta('common', 'system')
+    const commonRagSystemMeta = promptStore?.getPromptMeta('common', 'rag-system')
+    const commonSystem = commonSystemMeta?.prompt ?? ''
+    const commonRagSystem = commonRagSystemMeta?.prompt ?? ''
 
     const ragSystem = context
 
@@ -457,6 +463,8 @@ export class RagService {
       stage: 'rag-answer',
       promptType: 'rag-answer',
       route: usedCollection ?? null,
+      appKey: String(usedCollection ?? '').split('/').filter(Boolean)[0] || null,
+      promptId: commonRagSystemMeta?.id ?? commonSystemMeta?.id ?? null,
       systemPromptLen: system.length,
       messageLen: String(message ?? '').length,
       historyTurns: history.length,

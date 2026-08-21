@@ -188,6 +188,16 @@ export class PromptStoreService implements OnModuleInit {
   }
 
   // ── 런타임 조회(동기) ──────────────────────────────
+  getPromptMeta(key: string, promptType: string): { id: number | null; prompt: string; enabled: boolean } | undefined {
+    const row = this.prompts.get(`${key}::${promptType}`)
+    if (!row) return undefined
+    return {
+      id: row.id ?? null,
+      prompt: row.prompt ?? '',
+      enabled: row.enabled !== false,
+    }
+  }
+
   getPromptContent(key: string, promptType: string): string | undefined {
     const row = this.prompts.get(`${key}::${promptType}`)
     if (!row || row.enabled === false) return undefined

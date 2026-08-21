@@ -44,6 +44,7 @@ export function logLlmPromptMeta(payload: {
   promptType: string
   route?: string | null
   appKey?: string | null
+  promptId?: number | null
   systemPromptLen?: number
   messageLen?: number
   historyTurns?: number
@@ -56,6 +57,7 @@ export function logLlmPromptMeta(payload: {
     promptType: payload.promptType,
     route: payload.route ?? null,
     appKey: payload.appKey ?? null,
+    promptId: payload.promptId ?? null,
     reqId: payload.reqId ?? null,
     systemPromptLen: Number(payload.systemPromptLen ?? 0),
     messageLen: Number(payload.messageLen ?? 0),
