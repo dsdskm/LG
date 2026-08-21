@@ -38,8 +38,6 @@ export class ChatRuleController {
       rawItems: items,
       fullResponse: { items },
     }
-    this.logger.log(`[chat_settings/rules] list result ${JSON.stringify(resultLog)}`)
-    console.log(`[chat_settings/rules] list result ${JSON.stringify(resultLog)}`)
 
     return ok({ items })
   }
@@ -58,9 +56,11 @@ export class ChatRuleController {
     const message = String(body?.message ?? '').trim()
     if (!appKey || !screenKey || !message) return ok({ match: null })
 
-    const rows = (await this.chatRules.listByAppAndScreen(appKey, screenKey))
-      .filter((row) => row.ruleType === 'taskflow-command')
-    const matched = matchFrontRuleRows({ screenKey, message }, rows)
+    const rows = await this.chatRules.listByAppAndScreen(appKey, screenKey)
+    const appRows = await this.chatRules.listByAppAndScreen(appKey, appKey)
+    const allTmsRules = Array.from(new Map([...rows, ...appRows].map((row) => [`${row.appKey}:${row.screenKey}:${row.ruleType}:${row.ruleKey}`, row])).values())
+    this.logger.log(`[chat_settings/rules/match] appKey=${appKey} screenKey=${screenKey} message="${message}" candidateRules=${allTmsRules.length} ruleKeys=[${allTmsRules.map((row) => `${row.ruleType}:${row.ruleKey}`).join(', ')}]`)
+    const matched = matchFrontRuleRows({ screenKey, message }, allTmsRules)
     if (!matched) return ok({ match: null })
 
     const args = matched.toolArgs && typeof matched.toolArgs === 'object' ? matched.toolArgs : {}

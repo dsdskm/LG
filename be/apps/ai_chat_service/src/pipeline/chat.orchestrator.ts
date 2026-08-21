@@ -552,7 +552,7 @@ export class ChatOrchestrator {
 
     const settings = getChatSettingService()
     const actionRagHasMatch = this.retrieveActionRagContext(actionRagCollections, effectiveMessage).usedChunks.length > 0
-    if (pipelineIntent === 'action' && !actionRagHasMatch && pipelineIntent !== 'info') {
+    if (pipelineIntent === 'action' && !actionRagHasMatch) {
       pipelineIntent = 'info'
       this.stageLog(
         '2-6-4단계:액션RAG_미매칭_정보폴백',

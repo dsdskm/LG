@@ -150,6 +150,65 @@ describe('matchFrontRuleRows', () => {
     expect(matched?.chatActionParam).toMatchObject({ path: 'tms/taskflows', app: 'tms' })
   })
 
+  it('matches a taskflow graph arrow chain like Idle->Joy on the canvas route', () => {
+    const arrowRule = {
+      ...commandRule('separate-arrow-lines', {
+        patternRegex: '^\\s*([^\\r\\n]+(?:->|=>|→|⇒)[^\\r\\n]+(?:\\s*(?:\\r?\\n|$))?)\\s*$',
+        graphOperation: 'separate-arrow-lines',
+        direction: 'forward',
+        replyText: '$1 연결을 캔버스에 반영했습니다.',
+      }),
+      ruleType: 'taskflow-command',
+    }
+
+    const matched = matchFrontRuleRows({ screenKey, message: 'Idle->Joy' }, [arrowRule])
+    expect(matched).not.toBeNull()
+    expect(matched?.ruleKey).toBe('separate-arrow-lines')
+    expect(matched?.graphOperation).toBe('separate-arrow-lines')
+    expect(matched?.ruleType).toBe('taskflow-graph')
+    expect(matched?.captures).toContain('Idle->Joy')
+  })
+
+  it('matches leading-arrow canvas chains like ->Joy and ->Joy->Love', () => {
+    const arrowRule = commandRule('separate-arrow-lines', {
+      patternRegex: '^\\s*(?:[^\\r\\n]+(?:\\s*(?:->|=>|→|⇒)\\s*[^\\r\\n]+)+|(?:\\s*(?:->|=>|→|⇒)\\s*[^\\r\\n]+)+)\\s*$',
+      graphOperation: 'separate-arrow-lines',
+      direction: 'forward',
+      replyText: '$1 연결을 캔버스에 반영했습니다.',
+    })
+
+    expect(matchFrontRuleRows({ screenKey, message: '->Joy' }, [arrowRule])).not.toBeNull()
+    expect(matchFrontRuleRows({ screenKey, message: '->Joy->Love' }, [arrowRule])).not.toBeNull()
+    expect(matchFrontRuleRows({ screenKey, message: 'Joy=>Love' }, [arrowRule])).not.toBeNull()
+  })
+
+  it('prefers the exact A->B taskflow rule over the generic graph fallback', () => {
+    const genericRule = {
+      ...commandRule('append-node-chain', {
+        pattern: 'A->B->C',
+        graphOperation: 'append-node-chain',
+        direction: 'right-to-left',
+        description: '연결 체인을 이어서 생성한다.',
+      }),
+      ruleType: 'taskflow-graph',
+    }
+    const exactRule = {
+      ...commandRule('connect-node-pair', {
+        pattern: 'A->B',
+        graphOperation: 'connect-node-pair',
+        direction: 'right-to-left',
+        description: '노드-노드 간 연결을 생성한다.',
+      }),
+      ruleType: 'taskflow-graph',
+    }
+
+    const matched = matchFrontRuleRows({ screenKey, message: 'A->B' }, [genericRule, exactRule])
+
+    expect(matched).not.toBeNull()
+    expect(matched?.ruleKey).toBe('connect-node-pair')
+    expect(matched?.captures).toEqual(['A', 'B'])
+  })
+
   it('matches taskflow management commands without robot id', () => {
     const copyRule = commandRule('copy-taskflow-command', {
       patternRegex: '^/\\s*copy\\s+(\\S+)\\s*$',

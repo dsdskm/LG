@@ -52,7 +52,7 @@ export default function PropertyPanel() {
     if (!selectedNodeId) return null
     return nodes.find((node) => node.id === selectedNodeId) ?? null
   }, [nodes, selectedNodeId])
-
+  console.log(`selectedNode`,selectedNode)
   const selectedEdge = useMemo(() => {
     if (!selectedEdgeId) return null
     return edges.find((edge) => edge.id === selectedEdgeId) ?? null

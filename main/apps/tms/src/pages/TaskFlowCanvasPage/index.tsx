@@ -1158,6 +1158,7 @@ export function applyEditDraftToFlowDefinition(
     }
 
     if (!anchorNode) {
+      const missingName = String(after ?? '').trim()
       console.warn('[AI_TASKFLOW][ANCHOR_MISS]', {
         after,
         nodes: nextNodes.map((n) => String((n as any).data?.label ?? n.id)),
@@ -1170,7 +1171,9 @@ export function applyEditDraftToFlowDefinition(
       })
       return {
         next: null,
-        clarification: null
+        clarification: missingName
+          ? `"${missingName}" 노드를 찾지 못했습니다. 현재 캔버스에 있는 이름으로 다시 요청해 주세요.`
+          : '기준 노드를 찾지 못했습니다. 현재 캔버스에 있는 이름으로 다시 요청해 주세요.'
       }
     }
 
@@ -1613,12 +1616,12 @@ export default function TaskFlowCanvasPage() {
     [nodes]
   )
 
-  useEffect(() => {
-    const onTaskflowDraft = (event: Event) => {
-      const custom = event as CustomEvent<any>
-      const draft = extractAssistantDraft(custom?.detail)
-      if (!draft) return
-      const assistantMessageId = String(custom?.detail?.assistantMessageId ?? '').trim() || undefined
+  const applyAssistantDraftToCanvas = useCallback(
+    (draftInput: unknown, sourceMessage?: string) => {
+      const draft = extractAssistantDraft(draftInput)
+      if (!draft) return false
+
+      const assistantMessageId = String((draftInput as any)?.assistantMessageId ?? '').trim() || undefined
       if (assistantMessageId) {
         draft.assistantMessageId = assistantMessageId
       }
@@ -1638,7 +1641,7 @@ export default function TaskFlowCanvasPage() {
           paletteSize: palette.length
         })
         pendingDraftRef.current = draft
-        return
+        return false
       }
 
       pendingDraftRef.current = null
@@ -1666,7 +1669,7 @@ export default function TaskFlowCanvasPage() {
             }
           })
         )
-        return
+        return true
       }
 
       const next = draft.mode === 'edit' ? (applied?.next ?? null) : buildLinearFlowDefinitionFromDraft(draft, palette)
@@ -1692,10 +1695,10 @@ export default function TaskFlowCanvasPage() {
             }
           })
         )
-        return
+        return false
       }
 
-      logAppliedAiNodes(next as Record<string, unknown>, String((draft as any)?.message ?? ''))
+      logAppliedAiNodes(next as Record<string, unknown>, String(sourceMessage ?? (draft as any)?.message ?? ''))
       applyFlowDefinitionWithHistory(next as Record<string, unknown>)
 
       const currentIds = new Set(nodes.map((n) => String(n.id)))
@@ -1723,13 +1726,44 @@ export default function TaskFlowCanvasPage() {
           }
         })
       )
+
+      return true
+    },
+    [nodes, edges, viewport, palette, applyFlowDefinitionWithHistory]
+  )
+
+  useEffect(() => {
+    const onTaskflowDraft = (event: Event) => {
+      const custom = event as CustomEvent<any>
+      const draftInput = custom?.detail
+      if (!draftInput) return
+      applyAssistantDraftToCanvas(draftInput, String(draftInput?.message ?? ''))
     }
 
     window.addEventListener(AI_TASKFLOW_CANVAS_DRAFT_EVENT, onTaskflowDraft)
     return () => {
       window.removeEventListener(AI_TASKFLOW_CANVAS_DRAFT_EVENT, onTaskflowDraft)
     }
-  }, [nodes, edges, viewport, palette, applyFlowDefinitionWithHistory])
+  }, [applyAssistantDraftToCanvas])
+
+  useEffect(() => {
+    window.__AI_TASKFLOW_CANVAS_APPLY__ = (draft: any) => {
+      const sourceMessage = String(draft?.message ?? '')
+      const applied = applyAssistantDraftToCanvas(draft, sourceMessage)
+      if (applied) {
+        console.log('[AI_TASKFLOW][DIRECT_APPLY_OK]', {
+          message: sourceMessage,
+          hasDraft: Boolean(extractAssistantDraft(draft))
+        })
+      }
+    }
+
+    return () => {
+      if (window.__AI_TASKFLOW_CANVAS_APPLY__) {
+        delete window.__AI_TASKFLOW_CANVAS_APPLY__
+      }
+    }
+  }, [applyAssistantDraftToCanvas])
 
   useEffect(() => {
     const pending = pendingDraftRef.current

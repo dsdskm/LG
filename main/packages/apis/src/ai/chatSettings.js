@@ -259,20 +259,32 @@ export function clearChatRuleListCache(appKey, screenKey) {
   const normalizedScreenKey = String(screenKey ?? '').trim() || 'common'
   const cacheKey = `${normalizedAppKey}::${normalizedScreenKey}`
   SCREEN_RULE_LIST_CACHE.delete(cacheKey)
+
+  if (!screenKey) {
+    for (const key of SCREEN_RULE_LIST_CACHE.keys()) {
+      if (key.startsWith(`${normalizedAppKey}::`)) SCREEN_RULE_LIST_CACHE.delete(key)
+    }
+  }
 }
 
-export async function listChatRules({ appKey, screenKey } = {}) {
+export async function listChatRules({ appKey, screenKey, forceRefresh = true } = {}) {
   const normalizedAppKey = String(appKey ?? '').trim() || 'common'
   const normalizedScreenKey = String(screenKey ?? '').trim() || 'common'
-  const cacheKey = `${normalizedAppKey}::${normalizedScreenKey}`
-  const cached = SCREEN_RULE_LIST_CACHE.get(cacheKey)
-  if (cached) {
-    console.info('[chat-settings] GET /chat/settings/rules cache-hit', {
-      appKey: normalizedAppKey,
-      screenKey: normalizedScreenKey,
-      itemCount: Array.isArray(cached?.data?.items) ? cached.data.items.length : Array.isArray(cached?.items) ? cached.items.length : 0,
-    })
-    return cached
+  const cacheKey = screenKey ? `${normalizedAppKey}::${normalizedScreenKey}` : `${normalizedAppKey}::app-all`
+
+  if (!forceRefresh) {
+    const cached = SCREEN_RULE_LIST_CACHE.get(cacheKey)
+    if (cached) {
+      console.info('[chat-settings] GET /chat/settings/rules cache-hit', {
+        appKey: normalizedAppKey,
+        screenKey: normalizedScreenKey,
+        cacheKey,
+        itemCount: Array.isArray(cached?.data?.items) ? cached.data.items.length : Array.isArray(cached?.items) ? cached.items.length : 0,
+      })
+      return cached
+    }
+  } else {
+    SCREEN_RULE_LIST_CACHE.delete(cacheKey)
   }
 
   const query = new URLSearchParams()
@@ -283,7 +295,10 @@ export async function listChatRules({ appKey, screenKey } = {}) {
   console.info('[chat-settings] GET /chat/settings/rules request', {
     appKey: normalizedAppKey,
     screenKey: normalizedScreenKey,
+    cacheKey,
     endpoint,
+    scope: screenKey ? 'screen' : 'app',
+    forceRefresh,
   })
 
   const response = await fetch(endpoint, {
@@ -298,6 +313,9 @@ export async function listChatRules({ appKey, screenKey } = {}) {
     itemCount: Array.isArray(json?.data?.items) ? json.data.items.length : Array.isArray(json?.items) ? json.items.length : 0,
     appKey: normalizedAppKey,
     screenKey: normalizedScreenKey,
+    cacheKey,
+    scope: screenKey ? 'screen' : 'app',
+    forceRefresh,
   })
   return json
 }

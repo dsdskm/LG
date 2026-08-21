@@ -24,6 +24,21 @@ describe('fast taskflow command semantics', () => {
     expect(isTmsCanvasPath('/tms/taskflows')).toBe(false)
   })
 
+  it('exports a safe TMS app rules loader for the AI assistant panel', () => {
+    const panelRules = require('../../../../../packages/ui/components/layout/AiAssistantPanel/taskflowCommandRules.js')
+
+    expect(typeof panelRules.loadTmsAppRules).toBe('function')
+  })
+
+  it('accepts canvas-draft matches even when the backend does not set a command type', async () => {
+    const panelRules = require('../../../../../packages/ui/components/layout/AiAssistantPanel/taskflowCommandRules.js')
+    const result = await panelRules.matchTaskflowCanvasCommand('Idle->Joy', '/tms/taskflows/197/canvas')
+
+    expect(result).not.toBeNull()
+    expect(result?.chatAction).toBe('action')
+    expect(result?.chatActionParam?.canvasDraft || result?.chatActionParam?.taskflowDraft).toBeTruthy()
+  })
+
   it('uses left-left handles for vertical => chains', () => {
     expect(resolveArrowHandleConfig('=>')).toEqual({
       sourceHandle: 'left',

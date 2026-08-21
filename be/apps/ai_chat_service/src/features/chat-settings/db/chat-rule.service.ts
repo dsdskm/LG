@@ -27,6 +27,11 @@ function routeMatchesTemplate(template: string, actual: string): boolean {
   return true
 }
 
+function describeRuleNames(rows: Array<{ ruleType?: string; ruleKey?: string }> | undefined | null): string {
+  if (!rows || rows.length === 0) return 'none'
+  return rows.map((row) => `${row.ruleType ?? 'unknown'}:${row.ruleKey ?? 'unknown'}`).join(', ')
+}
+
 @Injectable()
 export class ChatRuleService {
   private readonly logger = new Logger(ChatRuleService.name)
@@ -75,14 +80,14 @@ export class ChatRuleService {
       })
       const finalRows = Array.from(new Map(allRows.map((row) => [`${row.appKey}:${row.screenKey}:${row.ruleType}:${row.ruleKey}`, row])).values())
       this.logger.warn(
-        `[chat-rule] list appKey=${normalizedAppKey || '-'} screenKey=${normalizedScreenKey || '-'} count=${finalRows.length} keys=${JSON.stringify(finalRows.map((row) => `${row.ruleType}:${row.ruleKey}`))}`,
+        `[chat-rule] list appKey=${normalizedAppKey || '-'} screenKey=${normalizedScreenKey || '-'} count=${finalRows.length} keys=[${describeRuleNames(finalRows)}]`,
       )
       return finalRows
     }
 
     if (rows.length > 0) {
       this.logger.warn(
-        `[chat-rule] list appKey=${normalizedAppKey || '-'} screenKey=${normalizedScreenKey || '-'} count=${deduped.length} keys=${JSON.stringify(deduped.map((row) => `${row.ruleType}:${row.ruleKey}`))}`,
+        `[chat-rule] list appKey=${normalizedAppKey || '-'} screenKey=${normalizedScreenKey || '-'} count=${deduped.length} keys=[${describeRuleNames(deduped)}]`,
       )
       return deduped
     }
@@ -97,7 +102,7 @@ export class ChatRuleService {
     const finalRows = Array.from(new Map(combined.map((row) => [`${row.appKey}:${row.screenKey}:${row.ruleType}:${row.ruleKey}`, row])).values())
 
     this.logger.warn(
-      `[chat-rule] list appKey=${normalizedAppKey || '-'} screenKey=${normalizedScreenKey || '-'} count=${finalRows.length} keys=${JSON.stringify(finalRows.map((row) => `${row.ruleType}:${row.ruleKey}`))}`,
+      `[chat-rule] list appKey=${normalizedAppKey || '-'} screenKey=${normalizedScreenKey || '-'} count=${finalRows.length} keys=[${describeRuleNames(finalRows)}]`,
     )
     return finalRows
   }

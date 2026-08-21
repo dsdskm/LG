@@ -1677,7 +1677,7 @@ export class ChatService {
       return reply
     }
 
-    if (ruleMatch.ruleType !== 'taskflow-graph') return null
+    if (ruleMatch.ruleType !== 'taskflow-graph' && !ruleMatch.graphOperation) return null
 
     const arrowLines = ruleMatch.graphOperation === 'separate-arrow-lines'
       ? String(ruleMatch.captures[0] ?? ctx.message)

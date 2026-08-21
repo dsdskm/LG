@@ -42,6 +42,12 @@ type FrontRuleTemplateMeta = {
 }
 
 const screenRuleCache = new Map<string, ChatRuleEntity[]>()
+let lastRouteKey = ''
+
+function describeRuleNames(rows: ChatRuleEntity[] | undefined | null): string {
+  if (!rows || rows.length === 0) return 'none'
+  return rows.map((row) => `${row.ruleType ?? 'unknown'}:${row.ruleKey ?? 'unknown'}`).join(', ')
+}
 
 function screenCacheKey(appKey: string, screenKey: string): string {
   return `${appKey}::${screenKey}`
@@ -65,17 +71,11 @@ async function getCachedScreenRules(
   loadRules: (appKey: string, screenKey: string) => Promise<ChatRuleEntity[]>,
 ): Promise<ChatRuleEntity[]> {
   const key = screenCacheKey(appKey, screenKey)
-  const cached = screenRuleCache.get(key)
-  if (cached) {
-    logger.log(`[front-rule] cache hit appKey=${appKey} screenKey=${screenKey} key=${key} rules=${cached.length}`)
-    console.log(`[front-rule] cache hit appKey=${appKey} screenKey=${screenKey} key=${key} rules=${cached.length}`)
-    return cached
-  }
-
   const rules = await loadRules(appKey, screenKey)
-  screenRuleCache.set(key, rules)
-  logger.log(`[front-rule] cache miss appKey=${appKey} screenKey=${screenKey} key=${key} loaded=${rules.length} source=screen-load`)
-  console.log(`[front-rule] cache miss appKey=${appKey} screenKey=${screenKey} key=${key} loaded=${rules.length} source=screen-load`)
+  const names = describeRuleNames(rules)
+  screenRuleCache.delete(key)
+  logger.log(`[front-rule] fresh-load appKey=${appKey} screenKey=${screenKey} key=${key} loaded=${rules.length} names=[${names}] source=db-read`)
+  console.log(`[front-rule] fresh-load appKey=${appKey} screenKey=${screenKey} key=${key} loaded=${rules.length} names=[${names}] source=db-read`)
   return rules
 }
 
@@ -256,6 +256,13 @@ export async function matchFrontRule(
   const screenKey = normalize(ctx.screenKey)
   const appKey = screenKey.split('/').filter(Boolean)[0] || ''
 
+  if (lastRouteKey && lastRouteKey !== screenKey) {
+    screenRuleCache.clear()
+    logger.log(`[front-rule] route changed from ${lastRouteKey} -> ${screenKey}; invalidated screen cache`)
+    console.log(`[front-rule] route changed from ${lastRouteKey} -> ${screenKey}; invalidated screen cache`)
+  }
+  lastRouteKey = screenKey
+
   let rules = await getCachedScreenRules(appKey, screenKey, loadRules)
 
   if (appKey && screenKey !== appKey) {
@@ -280,10 +287,10 @@ export function matchFrontRuleRows(
   const screenKey = normalize(ctx.screenKey)
   const appKey = screenKey.split('/').filter(Boolean)[0] || ''
 
-  logger.log(`[front-rule] match start appKey=${appKey} screenKey=${screenKey} message="${message}" rules=${rules.length}`)
+  logger.log(`[front-rule] 규칙 매칭 시작: appKey=${appKey} screenKey=${screenKey} message="${message}" ruleCount=${rules.length}`)
 
   if (rules.length === 0) {
-    logger.warn(`[front-rule] no rules for appKey=${appKey} screenKey=${screenKey}`)
+    logger.warn(`[front-rule] 규칙 없음: appKey=${appKey} screenKey=${screenKey}`)
     return null
   }
 
@@ -291,14 +298,11 @@ export function matchFrontRuleRows(
     const pattern = patternForRule(rule)
     const regex = canCompileRegex(pattern)
     if (!regex) {
-      logger.warn(`[front-rule] invalid regex ruleKey=${rule.ruleKey} pattern=${pattern}`)
+      logger.warn(`[front-rule] 잘못된 규칙 패턴: ruleKey=${rule.ruleKey}`)
       continue
     }
 
     const matched = message.match(regex)
-    logger.log(
-      `[front-rule] try ruleKey=${rule.ruleKey} ruleType=${rule.ruleType} pattern=${pattern} matched=${Boolean(matched)}`,
-    )
     if (!matched) continue
 
     // 정규식 그룹 위치($1, $2, ...)를 그대로 보존해야 템플릿의 $N 치환이 어긋나지 않는다.
@@ -311,14 +315,18 @@ export function matchFrontRuleRows(
     const toolName = inferToolName(meta)
     const toolArgs = buildToolArgs(rule, meta, message)
 
-    logger.log(
-      `[front-rule] matched ruleKey=${rule.ruleKey} intent=${intent} captures=${JSON.stringify(captures)}`,
-    )
+    logger.log(`[front-rule] 규칙 매칭 성공: ruleKey=${rule.ruleKey} intent=${intent}`)
+
+    const graphOperation = normalize(ruleValue(rule).graphOperation) || undefined
+    const normalizedRuleType =
+      String(rule.ruleType ?? '').trim() === 'taskflow-graph' || graphOperation === 'separate-arrow-lines'
+        ? 'taskflow-graph'
+        : String(rule.ruleType ?? '').trim()
 
     return {
       routeKey: rule.screenKey,
       ruleKey: rule.ruleKey,
-      ruleType: String(rule.ruleType ?? '').trim(),
+      ruleType: normalizedRuleType,
       confidence: Number.isFinite(Number(ruleValue(rule).confidence)) ? Number(ruleValue(rule).confidence) : 0.95,
       reason: `front-rule:${rule.ruleKey}`,
       intent,
@@ -331,11 +339,11 @@ export function matchFrontRuleRows(
       chatActionParam: isEmptyObject(meta.chatActionParam) ? undefined : meta.chatActionParam,
       captures,
       direction: normalize(ruleValue(rule).direction) || undefined,
-      graphOperation: normalize(ruleValue(rule).graphOperation) || undefined,
+      graphOperation,
     }
   }
 
-  logger.warn(`[front-rule] no rule matched screenKey=${screenKey} message="${message}"`)
+  logger.warn(`[front-rule] 규칙 미매칭: screenKey=${screenKey} message="${message}"`)
   return null
 }
 
@@ -348,6 +356,19 @@ function ruleValue(rule: ChatRuleEntity): Record<string, unknown> {
 }
 
 const ARROW_SEPARATOR = '(?:->|=>|→|⇒)'
+
+function taskflowArrowChainPattern(): string {
+  return '^\\s*(?:' +
+    '[^\\r\\n]+(?:\\s*(?:->|=>|→|⇒)\\s*[^\\r\\n]+)+' +
+    '|(?:\\s*(?:->|=>|→|⇒)\\s*[^\\r\\n]+(?:\\s*(?:->|=>|→|⇒)\\s*[^\\r\\n]+)*)' +
+    ')\\s*$'
+}
+
+function isTaskflowArrowMessage(value: string): boolean {
+  const trimmed = String(value ?? '').trim()
+  if (!trimmed) return false
+  return new RegExp(taskflowArrowChainPattern(), 'i').test(trimmed)
+}
 
 /** "A->B", "A->B->C" 같은 자리표시자 패턴을 노드명 캡처 정규식으로 바꾼다. */
 function buildPatternFromTemplate(template: string): string | null {
@@ -376,6 +397,10 @@ function patternForRule(rule: ChatRuleEntity): string {
     const built = buildPatternFromTemplate(patternTemplate)
     if (built) return built
     return escapeRegex(patternTemplate)
+  }
+
+  if (normalize(value.graphOperation) === 'separate-arrow-lines' || String(rule.ruleType ?? '').trim() === 'taskflow-graph') {
+    return taskflowArrowChainPattern()
   }
 
   const aliases = toStringArray(value.aliases)

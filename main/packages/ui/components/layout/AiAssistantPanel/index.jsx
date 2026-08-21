@@ -52,7 +52,7 @@ import {
   StyledAiStopButton
 } from './styles'
 import { postSiteAssistantChat } from '@repo/apis/ai/chat.js'
-import { isTmsCanvasPath } from './taskflowCommandRules.js'
+import { isTmsCanvasPath, loadTmsAppRules } from './taskflowCommandRules.js'
 import {
   isCommandHelpRequest,
   extractCommandHelpEntries,
@@ -559,19 +559,21 @@ const extractTaskflowDraftParam = (value) => {
   if (!value || typeof value !== 'object') return null
 
   const row = value
+  const wrapped = row.chat_action_param && typeof row.chat_action_param === 'object' ? row.chat_action_param : row.chatActionParam && typeof row.chatActionParam === 'object' ? row.chatActionParam : row
 
-  if (row.canvasDraft && typeof row.canvasDraft === 'object') return row.canvasDraft
-  if (row.taskflowDraft && typeof row.taskflowDraft === 'object') return row.taskflowDraft
-  if (row.canvas && typeof row.canvas === 'object') return row.canvas
-  if (row.flowDefinition && typeof row.flowDefinition === 'object') return row.flowDefinition
+  if (wrapped.canvasDraft && typeof wrapped.canvasDraft === 'object') return wrapped.canvasDraft
+  if (wrapped.taskflowDraft && typeof wrapped.taskflowDraft === 'object') return wrapped.taskflowDraft
+  if (wrapped.draft && typeof wrapped.draft === 'object') return wrapped.draft
+  if (wrapped.canvas && typeof wrapped.canvas === 'object') return wrapped.canvas
+  if (wrapped.flowDefinition && typeof wrapped.flowDefinition === 'object') return wrapped.flowDefinition
 
-  if (row.toolResult && typeof row.toolResult === 'object') {
-    const nested = extractTaskflowDraftParam(row.toolResult)
+  if (wrapped.toolResult && typeof wrapped.toolResult === 'object') {
+    const nested = extractTaskflowDraftParam(wrapped.toolResult)
     if (nested) return nested
   }
 
-  if (row.executed && typeof row.executed === 'object') {
-    const nested = extractTaskflowDraftParam(row.executed)
+  if (wrapped.executed && typeof wrapped.executed === 'object') {
+    const nested = extractTaskflowDraftParam(wrapped.executed)
     if (nested) return nested
   }
 
@@ -582,15 +584,16 @@ const extractTaskflowCanvasCommandParam = (value) => {
   if (!value || typeof value !== 'object') return null
 
   const row = value
-  if (row.canvasCommand && typeof row.canvasCommand === 'object') return row.canvasCommand
+  const wrapped = row.chat_action_param && typeof row.chat_action_param === 'object' ? row.chat_action_param : row.chatActionParam && typeof row.chatActionParam === 'object' ? row.chatActionParam : row
+  if (wrapped.canvasCommand && typeof wrapped.canvasCommand === 'object') return wrapped.canvasCommand
 
-  if (row.toolResult && typeof row.toolResult === 'object') {
-    const nested = extractTaskflowCanvasCommandParam(row.toolResult)
+  if (wrapped.toolResult && typeof wrapped.toolResult === 'object') {
+    const nested = extractTaskflowCanvasCommandParam(wrapped.toolResult)
     if (nested) return nested
   }
 
-  if (row.executed && typeof row.executed === 'object') {
-    const nested = extractTaskflowCanvasCommandParam(row.executed)
+  if (wrapped.executed && typeof wrapped.executed === 'object') {
+    const nested = extractTaskflowCanvasCommandParam(wrapped.executed)
     if (nested) return nested
   }
 
@@ -1160,6 +1163,13 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
   }, [])
 
   useEffect(() => {
+    const appPrefix = String(routeContext.appPrefix ?? '').trim().replace(/^\/+|\/+$/g, '').toLowerCase()
+    if (appPrefix === 'tms') {
+      void loadTmsAppRules()
+    }
+  }, [routeContext.appPrefix, routeContext.pathname])
+
+  useEffect(() => {
     let cancelled = false
 
     const loadSuggestions = async () => {
@@ -1321,8 +1331,9 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
   // chat_action 분기 처리.
   const handleChatAction = useCallback(
     (chatAction, param, assistantMessage, assistantMessageId) => {
-      const taskflowDraft = extractTaskflowDraftParam(param)
-      const taskflowCommand = extractTaskflowCanvasCommandParam(param)
+      const normalizedActionParam = param && typeof param === 'object' ? (param.chat_action_param ?? param.chatActionParam ?? param) : param
+      const taskflowDraft = extractTaskflowDraftParam(normalizedActionParam)
+      const taskflowCommand = extractTaskflowCanvasCommandParam(normalizedActionParam)
       console.log('[AI_TASKFLOW][CHAT_ACTION]', {
         chatAction,
         hasParam: Boolean(param),
@@ -1718,8 +1729,9 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
         phase: 'before-early-return'
       })
 
-      if (localChatAction === 'navigation') {
-        handleChatAction(localChatAction, localCommandRule.chatActionParam, localReplyText, localAssistantMessageId)
+      const localActionParam = localCommandRule.chatActionParam ?? localCommandRule.chat_action_param ?? null
+      if (localChatAction || (localActionParam && typeof localActionParam === 'object' && hasCanvasDraftPayload(localActionParam))) {
+        handleChatAction(localChatAction || 'action', localActionParam, localReplyText, localAssistantMessageId)
         setDraft('')
         submitInFlightRef.current = false
         return
