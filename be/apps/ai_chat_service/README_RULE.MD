@@ -99,7 +99,7 @@ AI Chat Service의 룰은 DB(`ai_chat_service` DB의 `taskflow_rule` 테이블)�
 ## DB 저장 구조
 
 ```
-ruleType    scopeKey      ruleKey                  valueJson
+ruleType    scopeKey      ruleKey                  extraJson
 ----------  ------------  -----------------------  ----------------------
 language    tms           composeNoisePhrases      ["해줘", "으로"]
 language    common        deleteRequestPhrases     ["삭제해줘", "제거"]

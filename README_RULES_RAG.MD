@@ -1,37 +1,47 @@
 # rag
+
 ## common
+
 운영 관제가 뭐야
 {control node}
 
 ## tms
 
 # rule & command
-## tms
-/?
-/deploy {robot} {taskflow}
-/run {robot} {taskflow}
-/pause {robot} {taskflow}
-/resume {robot} {taskflow}
-/stop {robot} {taskflow}
-/create
-/copy {taskflow}
-/delete {taskflow}
-/modify {taskflow}
 
-## tms/taskflows/:taskFlowId/canvas
-A->B
-A=>B
-A->B=>C
-->B
-=>C
-->B=>C
-A=B
-!A
+/list
+/robots
+/create
+/copy
+/delete
+/edit
 /clear
-/reset
-/redo
-/undo
-/temp
 /save
+/temp
+/undo
+/redo
+A->B
+->A
+A=>B
+=>A
+/reset
 /contents
-도슨트 유형 추천
+!A
+/deploy
+/run
+/pause
+/resume
+/stop
+
+71 : AZ-y1xF6coSjREkJ1trnvw
+kkh : test 197
+/deploy AZ-y1xF6coSjREkJ1trnvw 197
+/deploy 197
+/deploy AZ-y1xF6coSjREkJ1trnvw
+
+/run AZ-y1xF6coSjREkJ1trnvw 197
+/pause AZ-y1xF6coSjREkJ1trnvw 197
+/resume AZ-y1xF6coSjREkJ1trnvw 197
+/stop AZ-y1xF6coSjREkJ1trnvw 197
+/robot AZ-y1xF6coSjREkJ1trnvw
+/taskflow 197

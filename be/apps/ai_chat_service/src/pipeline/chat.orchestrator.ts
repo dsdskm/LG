@@ -637,7 +637,6 @@ export class ChatOrchestrator {
 
       output.reply.matchedRule = {
         source: 'orchestrator',
-        ruleType: ruleFirstIntentResult ? 'rule-first-intent' : 'taskflow-action-heuristic',
         ruleKey: matchedReason || 'orchestrator-rule-match',
         reason: matchedReason || undefined,
         confidence: matchedConfidence,
@@ -949,19 +948,14 @@ export class ChatOrchestrator {
       }
     }
 
-    const defaultLlmText =
-      usedChunks.length === 0 || !text?.trim()
-        ? await this.generateDefaultLlmReply(screen, message, history, usedChunks.length === 0 ? 'no-rag-hit' : 'rag-empty-text', reqId)
-        : undefined
-
     const ragBodyFallback = usedChunks.length > 0
       ? this.resolveUsedChunkBodyText(ragCollections, usedChunks)
       : ''
-    const fallbackText = defaultLlmText || text || ''
+    const fallbackText = text || ''
     const finalText = this.sanitizeInfoFinalText(
       this.shouldUseRagBodyFallback(fallbackText, ragBodyFallback)
         ? ragBodyFallback
-        : (defaultLlmText || text || ''),
+        : fallbackText,
       usedCollection,
     )
 
@@ -980,7 +974,7 @@ export class ChatOrchestrator {
         primaryChunkKey,
         usedChunks,
         ragScores,
-        defaultLlmFallback: Boolean(defaultLlmText),
+        defaultLlmFallback: false,
       },
     }
   }

@@ -65,6 +65,4 @@ export function logLlmPromptMeta(payload: {
     toolCount: Number(payload.toolCount ?? 0),
     isToolCall: Boolean(payload.isToolCall),
   }
-
-  console.info('[LLM_PROMPT_META]', details)
 }

@@ -25,8 +25,10 @@ import type { DeployActionRequest } from '@/types/taskflow'
 import type { InstantActionsRequest } from '@/types/api/deviceControl'
 import {
   AI_TASKFLOW_CANVAS_COMMAND_EVENT,
-  AI_TASKFLOW_CANVAS_RESULT_EVENT
-} from '@repo/ui/components/layout/AiAssistantPanel/taskflowEvents.js'
+  AI_TASKFLOW_CANVAS_RESULT_EVENT,
+  RULE_KEY
+} from '@repo/constants'
+import { buildAiTaskflowReplyText } from '@/utils/aiTaskflowCommand'
 import { toast } from 'react-toastify'
 
 type TaskFlowSortOption =
@@ -196,6 +198,20 @@ ${firstError}`
     setSearchQuery('')
   }
 
+  const buildCopyReplyText = (template: string, taskFlowId: number, copiedTaskFlowName: string) => {
+    const baseText = String(template || '').trim()
+    const resolvedText = baseText || '태스크플로우 $1 를 $2 복제했습니다.'
+    const withTaskFlowId = resolvedText.replace(/\$1/g, String(taskFlowId))
+    const withCopiedName = copiedTaskFlowName
+      ? withTaskFlowId.replace(/\$2/g, copiedTaskFlowName)
+      : withTaskFlowId.replace(/\s*\$2\s*이름으로/g, '').replace(/\$2/g, '')
+
+    return withCopiedName
+      .replace(/\s*\$2\s*이름으로/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+  }
+
   useEffect(() => {
     const onTaskflowCanvasCommand = async (event: Event) => {
       const custom = event as CustomEvent<any>
@@ -203,8 +219,18 @@ ${firstError}`
       if (!command || typeof command !== 'object') return
 
       const type = String(command?.type ?? '').trim().toLowerCase()
-      const supportedTypes = ['deploy-taskflow', 'run-taskflow', 'pause-taskflow', 'resume-taskflow', 'stop-taskflow', 'copy-taskflow', 'delete-taskflow', 'create-taskflow', 'modify-taskflow']
+      console.info('[AI_TASKFLOW][RAW_EVENT_RECEIVED]', {
+        page: 'TaskFlowListPage',
+        type,
+        command
+      })
+      const supportedTypes = [RULE_KEY.TASKFLOW_DEPLOY, RULE_KEY.TASKFLOW_RUN, RULE_KEY.TASKFLOW_PAUSE, RULE_KEY.TASKFLOW_RESUME, RULE_KEY.TASKFLOW_STOP, 'deploy-taskflow', 'run-taskflow', 'pause-taskflow', 'resume-taskflow', 'stop-taskflow', RULE_KEY.TASKFLOW_COPY, RULE_KEY.TASKFLOW_DELETE, 'create-taskflow', 'modify-taskflow']
       if (!supportedTypes.includes(type)) {
+        console.warn('[AI_TASKFLOW][UNSUPPORTED_COMMAND_TYPE]', {
+          page: 'TaskFlowListPage',
+          type,
+          supportedTypes
+        })
         return
       }
 
@@ -228,6 +254,16 @@ ${firstError}`
       const taskFlowId = Number.isFinite(reversedTaskFlowId) ? reversedTaskFlowId : Number(explicitTaskFlowId || '')
       const resolvedGroupId = String(selectedOrgs?.[0] ?? '').trim() || null
       const resolvedSiteId = String(selectedOrgs?.[1] ?? '').trim() || null
+
+      console.info('[AI_TASKFLOW][COMMAND_RECEIVED]', {
+        page: 'TaskFlowListPage',
+        type,
+        robotId,
+        taskFlowId,
+        resolvedGroupId,
+        resolvedSiteId,
+        command
+      })
 
       const dispatchResult = (success: boolean, message?: string) => {
         if (success) {
@@ -281,17 +317,19 @@ ${firstError}`
         return
       }
 
-      if (type === 'copy-taskflow') {
+      if (type === RULE_KEY.TASKFLOW_COPY) {
         const targetTaskFlowId = Number(explicitTaskFlowId || '')
+        const requestedTaskFlowName = String(command?.taskFlowName ?? command?.name ?? '').trim()
         if (!Number.isFinite(targetTaskFlowId) || targetTaskFlowId <= 0) {
           dispatchResult(false, String(command?.notFoundText ?? '복사할 태스크플로우 정보를 찾지 못했습니다.'))
           return
         }
 
         try {
-          await copyFlow(targetTaskFlowId)
+          const copiedFlow = await copyFlow(targetTaskFlowId, requestedTaskFlowName || undefined)
           await refreshFlows(selectedOrgs?.[0] ?? null, selectedOrgs?.[1] ?? null)
-          dispatchResult(true, String(custom?.detail?.replyText || `${targetTaskFlowId} 태스크플로우를 복제했습니다.`))
+          const copiedTaskFlowName = String(copiedFlow?.name ?? requestedTaskFlowName ?? '').trim()
+          dispatchResult(true, buildCopyReplyText(String(custom?.detail?.replyText ?? ''), targetTaskFlowId, copiedTaskFlowName))
           return
         } catch (error) {
           console.error('[AI_TASKFLOW][COPY_TASKFLOW_FAILED]', error)
@@ -300,7 +338,7 @@ ${firstError}`
         }
       }
 
-      if (type === 'delete-taskflow') {
+      if (type === RULE_KEY.TASKFLOW_DELETE) {
         const targetTaskFlowId = Number(explicitTaskFlowId || '')
         if (!Number.isFinite(targetTaskFlowId) || targetTaskFlowId <= 0) {
           dispatchResult(false, String(command?.notFoundText ?? '삭제할 태스크플로우 정보를 찾지 못했습니다.'))
@@ -319,13 +357,22 @@ ${firstError}`
         }
       }
 
-      if (!robotId || !Number.isFinite(taskFlowId) || taskFlowId <= 0 || (!resolvedGroupId && type === 'deploy-taskflow') || (!resolvedSiteId && type === 'deploy-taskflow')) {
+      if (!robotId || !Number.isFinite(taskFlowId) || taskFlowId <= 0 || (!resolvedGroupId && (type === RULE_KEY.TASKFLOW_DEPLOY || type === 'deploy-taskflow')) || (!resolvedSiteId && (type === RULE_KEY.TASKFLOW_DEPLOY || type === 'deploy-taskflow'))) {
+        console.warn('[AI_TASKFLOW][COMMAND_BLOCKED_BY_GUARD]', {
+          page: 'TaskFlowListPage',
+          type,
+          robotId,
+          taskFlowId,
+          resolvedGroupId,
+          resolvedSiteId,
+          requiresDeployOrg: type === RULE_KEY.TASKFLOW_DEPLOY || type === 'deploy-taskflow'
+        })
         dispatchResult(false, String(command?.notFoundText ?? '배포/실행 대상 정보를 찾지 못했습니다.'))
         return
       }
 
       try {
-        if (type === 'deploy-taskflow') {
+        if (type === RULE_KEY.TASKFLOW_DEPLOY || type === 'deploy-taskflow') {
           const deployPayload: DeployActionRequest = {
             taskFlowId,
             param: {
@@ -353,7 +400,8 @@ ${firstError}`
           const deployResult = await deployTaskFlowActionAsync(deployPayload)
           console.info('[AI_TASKFLOW][DEPLOY_API_RESULT]', { type, robotId, taskFlowId, result: deployResult })
 
-          dispatchResult(true, String(custom?.detail?.replyText || `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 배포를 요청했습니다.`))
+          const finalDeployReply = buildAiTaskflowReplyText(custom?.detail?.replyText || `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 배포를 요청했습니다.`, robotId, taskFlowId)
+          dispatchResult(true, finalDeployReply || `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 배포를 요청했습니다.`)
           return
         }
 
@@ -364,6 +412,10 @@ ${firstError}`
         }
 
         const instantActionTypeMap: Record<string, string> = {
+          [RULE_KEY.TASKFLOW_RUN]: 'start',
+          [RULE_KEY.TASKFLOW_PAUSE]: 'startPause',
+          [RULE_KEY.TASKFLOW_RESUME]: 'stopPause',
+          [RULE_KEY.TASKFLOW_STOP]: 'stop',
           'run-taskflow': 'start',
           'pause-taskflow': 'startPause',
           'resume-taskflow': 'stopPause',
@@ -390,13 +442,18 @@ ${firstError}`
         console.info('[AI_TASKFLOW][INSTANT_ACTION_RESULT]', { type, robotId, taskFlowId, actionType, result: instantResult })
 
         const defaultReplyMap: Record<string, string> = {
+          [RULE_KEY.TASKFLOW_RUN]: `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 실행을 요청했습니다.`,
+          [RULE_KEY.TASKFLOW_PAUSE]: `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 일시정지를 요청했습니다.`,
+          [RULE_KEY.TASKFLOW_RESUME]: `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 재개를 요청했습니다.`,
+          [RULE_KEY.TASKFLOW_STOP]: `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 정지를 요청했습니다.`,
           'run-taskflow': `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 실행을 요청했습니다.`,
           'pause-taskflow': `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 일시정지를 요청했습니다.`,
           'resume-taskflow': `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 재개를 요청했습니다.`,
           'stop-taskflow': `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 정지를 요청했습니다.`
         }
 
-        dispatchResult(true, String(custom?.detail?.replyText || defaultReplyMap[type] || `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 제어를 요청했습니다.`))
+        const finalReplyText = buildAiTaskflowReplyText(custom?.detail?.replyText || defaultReplyMap[type] || `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 제어를 요청했습니다.`, robotId, taskFlowId)
+        dispatchResult(true, finalReplyText || `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 제어를 요청했습니다.`)
       } catch (error) {
         console.error('[AI_TASKFLOW][COMMAND_RUN_FAILED]', error)
         dispatchResult(false, String(command?.notFoundText ?? '배포/실행 요청에 실패했습니다.'))

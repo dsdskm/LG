@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
 import { Repository } from 'typeorm'
-import { clearScreenRuleCache } from '../../../domains/front-rule/front-rule-engine'
 import { clearTaskflowRulesCache } from '../../../pipeline/taskflow-language-rules'
 import { ChatRuleEntity } from './chat-rule.entity'
 
@@ -27,9 +26,9 @@ function routeMatchesTemplate(template: string, actual: string): boolean {
   return true
 }
 
-function describeRuleNames(rows: Array<{ ruleType?: string; ruleKey?: string }> | undefined | null): string {
+function describeRuleNames(rows: Array<{ ruleKey?: string }> | undefined | null): string {
   if (!rows || rows.length === 0) return 'none'
-  return rows.map((row) => `${row.ruleType ?? 'unknown'}:${row.ruleKey ?? 'unknown'}`).join(', ')
+  return rows.map((row) => `${row.ruleKey ?? 'unknown'}`).join(', ')
 }
 
 @Injectable()
@@ -71,14 +70,14 @@ export class ChatRuleService {
       : []
 
     const rows = [...exactRows, ...appRows]
-    const deduped = Array.from(new Map(rows.map((row) => [`${row.appKey}:${row.screenKey}:${row.ruleType}:${row.ruleKey}`, row])).values())
+    const deduped = Array.from(new Map(rows.map((row) => [`${row.appKey}:${row.screenKey}:${row.ruleKey}`, row])).values())
 
     if (!normalizedScreenKey) {
       const allRows = await this.repository.find({
         where: baseWhere,
         order: { priority: 'DESC', updatedAt: 'DESC', id: 'DESC' },
       })
-      const finalRows = Array.from(new Map(allRows.map((row) => [`${row.appKey}:${row.screenKey}:${row.ruleType}:${row.ruleKey}`, row])).values())
+      const finalRows = Array.from(new Map(allRows.map((row) => [`${row.appKey}:${row.screenKey}:${row.ruleKey}`, row])).values())
       this.logger.warn(
         `[chat-rule] list appKey=${normalizedAppKey || '-'} screenKey=${normalizedScreenKey || '-'} count=${finalRows.length} keys=[${describeRuleNames(finalRows)}]`,
       )
@@ -99,7 +98,7 @@ export class ChatRuleService {
     const templateRows = allRows.filter((row) => routeMatchesTemplate(String(row.screenKey ?? ''), normalizedScreenKey))
 
     const combined = [...deduped, ...templateRows]
-    const finalRows = Array.from(new Map(combined.map((row) => [`${row.appKey}:${row.screenKey}:${row.ruleType}:${row.ruleKey}`, row])).values())
+    const finalRows = Array.from(new Map(combined.map((row) => [`${row.appKey}:${row.screenKey}:${row.ruleKey}`, row])).values())
 
     this.logger.warn(
       `[chat-rule] list appKey=${normalizedAppKey || '-'} screenKey=${normalizedScreenKey || '-'} count=${finalRows.length} keys=[${describeRuleNames(finalRows)}]`,
@@ -110,7 +109,7 @@ export class ChatRuleService {
   async listAll(): Promise<ChatRuleEntity[]> {
     return this.repository.find({
       where: { enabled: true },
-      order: { appKey: 'ASC', screenKey: 'ASC', ruleType: 'ASC', priority: 'DESC', updatedAt: 'DESC', id: 'DESC' },
+      order: { appKey: 'ASC', screenKey: 'ASC', ruleKey: 'ASC', priority: 'DESC', updatedAt: 'DESC', id: 'DESC' },
     })
   }
 
@@ -119,13 +118,11 @@ export class ChatRuleService {
       where: {
         appKey: String(input.appKey ?? 'common').trim() || 'common',
         screenKey: String(input.screenKey ?? 'common').trim() || 'common',
-        ruleType: String(input.ruleType ?? 'taskflow').trim() || 'taskflow',
         ruleKey: String(input.ruleKey ?? '').trim(),
       },
     })
     const row = this.repository.create({ ...existing, ...input })
     const saved = await this.repository.save(row)
-    clearScreenRuleCache(saved.screenKey)
     clearTaskflowRulesCache(saved.screenKey)
     return saved
   }
@@ -134,7 +131,6 @@ export class ChatRuleService {
     const row = await this.repository.findOne({ where: { id } })
     if (!row) return null
     const deleted = await this.repository.remove(row)
-    clearScreenRuleCache(row.screenKey)
     clearTaskflowRulesCache(row.screenKey)
     return deleted
   }

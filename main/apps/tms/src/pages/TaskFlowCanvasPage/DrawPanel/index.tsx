@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'react-toastify'
 import styled from 'styled-components'
 import { Button } from '@repo/ui'
-import { AI_TASKFLOW_REFRESH_CONTENTS_EVENT } from '@repo/ui/components/layout/AiAssistantPanel/taskflowEvents.js'
+import { AI_TASKFLOW_REFRESH_CONTENTS_EVENT } from '@repo/constants'
 import {
   ReactFlow,
   ReactFlowProvider,

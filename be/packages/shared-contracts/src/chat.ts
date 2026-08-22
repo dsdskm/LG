@@ -4,17 +4,10 @@ export interface ChatPayload {
   currentApp?: string;
   key: string;
   author?: string;
-  accessToken?: string;
-  apiBaseUrl?: string;
-  eventAnalyzerUrl?: string;
-  configManagerUrl?: string;
+  groupId?: string;
+  siteId?: string;
   history?: ChatTurn[];
-  previousFilters?: Record<string, unknown>;
-  context?: {
-    groupId?: string;
-    siteId?: string;
-    [k: string]: unknown;
-  };
+  context?: Record<string, unknown>;
 }
 
 export interface ChatTurn {

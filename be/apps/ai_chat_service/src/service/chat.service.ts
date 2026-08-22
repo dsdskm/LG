@@ -107,12 +107,43 @@ type ScreenTask =
   | 'update'
   | 'delete'
 
+type UserReplyPolicy = {
+  infoEmptyText: string
+  defaultFallbackText: string
+  navigationFallbackText: string
+  suggestedActionFallbackText: string
+  unclearIntentFallbackText: string
+  blockedReasonPhrases: string[]
+}
+
+const USER_REPLY_POLICY_SETTING_KEY = {
+  infoEmptyText: 'replyPolicy.infoEmptyText',
+  defaultFallbackText: 'replyPolicy.defaultFallbackText',
+  navigationFallbackText: 'replyPolicy.navigationFallbackText',
+  suggestedActionFallbackText: 'replyPolicy.suggestedActionFallbackText',
+  unclearIntentFallbackText: 'replyPolicy.unclearIntentFallbackText',
+  blockedReasonPhrases: 'replyPolicy.blockedReasonPhrases',
+} as const
+
+const USER_REPLY_POLICY_DEFAULT: UserReplyPolicy = {
+  infoEmptyText: '확인할 수 있는 정보가 부족해서 답변을 만들기 어려워요. 질문을 조금 더 구체적으로 알려주세요.',
+  defaultFallbackText: '요청을 처리했지만 답변 문장을 자연스럽게 만들지 못했어요. 같은 내용을 한 번 더 말씀해 주세요.',
+  navigationFallbackText: '{path} 화면으로 이동을 준비했어요.',
+  suggestedActionFallbackText: '요청을 처리했지만 안내 문장을 만들지 못했어요. 같은 내용을 한 번 더 말씀해 주세요.',
+  unclearIntentFallbackText: '입력 내용을 정확히 이해하지 못했어요. 원하시는 작업이나 질문을 조금 더 구체적으로 알려주세요.',
+  blockedReasonPhrases: ['의도를 파악하기 어렵', '입력된 내용이 불분명', '분류는 반드시 json', 'confidence', 'reason'],
+}
+
+const USER_REPLY_POLICY_CACHE_TTL_MS = 30_000
+
 @Injectable()
 export class ChatService {
   private readonly logger = new Logger(ChatService.name)
   private readonly pipelineCfg = loadChatPipelineConfig()
 
   private readonly runtimeCache = new Map<string, RuntimeEntry>()
+  private userReplyPolicyCache: UserReplyPolicy | null = null
+  private userReplyPolicyCachedAt = 0
 
   constructor(
     private readonly chatLog: ChatLogService,
@@ -264,13 +295,19 @@ export class ChatService {
     const stripCodeBlock = text.replace(/^```(?:json)?\s*|\s*```$/gi, '').trim()
     const parsed = safeJsonParse(stripCodeBlock) as Record<string, unknown> | null
     if (parsed && typeof parsed === 'object') {
+      const hasClassifierShape =
+        (Object.prototype.hasOwnProperty.call(parsed, 'intent') || Object.prototype.hasOwnProperty.call(parsed, 'classification'))
+        && (Object.prototype.hasOwnProperty.call(parsed, 'confidence') || Object.prototype.hasOwnProperty.call(parsed, 'score') || Object.prototype.hasOwnProperty.call(parsed, 'reason'))
+      if (hasClassifierShape) {
+        return ''
+      }
+
       const preferred = [
         parsed.text,
         parsed.answer,
         parsed.content,
         parsed.summary,
         parsed.message,
-        parsed.reason,
       ]
         .map((value) => (typeof value === 'string' ? value.trim() : ''))
         .filter(Boolean)
@@ -279,25 +316,94 @@ export class ChatService {
       if (preferred) return preferred
     }
 
-    const reasonMatch = stripCodeBlock.match(/"reason"\s*:\s*"((?:\\.|[^"\\])*)"/i)
-    if (reasonMatch?.[1]) {
-      return reasonMatch[1]
-        .replace(/\\n/g, '\n')
-        .replace(/\\"/g, '"')
-        .replace(/\\'/g, "'")
-        .replace(/\\\\/g, '\\')
-    }
-
-    const singleQuoteReasonMatch = stripCodeBlock.match(/'reason'\s*:\s*'((?:\\.|[^'\\])*)'/i)
-    if (singleQuoteReasonMatch?.[1]) {
-      return singleQuoteReasonMatch[1]
-        .replace(/\\n/g, '\n')
-        .replace(/\\"/g, '"')
-        .replace(/\\'/g, "'")
-        .replace(/\\\\/g, '\\')
-    }
-
     return text
+  }
+
+  private toSettingText(value: unknown, fallback: string): string {
+    const text = String(value ?? '').trim()
+    return text || fallback
+  }
+
+  private toSettingStringArray(value: unknown, fallback: string[]): string[] {
+    if (Array.isArray(value)) {
+      const list = value.map((item) => String(item ?? '').trim()).filter(Boolean)
+      return list.length > 0 ? list : fallback
+    }
+
+    const text = String(value ?? '').trim()
+    if (!text) return fallback
+
+    const list = text
+      .split(/\r?\n|,/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+    return list.length > 0 ? list : fallback
+  }
+
+  private async getUserReplyPolicy(): Promise<UserReplyPolicy> {
+    const isFresh = this.userReplyPolicyCache && (Date.now() - this.userReplyPolicyCachedAt) < USER_REPLY_POLICY_CACHE_TTL_MS
+    if (isFresh && this.userReplyPolicyCache) {
+      return this.userReplyPolicyCache
+    }
+
+    const [
+      infoEmptyTextRaw,
+      defaultFallbackTextRaw,
+      navigationFallbackTextRaw,
+      suggestedActionFallbackTextRaw,
+      unclearIntentFallbackTextRaw,
+      blockedReasonPhrasesRaw,
+    ] = await Promise.all([
+      this.chatSetting.get(USER_REPLY_POLICY_SETTING_KEY.infoEmptyText),
+      this.chatSetting.get(USER_REPLY_POLICY_SETTING_KEY.defaultFallbackText),
+      this.chatSetting.get(USER_REPLY_POLICY_SETTING_KEY.navigationFallbackText),
+      this.chatSetting.get(USER_REPLY_POLICY_SETTING_KEY.suggestedActionFallbackText),
+      this.chatSetting.get(USER_REPLY_POLICY_SETTING_KEY.unclearIntentFallbackText),
+      this.chatSetting.get(USER_REPLY_POLICY_SETTING_KEY.blockedReasonPhrases),
+    ])
+
+    const policy: UserReplyPolicy = {
+      infoEmptyText: this.toSettingText(infoEmptyTextRaw, USER_REPLY_POLICY_DEFAULT.infoEmptyText),
+      defaultFallbackText: this.toSettingText(defaultFallbackTextRaw, USER_REPLY_POLICY_DEFAULT.defaultFallbackText),
+      navigationFallbackText: this.toSettingText(navigationFallbackTextRaw, USER_REPLY_POLICY_DEFAULT.navigationFallbackText),
+      suggestedActionFallbackText: this.toSettingText(suggestedActionFallbackTextRaw, USER_REPLY_POLICY_DEFAULT.suggestedActionFallbackText),
+      unclearIntentFallbackText: this.toSettingText(unclearIntentFallbackTextRaw, USER_REPLY_POLICY_DEFAULT.unclearIntentFallbackText),
+      blockedReasonPhrases: this.toSettingStringArray(blockedReasonPhrasesRaw, USER_REPLY_POLICY_DEFAULT.blockedReasonPhrases),
+    }
+
+    this.userReplyPolicyCache = policy
+    this.userReplyPolicyCachedAt = Date.now()
+    return policy
+  }
+
+  private looksLikeClassifierReasonText(text: string, blockedReasonPhrases: string[]): boolean {
+    const raw = String(text ?? '').trim().toLowerCase()
+    if (!raw) return false
+
+    if (/^\{\s*"intent"\s*:/.test(raw)) return true
+    if (/^\{\s*'intent'\s*:/.test(raw)) return true
+
+    const blocked = Array.isArray(blockedReasonPhrases)
+      ? blockedReasonPhrases.map((item) => String(item ?? '').trim().toLowerCase()).filter(Boolean)
+      : []
+
+    for (const phrase of blocked) {
+      if (phrase && raw.includes(phrase)) return true
+    }
+
+    return false
+  }
+
+  private buildNavigationFallbackText(template: string, path: string): string {
+    const pathValue = String(path ?? '').trim().replace(/^\/+/, '')
+    if (!pathValue) return '화면 이동을 준비했어요.'
+
+    const rawTemplate = String(template ?? '').trim() || USER_REPLY_POLICY_DEFAULT.navigationFallbackText
+    if (rawTemplate.includes('{path}')) {
+      return rawTemplate.replace(/\{path\}/g, pathValue)
+    }
+
+    return `${pathValue} 화면으로 이동을 준비했어요.`
   }
 
   private summarizeRagDebugText(text: string): string {
@@ -310,47 +416,28 @@ export class ChatService {
     return '질문과 관련된 내용을 확인해서 답변을 정리해봤어요.'
   }
 
-  private applyPoliteKoreanTone(text: string): string {
-    const raw = String(text ?? '').trim()
-    if (!raw) return ''
-
-    const alreadyPolite = /(해요|어요|합니다|세요|네요|예요|이에요|았어요|었어요|겠어요)$/.test(raw)
-    if (alreadyPolite) {
-      return raw
-    }
-
-    let next = raw.replace(/\s+/g, ' ').replace(/[.!?]+$/, '')
-
-    if (/합니다$/.test(next)) {
-      return `${next.replace(/합니다$/, '해요')}.`
-    }
-
-    if (/습니까$/.test(next)) {
-      return `${next.replace(/습니까$/, '어요')}.`
-    }
-
-    if (/한다$/.test(next)) {
-      return `${next.replace(/한다$/, '해요')}.`
-    }
-
-    if (/이다$/.test(next)) {
-      return `${next.replace(/이다$/, '이에요')}.`
-    }
-
-    if (/다$/.test(next)) {
-      return `${next.replace(/다$/, '해요')}.`
-    }
-
-    return `${next}.`
-  }
-
-  private ensureUserFacingReply(reply: ChatReply): ChatReply {
+  private async ensureUserFacingReply(reply: ChatReply): Promise<ChatReply> {
+    const userReplyPolicy = await this.getUserReplyPolicy()
     const text = String(reply?.text ?? '').trim()
     if (text) {
       const normalizedText = this.normalizeUserFacingText(text)
+      if (!normalizedText) {
+        return {
+          ...reply,
+          text: userReplyPolicy.unclearIntentFallbackText,
+        }
+      }
+
+      if (this.looksLikeClassifierReasonText(normalizedText, userReplyPolicy.blockedReasonPhrases)) {
+        return {
+          ...reply,
+          text: userReplyPolicy.unclearIntentFallbackText,
+        }
+      }
+
       const ragFriendlyText = this.summarizeRagDebugText(normalizedText)
       const finalTextCandidate = this.sanitizeLeadingAssistantPreface(ragFriendlyText)
-      const finalText = this.applyPoliteKoreanTone(finalTextCandidate || ragFriendlyText || normalizedText)
+      const finalText = finalTextCandidate || ragFriendlyText || normalizedText
 
       if (finalText !== text) {
         return {
@@ -372,7 +459,7 @@ export class ChatService {
     if (this.isInfoPipelineReply(reply)) {
       return {
         ...reply,
-        text: '정보 응답 생성에 실패했습니다.',
+        text: userReplyPolicy.infoEmptyText,
       }
     }
 
@@ -381,13 +468,13 @@ export class ChatService {
       ? (reply.chat_action_param as Record<string, unknown>)
       : undefined
 
-    let fallbackText = '요청을 처리했지만 답변 문장을 만들지 못했습니다. 다시 질문해 주세요.'
+    let fallbackText = userReplyPolicy.defaultFallbackText
 
     if (chatAction === 'navigation') {
       const path = String(actionParam?.path ?? '').trim().replace(/^\/+/, '')
-      fallbackText = path ? `${path} 화면으로 이동을 준비했어요.` : '화면 이동을 준비했어요.'
+      fallbackText = this.buildNavigationFallbackText(userReplyPolicy.navigationFallbackText, path)
     } else if (Array.isArray(actionParam?.suggested_actions) && actionParam.suggested_actions.length > 0) {
-      fallbackText = '요청을 처리했지만 답변 문장을 만들지 못했습니다. 같은 내용을 한 번 더 질문해 주세요.'
+      fallbackText = userReplyPolicy.suggestedActionFallbackText
     }
 
     return {
@@ -489,7 +576,7 @@ export class ChatService {
     const frontRuleReply = await this.tryFrontRuleEngine(ctx)
     if (frontRuleReply) {
       this.stageLog('3단계:룰우선처리', 'served', '화면별 front-rule 처리로 응답 완료', reqId)
-      return this.ensureUserFacingReply(this.withSuggestedActions(
+      return await this.ensureUserFacingReply(this.withSuggestedActions(
         this.withTaskflowExplanationImages(
           this.attachPipelineTrace(
             frontRuleReply,
@@ -507,7 +594,7 @@ export class ChatService {
       const fallbackReply = await this.tryComposeTaskflowFallback(ctx, pipelineReply)
       if (fallbackReply) {
         this.stageLog('4-1단계:화면파이프라인', 'completed', '화면 파이프라인 후 태스크플로우 draft 폴백 반영 완료', reqId)
-        return this.ensureUserFacingReply(this.withSuggestedActions(
+        return await this.ensureUserFacingReply(this.withSuggestedActions(
           this.withTaskflowExplanationImages(
             this.attachPipelineTrace(
               fallbackReply,
@@ -519,7 +606,7 @@ export class ChatService {
         ))
       }
       this.stageLog('4-1단계:화면파이프라인', 'completed', '화면 파이프라인에서 응답 생성 완료', reqId)
-      return this.ensureUserFacingReply(this.withSuggestedActions(
+      return await this.ensureUserFacingReply(this.withSuggestedActions(
         this.withTaskflowExplanationImages(
           this.attachPipelineTrace(
             pipelineReply,
@@ -535,11 +622,11 @@ export class ChatService {
     this.stageLog('5단계:가이던스폴백', 'fallback', '등록 화면 처리 불가로 기본 안내 경로 진입', reqId)
     const guidanceReply = await this.handleGuidance(ctx)
     this.stageLog('5-1단계:가이던스폴백', 'completed', '기본 안내 응답 생성 완료', reqId)
-    return this.ensureUserFacingReply(this.withSuggestedActions(
+    return await this.ensureUserFacingReply(this.withSuggestedActions(
       this.withTaskflowExplanationImages(
         this.attachPipelineTrace(
           guidanceReply,
-          'llm(공통 프롬프트+앱별 프롬프트)=>guidance-llm=>응답조립',
+          'guidance-fallback-text=>응답조립',
         ),
         ctx,
       ),
@@ -1596,188 +1683,30 @@ export class ChatService {
     toolName: string,
     toolResult: unknown,
   ): ChatReply {
-    if (toolName === 'query_events') {
-      const result = toolResult as any
-      const filters = result?.resolvedFilters && typeof result.resolvedFilters === 'object'
-        ? result.resolvedFilters
-        : undefined
-      const screen = getScreenConfig(routeKey)
-      return {
-        chat_action: ruleMatch.chatAction || screen?.chatActions.data || 'ailog/event/filter',
-        chat_action_param: filters ? { filters } : undefined,
-        text: this.toDisplayText(result?.summary)
-          || String(ruleMatch.fallbackText ?? '').trim()
-          || String(screen?.fallbackText ?? '').trim()
-          || '조회 결과를 확인했습니다.',
-      }
-    }
-
-    const resultRow = toolResult && typeof toolResult === 'object'
-      ? (toolResult as Record<string, unknown>)
-      : {}
-    const text = this.toDisplayText(
-      resultRow.text ?? resultRow.summary ?? resultRow.message ?? resultRow.assistantText ?? toolResult,
-    )
+    const rule = ruleMatch.rule
     const screen = getScreenConfig(routeKey)
-    const baseActionParam = ruleMatch.chatActionParam && typeof ruleMatch.chatActionParam === 'object'
-      ? (ruleMatch.chatActionParam as Record<string, unknown>)
-      : {}
+    const text = String(rule.replyText ?? '').trim()
+      || String(screen?.fallbackText ?? '').trim()
+      || '요청을 처리했습니다.'
 
     return {
-      chat_action: ruleMatch.chatAction || screen?.chatActions.action || 'action',
+      chat_action: 'action',
       chat_action_param: {
-        ...baseActionParam,
         toolName,
-        toolResult: resultRow,
-      },
-      text: text
-        || String(ruleMatch.fallbackText ?? '').trim()
-        || String(screen?.fallbackText ?? '').trim()
-        || '요청을 처리했습니다.',
-    }
-  }
-
-  /** taskflow-graph 룰(노드 연결/삭제)은 tool 없이 캔버스 draft를 바로 만들어 응답한다. */
-  private async buildTaskflowGraphRuleReply(
-    ctx: ChatContext,
-    routeKey: string,
-    ruleMatch: FrontRuleMatch,
-  ): Promise<ChatReply | null> {
-    if (ruleMatch.ruleType === 'taskflow-graph-guide') {
-      const screen = getScreenConfig(routeKey)
-      const guideText = String(ruleMatch.fallbackText ?? '').trim()
-      const guidanceText = Array.isArray(screen?.guidanceExamples) && screen.guidanceExamples.length > 0
-        ? `아래처럼 요청해보세요.\n${screen.guidanceExamples.join('\n')}`
-        : ''
-
-      const reply: ChatReply = {
-        chat_action: ruleMatch.chatAction || screen?.chatActions.info || 'info',
-        chat_action_param: {
-          ...(ruleMatch.chatActionParam ?? {}),
-          matchedRuleKey: ruleMatch.ruleKey,
-        },
-        text: guideText || guidanceText || '지원하는 요청 형식을 확인해 주세요.',
-      }
-
-      reply.pipelineConfidence = ruleMatch.confidence
-      reply.matchedRule = {
-        source: 'front-rule',
-        ruleKey: ruleMatch.ruleKey,
-        ruleType: ruleMatch.ruleType,
-        reason: ruleMatch.reason,
-        confidence: Number.isFinite(Number(ruleMatch.confidence)) ? Number(ruleMatch.confidence) : undefined,
-      }
-
-      await this.saveLog(ctx.body, reply, ctx, this.buildChatLogDebugMeta(ctx, reply, {
-        pipelineIntent: 'info',
-        pipelineConfidence: ruleMatch.confidence,
-        pipelineTrace: `front-rule:${ruleMatch.ruleKey}`,
-      }, 'front-rule'))
-
-      return reply
-    }
-
-    if (ruleMatch.ruleType !== 'taskflow-graph' && !ruleMatch.graphOperation) return null
-
-    const arrowLines = ruleMatch.graphOperation === 'separate-arrow-lines'
-      ? String(ruleMatch.captures[0] ?? ctx.message)
-          .split(/\r?\n/)
-          .map((line) => line.trim())
-          .filter(Boolean)
-          .flatMap((line) => {
-            const separators = Array.from(line.match(/->|=>|→|⇒/g) ?? [])
-            const rawLabels = line.split(/->|=>|→|⇒/).map((item) => item.trim())
-            const hasLeadingArrow = rawLabels[0] === ''
-            const labels = hasLeadingArrow ? rawLabels.slice(1) : rawLabels
-            const valid = labels.every(Boolean) && (hasLeadingArrow ? labels.length >= 1 : labels.length >= 2)
-            return valid ? [{ labels, separators, hasLeadingArrow }] : []
-          })
-      : []
-
-    const nodes = arrowLines.length > 0
-      ? arrowLines.flatMap((line) => line.labels)
-      : ruleMatch.graphOperation === 'append-leading'
-      ? String(ruleMatch.captures[0] ?? '')
-          .split(/->|=>|→|⇒/)
-          .map((item) => item.trim())
-          .filter(Boolean)
-      : ruleMatch.captures.map((item) => String(item ?? '').trim()).filter(Boolean)
-    this.logger.warn(
-      `[front-rule][taskflow-graph] reqId=${ctx.reqId} ruleKey=${ruleMatch.ruleKey} nodes=${JSON.stringify(nodes)} direction=${ruleMatch.direction ?? '-'}`,
-    )
-
-    const minimumNodeCount =
-      ruleMatch.graphOperation === 'append-leading' || ruleMatch.graphOperation === 'separate-arrow-lines' ? 1 : 2
-    if (nodes.length < minimumNodeCount) {
-      this.logger.warn(`[front-rule][taskflow-graph] reqId=${ctx.reqId} 노드 캡처 부족으로 draft 생성 생략`)
-      return null
-    }
-
-    const insertAfter = arrowLines.length > 0
-      ? arrowLines.flatMap((line) => line.labels.map((label, index) => {
-          if (index === 0) {
-            return { after: '', step: label, isolated: true, sourceHandle: 'right', targetHandle: 'left' }
-          }
-
-          const separatorIndex = line.hasLeadingArrow ? index : index - 1
-          const separator = line.separators[separatorIndex] ?? '->'
-          const vertical = separator === '=>' || separator === '⇒'
-          return {
-            after: line.labels[index - 1],
-            step: label,
-            appendOnly: true,
-            sourceHandle: vertical ? 'left' : 'right',
-            targetHandle: 'left',
-          }
-        }))
-      : nodes.map((label, index) => (
-          index === 0
-            ? { after: '', step: label, appendOnly: true, sourceHandle: 'right', targetHandle: 'left' }
-            : { after: nodes[index - 1], step: label, appendOnly: true, sourceHandle: 'right', targetHandle: 'left' }
-        ))
-
-    const canvasDraft = {
-      mode: 'edit' as const,
-      insertAfter,
-    }
-
-    const screen = getScreenConfig(routeKey)
-    const connectionText = arrowLines.length > 0
-      ? arrowLines.map((line) => line.labels.join(' -> ')).join('\n')
-      : nodes.join(' -> ')
-    const text = `${connectionText} 연결을 캔버스에 반영했습니다.`
-
-    const reply: ChatReply = {
-      chat_action: ruleMatch.chatAction || screen?.chatActions.action || 'action',
-      chat_action_param: {
-        ...(ruleMatch.chatActionParam ?? {}),
-        matchedRuleKey: ruleMatch.ruleKey,
-        canvasDraft,
+        toolResult,
+        matchedRuleKey: rule.ruleKey,
       },
       text,
     }
+  }
 
-    reply.pipelineConfidence = ruleMatch.confidence
-    reply.matchedRule = {
-      source: 'front-rule',
-      ruleKey: ruleMatch.ruleKey,
-      ruleType: ruleMatch.ruleType,
-      reason: ruleMatch.reason,
-      confidence: Number.isFinite(Number(ruleMatch.confidence)) ? Number(ruleMatch.confidence) : undefined,
-    }
-
-    this.logger.warn(
-      `[front-rule][taskflow-graph] reqId=${ctx.reqId} draft=${JSON.stringify(canvasDraft)}`,
-    )
-
-    await this.saveLog(ctx.body, reply, ctx, this.buildChatLogDebugMeta(ctx, reply, {
-      pipelineIntent: 'action',
-      pipelineConfidence: ruleMatch.confidence,
-      pipelineTrace: `front-rule:${ruleMatch.ruleKey}`,
-    }, 'front-rule'))
-
-    this.stageLog('3단계:룰우선처리', 'served', `taskflow-graph 룰로 캔버스 draft 응답(ruleKey=${ruleMatch.ruleKey})`, ctx.reqId)
-    return reply
+  /** taskflow-graph 룰은 현재 최소 매칭 결과에서는 사용하지 않는다. */
+  private async buildTaskflowGraphRuleReply(
+    _ctx: ChatContext,
+    _routeKey: string,
+    _ruleMatch: FrontRuleMatch,
+  ): Promise<ChatReply | null> {
+    return null
   }
 
   private async tryFrontRuleEngine(ctx: ChatContext): Promise<ChatReply | null> {
@@ -1785,8 +1714,10 @@ export class ChatService {
     this.logger.warn(
       `[front-rule] reqId=${ctx.reqId} ctxKey=${ctx.key} matchedRouteKey=${matchedRouteKey} currentPath=${ctx.currentPath || '-'} message="${ctx.message}"`,
     )
+
     const ruleMatch = await matchFrontRule(
       {
+        appKey: ctx.currentApp,
         screenKey: matchedRouteKey,
         message: ctx.message,
       },
@@ -1798,192 +1729,45 @@ export class ChatService {
       return null
     }
 
+    const rule = ruleMatch.rule
+    const reply: ChatReply = {
+      chat_action: 'action',
+      chat_action_param: {
+        matchedRuleKey: rule.ruleKey,
+      },
+      text: String(rule.replyText ?? '').trim() || '요청을 처리했습니다.',
+    }
+
     this.stageLog(
       '3단계:룰우선처리',
       'matched',
-      `front-rule 매칭 성공(ruleKey=${ruleMatch.ruleKey}, intent=${ruleMatch.intent})`,
+      `front-rule 매칭 성공(ruleKey=${rule.ruleKey})`,
       ctx.reqId,
     )
 
-    if (ruleMatch.intent === 'info') {
-      const chunks = this.resolveFrontRuleChunks(matchedRouteKey, ruleMatch.chunkKeys)
-      const text = this.renderFrontRuleTemplate(ruleMatch.answerTemplate, ctx.message, chunks)
-      const screen = getScreenConfig(matchedRouteKey)
-      const baseActionParam = ruleMatch.chatActionParam && typeof ruleMatch.chatActionParam === 'object'
-        ? (ruleMatch.chatActionParam as Record<string, unknown>)
-        : {}
+    await this.saveLog(ctx.body, reply, ctx, this.buildChatLogDebugMeta(ctx, reply, {
+      pipelineIntent: 'action',
+      pipelineTrace: `front-rule:${rule.ruleKey}`,
+    }, 'front-rule'))
 
-      const reply: ChatReply = {
-        chat_action: ruleMatch.chatAction || screen?.chatActions.info || 'info',
-        chat_action_param: {
-          ...baseActionParam,
-          matchedRuleKey: ruleMatch.ruleKey,
-          usedChunks: chunks.map((row) => row.key),
-          usedCollection: chunks[0]?.collection,
-        },
-        text: text
-          || String(ruleMatch.fallbackText ?? '').trim()
-          || String(screen?.fallbackText ?? '').trim()
-          || '관련 정보를 찾지 못했습니다.',
-      }
-
-      reply.usedCollection = chunks[0]?.collection
-      reply.primaryChunkKey = chunks[0]?.key
-      reply.usedChunks = chunks.map((row) => row.key)
-      reply.pipelineConfidence = ruleMatch.confidence
-      reply.matchedRule = {
-        source: 'front-rule',
-        ruleKey: ruleMatch.ruleKey,
-        ruleType: ruleMatch.intent,
-        reason: ruleMatch.reason,
-        confidence: Number.isFinite(Number(ruleMatch.confidence))
-          ? Number(ruleMatch.confidence)
-          : undefined,
-      }
-
-      await this.saveLog(ctx.body, reply, ctx, this.buildChatLogDebugMeta(ctx, reply, {
-        pipelineIntent: 'info',
-        pipelineConfidence: ruleMatch.confidence,
-        pipelineTrace: `front-rule:${ruleMatch.ruleKey}`,
-      }, 'front-rule'))
-
-      return reply
-    }
-
-    const canvasReply = await this.buildTaskflowGraphRuleReply(ctx, matchedRouteKey, ruleMatch)
-    if (canvasReply) return canvasReply
-
-    const toolName = String(ruleMatch.toolName ?? '').trim()
-    if (!toolName) {
-      if (ruleMatch.chatAction) {
-        const screen = getScreenConfig(matchedRouteKey)
-        const baseActionParam = ruleMatch.chatActionParam && typeof ruleMatch.chatActionParam === 'object'
-          ? (ruleMatch.chatActionParam as Record<string, unknown>)
-          : {}
-        const directReplyText = String(
-          (ruleMatch.toolArgs && typeof ruleMatch.toolArgs === 'object' && 'replyText' in ruleMatch.toolArgs
-            ? ruleMatch.toolArgs.replyText
-            : '') ?? '',
-        ).trim()
-        const reply: ChatReply = {
-          chat_action: ruleMatch.chatAction,
-          chat_action_param: {
-            ...baseActionParam,
-            matchedRuleKey: ruleMatch.ruleKey,
-          },
-          text: directReplyText
-            || String(ruleMatch.fallbackText ?? '').trim()
-            || String(screen?.fallbackText ?? '').trim()
-            || '요청을 처리합니다.',
-        }
-        reply.pipelineConfidence = ruleMatch.confidence
-        reply.matchedRule = {
-          source: 'front-rule',
-          ruleKey: ruleMatch.ruleKey,
-          ruleType: ruleMatch.ruleType,
-          reason: ruleMatch.reason,
-          confidence: Number.isFinite(Number(ruleMatch.confidence)) ? Number(ruleMatch.confidence) : undefined,
-        }
-
-        await this.saveLog(ctx.body, reply, ctx, this.buildChatLogDebugMeta(ctx, reply, {
-          pipelineIntent: 'action',
-          pipelineConfidence: ruleMatch.confidence,
-          pipelineTrace: `front-rule:${ruleMatch.ruleKey}`,
-        }, 'front-rule'))
-
-        return reply
-      }
-
-      this.stageLog('3단계:룰우선처리', 'miss', `action 룰에 toolName 없음(ruleKey=${ruleMatch.ruleKey})`, ctx.reqId)
-      return null
-    }
-
-    const tool = this.resolveRuleTool(matchedRouteKey, toolName)
-    if (!tool) {
-      this.stageLog('3단계:룰우선처리', 'miss', `tool 미등록(toolName=${toolName})`, ctx.reqId)
-      return null
-    }
-
-    const toolCtx = buildToolContextFromBody({
-      body: {
-        ...ctx.body,
-        routeKey: matchedRouteKey,
-        screenRouteKey: matchedRouteKey,
-      },
-      message: ctx.message,
-      log: {
-        log: (m) => this.logger.log(m),
-        error: (m) => this.logger.error(m),
-      },
-    })
-
-    try {
-      const toolResult = await tool.execute({ ...(ruleMatch.toolArgs ?? {}) }, toolCtx)
-      const reply = this.buildRuleFirstActionReply(matchedRouteKey, ruleMatch, toolName, toolResult)
-      reply.pipelineConfidence = ruleMatch.confidence
-      reply.matchedRule = {
-        source: 'front-rule',
-        ruleKey: ruleMatch.ruleKey,
-        ruleType: ruleMatch.intent,
-        reason: ruleMatch.reason,
-        confidence: Number.isFinite(Number(ruleMatch.confidence))
-          ? Number(ruleMatch.confidence)
-          : undefined,
-      }
-
-      await this.saveLog(ctx.body, reply, ctx, this.buildChatLogDebugMeta(ctx, reply, {
-        pipelineIntent: 'action',
-        pipelineConfidence: ruleMatch.confidence,
-        pipelineTrace: `front-rule:${ruleMatch.ruleKey}`,
-      }, 'front-rule'))
-
-      return this.ensurePeriodInEventReply(reply)
-    } catch (e: any) {
-      this.logger.debug(`[front-rule] tool execute failed rule=${ruleMatch.ruleKey} tool=${toolName} err=${e?.message ?? String(e)}`)
-      this.stageLog('3단계:룰우선처리', 'error', `tool 실행 실패(rule=${ruleMatch.ruleKey})`, ctx.reqId)
-      return null
-    }
+    return reply
   }
 
   /** 기존 화면 안내(guidance) 처리. */
   private async handleGuidance(ctx: ChatContext): Promise<ChatReply> {
-    const commonSystem = getPromptStore()?.getPromptContent('common', 'system') ?? ''
+    const userReplyPolicy = await this.getUserReplyPolicy()
     const routeKey = ctx.key
-    const routeHint =
-      getPromptStore()?.getPromptContent(routeKey, 'intent-hint') ??
-      getPromptStore()?.getPromptContent(routeKey, 'data-system') ??
-      getPromptStore()?.getPromptContent(routeKey, 'action-system') ??
-      ''
-
-    const systemPrompt = [commonSystem, routeHint].filter(Boolean).join('\n\n')
-    const messages = systemPrompt
-      ? [
-        { role: 'system' as const, content: systemPrompt },
-        ...ctx.history,
-        { role: 'user' as const, content: ctx.message },
-      ]
-      : [...ctx.history, { role: 'user' as const, content: ctx.message }]
+    const matchedRouteKey = this.findNearestRegisteredRouteKey(routeKey, ctx.reqId) ?? routeKey
+    const screen = getScreenConfig(matchedRouteKey)
+    const screenFallbackText = String(screen?.fallbackText ?? '').trim()
+    const finalText = screenFallbackText || userReplyPolicy.defaultFallbackText
 
     this.logger.log(
-      `[chat] [reqId=${ctx.reqId}] status=fallback reason=guidance 경로에서 기본 LLM 호출`,
+      `[chat] [reqId=${ctx.reqId}] status=fallback reason=guidance 경로에서 기본 fallback 문구 반환`,
     )
     this.logger.log(
-      `[chat] [trace][reqId=${ctx.reqId}] route=${routeKey || '-'} promptMeta={commonSystem:${commonSystem.length}, routeHint:${routeHint.length}, routeHintApplied:${Boolean(routeHint)}}`,
+      `[chat] [trace][reqId=${ctx.reqId}] route=${routeKey || '-'} matchedRoute=${matchedRouteKey || '-'} fallbackSource=${screenFallbackText ? 'screen-fallback' : 'replyPolicy.defaultFallbackText'}`,
     )
-
-    const result = await ctx.llm.client.generateContent({
-      messages,
-      maxOutputTokens: ctx.llm.maxOutputTokens,
-    })
-
-    const text = result?.text?.trim()
-    const finalText = text || ''
-
-    if (!text) {
-      this.logger.debug(
-        `[chat] guidance-empty-text route=${routeKey || '-'} fallbackApplied=false`,
-      )
-    }
 
     const reply: ChatReply = {
       chat_action: routeKey || 'default',

@@ -31,8 +31,9 @@ import {
   AI_TASKFLOW_CANVAS_COMMAND_EVENT,
   AI_TASKFLOW_CANVAS_DRAFT_EVENT,
   AI_TASKFLOW_CANVAS_RESULT_EVENT,
-  AI_TASKFLOW_REFRESH_CONTENTS_EVENT
-} from '@repo/ui/components/layout/AiAssistantPanel/taskflowEvents.js'
+  AI_TASKFLOW_REFRESH_CONTENTS_EVENT,
+  RULE_KEY
+} from '@repo/constants'
 import { useOrganizationStore, useUserStore } from '@repo/stores'
 import { Checkbox } from '@repo/ui'
 import { Main, PageRoot, SaveHint } from './styles'
@@ -41,6 +42,7 @@ import DrawPanel from './DrawPanel'
 import type { PaletteItem } from '@/types/palette'
 import { MarkerType } from '@xyflow/react'
 import { useFlowEditorStore as useFlowEditorStoreHook, type RFEdge, type RFNode } from '@/store/taskflow.canvas.store'
+import { buildAiTaskflowReplyText, resolveAiTaskflowCommandTarget } from '@/utils/aiTaskflowCommand'
 
 type SaveOverride = { name: string; description: string }
 type MoveToMapEntry = { nodeId: string; mapId: string }
@@ -2376,14 +2378,6 @@ export default function TaskFlowCanvasPage() {
   }, [isDirty, leaveCanvas, saving])
 
   const resolveDeployRunTargets = (command: Record<string, unknown>) => {
-    const candidateList = (value: unknown) => {
-      if (Array.isArray(value)) {
-        return value.map((item) => String(item ?? '').trim()).filter(Boolean)
-      }
-      const single = String(value ?? '').trim()
-      return single ? [single] : []
-    }
-
     const fallbackTaskFlowId = Number.isFinite(Number(selectedFlowId ?? numericFlowId))
       ? Number(selectedFlowId ?? numericFlowId)
       : Number.NaN
@@ -2394,31 +2388,10 @@ export default function TaskFlowCanvasPage() {
       return match?.[1] ? decodeURIComponent(match[1]) : ''
     })()
 
-    const robotCandidates = candidateList(command?.robotId ?? command?.robot)
-    const taskFlowCandidates = candidateList(command?.taskFlowId ?? command?.taskflowId ?? command?.id)
-
-    const explicitRobotId = robotCandidates.find((candidate) => !/^\d+$/.test(candidate)) || ''
-    const explicitTaskFlowId = taskFlowCandidates.find((candidate) => /^\d+$/.test(candidate)) || ''
-
-    let robotId = explicitRobotId || fallbackRobotId
-    let taskFlowId = Number(explicitTaskFlowId || (Number.isFinite(fallbackTaskFlowId) && fallbackTaskFlowId > 0 ? String(fallbackTaskFlowId) : ''))
-
-    if (taskFlowCandidates.length === 1 && robotCandidates.length === 0 && fallbackRobotId) {
-      robotId = fallbackRobotId
-      taskFlowId = Number(taskFlowCandidates[0])
-    }
-
-    if (robotCandidates.length === 1 && taskFlowCandidates.length === 0 && Number.isFinite(fallbackTaskFlowId)) {
-      robotId = robotCandidates[0]
-      taskFlowId = fallbackTaskFlowId
-    }
-
-    if (robotCandidates.length === 1 && taskFlowCandidates.length === 0 && fallbackRobotId && /^\d+$/.test(robotCandidates[0])) {
-      robotId = fallbackRobotId
-      taskFlowId = Number(robotCandidates[0])
-    }
-
-    return { robotId, taskFlowId }
+    return resolveAiTaskflowCommandTarget(command, {
+      robotId: fallbackRobotId,
+      taskFlowId: fallbackTaskFlowId
+    })
   }
 
   useEffect(() => {
@@ -2427,6 +2400,15 @@ export default function TaskFlowCanvasPage() {
       const command = custom?.detail?.command
       if (!command || typeof command !== 'object') return
       const replyText = String(custom?.detail?.replyText ?? '').trim()
+      const type = String(command?.type ?? '')
+        .trim()
+        .toLowerCase()
+
+      console.info('[AI_TASKFLOW][RAW_EVENT_RECEIVED]', {
+        page: 'TaskFlowCanvasPage',
+        type,
+        command
+      })
 
       const dispatchResult = (success: boolean, message?: string) => {
         window.dispatchEvent(
@@ -2444,9 +2426,6 @@ export default function TaskFlowCanvasPage() {
         )
       }
 
-      const type = String(command?.type ?? '')
-        .trim()
-        .toLowerCase()
       if (!type) return
 
       // 저장 방식이 하나로 통합되어, 예전 temp-save 커맨드도 같은 저장으로 처리한다.
@@ -2566,23 +2545,47 @@ export default function TaskFlowCanvasPage() {
       }
 
       if (
+        type === RULE_KEY.TASKFLOW_DEPLOY ||
+        type === RULE_KEY.TASKFLOW_RUN ||
+        type === RULE_KEY.TASKFLOW_PAUSE ||
+        type === RULE_KEY.TASKFLOW_RESUME ||
+        type === RULE_KEY.TASKFLOW_STOP ||
         type === 'deploy-taskflow' ||
         type === 'run-taskflow' ||
         type === 'pause-taskflow' ||
         type === 'resume-taskflow' ||
         type === 'stop-taskflow'
       ) {
-        const { robotId, taskFlowId } = resolveDeployRunTargets(command)
+        const { resolvedRobotId: robotId, taskFlowIdValue: taskFlowId } = resolveDeployRunTargets(command)
         const resolvedGroupId = selectedGroupId || normalizeOrgId(selectedFlow?.groupId)
         const resolvedSiteId = selectedSiteId || normalizeOrgId(selectedFlow?.siteId)
 
-        if (!robotId || !Number.isFinite(taskFlowId) || taskFlowId <= 0 || (!resolvedGroupId && type === 'deploy-taskflow') || (!resolvedSiteId && type === 'deploy-taskflow')) {
+        console.info('[AI_TASKFLOW][COMMAND_RECEIVED]', {
+          page: 'TaskFlowCanvasPage',
+          type,
+          robotId,
+          taskFlowId,
+          resolvedGroupId,
+          resolvedSiteId,
+          command
+        })
+
+        if (!robotId || !Number.isFinite(taskFlowId) || taskFlowId <= 0 || (!resolvedGroupId && (type === RULE_KEY.TASKFLOW_DEPLOY || type === 'deploy-taskflow')) || (!resolvedSiteId && (type === RULE_KEY.TASKFLOW_DEPLOY || type === 'deploy-taskflow'))) {
+          console.warn('[AI_TASKFLOW][COMMAND_BLOCKED_BY_GUARD]', {
+            page: 'TaskFlowCanvasPage',
+            type,
+            robotId,
+            taskFlowId,
+            resolvedGroupId,
+            resolvedSiteId,
+            requiresDeployOrg: type === RULE_KEY.TASKFLOW_DEPLOY || type === 'deploy-taskflow'
+          })
           dispatchResult(false, String(command?.notFoundText ?? '배포/실행 대상 정보를 찾지 못했습니다.'))
           return
         }
 
         try {
-          if (type === 'deploy-taskflow') {
+          if (type === RULE_KEY.TASKFLOW_DEPLOY || type === 'deploy-taskflow') {
             const deployPayload: DeployActionRequest = {
               taskFlowId,
               param: {
@@ -2611,7 +2614,8 @@ export default function TaskFlowCanvasPage() {
               taskFlowId,
               result: deployResult,
             })
-            dispatchResult(true, String(replyText || `${robotId} 로봇에 ${taskFlowId} 태스크플로우 배포를 요청했습니다.`))
+            const finalDeployReply = buildAiTaskflowReplyText(replyText || `${robotId} 로봇에 ${taskFlowId} 태스크플로우 배포를 요청했습니다.`, robotId, taskFlowId)
+            dispatchResult(true, finalDeployReply || `${robotId} 로봇에 ${taskFlowId} 태스크플로우 배포를 요청했습니다.`)
             return
           }
 
@@ -2622,6 +2626,10 @@ export default function TaskFlowCanvasPage() {
           }
 
           const instantActionTypeMap: Record<string, string> = {
+            [RULE_KEY.TASKFLOW_RUN]: 'start',
+            [RULE_KEY.TASKFLOW_PAUSE]: 'startPause',
+            [RULE_KEY.TASKFLOW_RESUME]: 'stopPause',
+            [RULE_KEY.TASKFLOW_STOP]: 'stop',
             'run-taskflow': 'start',
             'pause-taskflow': 'startPause',
             'resume-taskflow': 'stopPause',
@@ -2665,13 +2673,18 @@ export default function TaskFlowCanvasPage() {
           })
 
           const defaultReplyMap: Record<string, string> = {
+            [RULE_KEY.TASKFLOW_RUN]: `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 실행을 요청했습니다.`,
+            [RULE_KEY.TASKFLOW_PAUSE]: `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 일시정지를 요청했습니다.`,
+            [RULE_KEY.TASKFLOW_RESUME]: `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 재개를 요청했습니다.`,
+            [RULE_KEY.TASKFLOW_STOP]: `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 정지를 요청했습니다.`,
             'run-taskflow': `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 실행을 요청했습니다.`,
             'pause-taskflow': `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 일시정지를 요청했습니다.`,
             'resume-taskflow': `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 재개를 요청했습니다.`,
             'stop-taskflow': `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 정지를 요청했습니다.`,
           }
 
-          dispatchResult(true, String(replyText || defaultReplyMap[type] || `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 제어를 요청했습니다.`))
+          const finalReplyText = buildAiTaskflowReplyText(replyText || defaultReplyMap[type] || `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 제어를 요청했습니다.`, robotId, taskFlowId)
+          dispatchResult(true, finalReplyText || `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 제어를 요청했습니다.`)
           return
         } catch (error) {
           console.error('[AI_TASKFLOW][COMMAND_RUN_FAILED]', error)

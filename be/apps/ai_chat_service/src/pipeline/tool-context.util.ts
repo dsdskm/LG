@@ -32,20 +32,14 @@ export function buildToolContextFromBody({
 
   return {
     accessToken: body?.accessToken,
-    apiBaseUrl: body?.apiBaseUrl || process.env.URL_EVENT_RECEIVER || process.env.API_BASE_URL,
-    eventAnalyzerUrl: body?.eventAnalyzerUrl || process.env.URL_EVENT_ANALYZER || process.env.EVENT_ANALYZER_URL,
-    configManagerUrl: body?.configManagerUrl || process.env.URL_CONFIG_MANAGER || process.env.CONFIG_MANAGER_URL,
     ...(actionRunnerUrl ? { actionRunnerUrl } : {}),
-    context: userMessage
-      ? {
-        ...baseContext,
-        ...(reqId ? { __reqId: reqId } : {}),
-        __userMessage: userMessage,
-      }
-      : {
-        ...baseContext,
-        ...(reqId ? { __reqId: reqId } : {}),
-      },
+    context: {
+      ...baseContext,
+      ...(body?.groupId ? { groupId: body.groupId } : {}),
+      ...(body?.siteId ? { siteId: body.siteId } : {}),
+      ...(reqId ? { __reqId: reqId } : {}),
+      ...(userMessage ? { __userMessage: userMessage } : {}),
+    },
     log,
   }
 }

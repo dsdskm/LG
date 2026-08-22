@@ -48,9 +48,6 @@ function logPromptMeta(routeKey: string, appKey: string, details: Record<string,
     .map(([key, value]) => `${key}:len=${value.enabled ? value.length : 0}:src=${value.source}:promptId=${value.promptId ?? 'none'}`)
     .join(', ')
 
-  console.log(
-    `[prompt-meta] route=${routeKey} appKey=${appKey} promptInfo={${promptEntries}} mode=${details.intentHintMode?.source ?? 'unknown'}`,
-  )
 }
 
 function matchRouteTemplate(template: string, actual: string): boolean {

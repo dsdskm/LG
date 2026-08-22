@@ -17,7 +17,7 @@ describe('fast taskflow command semantics', () => {
   })
 
   it('does not short-circuit navigation commands on non-canvas TMS pages', () => {
-    const { isTmsCanvasPath } = require('../../../../../packages/ui/components/layout/AiAssistantPanel/taskflowCommandRules.js')
+    const { isTmsCanvasPath } = require('../../../../../packages/ai/src/taskflowCommandRules.js')
 
     expect(isTmsCanvasPath('/tms/taskflows/42/canvas')).toBe(true)
     expect(isTmsCanvasPath('/tms/robots/AZ-y1xF6coSjREkJ1trnvw/detail')).toBe(false)
@@ -25,18 +25,28 @@ describe('fast taskflow command semantics', () => {
   })
 
   it('exports a safe TMS app rules loader for the AI assistant panel', () => {
-    const panelRules = require('../../../../../packages/ui/components/layout/AiAssistantPanel/taskflowCommandRules.js')
+    const panelRules = require('../../../../../packages/ai/src/taskflowCommandRules.js')
 
     expect(typeof panelRules.loadTmsAppRules).toBe('function')
   })
 
   it('accepts canvas-draft matches even when the backend does not set a command type', async () => {
-    const panelRules = require('../../../../../packages/ui/components/layout/AiAssistantPanel/taskflowCommandRules.js')
+    const panelRules = require('../../../../../packages/ai/src/taskflowCommandRules.js')
     const result = await panelRules.matchTaskflowCanvasCommand('Idle->Joy', '/tms/taskflows/197/canvas')
 
     expect(result).not.toBeNull()
     expect(result?.chatAction).toBe('action')
     expect(result?.chatActionParam?.canvasDraft || result?.chatActionParam?.taskflowDraft).toBeTruthy()
+  })
+
+  it('forces local TMS canvas arrow commands to bypass backend requests', async () => {
+    const panelRules = require('../../../../../packages/ai/src/taskflowCommandRules.js')
+
+    expect(panelRules.isLocalTaskflowCanvasCommand('Idle->Joy', '/tms/taskflows/197/canvas')).toBe(true)
+    expect(panelRules.matchTaskflowCanvasCommand('Idle->Joy', '/tms/taskflows/197/canvas')).resolves.toMatchObject({
+      ruleKey: 'local-fast-taskflow-graph',
+      chatAction: 'action'
+    })
   })
 
   it('uses left-left handles for vertical => chains', () => {

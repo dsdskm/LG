@@ -9,6 +9,24 @@ describe('ChatOrchestrator taskflow routing guard', () => {
     jest.restoreAllMocks()
   })
 
+  const buildChatService = () => {
+    const chatSetting = {
+      get: jest.fn(async (key: string) => {
+        const values: Record<string, string> = {
+          'replyPolicy.infoEmptyText': '확인할 수 있는 정보가 부족해요.',
+          'replyPolicy.defaultFallbackText': '요청을 처리했지만 답변 문장을 자연스럽게 만들지 못했어요. 같은 내용을 한 번 더 말씀해 주세요.',
+          'replyPolicy.navigationFallbackText': '{path} 화면으로 이동을 준비했어요.',
+          'replyPolicy.suggestedActionFallbackText': '요청을 처리했지만 안내 문장을 만들지 못했어요. 같은 내용을 한 번 더 말씀해 주세요.',
+          'replyPolicy.unclearIntentFallbackText': '입력 내용을 정확히 이해하지 못했어요. 원하시는 작업이나 질문을 조금 더 구체적으로 알려주세요.',
+          'replyPolicy.blockedReasonPhrases': '의도를 파악하기 어렵,입력된 내용이 불분명,분류는 반드시 json,confidence,reason',
+        }
+        return values[key] ?? ''
+      }),
+    }
+
+    return new ChatService({} as any, chatSetting as any, {} as any)
+  }
+
   const client = {
     generateContent: async () => ({ text: '' }),
   } as any
@@ -111,21 +129,21 @@ describe('ChatOrchestrator taskflow routing guard', () => {
     expect(result.reply?.text).toBe('정보 응답')
   })
 
-  it('strips developer-format intent json before sending the message to chat users', () => {
-    const service = new ChatService({} as any, {} as any, {} as any)
+  it('strips developer-format intent json before sending the message to chat users', async () => {
+    const service = buildChatService()
 
-    const result = (service as any).ensureUserFacingReply({
+    const result = await (service as any).ensureUserFacingReply({
       chat_action: 'info',
       text: '{"intent":"info","confidence":1.0,"reason":"TaskFlow 배포 방법을 설명합니다."}',
     })
 
-    expect(result.text).toBe('TaskFlow 배포 방법을 설명해요.')
+    expect(result.text).toBe('입력 내용을 정확히 이해하지 못했어요. 원하시는 작업이나 질문을 조금 더 구체적으로 알려주세요.')
   })
 
-  it('converts raw RAG debug output into natural user-facing text', () => {
-    const service = new ChatService({} as any, {} as any, {} as any)
+  it('converts raw RAG debug output into natural user-facing text', async () => {
+    const service = buildChatService()
 
-    const result = (service as any).ensureUserFacingReply({
+    const result = await (service as any).ensureUserFacingReply({
       chat_action: 'info',
       text: 'matchScore=0.91 adjustedScore=1.02 thresholdScore=0.00 selected=common selectedChunks=[chunk-1] comparison=common(0.91) screen(abc)=0.82',
     })
@@ -133,21 +151,64 @@ describe('ChatOrchestrator taskflow routing guard', () => {
     expect(result.text).toBe('질문과 관련된 내용을 확인해서 답변을 정리해봤어요.')
   })
 
-  it('applies a polite Korean tone to plain RAG answer text', () => {
-    const service = new ChatService({} as any, {} as any, {} as any)
+  it('keeps natural Korean wording without forcing a polite conversion', async () => {
+    const service = buildChatService()
 
-    const result = (service as any).ensureUserFacingReply({
+    const result = await (service as any).ensureUserFacingReply({
       chat_action: 'info',
       text: '운영 관제는 로봇 관리, SOTA, CMS, TMS, 학습 기능 등을 제공한다.',
     })
 
-    expect(result.text).toContain('해요')
-    expect(result.text).toBe('운영 관제는 로봇 관리, SOTA, CMS, TMS, 학습 기능 등을 제공해요.')
+    expect(result.text).not.toContain('해요')
+    expect(result.text).toBe('운영 관제는 로봇 관리, SOTA, CMS, TMS, 학습 기능 등을 제공한다.')
+  })
+
+  it('skips the default LLM fallback when RAG has no usable answer', async () => {
+    const orchestrator = new ChatOrchestrator(client, 1024, pipeline, { log: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any)
+    const screen = {
+      key: 'robot/test',
+      appKey: 'robot',
+      screenName: '테스트 화면',
+      ragCollection: 'robot/test',
+      dataTools: [],
+      actionTools: [],
+      commonActionTools: [],
+      dataSystemPrompt: '',
+      actionSystemPrompt: '',
+      chatActions: { info: 'info', data: 'data', action: 'action' },
+      fallbackText: '기본 안내 문구',
+      guidanceExamples: [],
+      intentHints: '',
+    }
+
+    jest.spyOn(require('./screen-registry'), 'getScreenConfig').mockReturnValue(screen as any)
+    jest.spyOn((orchestrator as any).rag, 'answer').mockResolvedValue({
+      text: '',
+      usedCollection: '',
+      primaryChunkKey: '',
+      usedChunks: [],
+      ragScores: [],
+    })
+    const llmSpy = jest.spyOn(orchestrator as any, 'generateDefaultLlmReply').mockResolvedValue('llm fallback')
+
+    const result = await (orchestrator as any).handleInfo(
+      screen,
+      '관련 정보를 알려줘',
+      { actionKeywords: [], actionScreenTasks: [] },
+      { intent: 'info', confidence: 0.7 },
+      [],
+      'unknown',
+      ['robot/test'],
+      'req-no-rag',
+    )
+
+    expect(llmSpy).not.toHaveBeenCalled()
+    expect(result.reply?.text).toBe('')
   })
 
   it('includes chunk titles in the compact RAG warning log', () => {
     const logger = { warn: jest.fn(), log: jest.fn(), debug: jest.fn(), error: jest.fn() }
-    const service = new ChatService({} as any, {} as any, {} as any)
+    const service = buildChatService()
     ;(service as any).logger = logger
     ;(service as any).pipelineCfg = { infoRagMinScore: 0 }
 

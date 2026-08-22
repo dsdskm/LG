@@ -17,6 +17,7 @@
     "@originjs/vite-plugin-federation": "^1.4.1",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
+    "@repo/ai": "workspace:*",
     "@repo/apis": "workspace:*",
     "@repo/constants": "workspace:*",
     "@repo/hooks": "workspace:*",

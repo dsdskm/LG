@@ -177,7 +177,7 @@ function toStringValue(value: unknown, fallback = ''): string {
   return normalized || fallback
 }
 
-function buildScopeRuleMaps(routeScope: string, rows: Array<{ scopeKey: string; ruleKey: string; valueJson: unknown }>): ScopeRuleMaps {
+function buildScopeRuleMaps(routeScope: string, rows: Array<{ scopeKey: string; ruleKey: string; extraJson?: unknown }>): ScopeRuleMaps {
   const scoped: Record<string, unknown> = {}
 
   for (const row of rows) {
@@ -187,7 +187,7 @@ function buildScopeRuleMaps(routeScope: string, rows: Array<{ scopeKey: string; 
     const scopeKey = String(row?.scopeKey ?? '').trim() || 'common'
     if (scopeKey === routeScope) {
       if (scoped[key] === undefined) {
-        scoped[key] = row.valueJson
+        scoped[key] = row.extraJson
       }
     }
   }

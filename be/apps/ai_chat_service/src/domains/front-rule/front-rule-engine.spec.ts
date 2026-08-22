@@ -8,7 +8,7 @@ const screenKey = 'tms/taskflows/:taskFlowId/canvas'
 
 function commandRule(
   ruleKey: string,
-  valueJson: Record<string, unknown>,
+  extraJson: Record<string, unknown>,
   priority = 100,
 ): ChatRuleEntity {
   return {
@@ -17,7 +17,7 @@ function commandRule(
     screenKey,
     ruleType: 'taskflow-command',
     ruleKey,
-    valueJson,
+    extraJson,
     enabled: true,
     priority,
     createdAt: new Date(0),
@@ -37,7 +37,7 @@ describe('ChatRuleService', () => {
             screenKey: 'tms/taskflows/:taskFlowId/canvas',
             ruleType: 'taskflow-command',
             ruleKey: 'create-taskflow-command',
-            valueJson: { type: 'create-taskflow' },
+            extraJson: { type: 'create-taskflow' },
             enabled: true,
             priority: 100,
             createdAt: new Date(0),
@@ -59,6 +59,106 @@ describe('ChatRuleService', () => {
 })
 
 describe('matchFrontRuleRows', () => {
+  it('matches /copy 197 and /copy 197 name when patternRegex has optional name capture', () => {
+    const rule = {
+      id: 1,
+      appKey: 'tms',
+      screenKey,
+      ruleType: 'taskflow-command',
+      ruleKey: 'taskflow-copy',
+      command: '/copy',
+      pattern: '/copy',
+      patternRegex: '^/copy\\s+(\\d+)(?:\\s+(.+))?$',
+      aliases: ['/copy'],
+      description: 'TaskFlow를 복사합니다.',
+      replyText: 'TaskFlow를 복사합니다.',
+      example: ['/copy 197', '/copy 197 신규 이름'],
+      enabled: true,
+      priority: 100,
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+    } as any
+
+    const rawPattern = String(rule.patternRegex ?? '').trim()
+    const regex = new RegExp(rawPattern, 'i')
+
+    expect(regex.toString()).toBe('/^\\/copy\\s+(\\d+)(?:\\s+(.+))?$/i')
+    expect(regex.test('/copy 197')).toBe(true)
+    expect(regex.test('/copy 197 abc')).toBe(true)
+    expect(regex.test('/copy 197 sample name')).toBe(true)
+    expect(regex.test('/copy 1')).toBe(true)
+    expect(regex.test('/copy 12345')).toBe(true)
+    expect(regex.test('/copy abc')).toBe(false)
+    expect(regex.test('/copy')).toBe(false)
+    expect(regex.test('/copy197')).toBe(false)
+
+    const matched = matchFrontRuleRows({ screenKey, message: '/copy 197' }, [rule])
+    expect(matched).not.toBeNull()
+    expect(matched?.ruleKey).toBe('taskflow-copy')
+    expect(matched?.params).toEqual([197])
+
+    const namedMatched = matchFrontRuleRows({ screenKey, message: '/copy 197 신규 이름' }, [rule])
+    expect(namedMatched).not.toBeNull()
+    expect(namedMatched?.ruleKey).toBe('taskflow-copy')
+    expect(namedMatched?.params).toEqual([197, '신규 이름'])
+  })
+
+  it('matches a rule stored directly on top-level columns without legacy json payloads', () => {
+    const rules = [{
+      id: 1,
+      appKey: 'tms',
+      screenKey,
+      ruleType: 'taskflow-command',
+      ruleKey: 'undo',
+      type: 'undo',
+      command: '/undo',
+      pattern: '/undo',
+      patternRegex: '^/undo$',
+      aliases: ['/undo'],
+      description: '이전 동작을 취소한다.',
+      replyText: '되돌렸습니다.',
+      example: ['/undo'],
+      enabled: true,
+      priority: 100,
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+    }] as any
+
+    const matched = matchFrontRuleRows({ screenKey, message: '/undo' }, rules)
+
+    expect(matched?.ruleKey).toBe('undo')
+    expect(matched?.toolArgs).toMatchObject({ type: 'undo', replyText: '되돌렸습니다.' })
+  })
+
+  it('keeps the raw matched rule data and honors navigation/replyText from extraJson', () => {
+    const rule = {
+      id: 11,
+      appKey: 'tms',
+      screenKey,
+      ruleKey: 'taskflow-list',
+      command: '/list',
+      pattern: '/list',
+      patternRegex: '^/list$',
+      replyText: '목록으로 이동합니다.',
+      extraJson: {
+        navigation: 'tms/taskflows',
+        replyText: '태스크플로우 목록으로 이동합니다.',
+      },
+      enabled: true,
+      priority: 100,
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+    } as any
+
+    const matched = matchFrontRuleRows({ screenKey, message: '/list' }, [rule])
+
+    expect(matched).not.toBeNull()
+    expect(matched?.ruleKey).toBe('taskflow-list')
+    expect(matched?.ruleData).toBe(rule)
+    expect(matched?.ruleData?.extraJson).toMatchObject({ navigation: 'tms/taskflows' })
+    expect(matched?.toolArgs).toMatchObject({ replyText: '태스크플로우 목록으로 이동합니다.' })
+  })
+
   it('matches an alias command from its DB rule', () => {
     const rules = [commandRule('undo', { aliases: ['/undo'], type: 'undo', replyText: '되돌렸습니다.' })]
     const matched = matchFrontRuleRows(
@@ -69,6 +169,127 @@ describe('matchFrontRuleRows', () => {
     expect(matched?.ruleKey).toBe('undo')
     expect(matched?.toolArgs).toMatchObject({ type: 'undo', replyText: '되돌렸습니다.' })
     expect(matchFrontRuleRows({ screenKey, message: 'please /undo now' }, rules)).toBeNull()
+  })
+
+  it('filters rules by appKey before matching', () => {
+    const tmsRule = {
+      id: 1,
+      appKey: 'tms',
+      screenKey,
+      ruleKey: 'taskflow-list',
+      command: '/list',
+      pattern: '/list',
+      patternRegex: '^/list$',
+      replyText: 'TMS 목록으로 이동합니다.',
+      enabled: true,
+      priority: 100,
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+    } as any
+
+    const robotRule = {
+      id: 2,
+      appKey: 'robot',
+      screenKey,
+      ruleKey: 'robot-list',
+      command: '/list',
+      pattern: '/list',
+      patternRegex: '^/list$',
+      replyText: '로봇 목록으로 이동합니다.',
+      enabled: true,
+      priority: 100,
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+    } as any
+
+    const matched = matchFrontRuleRows({ screenKey, appKey: 'robot', message: '/list' }, [tmsRule, robotRule])
+
+    expect(matched).not.toBeNull()
+    expect(matched?.ruleKey).toBe('robot-list')
+    expect(matched?.ruleData?.appKey).toBe('robot')
+  })
+
+  it('matches alias arrays stored as JSONB payloads', () => {
+    const rules = [{
+      id: 3,
+      appKey: 'tms',
+      screenKey,
+      ruleKey: 'undo-jsonb',
+      ruleType: 'taskflow-command',
+      type: 'undo',
+      command: null,
+      pattern: null,
+      patternRegex: null,
+      aliases: { default: ['/undo', '/되돌리기'] },
+      description: '이전 동작을 취소한다.',
+      replyText: '되돌렸습니다.',
+      example: ['/undo'],
+      enabled: true,
+      priority: 100,
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+    }] as any
+
+    const matched = matchFrontRuleRows({ screenKey, message: '/되돌리기' }, rules)
+
+    expect(matched).not.toBeNull()
+    expect(matched?.ruleKey).toBe('undo-jsonb')
+    expect(matched?.toolArgs).toMatchObject({ type: 'undo', replyText: '되돌렸습니다.' })
+  })
+
+  it('ignores null pattern data and still matches via alias-only rows', () => {
+    const rules = [{
+      id: 2,
+      appKey: 'tms',
+      screenKey,
+      ruleKey: 'taskflow-help',
+      ruleType: 'taskflow-command',
+      type: 'taskflow-help',
+      command: null,
+      pattern: null,
+      patternRegex: null,
+      aliases: ['/help', '/?'],
+      description: '도움말을 보여줍니다.',
+      replyText: '도움말을 보여줍니다.',
+      example: ['/help', '/?'],
+      enabled: true,
+      priority: 100,
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+    }] as any
+
+    const matched = matchFrontRuleRows({ screenKey, message: '/?' }, rules)
+
+    expect(matched).not.toBeNull()
+    expect(matched?.ruleKey).toBe('taskflow-help')
+    expect(matched?.toolArgs).toMatchObject({ type: 'taskflow-help', replyText: '도움말을 보여줍니다.' })
+  })
+
+  it('matches a pattern when zero-width or hidden characters are embedded in the rule text', () => {
+    const rules = [{
+      id: 99,
+      appKey: 'tms',
+      screenKey,
+      ruleKey: 'taskflow-list',
+      ruleType: 'taskflow-command',
+      type: 'taskflow-list',
+      command: null,
+      pattern: '/list\u200B',
+      patternRegex: '^/?list\s*$',
+      aliases: null,
+      description: '목록을 보여줍니다.',
+      replyText: '목록을 보여드립니다.',
+      example: ['/list'],
+      enabled: true,
+      priority: 100,
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+    }] as any
+
+    const matched = matchFrontRuleRows({ screenKey, message: '/list' }, rules)
+
+    expect(matched).not.toBeNull()
+    expect(matched?.ruleKey).toBe('taskflow-list')
   })
 
   it('interpolates regex captures in command values and reply text', () => {
