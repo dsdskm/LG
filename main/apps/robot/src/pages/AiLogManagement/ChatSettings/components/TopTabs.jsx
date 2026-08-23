@@ -5,13 +5,14 @@ export const TopTabs = ({ activeAppTab, onChange }) => {
         <div
             style={{
                 display: 'flex',
+                flexWrap: 'wrap',
                 gap: '8px',
                 marginTop: '4px',
                 marginBottom: '20px',
                 padding: '6px',
                 borderRadius: '14px',
                 background: '#f3f4f6',
-                width: 'fit-content',
+                width: '100%',
             }}
         >
             {APP_TABS.map((tab) => {

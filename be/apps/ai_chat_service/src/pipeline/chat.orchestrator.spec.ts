@@ -109,7 +109,7 @@ describe('ChatOrchestrator taskflow routing guard', () => {
       chatActions: { info: 'info', data: 'data', action: 'action' },
       fallbackText: 'fallback',
       guidanceExamples: [],
-      intentHints: '',
+      intentClassifierPrompt: '',
     }
 
     jest.spyOn(require('../features/chat-settings/service/chat-setting.service'), 'getChatSettingService').mockReturnValue(null)
@@ -178,7 +178,7 @@ describe('ChatOrchestrator taskflow routing guard', () => {
       chatActions: { info: 'info', data: 'data', action: 'action' },
       fallbackText: '기본 안내 문구',
       guidanceExamples: [],
-      intentHints: '',
+      intentClassifierPrompt: '',
     }
 
     jest.spyOn(require('./screen-registry'), 'getScreenConfig').mockReturnValue(screen as any)
@@ -433,7 +433,16 @@ describe('ChatOrchestrator taskflow routing guard', () => {
       { appKey: 'tms', screenKey: 'tms/taskflows/:taskFlowId/detail', screenName: 'TaskFlow Detail', enabled: true },
       { appKey: 'tms', screenKey: 'tms/robots/:robotId/detail', screenName: 'Robot Detail', enabled: true },
     ]) }
-    const promptRepo = { find: jest.fn().mockResolvedValue([]) }
+    const migrationRepository = {
+      find: jest.fn().mockResolvedValue([]),
+      delete: jest.fn().mockResolvedValue({ affected: 0 }),
+    }
+    const promptRepo = {
+      find: jest.fn().mockResolvedValue([]),
+      manager: {
+        transaction: jest.fn(async (run) => run({ getRepository: () => migrationRepository })),
+      },
+    }
     const guidanceRepo = { find: jest.fn().mockResolvedValue([]) }
     const ragRepo = { find: jest.fn().mockResolvedValue([]) }
 
@@ -454,7 +463,16 @@ describe('ChatOrchestrator taskflow routing guard', () => {
 
   it('loads app-level rag collections under both screenKey and appKey aliases', async () => {
     const screenRepo = { find: jest.fn().mockResolvedValue([]) }
-    const promptRepo = { find: jest.fn().mockResolvedValue([]) }
+    const migrationRepository = {
+      find: jest.fn().mockResolvedValue([]),
+      delete: jest.fn().mockResolvedValue({ affected: 0 }),
+    }
+    const promptRepo = {
+      find: jest.fn().mockResolvedValue([]),
+      manager: {
+        transaction: jest.fn(async (run) => run({ getRepository: () => migrationRepository })),
+      },
+    }
     const guidanceRepo = { find: jest.fn().mockResolvedValue([]) }
     const ragRepo = { find: jest.fn().mockResolvedValue([
       {

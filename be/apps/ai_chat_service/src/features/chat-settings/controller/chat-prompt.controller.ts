@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Logger, Param, Post, Put, Query } from '@nestjs/common'
+import { Body, Controller, Delete, Get, Logger, Param, Post, Put, Query } from '@nestjs/common'
 import { ok, type ChatPromptUpsertRequest } from '@ai-log/shared-contracts'
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger'
 import { PromptStoreService } from '../../chat/service/prompt-store.service'
@@ -18,12 +18,14 @@ export class ChatPromptController {
     @Query('screen_key') screenKeyQuery?: string,
     @Query('appKey') appKeyCamel?: string,
     @Query('screenKey') screenKeyCamel?: string,
-    @Query('system') systemQuery?: string,
+    @Query('instruction') instructionQuery?: string,
+    @Query('type') typeQuery?: string,
   ) {
     const appKey = String(appKeyQuery ?? appKeyCamel ?? '').trim() || undefined
     const screenKey = String(screenKeyQuery ?? screenKeyCamel ?? '').trim() || undefined
-    const systemValue = String(systemQuery ?? '').trim().toLowerCase()
-    const type = systemValue === 'true' || systemValue === '1' || systemValue === 'system' ? 'system' : undefined
+    const instructionValue = String(instructionQuery ?? '').trim().toLowerCase()
+    const type = String(typeQuery ?? '').trim() ||
+      (instructionValue === 'true' || instructionValue === '1' || instructionValue === 'instruction' ? 'instruction' : undefined)
 
     const items = await this.promptStore.listPrompts({ appKey, screenKey, type })
     this.logger.log(
@@ -50,7 +52,7 @@ export class ChatPromptController {
       prompt,
       enabled: body?.enabled,
     })
-    this.logger.log(`[chat_settings/prompts] create screenKey=${screenKey} type=${body?.type ?? 'system'}`)
+    this.logger.log(`[chat_settings/prompts] create screenKey=${screenKey} type=${body?.type ?? 'instruction'}`)
     return ok(created)
   }
 
@@ -81,5 +83,17 @@ export class ChatPromptController {
     })
     this.logger.log(`[chat_settings/prompts] update id=${parsedId}`)
     return ok(updated)
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: '프롬프트 삭제' })
+  @ApiOkResponse({ description: '삭제된 프롬프트 반환' })
+  async deletePrompt(@Param('id') id: string) {
+    const parsedId = Number(id)
+    if (!Number.isFinite(parsedId) || parsedId <= 0) throw new Error('invalid prompt id')
+
+    const deleted = await this.promptStore.deletePrompt(parsedId)
+    this.logger.log(`[chat_settings/prompts] delete id=${parsedId}`)
+    return ok(deleted)
   }
 }

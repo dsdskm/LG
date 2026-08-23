@@ -3,16 +3,17 @@ export const EMPTY_MANAGEMENT = {
     prompts: [],
     guidance: [],
     ragDocs: [],
+    rules: [],
     history: [],
 }
 
 export const APP_TAB = {
     COMMON: 'common',
-    ROBOT: 'robot',
-    OTA: 'ota',
-    CMS: 'cms',
-    TMS: 'tms',
-    HISTORY: 'history',
+    SCREEN: 'screen',
+    GUIDANCE: 'guidance',
+    PROMPT: 'prompt',
+    RAG: 'rag',
+    RULE: 'rule',
 }
 
 export const APP_TABS = [
@@ -21,24 +22,24 @@ export const APP_TABS = [
         label: '공통',
     },
     {
-        key: APP_TAB.ROBOT,
-        label: 'robot',
+        key: APP_TAB.SCREEN,
+        label: '화면 설정',
     },
     {
-        key: APP_TAB.OTA,
-        label: 'ota',
+        key: APP_TAB.GUIDANCE,
+        label: '가이드/힌트 설정',
     },
     {
-        key: APP_TAB.CMS,
-        label: 'cms',
+        key: APP_TAB.PROMPT,
+        label: '프롬프트 설정',
     },
     {
-        key: APP_TAB.TMS,
-        label: 'tms',
+        key: APP_TAB.RAG,
+        label: 'RAG 설정',
     },
     {
-        key: APP_TAB.HISTORY,
-        label: '채팅 내역',
+        key: APP_TAB.RULE,
+        label: 'Rule 설정',
     },
 ]
 

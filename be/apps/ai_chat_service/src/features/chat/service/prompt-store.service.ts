@@ -132,11 +132,39 @@ export class PromptStoreService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    await this.migratePromptTypes()
     await this.reload()
     activeStore = this
     this.logger.log(
       `[prompt-store] loaded screens=${this.screens.size} prompts=${this.prompts.size} guidance=${this.guidance.size} collections=${this.collections.size}`,
     )
+  }
+
+  private async migratePromptTypes() {
+    const renames = [
+      ['system', 'instruction'],
+      ['intent-hint', 'intent-classifier'],
+      ['rag-system', 'rag'],
+    ] as const
+
+    await this.promptRepo.manager.transaction(async (manager) => {
+      const repository = manager.getRepository(Prompt)
+
+      for (const [legacyType, nextType] of renames) {
+        const legacyRows = await repository.find({ where: { type: legacyType } })
+        for (const row of legacyRows) {
+          const existing = await repository.findOne({ where: { screenKey: row.screenKey, type: nextType } })
+          if (existing) {
+            await repository.remove(row)
+            continue
+          }
+          row.type = nextType
+          await repository.save(row)
+        }
+      }
+
+      await repository.delete({ type: 'intent-hint-mode' })
+    })
   }
 
   /** DB 전체를 인메모리 캐시로 재적재. */
@@ -237,6 +265,65 @@ export class PromptStoreService implements OnModuleInit {
     return this.screenRepo.find({ order: { appKey: 'ASC', screenKey: 'ASC' } })
   }
 
+  async createScreen(input: {
+    appKey: string
+    screenKey: string
+    screenName: string
+    enabled?: boolean
+  }) {
+    const appKey = String(input.appKey ?? '').trim()
+    const screenKey = String(input.screenKey ?? '').trim()
+    const screenName = String(input.screenName ?? '').trim()
+    if (!appKey) throw new Error('screen appKey is required')
+    if (!screenKey) throw new Error('screen screenKey is required')
+    if (!screenName) throw new Error('screen screenName is required')
+
+    const existing = await this.screenRepo.findOne({ where: { screenKey } })
+    if (existing) throw new Error('screen already exists')
+
+    const row = this.screenRepo.create({
+      appKey,
+      screenKey,
+      screenName,
+      enabled: input.enabled !== false,
+    })
+    await this.screenRepo.save(row)
+    await this.reload()
+    return row
+  }
+
+  async updateScreen(
+    id: number,
+    patch: { appKey?: string; screenName?: string; enabled?: boolean },
+  ) {
+    const row = await this.screenRepo.findOne({ where: { id } })
+    if (!row) throw new Error('screen not found')
+
+    if (patch.appKey !== undefined) {
+      const appKey = String(patch.appKey).trim()
+      if (!appKey) throw new Error('screen appKey is required')
+      row.appKey = appKey
+    }
+    if (patch.screenName !== undefined) {
+      const screenName = String(patch.screenName).trim()
+      if (!screenName) throw new Error('screen screenName is required')
+      row.screenName = screenName
+    }
+    if (patch.enabled !== undefined) row.enabled = patch.enabled
+
+    await this.screenRepo.save(row)
+    await this.reload()
+    return row
+  }
+
+  async deleteScreen(id: number) {
+    const row = await this.screenRepo.findOne({ where: { id } })
+    if (!row) throw new Error('screen not found')
+    const deleted = await this.screenRepo.remove(row)
+    await this.reload()
+    return deleted
+  }
+
   async listPrompts(filters?: { appKey?: string | null; screenKey?: string | null; type?: string | null }) {
     const where: Record<string, unknown> = {}
     const appKey = String(filters?.appKey ?? '').trim()
@@ -266,6 +353,14 @@ export class PromptStoreService implements OnModuleInit {
     return row
   }
 
+  async deletePrompt(id: number) {
+    const row = await this.promptRepo.findOne({ where: { id } })
+    if (!row) throw new Error('prompt not found')
+    const deleted = await this.promptRepo.remove(row)
+    await this.reload()
+    return deleted
+  }
+
   async createPrompt(input: {
     appKey?: string | null
     screenKey: string
@@ -274,7 +369,7 @@ export class PromptStoreService implements OnModuleInit {
     enabled?: boolean
   }) {
     const screenKey = String(input.screenKey ?? '').trim()
-    const type = String(input.type ?? 'system').trim() || 'system'
+    const type = String(input.type ?? 'instruction').trim() || 'instruction'
     if (!screenKey) throw new Error('prompt screenKey is required')
 
     const existing = await this.promptRepo.findOne({ where: { screenKey, type } })
@@ -298,13 +393,13 @@ export class PromptStoreService implements OnModuleInit {
   async upsertCommonPrompt(
     patch: { prompt?: string; enabled?: boolean },
   ) {
-    const existing = await this.promptRepo.findOne({ where: { screenKey: 'common', type: 'system' } })
+    const existing = await this.promptRepo.findOne({ where: { screenKey: 'common', type: 'instruction' } })
     const row =
       existing ??
       this.promptRepo.create({
         screenKey: 'common',
         appKey: 'common',
-        type: 'system',
+        type: 'instruction',
         prompt: '',
         enabled: true,
       })
@@ -345,6 +440,14 @@ export class PromptStoreService implements OnModuleInit {
     await this.guidanceRepo.save(row)
     await this.reload()
     return row
+  }
+
+  async deleteGuidance(id: number) {
+    const row = await this.guidanceRepo.findOne({ where: { id } })
+    if (!row) throw new Error('guidance not found')
+    const deleted = await this.guidanceRepo.remove(row)
+    await this.reload()
+    return deleted
   }
 
   async createGuidance(input: {

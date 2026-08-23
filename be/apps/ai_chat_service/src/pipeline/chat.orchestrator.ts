@@ -474,7 +474,7 @@ export class ChatOrchestrator {
     const pipelineIntentResult = ruleFirstIntentResult ?? await this.classifier.classify(
       effectiveMessage,
       screen.screenName,
-      screen.intentHints,
+      screen.intentClassifierPrompt,
       history,
     )
 
@@ -1356,9 +1356,9 @@ export class ChatOrchestrator {
     const promptBlocks: string[] = [basePrompt]
 
     if (String(actionRagContext ?? '').trim()) {
-      const commonRagSystem = getPromptStore()?.getPromptContent('common', 'rag-system') ?? ''
+      const commonRagPrompt = getPromptStore()?.getPromptContent('common', 'rag') ?? ''
       promptBlocks.push([
-        commonRagSystem,
+        commonRagPrompt,
         '다음은 action 실행 시 참고해야 하는 액션 RAG 문서다.',
         '문서에 나온 파라미터 규칙/정책/우선순위를 가능한 범위에서 tool 인자 구성에 반영하라.',
         String(actionRagContext ?? '').trim(),

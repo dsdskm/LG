@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Logger, Post, Put, Query } from '@nestjs/common'
+import { Body, Controller, Delete, Get, Logger, Param, Post, Put, Query } from '@nestjs/common'
 import { ok, type ChatSettingUpdateRequest } from '@ai-log/shared-contracts'
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger'
 import { ChatLogService } from '../db/chat-log.service'
@@ -53,6 +53,50 @@ export class ChatSettingController {
     )
 
     return ok(payload)
+  }
+
+  @Get('screens')
+  @ApiOperation({ summary: '화면 목록 조회' })
+  @ApiOkResponse({ description: '화면 목록 반환' })
+  async listScreens() {
+    return ok({ items: await this.promptStore.listScreens() })
+  }
+
+  @Post('screens')
+  @ApiOperation({ summary: '화면 생성' })
+  @ApiOkResponse({ description: '생성된 화면 반환' })
+  async createScreen(@Body() body: Record<string, unknown>) {
+    const created = await this.promptStore.createScreen({
+      appKey: String(body?.appKey ?? ''),
+      screenKey: String(body?.screenKey ?? ''),
+      screenName: String(body?.screenName ?? ''),
+      enabled: body?.enabled !== false,
+    })
+    return ok(created)
+  }
+
+  @Put('screens/:id')
+  @ApiOperation({ summary: '화면 수정' })
+  @ApiOkResponse({ description: '수정된 화면 반환' })
+  async updateScreen(@Param('id') id: string, @Body() body: Record<string, unknown>) {
+    const parsedId = Number(id)
+    if (!Number.isFinite(parsedId) || parsedId <= 0) throw new Error('invalid screen id')
+
+    const updated = await this.promptStore.updateScreen(parsedId, {
+      appKey: body?.appKey === undefined ? undefined : String(body.appKey),
+      screenName: body?.screenName === undefined ? undefined : String(body.screenName),
+      enabled: body?.enabled === undefined ? undefined : body.enabled !== false,
+    })
+    return ok(updated)
+  }
+
+  @Delete('screens/:id')
+  @ApiOperation({ summary: '화면 삭제' })
+  @ApiOkResponse({ description: '삭제된 화면 반환' })
+  async deleteScreen(@Param('id') id: string) {
+    const parsedId = Number(id)
+    if (!Number.isFinite(parsedId) || parsedId <= 0) throw new Error('invalid screen id')
+    return ok(await this.promptStore.deleteScreen(parsedId))
   }
 
   @Get('history')

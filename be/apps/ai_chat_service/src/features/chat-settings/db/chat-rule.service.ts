@@ -68,7 +68,7 @@ export class ChatRuleService {
             ...baseWhere,
             screenKey: normalizedScreenKey,
           },
-          order: { priority: 'DESC', updatedAt: 'DESC', id: 'DESC' },
+          order: { updatedAt: 'DESC', id: 'DESC' },
         })
       : [];
 
@@ -78,14 +78,14 @@ export class ChatRuleService {
             ...baseWhere,
             screenKey: normalizedAppKey,
           },
-          order: { priority: 'DESC', updatedAt: 'DESC', id: 'DESC' },
+          order: { updatedAt: 'DESC', id: 'DESC' },
         })
       : [];
 
     if (!normalizedScreenKey) {
       const allRows = await this.repository.find({
         where: baseWhere,
-        order: { priority: 'DESC', updatedAt: 'DESC', id: 'DESC' },
+        order: { updatedAt: 'DESC', id: 'DESC' },
       });
       const finalRows = Array.from(
         new Map(
@@ -103,7 +103,7 @@ export class ChatRuleService {
 
     const allRows = await this.repository.find({
       where: baseWhere,
-      order: { priority: 'DESC', updatedAt: 'DESC', id: 'DESC' },
+      order: { updatedAt: 'DESC', id: 'DESC' },
     });
     const templateRows = allRows.filter((row) =>
       routeMatchesTemplate(String(row.screenKey ?? ''), normalizedScreenKey),
@@ -127,12 +127,10 @@ export class ChatRuleService {
 
   async listAll(): Promise<ChatRuleEntity[]> {
     return this.repository.find({
-      where: { enabled: true },
       order: {
         appKey: 'ASC',
         screenKey: 'ASC',
         ruleKey: 'ASC',
-        priority: 'DESC',
         updatedAt: 'DESC',
         id: 'DESC',
       },

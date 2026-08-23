@@ -100,6 +100,32 @@ export async function updateChatSettings(payload) {
   return response.json()
 }
 
+export async function createChatScreen(payload) {
+  const response = await fetch(`${BASE_URL}/chat/settings/screens`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return response.json()
+}
+
+export async function updateChatScreen(id, payload) {
+  const response = await fetch(`${BASE_URL}/chat/settings/screens/${encodeURIComponent(String(id))}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return response.json()
+}
+
+export async function deleteChatScreen(id) {
+  const response = await fetch(`${BASE_URL}/chat/settings/screens/${encodeURIComponent(String(id))}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  return response.json()
+}
+
 export async function updateChatPrompt(id, payload) {
   const response = await fetch(`${BASE_URL}/chat/settings/prompts/${encodeURIComponent(String(id))}`, {
     method: 'PUT',
@@ -109,18 +135,18 @@ export async function updateChatPrompt(id, payload) {
   return response.json()
 }
 
-export async function listPrompts({ appKey, screenKey, system, type } = {}) {
+export async function listPrompts({ appKey, screenKey, instruction, type } = {}) {
   const query = new URLSearchParams()
   if (appKey) query.set('app_key', String(appKey))
   if (screenKey) query.set('screen_key', String(screenKey))
-  if (system !== undefined && system !== null && system !== '') query.set('system', String(system))
+  if (instruction !== undefined && instruction !== null && instruction !== '') query.set('instruction', String(instruction))
   if (type) query.set('type', String(type))
 
   const endpoint = query.toString() ? `${BASE_URL}/chat/settings/prompts?${query.toString()}` : `${BASE_URL}/chat/settings/prompts`
   console.info('[chat-settings] GET /chat/settings/prompts', {
     appKey: appKey ?? null,
     screenKey: screenKey ?? null,
-    system: system ?? null,
+    instruction: instruction ?? null,
     type: type ?? null,
     endpoint,
   })
@@ -143,6 +169,14 @@ export async function createChatPrompt(payload) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
+  })
+  return response.json()
+}
+
+export async function deleteChatPrompt(id) {
+  const response = await fetch(`${BASE_URL}/chat/settings/prompts/${encodeURIComponent(String(id))}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
   })
   return response.json()
 }
@@ -218,6 +252,14 @@ export async function createChatGuidance(payload) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
+  })
+  return response.json()
+}
+
+export async function deleteChatGuidance(id) {
+  const response = await fetch(`${BASE_URL}/chat/settings/guidance/${encodeURIComponent(String(id))}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
   })
   return response.json()
 }
@@ -318,6 +360,14 @@ export async function listChatRules({ appKey, screenKey, forceRefresh = true } =
     forceRefresh,
   })
   return json
+}
+
+export async function listAllChatRules() {
+  const response = await fetch(`${BASE_URL}/chat/settings/rules/all`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  return response.json()
 }
 
 export async function matchChatRule({ appKey, screenKey, message } = {}) {

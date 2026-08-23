@@ -19,18 +19,9 @@ export class ChatRuleEntity {
   @Column({ name: 'command', type: 'text', nullable: true })
   command?: string | null
 
-  // 규칙 매칭용 패턴 템플릿. 예: /copy {taskflowId}
-  @Column({ name: 'pattern', type: 'text', nullable: true })
-  pattern?: string | null
-
-  // 정규식 패턴. 가장 우선적으로 매칭에 사용한다.
+  // 규칙 매칭용 정규식 패턴.
   @Column({ name: 'pattern_regex', type: 'text', nullable: true })
   patternRegex?: string | null
-
-  // 사용자 입력 별칭 목록. JSONB 배열 또는 객체 맵을 허용한다.
-  // 예: ['/copy', '/복사'] 또는 { default: ['/copy', '/복사'] }
-  @Column({ name: 'aliases', type: 'jsonb', nullable: true })
-  aliases?: unknown | null
 
   // 도움말과 응답에 노출되는 사람이 읽는 설명.
   @Column({ name: 'description', type: 'text', nullable: true })
@@ -54,9 +45,6 @@ export class ChatRuleEntity {
 
   @Column({ type: 'boolean', default: true })
   enabled!: boolean
-
-  @Column({ type: 'integer', default: 100 })
-  priority!: number
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date

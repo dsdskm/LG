@@ -32,7 +32,6 @@ const EMPTY_FORM = {
     ruleType: 'taskflow-command',
     valueJson: '{\n  "type": "custom-rule"\n}',
     enabled: true,
-    priority: 100,
 }
 
 const parseRuleValueJson = (raw, fallback = {}) => {
@@ -108,7 +107,6 @@ export const EventRuleDbEditorSection = ({
                     ruleKey: row?.ruleKey ?? row?.rule_key,
                     valueJson: row?.valueJson ?? row?.value_json,
                     enabled: row?.enabled,
-                    priority: row?.priority,
                 })),
             })
 
@@ -161,7 +159,6 @@ export const EventRuleDbEditorSection = ({
                 ruleKey: trimmedKey,
                 valueJson: parseRuleValueJson(draft.valueJson, {}),
                 enabled: Boolean(draft.enabled),
-                priority: Number(draft.priority) || 100,
             }
 
             await upsertChatRule(payload)
@@ -181,7 +178,6 @@ export const EventRuleDbEditorSection = ({
             ruleType: String(row?.ruleType ?? 'taskflow-command'),
             valueJson: formatRuleJson(row?.valueJson ?? {}),
             enabled: row?.enabled !== false,
-            priority: Number(row?.priority ?? 100),
         })
     }
 
@@ -241,16 +237,7 @@ export const EventRuleDbEditorSection = ({
                         </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '10px' }}>
-                        <div>
-                            <FieldHint>priority</FieldHint>
-                            <input
-                                type='number'
-                                value={draft.priority}
-                                onChange={(e) => handleDraftChange('priority', e.target.value)}
-                                style={{ width: '100%', height: '34px', border: '1px solid #dbe3ef', borderRadius: '10px', padding: '0 10px' }}
-                            />
-                        </div>
+                    <div>
                         <div>
                             <FieldHint>enabled</FieldHint>
                             <OptionList>
@@ -281,7 +268,7 @@ export const EventRuleDbEditorSection = ({
                         <PromptTextarea
                             value={draft.valueJson}
                             onChange={(e) => handleDraftChange('valueJson', e.target.value)}
-                            placeholder='{"type":"custom-rule","aliases":["..."],"description":"..."}'
+                            placeholder='{"type":"custom-rule","description":"..."}'
                             style={JSON_TEXTAREA_STYLE}
                         />
                     </div>
@@ -315,7 +302,6 @@ export const EventRuleDbEditorSection = ({
                                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                                         <SmallBadge>{String(row.ruleType ?? 'taskflow-command')}</SmallBadge>
                                         <SmallBadge>{row.enabled === false ? '비활성' : '활성'}</SmallBadge>
-                                        <SmallBadge>priority {Number(row.priority ?? 100)}</SmallBadge>
                                     </div>
                                 </div>
                                 <FieldHint>app: {String(row.appKey ?? appKey)} / screen: {String(row.screenKey ?? resolvedScopeKey)}</FieldHint>

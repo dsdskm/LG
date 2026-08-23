@@ -548,7 +548,7 @@ const ScreenSettingGroup = ({
     const promptSummary = group.prompts.reduce(
         (acc, item) => {
             const promptType = String(item?.type ?? item?.promptType ?? item?.category ?? '').toLowerCase()
-            if (promptType === 'intent-hint') acc.intent += 1
+            if (promptType === 'intent-classifier') acc.intent += 1
             else if (promptType === 'input-hint') acc.hint += 1
             else if (promptType === 'data-system') acc.data += 1
             else if (promptType === 'action-system') acc.action += 1
@@ -616,7 +616,7 @@ const ScreenSettingGroup = ({
                 onPromptChange={onPromptChange}
                 onSavePrompt={onSavePrompt}
                 onCreatePrompt={onCreatePrompt}
-                promptType="intent-hint"
+                promptType="intent-classifier"
                 title="상세 화면 분류 LLM 프롬프트"
                 description="이 화면이 info / action 분기를 결정할 때 사용할 상세 룰입니다. 기본값, 화면별 값, 또는 둘을 병합해서 적용할지 선택할 수 있습니다."
                 createLabel="분류 프롬프트 추가"
@@ -701,7 +701,7 @@ const ScreenSettingGroup = ({
                                     onPromptChange={onPromptChange}
                                     onSavePrompt={onSavePrompt}
                                     onCreatePrompt={onCreatePrompt}
-                                    promptType="intent-hint"
+                                    promptType="intent-classifier"
                                     title="인텐트 분기 룰"
                                     description="LLM이 info/action 인텐트를 분기할 때 참고하는 화면 전용 룰입니다."
                                     createLabel="인텐트 분기 룰 추가"
@@ -1214,14 +1214,6 @@ const ScreenPromptSection = ({ appKey, routeKey, routeParentKey, prompts, allPro
     const [createDraft, setCreateDraft] = useState(getInitialCreateDraft)
 
     const normalizedRouteKey = String(routeKey ?? '').trim()
-    const intentModePrompt = useMemo(() => {
-        if (!normalizedRouteKey) return null
-        return (Array.isArray(prompts) ? prompts : []).find((item) => {
-            const rowType = String(item?.type ?? item?.promptType ?? item?.category ?? '').trim().toLowerCase()
-            const rowRouteKey = String(item?.screenKey ?? item?.screen_key ?? item?.routeKey ?? item?.route_key ?? '').trim()
-            return rowType === 'intent-hint-mode' && rowRouteKey === normalizedRouteKey
-        }) ?? null
-    }, [normalizedRouteKey, prompts])
     const isCreatingHere = creatingPromptRouteKey === normalizedRouteKey
     const filteredPrompts = (Array.isArray(prompts) ? prompts : []).filter((item) => {
         const type = String(item?.type ?? item?.promptType ?? item?.category ?? '').trim().toLowerCase()
@@ -1302,11 +1294,11 @@ const ScreenPromptSection = ({ appKey, routeKey, routeParentKey, prompts, allPro
         : isCreatingHere
 
     const appIntentPrompt = useMemo(() => {
-        if (promptType !== 'intent-hint') return null
+        if (promptType !== 'intent-classifier') return null
         return (Array.isArray(allPrompts) ? allPrompts : []).find((item) => {
             const key = String(item?.appKey ?? item?.app_key ?? '').trim().toLowerCase()
             const type = String(item?.type ?? item?.promptType ?? item?.category ?? '').trim().toLowerCase()
-            return key === String(appKey ?? '').trim().toLowerCase() && type === 'intent-hint'
+            return key === String(appKey ?? '').trim().toLowerCase() && type === 'intent-classifier'
         }) ?? null
     }, [allPrompts, appKey, promptType])
 
@@ -1326,11 +1318,6 @@ const ScreenPromptSection = ({ appKey, routeKey, routeParentKey, prompts, allPro
     const screenIntentHintContent = useMemo(() => {
         return singleDraft.enabled !== false ? String(singleDraft.content ?? '').trim() : ''
     }, [singleDraft])
-
-    const mergedIntentHintPreview = useMemo(() => {
-        if (promptType !== 'intent-hint') return ''
-        return [commonIntentHintContent, appIntentHintContent, screenIntentHintContent].filter(Boolean).join('\n\n')
-    }, [promptType, commonIntentHintContent, appIntentHintContent, screenIntentHintContent])
 
     return (
         <div style={{ display: 'grid', gap: '12px' }}>

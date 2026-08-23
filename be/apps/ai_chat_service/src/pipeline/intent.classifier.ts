@@ -14,9 +14,9 @@ import { logLlmPromptMeta, safeJsonParse } from '../utils/utils'
 import type { ChatIntent, ChatTurn, IntentResult } from './pipeline.types'
 
 function buildSystemPrompt(screenName: string, hints?: string): string {
-  const commonSystem = getPromptStore()?.getPromptContent('common', 'system')?.trim() ?? ''
+  const commonInstruction = getPromptStore()?.getPromptContent('common', 'instruction')?.trim() ?? ''
   const extras = [
-    commonSystem,
+    commonInstruction,
     screenName ? `screen=${String(screenName)}` : '',
     hints ? String(hints) : '',
   ].filter(Boolean)
@@ -36,14 +36,14 @@ export class IntentClassifier {
     hints?: string,
     history: ChatTurn[] = [],
   ): Promise<IntentResult> {
-    const commonSystemMeta = getPromptStore()?.getPromptMeta('common', 'system')
+    const commonInstructionMeta = getPromptStore()?.getPromptMeta('common', 'instruction')
     const systemPrompt = buildSystemPrompt(screenName, hints)
     logLlmPromptMeta({
       stage: 'intent-classifier',
       promptType: 'intent-classifier',
       route: screenName,
       appKey: screenName?.split('/')?.[0] ?? null,
-      promptId: commonSystemMeta?.id ?? null,
+      promptId: commonInstructionMeta?.id ?? null,
       systemPromptLen: systemPrompt.length,
       messageLen: String(message ?? '').length,
       historyTurns: history.length,

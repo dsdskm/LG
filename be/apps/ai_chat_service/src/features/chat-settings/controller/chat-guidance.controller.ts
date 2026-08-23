@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Logger, Param, Post, Put, Query } from '@nestjs/common'
+import { Body, Controller, Delete, Get, Logger, Param, Post, Put, Query } from '@nestjs/common'
 import { ok, type ChatGuidanceCreateRequest, type ChatGuidanceUpdateRequest } from '@ai-log/shared-contracts'
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger'
 import { PromptStoreService } from '../../chat/service/prompt-store.service'
@@ -62,5 +62,17 @@ export class ChatGuidanceController {
     const updated = await this.promptStore.updateGuidance(parsedId, { examples: body?.examples })
     this.logger.log(`[chat_settings/guidance] update id=${parsedId}`)
     return ok(updated)
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: '화면 가이드 삭제' })
+  @ApiOkResponse({ description: '삭제된 화면 가이드 반환' })
+  async deleteGuidance(@Param('id') id: string) {
+    const parsedId = Number(id)
+    if (!Number.isFinite(parsedId) || parsedId <= 0) throw new Error('invalid guidance id')
+
+    const deleted = await this.promptStore.deleteGuidance(parsedId)
+    this.logger.log(`[chat_settings/guidance] delete id=${parsedId}`)
+    return ok(deleted)
   }
 }

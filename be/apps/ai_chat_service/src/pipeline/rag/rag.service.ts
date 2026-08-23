@@ -293,11 +293,11 @@ export class RagService {
       .join('\n\n')
 
     const promptStore = getPromptStore()
-    const commonSystemMeta = promptStore?.getPromptMeta('common', 'system')
-    const commonRagSystemMeta = promptStore?.getPromptMeta('common', 'rag-system')
-    const commonSystem = commonSystemMeta?.prompt ?? ''
-    const commonRagSystem = commonRagSystemMeta?.prompt ?? ''
-    const system = [commonSystem, commonRagSystem, context].filter(Boolean).join('\n\n')
+    const commonInstructionMeta = promptStore?.getPromptMeta('common', 'instruction')
+    const commonRagMeta = promptStore?.getPromptMeta('common', 'rag')
+    const commonInstruction = commonInstructionMeta?.prompt ?? ''
+    const commonRag = commonRagMeta?.prompt ?? ''
+    const system = [commonInstruction, commonRag, context].filter(Boolean).join('\n\n')
 
     this.logger.log?.(
       `================= [3-3-2단계:RAG_청크강제폴백] [reqId=${reqId}] chunkKeys=${JSON.stringify(targetChunkKeys)} matchedChunks=${JSON.stringify(usedChunkIds)} collections=${JSON.stringify(uniqueCollections)}`,
@@ -308,7 +308,7 @@ export class RagService {
       promptType: 'rag-answer',
       route: usedCollection ?? null,
       appKey: String(usedCollection ?? '').split('/').filter(Boolean)[0] || null,
-      promptId: commonRagSystemMeta?.id ?? commonSystemMeta?.id ?? null,
+      promptId: commonRagMeta?.id ?? commonInstructionMeta?.id ?? null,
       systemPromptLen: system.length,
       messageLen: String(message ?? '').length,
       historyTurns: history.length,
@@ -438,14 +438,14 @@ export class RagService {
       .join('\n\n')
 
     const promptStore = getPromptStore()
-    const commonSystemMeta = promptStore?.getPromptMeta('common', 'system')
-    const commonRagSystemMeta = promptStore?.getPromptMeta('common', 'rag-system')
-    const commonSystem = commonSystemMeta?.prompt ?? ''
-    const commonRagSystem = commonRagSystemMeta?.prompt ?? ''
+    const commonInstructionMeta = promptStore?.getPromptMeta('common', 'instruction')
+    const commonRagMeta = promptStore?.getPromptMeta('common', 'rag')
+    const commonInstruction = commonInstructionMeta?.prompt ?? ''
+    const commonRag = commonRagMeta?.prompt ?? ''
 
     const ragSystem = context
 
-    const system = [commonSystem, commonRagSystem, ragSystem].filter(Boolean).join('\n\n')
+    const system = [commonInstruction, commonRag, ragSystem].filter(Boolean).join('\n\n')
 
     this.stageLog(
       '3-4단계:RAG_프롬프트생성',
@@ -454,7 +454,7 @@ export class RagService {
       reqId,
     )
     this.logger.log?.(
-      `================= [3-4단계:RAG_프롬프트생성_추적] [reqId=${reqId}] commonSystemApplied=${Boolean(commonSystem)} systemLen=${system.length}`,
+      `================= [3-4단계:RAG_프롬프트생성_추적] [reqId=${reqId}] commonInstructionApplied=${Boolean(commonInstruction)} systemLen=${system.length}`,
     )
 
     // this.logger.log(`[ragService] system ${system}`)
@@ -464,7 +464,7 @@ export class RagService {
       promptType: 'rag-answer',
       route: usedCollection ?? null,
       appKey: String(usedCollection ?? '').split('/').filter(Boolean)[0] || null,
-      promptId: commonRagSystemMeta?.id ?? commonSystemMeta?.id ?? null,
+      promptId: commonRagMeta?.id ?? commonInstructionMeta?.id ?? null,
       systemPromptLen: system.length,
       messageLen: String(message ?? '').length,
       historyTurns: history.length,

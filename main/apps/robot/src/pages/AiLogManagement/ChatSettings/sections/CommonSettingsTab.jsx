@@ -303,41 +303,6 @@ export const CommonSettingsTab = ({
     isDirty,
     saving,
     onSaveProvider,
-    commonPromptItem,
-    commonPromptDraft,
-    savingCommonPrompt,
-    onCommonPromptChange,
-    onSaveCommonPrompt,
-    commonIntentPromptItem,
-    commonIntentPromptDraft,
-    savingCommonIntentPrompt,
-    onCommonIntentPromptChange,
-    onSaveCommonIntentPrompt,
-    commonRagPromptItem,
-    commonRagPromptDraft,
-    savingCommonRagPrompt,
-    onCommonRagPromptChange,
-    onSaveCommonRagPrompt,
-    commonInputHintPromptItem,
-    commonInputHintPromptDraft,
-    savingCommonInputHintPrompt,
-    onCommonInputHintPromptChange,
-    onSaveCommonInputHintPrompt,
-    commonRagDocs,
-    ragDrafts,
-    savingRagKey,
-    onRagChange,
-    onSaveRag,
-    newCommonInfoRagDraft,
-    newCommonActionRagDraft,
-    savingCreateCommonInfoRag,
-    savingCreateCommonActionRag,
-    deletingCommonRagKey,
-    onNewCommonInfoRagChange,
-    onNewCommonActionRagChange,
-    onCreateCommonInfoRag,
-    onCreateCommonActionRag,
-    onDeleteCommonRag,
 }) => {
     return (
         <ManagementGrid>
@@ -350,53 +315,6 @@ export const CommonSettingsTab = ({
                 saving={saving}
                 onSaveProvider={onSaveProvider}
             />
-
-            <CommonInputHintPromptManagementCard
-                commonInputHintPromptItem={commonInputHintPromptItem}
-                commonInputHintPromptDraft={commonInputHintPromptDraft}
-                savingCommonInputHintPrompt={savingCommonInputHintPrompt}
-                onCommonInputHintPromptChange={onCommonInputHintPromptChange}
-                onSaveCommonInputHintPrompt={onSaveCommonInputHintPrompt}
-            />
-
-            <PromptManagementCard
-                commonPromptItem={commonPromptItem}
-                commonPromptDraft={commonPromptDraft}
-                savingCommonPrompt={savingCommonPrompt}
-                onCommonPromptChange={onCommonPromptChange}
-                onSaveCommonPrompt={onSaveCommonPrompt}
-                commonIntentPromptItem={commonIntentPromptItem}
-                commonIntentPromptDraft={commonIntentPromptDraft}
-                savingCommonIntentPrompt={savingCommonIntentPrompt}
-                onCommonIntentPromptChange={onCommonIntentPromptChange}
-                onSaveCommonIntentPrompt={onSaveCommonIntentPrompt}
-            />
-
-            <CommonRagPromptManagementCard
-                commonRagPromptItem={commonRagPromptItem}
-                commonRagPromptDraft={commonRagPromptDraft}
-                savingCommonRagPrompt={savingCommonRagPrompt}
-                onCommonRagPromptChange={onCommonRagPromptChange}
-                onSaveCommonRagPrompt={onSaveCommonRagPrompt}
-            />
-
-            <CommonRagManagementCard
-                ragDocs={commonRagDocs}
-                ragDrafts={ragDrafts}
-                savingRagKey={savingRagKey}
-                onRagChange={onRagChange}
-                onSaveRag={onSaveRag}
-                intentType="info"
-                title="공통 info RAG 데이터"
-                description="공통 info RAG는 정보성 답변에 쓰는 근거 청크를 모아 관리합니다."
-                newCommonRagDraft={newCommonInfoRagDraft}
-                savingCreateCommonRag={savingCreateCommonInfoRag}
-                deletingCommonRagKey={deletingCommonRagKey}
-                onNewCommonRagChange={onNewCommonInfoRagChange}
-                onCreateCommonRag={onCreateCommonInfoRag}
-                onDeleteCommonRag={onDeleteCommonRag}
-            />
-
         </ManagementGrid>
     )
 }
@@ -657,7 +575,7 @@ const DefaultIntentPromptManagementCard = ({
                 <PromptMeta>
                     <span>{commonIntentPromptItem?.label || commonIntentPromptDraft.label || '기본 분류 LLM 프롬프트'}</span>
                     <span>key: common</span>
-                    <span>type: intent-hint</span>
+                    <span>type: intent-classifier</span>
                     {hasPrompt ? <span>updated: {formatDateTime(commonIntentPromptItem?.updatedAt)}</span> : null}
                 </PromptMeta>
 
@@ -719,7 +637,7 @@ const CommonRagPromptManagementCard = ({
                 <PromptMeta>
                     <span>{commonRagPromptItem?.label || commonRagPromptDraft.label || '공통 RAG 프롬프트'}</span>
                     <span>key: common</span>
-                    <span>type: rag-system</span>
+                    <span>type: rag</span>
                     {hasPrompt ? <span>updated: {formatDateTime(commonRagPromptItem?.updatedAt)}</span> : null}
                 </PromptMeta>
 
@@ -815,7 +733,7 @@ const PromptManagementCard = ({
                 <PromptMeta>
                     <span>{effectiveLabel}</span>
                     <span>key: common</span>
-                    <span>type: system + intent-hint</span>
+                    <span>type: instruction + intent-classifier</span>
                     {hasPrompt || hasIntentPrompt ? <span>updated: {formatDateTime(commonPromptItem?.updatedAt ?? commonIntentPromptItem?.updatedAt)}</span> : null}
                 </PromptMeta>
 

@@ -8,10 +8,8 @@ export type ScreenConfig = {
   appKey: string
   /** 화면 표시명(프롬프트/로그용). */
   screenName: string
-  /** 인텐트 분류기에 주는 화면별 추가 힌트. */
-  intentHints?: string
-  /** intent-hint 적용 방식. default | screen | merge */
-  intentHintMode?: 'default' | 'screen' | 'merge'
+  /** 인텐트 분류기에 주는 공통/앱/화면별 지침. */
+  intentClassifierPrompt?: string
   /** RAG 컬렉션 키(chat_rag_doc.key). info 인텐트에서 사용. */
   ragCollection: string
   /** data 인텐트 tool 목록. */
@@ -91,16 +89,6 @@ function toChatAction(routeKey: string) {
   return normalized || 'default'
 }
 
-function resolveIntentHintMode(routeKey: string): 'default' | 'screen' | 'merge' {
-  const normalizedRouteKey = String(routeKey || '').replace(/^\//, '')
-  const store = getPromptStore()
-  const rawMode = String(store?.getPromptContent(normalizedRouteKey, 'intent-hint-mode') ?? 'merge').trim().toLowerCase()
-  if (rawMode === 'default' || rawMode === 'screen' || rawMode === 'merge') {
-    return rawMode
-  }
-  return 'merge'
-}
-
 export function getScreenConfig(routeKey: string, reqId?: string): ScreenConfig | undefined {
   const normalizedRouteKey = String(routeKey || '').replace(/^\//, '')
   if (!normalizedRouteKey) return undefined
@@ -120,56 +108,46 @@ export function getScreenConfig(routeKey: string, reqId?: string): ScreenConfig 
   }
 
   const effectiveRouteKey = screen.screenKey
-  const commonSystemMeta = store?.getPromptMeta('common', 'system')
-  const commonIntentHintMeta = store?.getPromptMeta('common', 'intent-hint')
-  const screenIntentHintMeta = store?.getPromptMeta(effectiveRouteKey, 'intent-hint')
+  const commonInstructionMeta = store?.getPromptMeta('common', 'instruction')
+  const commonIntentClassifierMeta = store?.getPromptMeta('common', 'intent-classifier')
+  const screenIntentClassifierMeta = store?.getPromptMeta(effectiveRouteKey, 'intent-classifier')
   const screenDataSystemMeta = store?.getPromptMeta(effectiveRouteKey, 'data-system')
   const screenActionSystemMeta = store?.getPromptMeta(effectiveRouteKey, 'action-system')
   const screenFallbackMeta = store?.getPromptMeta(effectiveRouteKey, 'fallback')
   const guidanceExamples = normalizeGuidanceExamples(store?.getGuidance(effectiveRouteKey)?.examples)
 
-  const appIntentHintMeta = store?.getPromptMeta(appKey, 'intent-hint')
+  const appIntentClassifierMeta = store?.getPromptMeta(appKey, 'intent-classifier')
   const appDataSystemMeta = store?.getPromptMeta(appKey, 'data-system')
   const appActionSystemMeta = store?.getPromptMeta(appKey, 'action-system')
   const appFallbackMeta = store?.getPromptMeta(appKey, 'fallback')
 
-  const commonSystem = commonSystemMeta?.prompt ?? ''
-  const commonIntentHint = commonIntentHintMeta?.prompt ?? ''
-  const screenIntentHint = screenIntentHintMeta?.prompt ?? ''
+  const commonInstruction = commonInstructionMeta?.prompt ?? ''
+  const commonIntentClassifier = commonIntentClassifierMeta?.prompt ?? ''
+  const screenIntentClassifier = screenIntentClassifierMeta?.prompt ?? ''
   const screenDataSystem = screenDataSystemMeta?.prompt ?? ''
   const screenActionSystem = screenActionSystemMeta?.prompt ?? ''
   const screenFallback = screenFallbackMeta?.prompt ?? ''
 
-  const appIntentHint = appIntentHintMeta?.prompt ?? ''
+  const appIntentClassifier = appIntentClassifierMeta?.prompt ?? ''
   const appDataSystem = appDataSystemMeta?.prompt ?? ''
   const appActionSystem = appActionSystemMeta?.prompt ?? ''
   const appFallback = appFallbackMeta?.prompt ?? ''
 
-  const resolvedIntentHintMode = resolveIntentHintMode(effectiveRouteKey)
-  const resolvedIntentHint = (() => {
-    if (resolvedIntentHintMode === 'default') {
-      return commonIntentHint || appIntentHint || screenIntentHint
-    }
-    if (resolvedIntentHintMode === 'screen') {
-      return screenIntentHint || commonIntentHint || appIntentHint
-    }
-    return [commonIntentHint, appIntentHint, screenIntentHint].filter(Boolean).join('\n\n')
-  })()
+  const intentClassifierPrompt = [commonIntentClassifier, appIntentClassifier, screenIntentClassifier].filter(Boolean).join('\n\n')
   const resolvedDataSystem = screenDataSystem || appDataSystem
   const resolvedActionSystem = screenActionSystem || appActionSystem
   const resolvedFallback = screenFallback || appFallback
 
-  const mergedDataSystemPrompt = [commonSystem, resolvedDataSystem].filter(Boolean).join('\n\n')
-  const mergedActionSystemPrompt = [commonSystem, resolvedActionSystem].filter(Boolean).join('\n\n')
+  const mergedDataSystemPrompt = [commonInstruction, resolvedDataSystem].filter(Boolean).join('\n\n')
+  const mergedActionSystemPrompt = [commonInstruction, resolvedActionSystem].filter(Boolean).join('\n\n')
 
   logPromptMeta(effectiveRouteKey, appKey, {
-    'common:system': { source: 'common', length: commonSystem.length, enabled: Boolean(commonSystem), promptId: commonSystemMeta?.id ?? null },
-    'app:intent-hint': { source: appIntentHint ? 'app' : 'missing', length: appIntentHint.length, enabled: Boolean(appIntentHint), promptId: appIntentHintMeta?.id ?? null },
-    'screen:intent-hint': { source: screenIntentHint ? 'screen' : 'missing', length: screenIntentHint.length, enabled: Boolean(screenIntentHint), promptId: screenIntentHintMeta?.id ?? null },
-    'resolved:intent-hint': { source: resolvedIntentHintMode, length: resolvedIntentHint.length, enabled: Boolean(resolvedIntentHint), promptId: null },
+    'common:instruction': { source: 'common', length: commonInstruction.length, enabled: Boolean(commonInstruction), promptId: commonInstructionMeta?.id ?? null },
+    'app:intent-classifier': { source: appIntentClassifier ? 'app' : 'missing', length: appIntentClassifier.length, enabled: Boolean(appIntentClassifier), promptId: appIntentClassifierMeta?.id ?? null },
+    'screen:intent-classifier': { source: screenIntentClassifier ? 'screen' : 'missing', length: screenIntentClassifier.length, enabled: Boolean(screenIntentClassifier), promptId: screenIntentClassifierMeta?.id ?? null },
+    'resolved:intent-classifier': { source: 'merge', length: intentClassifierPrompt.length, enabled: Boolean(intentClassifierPrompt), promptId: null },
     'resolved:data-system': { source: resolvedDataSystem ? 'screen-or-app' : 'missing', length: mergedDataSystemPrompt.length, enabled: Boolean(mergedDataSystemPrompt), promptId: screenDataSystemMeta?.id ?? appDataSystemMeta?.id ?? null },
     'resolved:action-system': { source: resolvedActionSystem ? 'screen-or-app' : 'missing', length: mergedActionSystemPrompt.length, enabled: Boolean(mergedActionSystemPrompt), promptId: screenActionSystemMeta?.id ?? appActionSystemMeta?.id ?? null },
-    'intentHintMode': { source: resolvedIntentHintMode, length: resolvedIntentHintMode.length, enabled: true, promptId: null },
   })
 
   const dataTools: ToolDefinition[] = []
@@ -183,8 +161,7 @@ export function getScreenConfig(routeKey: string, reqId?: string): ScreenConfig 
     key: effectiveRouteKey,
     appKey,
     screenName: screen.screenName,
-    intentHints: resolvedIntentHint,
-    intentHintMode: resolvedIntentHintMode,
+    intentClassifierPrompt,
     ragCollection: effectiveRouteKey,
     dataTools,
     actionTools,

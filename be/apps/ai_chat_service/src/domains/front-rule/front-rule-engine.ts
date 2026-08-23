@@ -12,10 +12,6 @@ type FrontRuleContext = {
   message: string;
 };
 
-function exactLiteralPatternMatch(message: string, pattern: string): boolean {
-  return String(message ?? '').trim() === String(pattern ?? '').trim();
-}
-
 function toRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -176,18 +172,6 @@ export function matchFrontRuleRows(
   }
 
   for (const rule of candidateRules) {
-    /**
-     * 1. literal pattern 우선 검사
-     */
-    const pattern = String(rule.pattern ?? '').trim();
-
-    if (pattern && exactLiteralPatternMatch(message, pattern)) {
-      return buildFrontRuleMatch(rule, []);
-    }
-
-    /**
-     * 2. regex pattern 검사
-     */
     const rawPattern = String(rule.patternRegex ?? '').trim();
 
     if (!rawPattern) {

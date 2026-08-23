@@ -116,32 +116,8 @@ export class ChatRuleController {
     const ruleKey = String(body?.ruleKey ?? body?.rule_key ?? '').trim();
 
     const command = String(body?.command ?? '').trim() || undefined;
-    const pattern = String(body?.pattern ?? '').trim() || undefined;
     const patternRegex =
       String(body?.patternRegex ?? body?.regex ?? '').trim() || undefined;
-    const aliasesRaw = body?.aliases ?? body?.keywords ?? [];
-    const aliases = Array.isArray(aliasesRaw)
-      ? aliasesRaw.map((item) => String(item ?? '').trim()).filter(Boolean)
-      : typeof aliasesRaw === 'string'
-        ? aliasesRaw
-            .split(/[\n,]/)
-            .map((item) => item.trim())
-            .filter(Boolean)
-        : aliasesRaw && typeof aliasesRaw === 'object'
-          ? Object.values(aliasesRaw as Record<string, unknown>).flatMap(
-              (item) =>
-                Array.isArray(item)
-                  ? item
-                      .map((nested) => String(nested ?? '').trim())
-                      .filter(Boolean)
-                  : typeof item === 'string'
-                    ? item
-                        .split(/[\n,]/)
-                        .map((nested) => nested.trim())
-                        .filter(Boolean)
-                    : [],
-            )
-          : undefined;
     const description =
       String(
         body?.description ?? body?.display ?? body?.help ?? body?.label ?? '',
@@ -162,8 +138,6 @@ export class ChatRuleController {
         : undefined;
     const enabledValue = body?.enabled;
     const enabled = enabledValue === undefined ? true : Boolean(enabledValue);
-    const priorityRaw = Number(body?.priority ?? 100);
-    const priority = Number.isFinite(priorityRaw) ? priorityRaw : 100;
 
     if (!ruleKey) {
       throw new Error('ruleKey is required');
@@ -172,10 +146,8 @@ export class ChatRuleController {
     const sharedRuleKeys = new Set([
       'type',
       'command',
-      'pattern',
       'pattern_regex',
       'patternRegex',
-      'aliases',
       'description',
       'reply_text',
       'replyText',
@@ -189,7 +161,6 @@ export class ChatRuleController {
       'screen_key',
       'screenKey',
       'enabled',
-      'priority',
       'created_at',
       'createdAt',
       'updated_at',
@@ -220,16 +191,13 @@ export class ChatRuleController {
       screenKey,
       ruleKey,
       command,
-      pattern,
       patternRegex,
-      aliases,
       description,
       replyText,
       fallbackText,
       example,
       extraJson,
       enabled,
-      priority,
     });
 
     this.logger.log(
