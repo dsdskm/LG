@@ -20,7 +20,7 @@ import { AdminDbService } from "./service/admin-db.service";
       type: "postgres",
       url: process.env.DB_URL_EVENT_RECEIVER,
       entities: [EventEntity],
-      synchronize: true,
+      synchronize: false,
       logging: false,
     }),
     TypeOrmModule.forFeature([EventEntity]),

@@ -1,4 +1,4 @@
-import { TASKFLOW_CANVAS_RULE_ROUTE_KEY } from '@repo/constants'
+import { AI_TASKFLOW_CANVAS_COMMAND_EVENT, TASKFLOW_CANVAS_RULE_ROUTE_KEY } from '@repo/constants'
 
 export const ruleKey = 'node-delete'
 
@@ -6,30 +6,32 @@ export const metadata = {
   ruleKey,
   description: '노드 이름을 찾아 모두 삭제',
   screenKey: TASKFLOW_CANVAS_RULE_ROUTE_KEY,
-  command: '!A',
+  command: '!A'
 }
 
 export async function executeNodeDelete(context = {}) {
-  const { canvasActions, taskFlowId, captures = [] } = context
-  const [target] = captures
+  const { rule, params = [] } = context
+  const [target] = params
+  const nodeName = String(target ?? '').trim()
+  const replyText = String(rule.replyText ?? '').replace('$1', nodeName)
+  const fallbackText = String(rule.fallbackText ?? '').replace('$1', nodeName)
 
-  if (typeof canvasActions?.deleteNode === 'function') {
-    const result = await canvasActions.deleteNode({ taskFlowId, nodeName: target })
-    return {
-      ok: true,
-      ruleKey,
-      taskFlowId,
-      message: `${target ?? 'A'} 노드를 삭제했습니다.`,
-      result,
-    }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent(AI_TASKFLOW_CANVAS_COMMAND_EVENT, {
+        detail: {
+          command: {
+            type: 'remove-nodes-by-name',
+            names: [nodeName],
+            notFoundText: fallbackText
+          },
+          replyText
+        }
+      })
+    )
   }
 
-  return {
-    ok: true,
-    ruleKey,
-    taskFlowId,
-    message: `${target ?? 'A'} 노드를 삭제했습니다.`,
-  }
+  return replyText
 }
 
 export default executeNodeDelete

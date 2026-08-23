@@ -1,8 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAiAssistantStore, useUserStore, useOrganizationStore, useAiLogEventStore } from '@repo/stores'
 import { getAppPrefix } from '@repo/utils'
-import { getChatSettings, getGuidanceList, matchChatRule, saveLocalChatHistory } from '@repo/apis/ai/chatSettings.js'
+import {
+  getChatHistory,
+  getChatSettings,
+  getGuidanceList,
+  matchChatRule,
+  saveLocalChatHistory
+} from '@repo/apis/ai/chatSettings.js'
 import Icon from '../../common/Icon'
 import {
   StyledAiAssistantComposer,
@@ -25,6 +31,18 @@ import {
   StyledAiAssistantImageTitle,
   StyledAiAssistantMessageList,
   StyledAiAssistantMessageMeta,
+  StyledAiCommandTip,
+  StyledAiCommandTipExample,
+  StyledAiCommandTipExamples,
+  StyledAiCommandTipTitle,
+  StyledAiHelpCommand,
+  StyledAiHelpCommandDescription,
+  StyledAiHelpCommandExample,
+  StyledAiHelpCommandList,
+  StyledAiHelpContent,
+  StyledAiHelpIntro,
+  StyledAiHelpSection,
+  StyledAiHelpSectionTitle,
   StyledAiAssistantPipelineTrace,
   StyledAiAssistantTextarea,
   StyledAiBotAvatar,
@@ -317,6 +335,93 @@ const buildMessageId = () => {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+const buildMessagesFromHistory = (items) =>
+  [...(Array.isArray(items) ? items : [])].reverse().flatMap((item) => {
+    const logId = String(item?.id ?? '')
+    const createdAt = item?.createdAt ? new Date(item.createdAt).toISOString() : new Date().toISOString()
+    const context = {
+      pathname: String(item?.currentPath ?? ''),
+      appPrefix: String(item?.currentApp ?? ''),
+      conversationId: String(item?.conversationId ?? '')
+    }
+    const historyMessages = []
+    const userMessage = String(item?.userMessage ?? '').trim()
+    const assistantText = String(item?.assistantText ?? '').trim()
+
+    if (userMessage) {
+      historyMessages.push({ id: `history-${logId}-user`, role: 'user', content: userMessage, createdAt, context })
+    }
+    if (assistantText) {
+      historyMessages.push({
+        id: `history-${logId}-assistant`,
+        role: 'assistant',
+        content: assistantText,
+        createdAt,
+        context
+      })
+    }
+    return historyMessages
+  })
+
+const getChatDateKey = (value) => {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`
+}
+
+const formatChatDate = (value) => {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat('ko-KR', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    weekday: 'long'
+  }).format(date)
+}
+
+const formatChatTime = (value) => {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: 'numeric',
+    minute: '2-digit'
+  }).format(date)
+}
+
+const parseTmsHelpContent = (value) => {
+  const lines = String(value || '').split('\n')
+  const introLines = []
+  const sections = []
+  let currentSection = null
+
+  for (const line of lines) {
+    if (line.startsWith('### ')) {
+      currentSection = { title: line.slice(4).trim(), commands: [] }
+      sections.push(currentSection)
+      continue
+    }
+
+    if (!currentSection) {
+      if (line.trim()) introLines.push(line)
+      continue
+    }
+
+    const separatorIndex = line.indexOf(' : ')
+    if (separatorIndex < 0) continue
+    currentSection.commands.push({
+      example: line.slice(0, separatorIndex).trim(),
+      description: line.slice(separatorIndex + 3).trim()
+    })
+  }
+
+  if (sections.length <= 0) return null
+  return { intro: introLines.join('\n'), sections }
+}
+
 const normalizeAppPrefix = (pathname) => {
   const raw = getAppPrefix(pathname)
   if (!raw || raw === '/') return ''
@@ -416,6 +521,8 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
   const closePanel = useAiAssistantStore((state) => state.closePanel)
   const messages = useAiAssistantStore((state) => state.messages)
   const appendMessage = useAiAssistantStore((state) => state.appendMessage)
+  const replaceMessages = useAiAssistantStore((state) => state.replaceMessages)
+  const prependMessages = useAiAssistantStore((state) => state.prependMessages)
   const updateMessageById = useAiAssistantStore((state) => state.updateMessageById)
   const resetMessages = useAiAssistantStore((state) => state.resetMessages)
 
@@ -429,10 +536,18 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
   const [screenSuggestions, setScreenSuggestions] = useState([])
   const [chatInputPlaceholder, setChatInputPlaceholder] = useState('')
   const [isAssistantTyping, setIsAssistantTyping] = useState(false)
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false)
 
   const messageListRef = useRef(null)
   const textareaRef = useRef(null)
   const abortRef = useRef(null)
+  const activeRequestIdRef = useRef(0)
+  const historyPageRef = useRef(0)
+  const historyHasMoreRef = useRef(false)
+  const historyLoadingRef = useRef(false)
+  const historyRequestIdRef = useRef(0)
+  const pendingScrollRestoreRef = useRef(null)
+  const shouldScrollToBottomRef = useRef(true)
   const sendingStartedAtRef = useRef(null)
   const assistantTypingTimerRef = useRef(null)
   const assistantMessageContentRef = useRef(
@@ -465,6 +580,112 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
     setRouteAppKey(pathParts[0] || 'common')
     setRouteScreenKey(normalizedPath || 'common')
   }, [routeContext.pathname])
+
+  const markHistoryMessagesAsDisplayed = useCallback((historyMessages) => {
+    const assistantMessages = historyMessages.filter((message) => message?.role === 'assistant' && message?.id)
+    if (assistantMessages.length === 0) return
+
+    setTypedAssistantMessages((current) => {
+      const next = { ...current }
+      for (const message of assistantMessages) {
+        const id = String(message.id)
+        const content = String(message.content ?? '')
+        next[id] = content
+        assistantMessageContentRef.current.set(id, content)
+      }
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    const author = String(session?.email ?? '').trim()
+    const historyRequestId = historyRequestIdRef.current + 1
+    historyRequestIdRef.current = historyRequestId
+    let cancelled = false
+
+    activeRequestIdRef.current += 1
+    abortRef.current?.abort()
+    abortRef.current = null
+    historyPageRef.current = 0
+    historyHasMoreRef.current = false
+    historyLoadingRef.current = Boolean(author)
+    pendingScrollRestoreRef.current = null
+    shouldScrollToBottomRef.current = true
+    resetMessages()
+    setTypedAssistantMessages({})
+    setIsHistoryLoading(Boolean(author))
+
+    if (!author) return undefined
+
+    const loadInitialHistory = async () => {
+      try {
+        const response = await getChatHistory({ page: 1, pageSize: 20, author })
+        if (cancelled || historyRequestIdRef.current !== historyRequestId) return
+
+        const historyMessages = buildMessagesFromHistory(response?.data?.items)
+        const pagination = response?.data?.pagination ?? {}
+        markHistoryMessagesAsDisplayed(historyMessages)
+        replaceMessages(historyMessages)
+        historyPageRef.current = Number(pagination.page ?? 1)
+        historyHasMoreRef.current = Boolean(pagination.hasNext)
+      } catch {
+        if (!cancelled) {
+          replaceMessages([])
+        }
+      } finally {
+        if (!cancelled) {
+          historyLoadingRef.current = false
+          setIsHistoryLoading(false)
+        }
+      }
+    }
+
+    loadInitialHistory()
+
+    return () => {
+      cancelled = true
+    }
+  }, [session?.email, markHistoryMessagesAsDisplayed, replaceMessages, resetMessages])
+
+  const loadOlderHistory = useCallback(async () => {
+    const author = String(session?.email ?? '').trim()
+    const messageList = messageListRef.current
+    if (!author || !messageList || historyLoadingRef.current || !historyHasMoreRef.current) return
+
+    historyLoadingRef.current = true
+    const historyRequestId = historyRequestIdRef.current + 1
+    historyRequestIdRef.current = historyRequestId
+    setIsHistoryLoading(true)
+    pendingScrollRestoreRef.current = {
+      scrollHeight: messageList.scrollHeight,
+      scrollTop: messageList.scrollTop
+    }
+
+    try {
+      const response = await getChatHistory({ page: historyPageRef.current + 1, pageSize: 20, author })
+      if (historyRequestIdRef.current !== historyRequestId) return
+      const historyMessages = buildMessagesFromHistory(response?.data?.items)
+      const pagination = response?.data?.pagination ?? {}
+      markHistoryMessagesAsDisplayed(historyMessages)
+      prependMessages(historyMessages)
+      historyPageRef.current = Number(pagination.page ?? historyPageRef.current + 1)
+      historyHasMoreRef.current = Boolean(pagination.hasNext)
+    } catch {
+      pendingScrollRestoreRef.current = null
+    } finally {
+      historyLoadingRef.current = false
+      setIsHistoryLoading(false)
+    }
+  }, [session?.email, markHistoryMessagesAsDisplayed, prependMessages])
+
+  const handleMessageListScroll = useCallback(
+    (event) => {
+      if (event.currentTarget.scrollTop <= 48) {
+        loadOlderHistory()
+      }
+    },
+    [loadOlderHistory]
+  )
 
   const quickCommands = useMemo(
     () => pickRandomItems(screenSuggestions, Math.min(3, screenSuggestions.length)),
@@ -515,10 +736,34 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
   const userName = session?.email ? session.email.split('@')[0].replace(/[._-]/g, ' ') : null
 
   useEffect(() => {
-    if (messageListRef.current) {
-      messageListRef.current.scrollTop = messageListRef.current.scrollHeight
+    const messageList = messageListRef.current
+    if (!messageList || !isOpen) return
+
+    const pendingScrollRestore = pendingScrollRestoreRef.current
+    if (pendingScrollRestore) {
+      pendingScrollRestoreRef.current = null
+      requestAnimationFrame(() => {
+        messageList.scrollTop =
+          messageList.scrollHeight - pendingScrollRestore.scrollHeight + pendingScrollRestore.scrollTop
+      })
+      return
     }
-  }, [messages, isSending, isOpen])
+
+    if (shouldScrollToBottomRef.current) {
+      shouldScrollToBottomRef.current = false
+      requestAnimationFrame(() => {
+        messageList.scrollTop = messageList.scrollHeight
+      })
+    }
+  }, [messages, isOpen])
+
+  useEffect(() => {
+    if (!isOpen || !hasConversation) return
+    const messageList = messageListRef.current
+    if (messageList) {
+      messageList.scrollTop = messageList.scrollHeight
+    }
+  }, [isOpen, hasConversation])
 
   useEffect(() => {
     if (isOpen) textareaRef.current?.focus()
@@ -746,6 +991,11 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
 
   const handleBackToInitial = () => {
     if (isSending) return
+    historyRequestIdRef.current += 1
+    historyHasMoreRef.current = false
+    historyLoadingRef.current = false
+    pendingScrollRestoreRef.current = null
+    setIsHistoryLoading(false)
     resetMessages()
     setDraft('')
     setTimeout(() => {
@@ -754,7 +1004,7 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
   }
 
   const requestAssistantReply = useCallback(
-    async ({ content, currentPath, currentApp, conversationId, author, groupId, siteId, context }) =>
+    async ({ content, currentPath, currentApp, conversationId, author, groupId, siteId, context, signal }) =>
       postSiteAssistantChat({
         message: content,
         currentPath: currentPath || undefined,
@@ -763,13 +1013,15 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
         author,
         groupId,
         siteId,
-        context
+        context,
+        signal
       }),
     []
   )
 
   const showAssistantReply = useCallback(
     (assistantText, context) => {
+      shouldScrollToBottomRef.current = true
       appendMessage({
         id: buildMessageId(),
         role: 'assistant',
@@ -787,12 +1039,15 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
     if (!content || isSending || submitInFlightRef.current) return
 
     submitInFlightRef.current = true
+    const requestId = activeRequestIdRef.current + 1
+    activeRequestIdRef.current = requestId
     const now = new Date()
     const createdAt = now.toISOString()
 
     const conversationId = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
     const context = { ...routeContext, sentAt: createdAt }
 
+    shouldScrollToBottomRef.current = true
     appendMessage({ id: buildMessageId(), role: 'user', content, createdAt, context })
     setDraft('')
     sendingStartedAtRef.current = Date.now()
@@ -808,18 +1063,34 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
     // rule check
     try {
       setSendingStage(SENDING_STAGE.SCREEN_CHECK)
+
+      // local rule check
+
+      // rule check
       const rule = await ruleCheck(routeAppKey, routeScreenKey, content, navigate, {
         groupId: selectedOrgs?.[0],
         siteId: selectedOrgs?.[1],
         userId: session?.userId,
         description: 'AI command from assistant panel',
-        screenKey: routeScreenKey
+        screenKey: routeScreenKey,
+        signal: controller.signal
       })
-      console.log(`rule`,rule)
+      if (activeRequestIdRef.current !== requestId || controller.signal.aborted) return
+      console.log(`rule`, rule)
       if (rule?.ok && rule.replyText) {
         setSendingStage(SENDING_STAGE.COMPLETED)
         await sleep(180)
+        if (activeRequestIdRef.current !== requestId || controller.signal.aborted) return
         showAssistantReply(rule.replyText, context)
+        void saveLocalChatHistory({
+          author: session?.email || undefined,
+          conversationId,
+          currentApp: routeContext.appPrefix || undefined,
+          currentPath: routeContext.pathname || undefined,
+          chatAction: rule.ruleKey || 'local-rule',
+          userMessage: content,
+          assistantText: rule.replyText
+        }).catch(() => undefined)
         return
       }
 
@@ -833,25 +1104,26 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
         author: session?.email || undefined,
         groupId: selectedOrgs?.[0],
         siteId: selectedOrgs?.[1],
-        context: { ...routeContext }
+        context: { ...routeContext },
+        signal: controller.signal
       })
+      if (activeRequestIdRef.current !== requestId || controller.signal.aborted) return
 
       const assistantText = extractAssistantText(result)
 
       setSendingStage(SENDING_STAGE.ASSEMBLING)
       await sleep(220)
+      if (activeRequestIdRef.current !== requestId || controller.signal.aborted) return
       showAssistantReply(assistantText, context)
     } catch (error) {
-      if (error?.name === 'AbortError') {
+      if (activeRequestIdRef.current === requestId && error?.name !== 'AbortError') {
         setSendingStage(SENDING_STAGE.COMPLETED)
         await sleep(180)
-        showAssistantReply('답변 생성을 중지했습니다.', context)
-      } else {
-        setSendingStage(SENDING_STAGE.COMPLETED)
-        await sleep(180)
+        if (activeRequestIdRef.current !== requestId) return
         showAssistantReply(error?.message || '답변을 가져오지 못했습니다.', context)
       }
     } finally {
+      if (activeRequestIdRef.current !== requestId) return
       abortRef.current = null
       setIsSending(false)
       setSendingStage(SENDING_STAGE.IDLE)
@@ -867,7 +1139,38 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
   // 답변 생성 중지
   const handleStop = useCallback(() => {
     if (isSending) {
+      activeRequestIdRef.current += 1
       abortRef.current?.abort()
+      abortRef.current = null
+      if (stageTypingTimerRef.current) clearInterval(stageTypingTimerRef.current)
+      if (stageAdvanceTimerRef.current) clearTimeout(stageAdvanceTimerRef.current)
+      stageTypingTimerRef.current = null
+      stageAdvanceTimerRef.current = null
+      stageQueueRef.current = []
+      displayedStageRef.current = SENDING_STAGE.IDLE
+      sendingStartedAtRef.current = null
+      submitInFlightRef.current = false
+      setTypedStageLabel('')
+      setSendingElapsedSec(0)
+      setSendingStage(SENDING_STAGE.IDLE)
+      setIsSending(false)
+
+      const stoppedMessageId = buildMessageId()
+      const stoppedMessage = '답변 생성이 중지되었습니다.'
+      assistantMessageContentRef.current.set(stoppedMessageId, stoppedMessage)
+      setTypedAssistantMessages((prev) => ({
+        ...prev,
+        [stoppedMessageId]: stoppedMessage
+      }))
+      shouldScrollToBottomRef.current = true
+      appendMessage({
+        id: stoppedMessageId,
+        role: 'assistant',
+        content: stoppedMessage,
+        createdAt: new Date().toISOString(),
+        context: { ...routeContext }
+      })
+      textareaRef.current?.focus()
       return
     }
 
@@ -889,7 +1192,7 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
       return next
     })
     setIsAssistantTyping(false)
-  }, [isSending, messages])
+  }, [appendMessage, isSending, messages, routeContext])
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -979,18 +1282,101 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
               ) : null}
             </>
           ) : (
-            <StyledAiAssistantMessageList ref={messageListRef}>
-              {messages.map((m) => (
-                <StyledAiAssistantMessage key={m.id} $role={m.role}>
-                  <StyledAiAssistantMessageMeta>
-                    {m.role === 'user' ? '나' : 'AI Assistant'}
-                  </StyledAiAssistantMessageMeta>
+            <StyledAiAssistantMessageList ref={messageListRef} onScroll={handleMessageListScroll}>
+              {isHistoryLoading && historyPageRef.current > 0 && (
+                <div style={{ textAlign: 'center', color: '#848c9d', fontSize: '12px' }}>
+                  이전 대화를 불러오는 중...
+                </div>
+              )}
+              {messages.map((m, index) => {
+                const dateKey = getChatDateKey(m.createdAt)
+                const previousDateKey = getChatDateKey(messages[index - 1]?.createdAt)
+                const isUserMessage = m.role === 'user'
+                const displayedContent =
+                  m.role === 'assistant' ? (typedAssistantMessages[m.id] ?? m.content) : m.content
+                const helpContent = m.role === 'assistant' ? parseTmsHelpContent(displayedContent) : null
+                const showNodeCommandTip =
+                  m.role === 'assistant' && displayedContent.includes('노드 이름을 다시 확인해주세요')
 
-                  <StyledAiAssistantMessageBubble $role={m.role}>
-                    {m.role === 'assistant' ? (typedAssistantMessages[m.id] ?? m.content) : m.content}
-                  </StyledAiAssistantMessageBubble>
-                </StyledAiAssistantMessage>
-              ))}
+                return (
+                  <Fragment key={m.id}>
+                    {dateKey && dateKey !== previousDateKey && (
+                      <div
+                        style={{
+                          alignSelf: 'center',
+                          padding: '4px 10px',
+                          borderRadius: '999px',
+                          background: '#f1f3f5',
+                          color: '#6b7280',
+                          fontSize: '11px'
+                        }}
+                      >
+                        {formatChatDate(m.createdAt)}
+                      </div>
+                    )}
+                    <StyledAiAssistantMessage $role={m.role}>
+                      <StyledAiAssistantMessageMeta>
+                        {m.role === 'user' ? '나' : 'AI Assistant'} · {formatChatTime(m.createdAt)}
+                      </StyledAiAssistantMessageMeta>
+
+                      <StyledAiAssistantMessageBubble
+                        $role={m.role}
+                        role={isUserMessage ? 'button' : undefined}
+                        tabIndex={isUserMessage ? 0 : undefined}
+                        title={isUserMessage ? '클릭하여 다시 실행' : undefined}
+                        aria-disabled={isUserMessage ? isSending : undefined}
+                        onClick={isUserMessage && !isSending ? () => handleSubmit(m.content) : undefined}
+                        onKeyDown={
+                          isUserMessage && !isSending
+                            ? (event) => {
+                                if (event.key !== 'Enter' && event.key !== ' ') return
+                                event.preventDefault()
+                                handleSubmit(m.content)
+                              }
+                            : undefined
+                        }
+                        style={isUserMessage ? { cursor: isSending ? 'default' : 'pointer' } : undefined}
+                      >
+                        {helpContent ? (
+                          <StyledAiHelpContent>
+                            {helpContent.intro && <StyledAiHelpIntro>{helpContent.intro}</StyledAiHelpIntro>}
+                            {helpContent.sections.map((section) => (
+                              <StyledAiHelpSection key={section.title}>
+                                <StyledAiHelpSectionTitle>{section.title}</StyledAiHelpSectionTitle>
+                                <StyledAiHelpCommandList>
+                                  {section.commands.map((command, commandIndex) => (
+                                    <StyledAiHelpCommand key={`${section.title}-${command.example}-${commandIndex}`}>
+                                      <StyledAiHelpCommandExample>{command.example}</StyledAiHelpCommandExample>
+                                      <StyledAiHelpCommandDescription>
+                                        {command.description}
+                                      </StyledAiHelpCommandDescription>
+                                    </StyledAiHelpCommand>
+                                  ))}
+                                </StyledAiHelpCommandList>
+                              </StyledAiHelpSection>
+                            ))}
+                          </StyledAiHelpContent>
+                        ) : (
+                          displayedContent
+                        )}
+                      </StyledAiAssistantMessageBubble>
+                      {showNodeCommandTip && (
+                        <StyledAiCommandTip>
+                          <StyledAiCommandTipTitle>
+                            단축 명령어를 활용하여 더 많은 노드 작업을 한번에 할 수 있어요.
+                          </StyledAiCommandTipTitle>
+                          <StyledAiCommandTipExamples>
+                            <StyledAiCommandTipExample>A-&gt;B-&gt;C</StyledAiCommandTipExample>
+                            <StyledAiCommandTipExample>A-&gt;B=&gt;C</StyledAiCommandTipExample>
+                            <StyledAiCommandTipExample>-&gt;A-&gt;B</StyledAiCommandTipExample>
+                            <StyledAiCommandTipExample>-&gt;A=&gt;C</StyledAiCommandTipExample>
+                          </StyledAiCommandTipExamples>
+                        </StyledAiCommandTip>
+                      )}
+                    </StyledAiAssistantMessage>
+                  </Fragment>
+                )
+              })}
 
               {isSending && (
                 <StyledAiAssistantMessage $role="assistant">

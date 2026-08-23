@@ -105,6 +105,43 @@ describe('fast taskflow command semantics', () => {
 })
 
 describe('applyEditDraftToFlowDefinition', () => {
+  it.each([
+    {
+      title: 'prefers an exact name after whitespace correction',
+      requestedName: 'Alpha Beta',
+      paletteNames: ['Alpha Beta Extended', 'AlphaBeta'],
+      expectedName: 'AlphaBeta'
+    },
+    {
+      title: 'prefers the closest match beginning at the first character',
+      requestedName: 'Alpha B',
+      paletteNames: ['Alpha Beacon Extended', 'Alpha Beacon'],
+      expectedName: 'Alpha Beacon'
+    },
+    {
+      title: 'checks the second and later characters when no prefix matches',
+      requestedName: 'Beta',
+      paletteNames: ['XXBeta', 'XBeta'],
+      expectedName: 'XBeta'
+    }
+  ])('$title', ({ requestedName, paletteNames, expectedName }) => {
+    const palette: any[] = paletteNames.map((name, index) => ({
+      kind: 'controlTaskNode',
+      label: name,
+      task: { id: 100 + index, name, taskType: 'CONTROL', propertySchema: {} }
+    }))
+
+    const result = applyEditDraftToFlowDefinition(
+      { mode: 'edit', insertAfter: [{ after: '', step: requestedName, isolated: true }] },
+      [{ id: 'start', type: 'startNode', position: { x: 0, y: 0 }, data: { label: 'Start' } }],
+      [],
+      { x: 0, y: 0, zoom: 1 },
+      palette
+    )
+
+    expect(result.next?.nodes.find((node: any) => node.id !== 'start')?.data?.label).toBe(expectedName)
+  })
+
   it('removes a named node and reconnects its adjacent nodes', () => {
     const currentNodes: any[] = [
       { id: 'start', type: 'startNode', position: { x: 0, y: 0 }, data: { label: 'Start' } },

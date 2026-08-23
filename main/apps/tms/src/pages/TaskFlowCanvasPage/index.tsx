@@ -239,23 +239,55 @@ function buildDefaultPropertiesFromSchema(
   return result
 }
 
-function buildPaletteNameBuckets(palette: PaletteItem[]) {
-  const controlNames = new Map<string, PaletteItem>()
-  const contentNames = new Map<string, PaletteItem>()
+function resolvePaletteItemByName(step: AssistantStep, palette: PaletteItem[]): PaletteItem | null {
+  const requestedNames = [step.contentName, step.label, step.taskName]
+    .map((name) => normalizeNameKey(name))
+    .filter((name, index, names) => Boolean(name) && names.indexOf(name) === index)
 
-  for (const item of palette) {
-    if (item.kind === 'controlTaskNode') {
-      const key = normalizeNameKey(item.task.name)
-      if (key) controlNames.set(key, item)
-    }
+  let bestItem: PaletteItem | null = null
+  let bestScore: number[] | null = null
 
-    if (item.kind === 'contentNode') {
-      const key = normalizeNameKey(item.content.name)
-      if (key) contentNames.set(key, item)
+  for (const [itemIndex, item] of palette.entries()) {
+    const itemNames =
+      item.kind === 'contentNode'
+        ? [item.content.name, item.label, item.task.name]
+        : [item.task.name, item.label]
+
+    for (const [nameIndex, itemName] of itemNames.entries()) {
+      const itemKey = normalizeNameKey(itemName)
+      if (!itemKey) continue
+
+      for (const [requestedIndex, requestedName] of requestedNames.entries()) {
+        const matchedIndex = itemKey.indexOf(requestedName)
+        if (matchedIndex < 0) continue
+
+        const score = [
+          itemKey === requestedName ? 0 : 1,
+          matchedIndex,
+          itemKey.length - requestedName.length,
+          requestedIndex,
+          nameIndex,
+          itemIndex
+        ]
+        let firstDifference = -1
+        if (bestScore) {
+          for (let scoreIndex = 0; scoreIndex < score.length; scoreIndex += 1) {
+            if (score[scoreIndex] === bestScore[scoreIndex]) continue
+            firstDifference = scoreIndex
+            break
+          }
+        }
+        const isBetter = !bestScore || (firstDifference >= 0 && score[firstDifference] < bestScore[firstDifference])
+
+        if (isBetter) {
+          bestItem = item
+          bestScore = score
+        }
+      }
     }
   }
 
-  return { controlNames, contentNames }
+  return bestItem
 }
 
 function resolvePaletteItem(step: AssistantStep, palette: PaletteItem[]): PaletteItem | null {
@@ -265,57 +297,11 @@ function resolvePaletteItem(step: AssistantStep, palette: PaletteItem[]): Palett
   const controlItems = palette.filter(
     (item): item is Extract<PaletteItem, { kind: 'controlTaskNode' }> => item.kind === 'controlTaskNode'
   )
-  const { controlNames, contentNames } = buildPaletteNameBuckets(palette)
-
   const stepTaskType = String(step.taskType ?? '')
     .trim()
     .toLowerCase()
-  const stepTaskNameKey = normalizeText(step.taskName)
-  const stepLabelKey = normalizeText(step.label)
-  const looseLabelKey = normalizeLooseText(step.label || step.contentName || step.taskName)
-
-  let byTaskName: PaletteItem | null = null
-  let byLabelControl: PaletteItem | null = null
-  let byContentName: PaletteItem | null = null
-  let byLabelContent: PaletteItem | null = null
-  let byContains: PaletteItem | null = null
-
-  if (stepTaskType === 'control' || stepTaskNameKey || looseLabelKey) {
-    const retryControl = controlItems.find((item) => {
-      const itemText = normalizeLooseText(item.task.name || item.label)
-      return itemText.includes('retry') || itemText.includes('재시도')
-    })
-    if (retryControl && (looseLabelKey.includes('retry') || looseLabelKey.includes('재시도'))) {
-      return retryControl
-    }
-
-    const controlKeyCandidates = [stepTaskNameKey, stepLabelKey, looseLabelKey].filter(Boolean)
-    for (const key of controlKeyCandidates) {
-      const directControlMatch = controlNames.get(normalizeNameKey(key)) ?? null
-      if (directControlMatch) return directControlMatch
-    }
-
-    byTaskName = stepTaskNameKey
-      ? (controlItems.find((item) => normalizeText(item.task.name) === stepTaskNameKey) ?? null)
-      : null
-    if (byTaskName) return byTaskName
-
-    byLabelControl = stepLabelKey
-      ? (controlItems.find(
-          (item) => normalizeText(item.label) === stepLabelKey || normalizeText(item.task.name) === stepLabelKey
-        ) ?? null)
-      : null
-    if (byLabelControl) return byLabelControl
-  }
-
-  if (contentItems.length === 0) return null
 
   const stepContentId = toPositiveNumber(step.contentId)
-  if (stepContentId) {
-    const exact = contentItems.find((item) => Number(item.content.id) === stepContentId)
-    if (exact) return exact
-  }
-
   const stepTaskId = toPositiveNumber(step.taskId)
   if (stepTaskId && stepContentId) {
     const exactPair = contentItems.find(
@@ -323,65 +309,32 @@ function resolvePaletteItem(step: AssistantStep, palette: PaletteItem[]): Palett
     )
     if (exactPair) return exactPair
   }
-
-  const labelKey = normalizeText(step.label)
-  const contentNameKey = normalizeText(step.contentName)
-  const taskNameKey = normalizeText(step.taskName)
-  const contentKeyCandidates = [contentNameKey, labelKey, taskNameKey, looseLabelKey].filter(Boolean)
-  for (const key of contentKeyCandidates) {
-    const directContentMatch = contentNames.get(normalizeNameKey(key)) ?? null
-    if (directContentMatch) return directContentMatch
+  if (stepContentId) {
+    const exactContent = contentItems.find((item) => Number(item.content.id) === stepContentId)
+    if (exactContent) return exactContent
   }
 
-  const strictCandidates = contentItems.filter((item) => {
-    if (stepTaskId && Number(item.task.id) !== stepTaskId) return false
-    if (taskNameKey && normalizeText(item.task.name) !== taskNameKey) return false
-    return true
-  })
-  const candidates = strictCandidates.length > 0 ? strictCandidates : contentItems
+  const taskCandidates = stepTaskId
+    ? contentItems.filter((item) => Number(item.task.id) === stepTaskId)
+    : []
+  const nameCandidates =
+    stepTaskType === 'control'
+      ? controlItems
+      : taskCandidates.length > 0
+        ? taskCandidates
+        : palette
+  const rankedMatch = resolvePaletteItemByName(step, nameCandidates)
+  if (rankedMatch) return rankedMatch
 
-  byContentName =
-    contentNameKey || labelKey
-      ? (candidates.find((item) => normalizeText(item.content.name) === (contentNameKey || labelKey)) ?? null)
-      : null
-  if (byContentName) return byContentName
-
-  byLabelContent = labelKey ? (candidates.find((item) => normalizeText(item.label) === labelKey) ?? null) : null
-  if (byLabelContent) return byLabelContent
-
-  const looseNeedle = normalizeLooseText(step.contentName || step.label)
-  if (looseNeedle) {
-    byContains =
-      candidates.find((item) => {
-        const contentKey = normalizeLooseText(item.content.name)
-        const labelLooseKey = normalizeLooseText(item.label)
-        return (
-          contentKey.includes(looseNeedle) ||
-          looseNeedle.includes(contentKey) ||
-          labelLooseKey.includes(looseNeedle) ||
-          looseNeedle.includes(labelLooseKey)
-        )
+  const looseLabelKey = normalizeLooseText(step.label || step.contentName || step.taskName)
+  if (looseLabelKey.includes('retry') || looseLabelKey.includes('재시도')) {
+    return (
+      controlItems.find((item) => {
+        const itemText = normalizeLooseText(item.task.name || item.label)
+        return itemText.includes('retry') || itemText.includes('재시도')
       }) ?? null
-    if (byContains) return byContains
+    )
   }
-
-  const matchedItem: PaletteItem | null = byContentName ?? byLabelContent ?? byContains ?? byTaskName ?? null
-  const matchedName = (() => {
-    if (!matchedItem) return null
-    const candidate = matchedItem as any
-    return candidate.content?.name ?? candidate.task?.name ?? null
-  })()
-
-  console.log('[AI_TASKFLOW][PALETTE_MATCH_RESULT]', {
-    step: {
-      label: step.label,
-      contentName: step.contentName,
-      taskName: step.taskName,
-      taskType: step.taskType
-    },
-    matched: Boolean(matchedItem),
-    matchedName
-  })
 
   return null
 }
@@ -958,6 +911,22 @@ export function applyEditDraftToFlowDefinition(
     const appendOnly = Boolean(insert?.appendOnly)
     let isolated = Boolean((insert as any)?.isolated)
     const isStartLikeAnchor = ['', 'start', '시작', 'start node'].includes(after.toLowerCase())
+    const startConnectedNodeIds = buildStartConnectedNodeSet(nextNodes, nextEdges)
+    const hasActiveFlowNode = nextNodes.some(
+      (node) => String(node.id) !== 'start' && startConnectedNodeIds.has(String(node.id))
+    )
+
+    if (
+      !isolated &&
+      appendOnly &&
+      !reverseDirection &&
+      !hasActiveFlowNode &&
+      isStartLikeAnchor &&
+      sourceHandle === 'left' &&
+      targetHandle === 'left'
+    ) {
+      isolated = true
+    }
 
     if (
       !isolated &&

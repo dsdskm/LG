@@ -1,4 +1,4 @@
-import { TASKFLOW_CANVAS_RULE_ROUTE_KEY } from '@repo/constants'
+import { AI_TASKFLOW_CANVAS_COMMAND_EVENT, TASKFLOW_CANVAS_RULE_ROUTE_KEY } from '@repo/constants'
 
 export const ruleKey = 'node-save-temp'
 
@@ -6,29 +6,25 @@ export const metadata = {
   ruleKey,
   description: 'TaskFlow 임시 버전을 저장',
   screenKey: TASKFLOW_CANVAS_RULE_ROUTE_KEY,
-  command: '/temp',
+  command: '/temp'
 }
 
 export async function executeNodeSaveTemp(context = {}) {
-  const { canvasActions, taskFlowId } = context
+  const { rule } = context
+  const { replyText } = rule
 
-  if (typeof canvasActions?.saveTemp === 'function') {
-    const result = await canvasActions.saveTemp({ taskFlowId })
-    return {
-      ok: true,
-      ruleKey,
-      taskFlowId,
-      message: 'TaskFlow를 임시 버전으로 저장했습니다.',
-      result,
-    }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent(AI_TASKFLOW_CANVAS_COMMAND_EVENT, {
+        detail: {
+          command: { type: 'save-temp' },
+          replyText: replyText
+        }
+      })
+    )
   }
 
-  return {
-    ok: true,
-    ruleKey,
-    taskFlowId,
-    message: 'TaskFlow를 임시 버전으로 저장했습니다.',
-  }
+  return replyText
 }
 
 export default executeNodeSaveTemp

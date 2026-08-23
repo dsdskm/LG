@@ -1,4 +1,4 @@
-import { TASKFLOW_CANVAS_RULE_ROUTE_KEY } from '@repo/constants'
+import { AI_TASKFLOW_CANVAS_COMMAND_EVENT, TASKFLOW_CANVAS_RULE_ROUTE_KEY } from '@repo/constants'
 
 export const ruleKey = 'node-redo'
 
@@ -6,29 +6,25 @@ export const metadata = {
   ruleKey,
   description: '취소한 편집을 다시 실행',
   screenKey: TASKFLOW_CANVAS_RULE_ROUTE_KEY,
-  command: '/redo',
+  command: '/redo'
 }
 
 export async function executeNodeRedo(context = {}) {
-  const { canvasActions, taskFlowId } = context
+  const { rule } = context
+  const { replyText } = rule
 
-  if (typeof canvasActions?.redo === 'function') {
-    const result = await canvasActions.redo({ taskFlowId })
-    return {
-      ok: true,
-      ruleKey,
-      taskFlowId,
-      message: '마지막으로 취소한 캔버스 작업을 다시 실행했습니다.',
-      result,
-    }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent(AI_TASKFLOW_CANVAS_COMMAND_EVENT, {
+        detail: {
+          command: { type: 'redo' },
+          replyText: replyText
+        }
+      })
+    )
   }
 
-  return {
-    ok: true,
-    ruleKey,
-    taskFlowId,
-    message: '마지막으로 취소한 캔버스 작업을 다시 실행했습니다.',
-  }
+  return replyText
 }
 
 export default executeNodeRedo

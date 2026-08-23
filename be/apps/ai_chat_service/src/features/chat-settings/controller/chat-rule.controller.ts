@@ -77,6 +77,27 @@ export class ChatRuleController {
     const matched = matchFrontRuleRows({ screenKey, message }, rows);
 
     if (!matched) {
+      const appRows = await this.chatRules.listByAppAndScreen(appKey);
+      const availableScreenKeys = Array.from(
+        new Set(
+          appRows
+            .filter((row) => String(row.screenKey ?? '').trim() !== appKey)
+            .filter((row) =>
+              Boolean(
+                matchFrontRuleRows({ screenKey: row.screenKey, message }, [
+                  row,
+                ]),
+              ),
+            )
+            .map((row) => String(row.screenKey ?? '').trim())
+            .filter(Boolean),
+        ),
+      );
+
+      if (availableScreenKeys.length > 0) {
+        return ok({ availableScreenKeys });
+      }
+
       return ok(null);
     }
 
@@ -128,7 +149,8 @@ export class ChatRuleController {
     const replyText =
       String(body?.replyText ?? body?.reply_text ?? '').trim() || undefined;
     const fallbackText =
-      String(body?.fallbackText ?? body?.fallback_text ?? '').trim() || undefined;
+      String(body?.fallbackText ?? body?.fallback_text ?? '').trim() ||
+      undefined;
     const exampleRaw = body?.example ?? body?.examples ?? [];
     const example = Array.isArray(exampleRaw)
       ? exampleRaw.map((item) => String(item ?? '').trim()).filter(Boolean)

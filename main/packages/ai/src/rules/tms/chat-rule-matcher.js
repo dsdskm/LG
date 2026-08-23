@@ -1,6 +1,7 @@
 import { matchChatRule } from '@repo/apis/ai/chatSettings.js'
 import { detectFrontGraphRule, parseFrontGraphRule, executeFrontGraphRule } from './immediate-rules/index.js'
-import {executeTmsHelp} from './actions/tms-help.js'
+import { matchLocalRule } from './local-rule-matcher.js'
+import { executeTmsHelp } from './actions/tms-help.js'
 import { executeGoPage } from './actions/taskflow-move-page.js'
 import { executeTaskflowCopy } from './actions/taskflow-copy.js'
 import { executeTaskflowDelete } from './actions/taskflow-delete.js'
@@ -9,6 +10,14 @@ import { executeTaskflowRun } from './actions/taskflow-run.js'
 import { executeTaskflowPause } from './actions/taskflow-pause.js'
 import { executeTaskflowResume } from './actions/taskflow-resume.js'
 import { executeTaskflowStop } from './actions/taskflow-stop.js'
+import { executeNodeSaveFinal } from './actions/node-save-final.js'
+import { executeNodeSaveTemp } from './actions/node-save-temp.js'
+import { executeNodeClearAll } from './actions/node-clear-all.js'
+import { executeNodeUndo } from './actions/node-undo.js'
+import { executeNodeRedo } from './actions/node-redo.js'
+import { executeNodeReset } from './actions/node-reset.js'
+import { executeNodeContentsRefresh } from './actions/node-contents-refresh.js'
+import { executeNodeDelete } from './actions/node-delete.js'
 import { RULE_KEY } from '@repo/constants/ai'
 
 export const ruleCheck = async (appKey, screenKey, message, navigate, context = {}) => {
@@ -20,6 +29,9 @@ export const ruleCheck = async (appKey, screenKey, message, navigate, context = 
       replyText: ''
     }
   }
+
+  const localRule = await matchLocalRule(screenKey, text, { signal: context.signal })
+  if (localRule) return localRule
 
   const isTmsGraphRule = Boolean(
     detectFrontGraphRule(text, {
@@ -48,6 +60,20 @@ export const ruleCheck = async (appKey, screenKey, message, navigate, context = 
   const payload = response.data || {}
   const rule = payload.rule
   const params = payload.params
+  const availableScreenKeys = Array.isArray(payload.availableScreenKeys)
+    ? payload.availableScreenKeys.map((key) => String(key ?? '').trim()).filter(Boolean)
+    : []
+
+  if (!rule && availableScreenKeys.length > 0) {
+    return {
+      ok: true,
+      replyText:
+        availableScreenKeys.length === 1
+          ? `이 명령어는 ${availableScreenKeys[0]} 화면에서만 사용할 수 있습니다.`
+          : `이 명령어는 다음 화면에서만 사용할 수 있습니다: ${availableScreenKeys.join(', ')}`
+    }
+  }
+
   if (rule) {
     const ruleKey = rule.ruleKey
     let replyText = rule.replyText
@@ -96,6 +122,56 @@ export const ruleCheck = async (appKey, screenKey, message, navigate, context = 
         break
       case RULE_KEY.TASKFLOW_STOP:
         replyText = await executeTaskflowStop({ rule, params, replyText, userId: context.userId })
+        break
+      case RULE_KEY.NODE_SAVE_FINAL:
+        replyText = await executeNodeSaveFinal({ rule, replyText })
+        break
+      case RULE_KEY.NODE_SAVE_TEMP:
+        replyText = await executeNodeSaveTemp({ rule, replyText })
+        break
+      case RULE_KEY.NODE_CLEAR_ALL:
+        replyText = await executeNodeClearAll({ rule, replyText })
+        break
+      case RULE_KEY.NODE_UNDO:
+        replyText = await executeNodeUndo({ rule, replyText })
+        break
+      case RULE_KEY.NODE_REDO:
+        replyText = await executeNodeRedo({ rule, replyText })
+        break
+      case RULE_KEY.NODE_RESET:
+        replyText = await executeNodeReset({ rule, replyText })
+        break
+      case RULE_KEY.NODE_CONTENTS_REFRESH:
+        replyText = await executeNodeContentsRefresh({ rule, replyText })
+        break
+      case RULE_KEY.NODE_CREATE_HORIZON:
+      case RULE_KEY.NODE_APPEND_HORIZON: {
+        const nodeNames = (Array.isArray(params) ? params : [])
+          .map((value) => String(value || '').trim())
+          .filter(Boolean)
+        const isAppendRule = ruleKey === RULE_KEY.NODE_APPEND_HORIZON
+        const expectedNodeCount = isAppendRule ? 1 : 2
+
+        if (nodeNames.length !== expectedNodeCount) {
+          replyText =
+            rule.fallbackText ||
+            (isAppendRule ? '추가할 노드의 이름을 확인해주세요.' : '연결할 두 노드의 이름을 확인해주세요.')
+          break
+        }
+
+        const canvasCommand = isAppendRule ? `->${nodeNames[0]}` : nodeNames.join('->')
+        const canvasRule = await matchLocalRule(screenKey, canvasCommand, {
+          signal: context.signal,
+          ruleKey,
+          replyText,
+          originalMessage: text
+        })
+        if (canvasRule) return canvasRule
+        replyText = rule.fallbackText || '이 명령어는 Canvas 화면에서만 사용할 수 있습니다.'
+        break
+      }
+      case RULE_KEY.NODE_DELETE:
+        replyText = await executeNodeDelete({ rule, params, replyText })
         break
 
       default:

@@ -1,4 +1,4 @@
-import { TASKFLOW_CANVAS_RULE_ROUTE_KEY } from '@repo/constants'
+import { AI_TASKFLOW_CANVAS_COMMAND_EVENT, TASKFLOW_CANVAS_RULE_ROUTE_KEY } from '@repo/constants'
 
 export const ruleKey = 'node-clear-all'
 
@@ -6,29 +6,25 @@ export const metadata = {
   ruleKey,
   description: 'Start 노드를 제외한 모든 노드를 정리',
   screenKey: TASKFLOW_CANVAS_RULE_ROUTE_KEY,
-  command: '/clear',
+  command: '/clear'
 }
 
 export async function executeNodeClearAll(context = {}) {
-  const { canvasActions, taskFlowId } = context
+  const { rule } = context
+  const { replyText } = rule
 
-  if (typeof canvasActions?.clearAll === 'function') {
-    const result = await canvasActions.clearAll({ taskFlowId, keepStartNode: true })
-    return {
-      ok: true,
-      ruleKey,
-      taskFlowId,
-      message: '전체 노드를 초기화했습니다.',
-      result,
-    }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent(AI_TASKFLOW_CANVAS_COMMAND_EVENT, {
+        detail: {
+          command: { type: 'clear-all' },
+          replyText: replyText
+        }
+      })
+    )
   }
 
-  return {
-    ok: true,
-    ruleKey,
-    taskFlowId,
-    message: '전체 노드를 초기화했습니다.',
-  }
+  return replyText
 }
 
 export default executeNodeClearAll

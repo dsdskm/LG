@@ -24,5 +24,15 @@ export const RULE_KEY = {
   TASKFLOW_RUN: 'taskflow-run',
   TASKFLOW_PAUSE: 'taskflow-pause',
   TASKFLOW_RESUME: 'taskflow-resume',
-  TASKFLOW_STOP: 'taskflow-stop'
+  TASKFLOW_STOP: 'taskflow-stop',
+  NODE_SAVE_FINAL: 'node-save-final',
+  NODE_SAVE_TEMP: 'node-save-temp',
+  NODE_CLEAR_ALL: 'node-clear-all',
+  NODE_UNDO: 'node-undo',
+  NODE_REDO: 'node-redo',
+  NODE_RESET: 'node-reset',
+  NODE_CONTENTS_REFRESH: 'node-contents-refresh',
+  NODE_CREATE_HORIZON: 'node-create-horizon',
+  NODE_APPEND_HORIZON: 'node-append-horizon',
+  NODE_DELETE: 'node-delete'
 }

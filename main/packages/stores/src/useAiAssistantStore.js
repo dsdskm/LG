@@ -12,6 +12,20 @@ export const useAiAssistantStore = create((set) => ({
     set(({ messages }) => ({
       messages: [...messages, message]
     })),
+  replaceMessages: (messages) =>
+    set({
+      messages: Array.isArray(messages) ? messages : initialMessages
+    }),
+  prependMessages: (olderMessages) =>
+    set(({ messages }) => {
+      const existingIds = new Set(messages.map((message) => String(message?.id ?? '')))
+      const uniqueOlderMessages = (Array.isArray(olderMessages) ? olderMessages : []).filter(
+        (message) => !existingIds.has(String(message?.id ?? ''))
+      )
+      return {
+        messages: [...uniqueOlderMessages, ...messages]
+      }
+    }),
   updateMessageById: (id, patch) =>
     set(({ messages }) => ({
       messages: messages.map((message) =>
