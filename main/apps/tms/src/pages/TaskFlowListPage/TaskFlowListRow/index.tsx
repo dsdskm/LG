@@ -19,13 +19,11 @@ import {
   UpdatedAtText,
   RightTopRow,
   RightBottomRow,
-  RightInfoColumn,
-  FlowId
+  RightInfoColumn
 } from './styles'
 import { TaskFlowWithDeployment, TaskFlowStatus, DeploymentStatus } from '@/types/taskflow'
 import { getTaskFlowStatusLabel } from '@/utils/taskflowStatus'
 import { convertDateToString } from '@repo/utils'
-import { TextAlignStart } from 'lucide-react'
 function EmptyValue() {
   return <>-</>
 }
@@ -176,7 +174,7 @@ export default function TaskFlowListRow({
             <FlowVersionBadge>{getVersionText(flow)}</FlowVersionBadge>
             {renderFlowStatusBadge(flow, t)}
           </FlowTitleRow>
-          <FlowId>{flow.id || <EmptyValue />}</FlowId>
+          <FlowDesc>{flow.id || <EmptyValue />}</FlowDesc>
           {flow.description && <FlowDesc>{flow.description}</FlowDesc>}
         </FlowMain>
       </CardLeft>

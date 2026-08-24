@@ -182,7 +182,8 @@ const PermissionApproval = () => {
           </ManageActions>
         )
       },
-      sortable: false
+      sortable: false,
+      minWidth: '180px'
     }
   ]
 

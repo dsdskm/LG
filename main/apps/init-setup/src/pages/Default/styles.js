@@ -175,24 +175,28 @@ export const SectionDescription = styled.p`
 export const ActionButton = styled.button`
   border: none;
   border-radius: 1.2rem;
-  background: #5db7d8;
-  color: white;
+  background: var(--t-primary-btn-bg);
+  color: var(--t-primary-btn-text);
   padding: 1.05rem 1.7rem;
   font-size: 1.35rem;
   font-weight: 900;
   cursor: pointer;
   transition: 0.15s ease;
-  box-shadow: 0 6px 14px rgba(93, 183, 216, 0.24);
+  box-shadow: 0 6px 14px rgba(125, 119, 106, 0.22);
 
   &:hover:not(:disabled) {
-    background: #43a7ca;
+    background: var(--t-primary-btn-hover-bg);
     transform: translateY(-1px);
+  }
+
+  &:active:not(:disabled) {
+    background: var(--t-primary-btn-active-bg);
   }
 
   &:disabled {
     cursor: not-allowed;
-    color: #7b8797;
-    background: #d9e2ec;
+    color: var(--color-neutral-50);
+    background: var(--color-neutral-30);
     box-shadow: none;
     transform: none;
   }
@@ -228,9 +232,9 @@ export const WifiCard = styled.button`
   }
 
   &.active {
-    border-color: #5db7d8;
-    background: #f0fbff;
-    box-shadow: 0 0 0 3px rgba(93, 183, 216, 0.16);
+    border-color: var(--t-primary-btn-bg);
+    background: var(--color-neutral-15);
+    box-shadow: 0 0 0 3px rgba(125, 119, 106, 0.13);
   }
 `
 
@@ -301,7 +305,7 @@ export const SignalBar = styled.div`
   height: ${({ height }) => `${height * 0.6 + 0.6}rem`};
 
   &.on {
-    background: #5db7d8;
+    background: var(--t-primary-btn-bg);
   }
 `
 
@@ -387,8 +391,8 @@ export const PasswordInput = styled.input`
   transition: 0.15s ease;
 
   &:focus {
-    border-color: #5db7d8;
-    box-shadow: 0 0 0 4px rgba(93, 183, 216, 0.16);
+    border-color: var(--t-primary-btn-bg);
+    box-shadow: 0 0 0 4px rgba(125, 119, 106, 0.13);
   }
 `
 
@@ -411,12 +415,12 @@ export const TogglePasswordButton = styled.button`
   transition: 0.15s ease;
 
   &:hover {
-    background: #eef7fb;
-    color: #1681a7;
+    background: var(--color-neutral-20);
+    color: var(--t-primary-btn-bg);
   }
 
   &:focus-visible {
-    outline: 2px solid #5db7d8;
+    outline: 2px solid var(--t-primary-btn-bg);
     outline-offset: 2px;
   }
 `
@@ -541,15 +545,15 @@ export const SimplePanel = styled.div`
 export const MiniButton = styled.button`
   border: none;
   border-radius: 1.1rem;
-  background: #5db7d8;
-  color: white;
+  background: var(--t-primary-btn-bg);
+  color: var(--t-primary-btn-text);
   padding: 1rem 1.6rem;
   font-size: 1.3rem;
   font-weight: 900;
   cursor: pointer;
 
   &:hover {
-    background: #43a7ca;
+    background: var(--t-primary-btn-hover-bg);
   }
 `
 
@@ -569,73 +573,355 @@ export const HeaderRow = SectionHeader
 export const WifiList = WifiGrid
 export const WifiItem = WifiCard
 export const ConnectArea = ConnectPanel
-// import styled from 'styled-components'
 
-// export const StyledPageContent = styled.div`
-//   display: flex;
-//   flex-direction: column;
-//   gap: 1.6rem;
-//   padding: 2.4rem;
-//   width: 100%;
 
-//   /* ✅ 전체 페이지 스크롤 허용 */
-//   height: auto;
-//   min-height: 100%;
-//   overflow: visible;
-// `
+export const SetupFormCard = styled.div`
+  width: min(82rem, 100%);
+  max-width: 82rem;
+  align-self: flex-start;
+  margin: 1.2rem 0 0;
+  border: 1px solid var(--color-neutral-20);
+  border-radius: 2rem;
+  background: var(--color-neutral-10);
+  padding: 3rem 3.2rem;
+  box-shadow: var(--shadow-00);
 
-// export const HeaderRow = styled.div`
-//   display: flex;
-//   justify-content: space-between;
-//   align-items: center;
-// `
+  @media (max-width: 768px) {
+    padding: 2.2rem 1.8rem;
+  }
+`
 
-// export const WifiList = styled.div`
-//   border: 1px solid #ddd;
-//   border-radius: 8px;
-//   max-height: 320px;           /* ✅ 약 10개 표시 */
-//   overflow-y: auto;
-// `
+export const SetupCardIntro = styled.h3`
+  margin: 0 0 2.4rem;
+  color: var(--color-neutral-90);
+  font-size: 1.65rem;
+  font-weight: 800;
+  line-height: 1.5;
+`
 
-// export const WifiItem = styled.div`
-//   padding: 12px 16px;
-//   font-size: 1.7rem;             /* ✅ 글자 키움 */
-//   display: flex;
-//   justify-content: space-between;
-//   cursor: pointer;
+export const FormRow = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  margin-top: 1.7rem;
+`
 
-//   &:hover {
-//     background: #f5f7fa;
-//   }
+export const FormLabel = styled.label`
+  color: var(--color-neutral-80);
+  font-size: 1.3rem;
+  font-weight: 800;
+`
 
-//   &.active {
-//     background: #e8f2ff;
-//     font-weight: 600;
-//   }
-// `
+export const FormInput = styled.input`
+  width: 100%;
+  border: 1px solid var(--color-neutral-30);
+  border-radius: 1.2rem;
+  padding: 1.25rem 1.35rem;
+  color: var(--color-neutral-90);
+  background: ${({ disabled }) => disabled ? 'var(--color-neutral-15)' : 'var(--color-neutral-10)'};
+  font-size: 1.4rem;
+  outline: none;
 
-// export const ConnectArea = styled.div`
-//   margin-top: 1.6rem;
-//   display: flex;
-//   flex-direction: column;
-//   gap: 1rem;
-// `
+  &:focus {
+    border-color: var(--t-primary-btn-bg);
+    box-shadow: 0 0 0 3px rgba(125, 119, 106, 0.13);
+  }
+`
 
-// export const ButtonWrap = styled.div`
-//   display: flex;
-//   gap: 1rem;
-//   margin-bottom: 2rem;
-//   margin-top: 2rem;
+export const FormSelect = styled.select`
+  width: 100%;
+  border: 1px solid var(--color-neutral-30);
+  border-radius: 1.2rem;
+  padding: 1.25rem 1.35rem;
+  background: var(--color-neutral-10);
+  color: var(--color-neutral-90);
+  font-size: 1.4rem;
+  outline: none;
 
-//   &.alignLeft {
-//     justify-content: flex-start;
-//   }
+  &:focus {
+    border-color: var(--t-primary-btn-bg);
+    box-shadow: 0 0 0 3px rgba(125, 119, 106, 0.13);
+  }
 
-//   &.alignRight {
-//     justify-content: flex-end;
-//   }
+  &:disabled {
+    background: var(--color-neutral-15);
+    color: var(--color-neutral-50);
+  }
+`
 
-//   &.alignCenter {
-//     justify-content: center;
-//   }
-// `
+export const RadioLine = styled.label`
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  color: var(--color-neutral-90);
+  font-size: 1.4rem;
+  font-weight: 800;
+  cursor: pointer;
+
+  input {
+    accent-color: var(--t-primary-btn-bg);
+  }
+`
+
+export const InfoText = styled.p`
+  margin: 0.8rem 0 0;
+  color: var(--color-neutral-60);
+  font-size: 1.22rem;
+  line-height: 1.6;
+`
+
+export const ErrorText = styled.p`
+  margin: 1rem 0 0;
+  color: var(--color-error-70);
+  font-size: 1.25rem;
+  font-weight: 700;
+`
+
+export const SuccessText = styled.p`
+  margin: 1rem 0 0;
+  color: var(--color-success-70);
+  font-size: 1.25rem;
+  font-weight: 800;
+`
+
+export const SecondaryActionButton = styled(ActionButton)`
+  background: var(--color-neutral-20);
+  color: var(--color-neutral-80);
+  box-shadow: none;
+
+  &:hover:not(:disabled) {
+    background: var(--color-neutral-30);
+    transform: none;
+  }
+`
+
+export const WizardButtonWrap = styled.div`
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.2rem;
+  margin-top: 3.2rem;
+
+  > button {
+    width: 100%;
+    min-height: 5.2rem;
+    font-size: 1.4rem;
+  }
+
+  @media (max-width: 560px) {
+    grid-template-columns: 1fr;
+  }
+`
+
+export const ManualGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.2rem;
+
+  @media (max-width: 768px) {
+    grid-template-columns: 1fr;
+  }
+`
+
+export const ManualLabel = styled.div`
+  margin-bottom: 0.6rem;
+  color: var(--color-neutral-60);
+  font-size: 1.15rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+`
+
+
+
+// Language / Terms (EULA) — legacy GUI guide의 흐름을 Modern Neutral 테마에 맞춰 재구성.
+export const LanguageList = styled.div`
+  display: grid;
+  gap: 1rem;
+`
+
+export const LanguageOption = styled.button`
+  width: 100%;
+  min-height: 8rem;
+  display: flex;
+  align-items: center;
+  gap: 1.4rem;
+  border: 1px solid ${({ $active }) => ($active ? 'var(--t-primary-btn-bg)' : 'var(--color-neutral-20)')};
+  border-radius: 1.4rem;
+  background: ${({ $active }) => ($active ? 'var(--color-neutral-15)' : 'var(--color-neutral-10)')};
+  padding: 1.4rem 1.6rem;
+  text-align: left;
+  cursor: pointer;
+  transition: 0.15s ease;
+  box-shadow: ${({ $active }) => ($active ? '0 0 0 3px rgba(125, 119, 106, 0.10)' : 'none')};
+
+  &:hover {
+    border-color: var(--color-neutral-40);
+    background: var(--color-neutral-15);
+  }
+`
+
+export const LanguageRadio = styled.span`
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 2rem;
+  border: 2px solid ${({ $active }) => ($active ? 'var(--t-primary-btn-bg)' : 'var(--color-neutral-40)')};
+  border-radius: 50%;
+  background: ${({ $active }) => ($active ? 'var(--t-primary-btn-bg)' : 'transparent')};
+  box-shadow: ${({ $active }) => ($active ? 'inset 0 0 0 5px var(--color-neutral-10)' : 'none')};
+`
+
+export const LanguageBadge = styled.span`
+  width: 5.2rem;
+  height: 5.2rem;
+  flex: 0 0 5.2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: ${({ $active }) => ($active ? 'var(--t-primary-btn-text)' : 'var(--color-neutral-70)')};
+  background: ${({ $active }) => ($active ? 'var(--t-primary-btn-bg)' : 'var(--color-neutral-20)')};
+  font-size: 1.55rem;
+  font-weight: 900;
+`
+
+export const LanguageText = styled.span`
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+`
+
+export const LanguageName = styled.span`
+  color: var(--color-neutral-90);
+  font-size: 1.65rem;
+  font-weight: 800;
+`
+
+export const LanguageSubName = styled.span`
+  color: var(--color-neutral-60);
+  font-size: 1.2rem;
+  font-weight: 600;
+`
+
+export const WizardButtonWrapSingle = styled.div`
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 3.2rem;
+
+  > button {
+    width: min(36rem, 100%);
+    min-height: 5.2rem;
+    font-size: 1.4rem;
+  }
+`
+
+export const TermsList = styled.div`
+  overflow: hidden;
+  border: 1px solid var(--color-neutral-20);
+  border-radius: 1.5rem;
+  background: var(--color-neutral-10);
+`
+
+export const TermRow = styled.div`
+  min-height: 7.4rem;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1.3rem;
+  padding: 1.2rem 1.5rem;
+
+  & + & {
+    border-top: 1px solid var(--color-neutral-20);
+  }
+`
+
+export const TermCheckButton = styled.button`
+  width: 2.5rem;
+  height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid ${({ $checked }) => ($checked ? 'var(--t-primary-btn-bg)' : 'var(--color-neutral-40)')};
+  border-radius: 50%;
+  background: ${({ $checked }) => ($checked ? 'var(--t-primary-btn-bg)' : 'transparent')};
+  color: var(--t-primary-btn-text);
+  cursor: pointer;
+  padding: 0;
+`
+
+export const TermCheckMark = styled.span`
+  font-size: 1.45rem;
+  font-weight: 900;
+  line-height: 1;
+`
+
+export const TermLabel = styled.div`
+  color: var(--color-neutral-90);
+  font-size: 1.5rem;
+  font-weight: 750;
+  line-height: 1.45;
+`
+
+export const TermArrowButton = styled.button`
+  min-width: 4.2rem;
+  min-height: 4.2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 1rem;
+  background: transparent;
+  color: var(--color-neutral-60);
+  font-size: 3.2rem;
+  font-weight: 300;
+  line-height: 1;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--color-neutral-15);
+    color: var(--color-neutral-90);
+  }
+`
+
+export const TermsDetailHeader = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  margin-bottom: 1.8rem;
+`
+
+export const TermsBackButton = styled.button`
+  width: 4.4rem;
+  height: 4.4rem;
+  flex: 0 0 4.4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-neutral-20);
+  border-radius: 1.1rem;
+  background: var(--color-neutral-10);
+  color: var(--color-neutral-90);
+  font-size: 2.4rem;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--color-neutral-15);
+  }
+`
+
+export const TermsDetailTitle = styled.h3`
+  margin: 0;
+  color: var(--color-neutral-90);
+  font-size: 1.7rem;
+  font-weight: 850;
+`
+
+export const TermsDetailBody = styled.div`
+  min-height: 38rem;
+  max-height: 52rem;
+  overflow-y: auto;
+  border: 1px solid var(--color-neutral-20);
+  border-radius: 1.5rem;
+  background: var(--color-neutral-15);
+  padding: 2rem;
+`

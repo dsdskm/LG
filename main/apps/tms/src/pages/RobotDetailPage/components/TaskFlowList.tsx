@@ -5,11 +5,21 @@ import { RobotTaskFlow } from '@/types/api/device'
 interface TaskFlowListProps {
   taskFlowList: RobotTaskFlow[]
   controlList: Control[]
-  settingList: [Control[]]
+  settingList?: [Control[]]
   selectedId: number
   onListClick: (id: number) => void
+  onItemChecked: (id: number) => void
+  checkedItems: number[]
 }
-const TaskFlowList = ({ taskFlowList, controlList, settingList, selectedId, onListClick }: TaskFlowListProps) => {
+const TaskFlowList = ({
+  taskFlowList,
+  controlList,
+  settingList,
+  selectedId,
+  onListClick,
+  onItemChecked,
+  checkedItems
+}: TaskFlowListProps) => {
   return (
     <div
       style={{
@@ -25,7 +35,9 @@ const TaskFlowList = ({ taskFlowList, controlList, settingList, selectedId, onLi
           controlList={controlList}
           settingList={settingList}
           selectedId={selectedId}
+          checked={checkedItems.includes(taskFlow.id)}
           onListClicked={onListClick}
+          onItemChecked={onItemChecked}
         />
       ))}
     </div>

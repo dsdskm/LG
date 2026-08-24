@@ -2,17 +2,17 @@
   --viewport-width: 1vh;
   --viewport-height: 1vh;
   /*color*/
-  --color-primary-10: #f2f8f9;
-  --color-primary-15: #dfedef;
-  --color-primary-20: #c9e1e4;
-  --color-primary-30: #b0d3d8;
-  --color-primary-40: #83bac2;
-  --color-primary-50: #61a8b1;
-  --color-primary-60: #2f929f;
-  --color-primary-70: #1d828f;
-  --color-primary-80: #16646e;
-  --color-primary-90: #10454c;
-  --color-primary-100: #09262a;
+  --color-primary-10: #faf9f7;
+  --color-primary-15: #f5f2ed;
+  --color-primary-20: #ebe7df;
+  --color-primary-30: #e1d9cd;
+  --color-primary-40: #d3cfc4;
+  --color-primary-50: #c0b9aa;
+  --color-primary-60: #8c8678;
+  --color-primary-70: #7d776a;
+  --color-primary-80: #6b665a;
+  --color-primary-90: #59544b;
+  --color-primary-100: #3d3835;
 
   --color-secondary-10: #f5f6fa;
   --color-secondary-15: #e8ebf0;
@@ -264,6 +264,18 @@
 
 /* ── legacy theme ("기존 스타일") — toggled on <html data-theme="legacy"> ── */
 [data-theme='legacy'] {
+  --color-primary-10: #f2f8f9;
+  --color-primary-15: #dfedef;
+  --color-primary-20: #c9e1e4;
+  --color-primary-30: #b0d3d8;
+  --color-primary-40: #83bac2;
+  --color-primary-50: #61a8b1;
+  --color-primary-60: #2f929f;
+  --color-primary-70: #1d828f;
+  --color-primary-80: #16646e;
+  --color-primary-90: #10454c;
+  --color-primary-100: #09262a;
+
   --t-header-bg: linear-gradient(90deg, #5ba1c2 0%, #97d0eb 52.77%, #6caecc 92.03%);
   --t-menu-active-bg: rgba(255, 255, 255, 0.25);
   --t-menu-active-hover-bg: rgba(255, 255, 255, 0.2);

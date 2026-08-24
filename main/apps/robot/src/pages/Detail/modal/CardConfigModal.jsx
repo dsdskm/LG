@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react'
 import styled from 'styled-components'
 import { useTranslation } from 'react-i18next'
+import { getForceConnect, setForceConnect } from '../config/forceConnect'
 
 const ModalOverlay = styled.div`
   position: fixed;
@@ -126,10 +127,51 @@ const LiveTag = styled.span`
 
 const ModalFooter = styled.div`
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
   gap: 10px;
   padding: 20px;
   border-top: 1px solid #e0e0e0;
+`
+
+const FooterButtons = styled.div`
+  display: flex;
+  gap: 10px;
+`
+
+const ForceConnectRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`
+
+const ForceConnectLabel = styled.span`
+  font-size: 14px;
+  color: #333;
+`
+
+const ToggleSwitch = styled.button`
+  position: relative;
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  background: ${(props) => (props.$on ? '#28a745' : '#ccc')};
+  transition: background 0.3s ease;
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: ${(props) => (props.$on ? '22px' : '2px')};
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: white;
+    transition: left 0.3s ease;
+  }
 `
 
 const FooterButton = styled.button`
@@ -163,20 +205,39 @@ const FooterButton = styled.button`
 const CardConfigModal = ({ isOpen, onClose, onSave, cardTypes, currentCards }) => {
   const { t } = useTranslation('robot')
   const [selectedCards, setSelectedCards] = useState(new Set())
+  const [forceConnect, setForceConnectState] = useState(true)
 
   useEffect(() => {
     if (isOpen && currentCards) {
-      const currentPaths = new Set(currentCards.map((card) => card.targetPath))
-      setSelectedCards(currentPaths)
+      const currentKeys = new Set(
+        currentCards.map((card) => {
+          const categoryKey = card.cardType || card.type || 'CONTROL'
+          return `${categoryKey}:${card.cardKey}`
+        })
+      )
+      setSelectedCards(currentKeys)
     }
   }, [isOpen, currentCards])
 
-  const handleCardToggle = (cardKey, cardInfo) => {
+  useEffect(() => {
+    if (isOpen) {
+      setForceConnectState(getForceConnect())
+    }
+  }, [isOpen])
+
+  const handleForceConnectToggle = () => {
+    const next = !forceConnect
+    setForceConnectState(next)
+    setForceConnect(next)
+  }
+
+  const handleCardToggle = (cardKey, categoryKey) => {
+    const uniqueKey = `${categoryKey}:${cardKey}`
     const newSelected = new Set(selectedCards)
-    if (newSelected.has(cardInfo.path)) {
-      newSelected.delete(cardInfo.path)
+    if (newSelected.has(uniqueKey)) {
+      newSelected.delete(uniqueKey)
     } else {
-      newSelected.add(cardInfo.path)
+      newSelected.add(uniqueKey)
     }
     setSelectedCards(newSelected)
   }
@@ -186,8 +247,10 @@ const CardConfigModal = ({ isOpen, onClose, onSave, cardTypes, currentCards }) =
 
     Object.entries(cardTypes).forEach(([categoryKey, category]) => {
       Object.entries(category).forEach(([cardKey, cardInfo]) => {
-        if (selectedCards.has(cardInfo.path)) {
+        const uniqueKey = `${categoryKey}:${cardKey}`
+        if (selectedCards.has(uniqueKey)) {
           cardsToSave.push({
+            cardKey,
             name: cardInfo.name,
             path: cardInfo.path,
             port: cardInfo.port,
@@ -222,8 +285,8 @@ const CardConfigModal = ({ isOpen, onClose, onSave, cardTypes, currentCards }) =
                 {Object.entries(category).map(([cardKey, cardInfo]) => (
                   <CardOption
                     key={cardKey}
-                    selected={selectedCards.has(cardInfo.path)}
-                    onClick={() => handleCardToggle(cardKey, cardInfo)}
+                    selected={selectedCards.has(`${categoryKey}:${cardKey}`)}
+                    onClick={() => handleCardToggle(cardKey, categoryKey)}
                   >
                     <CardOptionHeader>
                       <span className="icon">{cardInfo.icon}</span>
@@ -243,12 +306,18 @@ const CardConfigModal = ({ isOpen, onClose, onSave, cardTypes, currentCards }) =
         </ModalBody>
 
         <ModalFooter>
-          <FooterButton className="btn-cancel" onClick={onClose}>
-            {t('cancel')}
-          </FooterButton>
-          <FooterButton className="btn-save" onClick={handleSave}>
-            {t('save')}
-          </FooterButton>
+          <ForceConnectRow>
+            <ToggleSwitch $on={forceConnect} onClick={handleForceConnectToggle} aria-pressed={forceConnect} />
+            <ForceConnectLabel>{t('forceConnect')}</ForceConnectLabel>
+          </ForceConnectRow>
+          <FooterButtons>
+            <FooterButton className="btn-cancel" onClick={onClose}>
+              {t('cancel')}
+            </FooterButton>
+            <FooterButton className="btn-save" onClick={handleSave}>
+              {t('save')}
+            </FooterButton>
+          </FooterButtons>
         </ModalFooter>
       </ModalContainer>
     </ModalOverlay>

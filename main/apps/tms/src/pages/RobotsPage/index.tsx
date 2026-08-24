@@ -325,26 +325,7 @@ const RobotsPage = () => {
             }}
           >
             <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', width: '100%' }}>
-              {/* <input
-                type="checkbox"
-                style={{ height: '16px', width: '16px', cursor: 'pointer' }}
-                checked={selectAll}
-                onChange={handleSelectAll}
-              />
-              <label
-                style={{ fontSize: '14px', fontWeight: 500, color: '#374151', whiteSpace: 'nowrap', marginLeft: '8px' }}
-              >
-                전체 선택
-              </label> */}
               <div style={{ display: 'flex', gap: '2px', marginLeft: 'auto' }}>
-                {/* <Dropdown
-                  size="lg"
-                  minWidth="180px"
-                  placeholder="최근 실행 TaskFlow"
-                  defaultValue={t('robots.statusFilter')}
-                  options={taskFlowOptions}
-                  onChange={() => {}}
-                /> */}
                 <Dropdown
                   size="lg"
                   minWidth="180px"
@@ -364,11 +345,6 @@ const RobotsPage = () => {
                 </SearchContainer>
               </div>
             </div>
-
-            {/* <div style={{ display: 'flex', flexDirection: 'row', gap: 10 }}>
-              <Button onClick={() => {}}>실행</Button>
-              <Button onClick={() => {}}>정지</Button>
-            </div> */}
           </div>
 
           <RobotList
@@ -376,7 +352,7 @@ const RobotsPage = () => {
             robotList={robotList}
             searchQuery={searchQuery}
             selectedRobotIds={selectedRobotIds}
-            onClickItem={(robotId) => navigate(`/tms/robots/${robotId}/detail`)}
+            onClickItem={(robot) => navigate(`/tms/robots/${robot.id}/detail`)}
           />
         </Section>
       </StyledPageContent>

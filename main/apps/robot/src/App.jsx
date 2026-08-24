@@ -25,6 +25,7 @@ import MapDetail from './pages/MapManagement/MapDetail'
 import MapHistory from './pages/MapManagement/MapHistory'
 import AiLogManagement from './pages/AiLogManagement'
 import AiEventSummaryPanel from './pages/Dashboard/components/AiEventSummaryPanel'
+import AlarmNotification from './components/AlarmNotification'
 import TVDashboard from './pages/TVDashboard'
 import TermManagement from './pages/TermManagement'
 
@@ -207,6 +208,7 @@ const App = () => {
                     appRoutes={appRoutes}
                     t={appT}
                     aiGreetingExtra={<AiEventSummaryPanel />}
+                    notificationSlot={<AlarmNotification />}
                   >
                     {item.element}
                   </MainLayout>

@@ -2,7 +2,15 @@ import { useState, useEffect } from 'react'
 import { Section, SectionTitle, Button, Input, Dropdown, IconButton, Icon } from '@repo/ui'
 import { ButtonWrapper, DetailWrapper, FieldGrid, MetaText, PropertyRow } from './styles'
 
-const SemanticDetail = ({ row, onPoiCreated, onPoiEdited, onPoiCancel }) => {
+const DEG2RAD = Math.PI / 180
+const round6 = (n) => Math.round(n * 1e6) / 1e6
+// yaw(도) → Z축 회전 쿼터니언 (REP-103; init-setup tf.js 의 yawOf 와 동일 규약)
+const yawDegToQuaternion = (deg) => {
+  const half = ((Number(deg) || 0) * DEG2RAD) / 2
+  return { x: 0, y: 0, z: round6(Math.sin(half)), w: round6(Math.cos(half)) }
+}
+
+const SemanticDetail = ({ row, readOnly = false, onPoiCreated, onPoiEdited, onPoiCancel }) => {
   const POI_TYPES = ['GENERAL', 'ETC']
 
   const [loading, setLoading] = useState(false)
@@ -13,14 +21,16 @@ const SemanticDetail = ({ row, onPoiCreated, onPoiEdited, onPoiCancel }) => {
 
   const handlePoiCreate = () => {
     const retObj = { ...workObj }
-    retObj._work.created = true
+    retObj.editStatus.needToSave = true
+    retObj.editStatus.created = true
     onPoiCreated(retObj)
   }
 
   const handlePoiEdit = () => {
     console.log('handlePoiEdit')
     const retObj = { ...workObj }
-    retObj._work.edited = true
+    retObj.editStatus.needToSave = true
+    retObj.editStatus.edited = true
     onPoiEdited(retObj)
   }
 
@@ -50,21 +60,13 @@ const SemanticDetail = ({ row, onPoiCreated, onPoiEdited, onPoiCancel }) => {
     }))
   }
 
-  const handleOrientationChange = (axis, value) => {
-    const newPose = { ...workObj.pose }
-    const floatValue = value === '' ? '' : parseFloat(value)
-    newPose.orientation[axis] = floatValue
-    setWorkObj((prev) => ({
-      ...prev,
-      pose: newPose
-    }))
-  }
-
   const handleYawDegChange = (value) => {
     const floatValue = value === '' ? '' : parseFloat(value)
     setWorkObj((prev) => ({
       ...prev,
-      yawDeg: floatValue
+      yawDeg: floatValue,
+      // orientation 은 사용자가 직접 입력하지 않고 yaw 로부터 파생한다.
+      pose: { ...prev.pose, orientation: yawDegToQuaternion(floatValue === '' ? 0 : floatValue) }
     }))
   }
 
@@ -89,25 +91,25 @@ const SemanticDetail = ({ row, onPoiCreated, onPoiEdited, onPoiCancel }) => {
     }))
   }
 
-  const handlePropKeyChange = (id, key) => {
-    const next = propEntries.map((e) => (e.id === id ? { ...e, key } : e))
+  const handlePropKeyChange = (poiId, key) => {
+    const next = propEntries.map((e) => (e.poiId === poiId ? { ...e, key } : e))
     setPropEntries(next)
     syncProperties(next)
   }
 
-  const handlePropValueChange = (id, value) => {
-    const next = propEntries.map((e) => (e.id === id ? { ...e, value } : e))
+  const handlePropValueChange = (poiId, value) => {
+    const next = propEntries.map((e) => (e.poiId === poiId ? { ...e, value } : e))
     setPropEntries(next)
     syncProperties(next)
   }
 
   const handleAddProp = () => {
     if (propEntries.length >= 5) return
-    setPropEntries((prev) => [...prev, { id: crypto.randomUUID(), key: '', value: '' }])
+    setPropEntries((prev) => [...prev, { poiId: crypto.randomUUID(), key: '', value: '' }])
   }
 
-  const handleRemoveProp = (id) => {
-    const next = propEntries.filter((e) => e.id !== id)
+  const handleRemoveProp = (poiId) => {
+    const next = propEntries.filter((e) => e.poiId !== poiId)
     setPropEntries(next)
     syncProperties(next)
   }
@@ -119,14 +121,14 @@ const SemanticDetail = ({ row, onPoiCreated, onPoiEdited, onPoiCancel }) => {
       setWorkObj(tempObj)
       setPropEntries(
         Object.entries(tempObj.properties).map(([key, value]) => ({
-          id: crypto.randomUUID(),
+          poiId: crypto.randomUUID(),
           key,
           value: String(value)
         }))
       )
     } else {
       const tempObj = {}
-      tempObj.id = crypto.randomUUID()
+      tempObj.poiId = crypto.randomUUID()
       tempObj.type = 'GENERAL'
       tempObj.name = {}
       tempObj.name['default'] = ''
@@ -138,15 +140,10 @@ const SemanticDetail = ({ row, onPoiCreated, onPoiEdited, onPoiCancel }) => {
         y: 0.0,
         z: 0.0
       }
-      tempObj.pose.orientation = {
-        x: 0.0,
-        y: 0.0,
-        z: 0.0,
-        w: 0.0
-      }
       tempObj.yawDeg = 0.0
+      tempObj.pose.orientation = yawDegToQuaternion(0) // { x:0, y:0, z:0, w:1 }
       tempObj.properties = {}
-      tempObj._work = {}
+      tempObj.editStatus = {}
       setWorkObj(tempObj)
     }
     setLoading(true)
@@ -157,22 +154,28 @@ const SemanticDetail = ({ row, onPoiCreated, onPoiEdited, onPoiCancel }) => {
       <DetailWrapper key={workObj.id}>
         {/* 상단: 상태 + 액션 버튼 */}
         <Section>
-          <SectionTitle title="POI 상세">
-            <MetaText>{workObj._work.state}</MetaText>
-          </SectionTitle>
+          <SectionTitle title={readOnly ? 'POI 상세 (읽기 전용)' : 'POI 상세'}></SectionTitle>
           <ButtonWrapper>
-            {workObj._work.saved || workObj._work.created ? (
-              <Button size="md" onClick={handlePoiEdit}>
-                수정
+            {readOnly ? (
+              <Button size="md" variant="outline" onClick={onPoiCancel}>
+                닫기
               </Button>
             ) : (
-              <Button size="md" onClick={handlePoiCreate}>
-                생성
-              </Button>
+              <>
+                {row ? (
+                  <Button size="md" onClick={handlePoiEdit}>
+                    수정
+                  </Button>
+                ) : (
+                  <Button size="md" onClick={handlePoiCreate}>
+                    생성
+                  </Button>
+                )}
+                <Button size="md" variant="outline" onClick={onPoiCancel}>
+                  취소
+                </Button>
+              </>
             )}
-            <Button size="md" variant="outline" onClick={onPoiCancel}>
-              취소
-            </Button>
           </ButtonWrapper>
         </Section>
 
@@ -186,10 +189,12 @@ const SemanticDetail = ({ row, onPoiCreated, onPoiEdited, onPoiCancel }) => {
             value={workObj.type}
             options={POI_TYPES.map((t) => ({ name: t, value: t }))}
             onChange={(value) => handleTypeChange(value)}
+            disabled={readOnly}
           />
           <Input
             label="기본 이름"
             size="md"
+            readOnly={readOnly}
             value={workObj.name?.default || ''}
             onChange={(e) => handleNameChange('default', e.target.value)}
           />
@@ -197,12 +202,14 @@ const SemanticDetail = ({ row, onPoiCreated, onPoiEdited, onPoiCancel }) => {
             <Input
               label="영문 이름"
               size="md"
+              readOnly={readOnly}
               value={workObj.name?.['en-US'] || ''}
               onChange={(e) => handleNameChange('en-US', e.target.value)}
             />
             <Input
               label="한글 이름"
               size="md"
+              readOnly={readOnly}
               value={workObj.name?.['ko-KR'] || ''}
               onChange={(e) => handleNameChange('ko-KR', e.target.value)}
             />
@@ -220,6 +227,7 @@ const SemanticDetail = ({ row, onPoiCreated, onPoiEdited, onPoiCancel }) => {
                 type="number"
                 step="0.001"
                 size="md"
+                readOnly={readOnly}
                 value={workObj.pose?.position?.[axis] ?? ''}
                 onChange={(e) => handlePosChange(axis, e.target.value)}
               />
@@ -230,6 +238,7 @@ const SemanticDetail = ({ row, onPoiCreated, onPoiEdited, onPoiCancel }) => {
         {/* Orientation */}
         <Section gap="1.2rem">
           <SectionTitle title="Orientation" />
+          <MetaText>yaw 로부터 자동 계산</MetaText>
           <FieldGrid>
             {['x', 'y', 'z', 'w'].map((axis) => (
               <Input
@@ -238,8 +247,8 @@ const SemanticDetail = ({ row, onPoiCreated, onPoiEdited, onPoiCancel }) => {
                 type="number"
                 step="0.001"
                 size="md"
+                readOnly
                 value={workObj.pose?.orientation?.[axis] ?? ''}
-                onChange={(e) => handleOrientationChange(axis, e.target.value)}
               />
             ))}
           </FieldGrid>
@@ -255,6 +264,7 @@ const SemanticDetail = ({ row, onPoiCreated, onPoiEdited, onPoiCancel }) => {
               step="0.001"
               unit="°"
               size="md"
+              readOnly={readOnly}
               value={workObj.yawDeg ?? 0.0}
               onChange={(e) => handleYawDegChange(e.target.value)}
             />
@@ -263,6 +273,7 @@ const SemanticDetail = ({ row, onPoiCreated, onPoiEdited, onPoiCancel }) => {
               type="number"
               step="0.001"
               size="md"
+              readOnly={readOnly}
               value={workObj.tolerance ?? 0.0}
               onChange={(e) => handleToleranceChange(e.target.value)}
             />
@@ -272,32 +283,38 @@ const SemanticDetail = ({ row, onPoiCreated, onPoiEdited, onPoiCancel }) => {
         {/* Properties (사용자 정의 key/value, string 값, 최대 5개) */}
         <Section gap="1.2rem">
           <SectionTitle title="Properties">
-            <IconButton size="sm" onClick={handleAddProp} disabled={propEntries.length >= 5}>
-              <Icon name="add" size={18} />
-            </IconButton>
+            {!readOnly && (
+              <IconButton size="sm" onClick={handleAddProp} disabled={propEntries.length >= 5}>
+                <Icon name="add" size={18} />
+              </IconButton>
+            )}
           </SectionTitle>
-          <MetaText>키/값 문자열, 최대 5개</MetaText>
+          {!readOnly && <MetaText>키/값 문자열, 최대 5개</MetaText>}
           {propEntries.map((entry) => (
-            <PropertyRow key={entry.id}>
+            <PropertyRow key={entry.poiId}>
               <div className="field">
                 <Input
                   size="sm"
                   placeholder="key"
+                  readOnly={readOnly}
                   value={entry.key}
-                  onChange={(e) => handlePropKeyChange(entry.id, e.target.value)}
+                  onChange={(e) => handlePropKeyChange(entry.poiId, e.target.value)}
                 />
               </div>
               <div className="field">
                 <Input
                   size="sm"
                   placeholder="value"
+                  readOnly={readOnly}
                   value={entry.value}
-                  onChange={(e) => handlePropValueChange(entry.id, e.target.value)}
+                  onChange={(e) => handlePropValueChange(entry.poiId, e.target.value)}
                 />
               </div>
-              <IconButton size="sm" onClick={() => handleRemoveProp(entry.id)}>
-                <Icon name="subtract" size={18} />
-              </IconButton>
+              {!readOnly && (
+                <IconButton size="sm" onClick={() => handleRemoveProp(entry.poiId)}>
+                  <Icon name="subtract" size={18} />
+                </IconButton>
+              )}
             </PropertyRow>
           ))}
         </Section>

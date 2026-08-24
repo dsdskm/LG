@@ -41,6 +41,9 @@ const completeStatus = [
   DEPLOYMENT_STATUS.REMOVED
 ]
 
+// BE(retrieveReleasedCampaign)가 고정 page size(5)로 페이지네이션하므로 FE도 동일 값을 사용한다
+const CAMPAIGN_PAGE_SIZE = 5
+
 const hoverStyles = {
   rows: {
     highlightOnHoverStyle: {
@@ -166,6 +169,7 @@ const Campaign = () => {
   const [filterQuery, setFilterQuery] = useState('all')
   const [orgFilter, setOrgFilter] = useState({ actualOrgs: [], matchesOrg: () => false })
   const [initialOrg, setInitialOrg] = useState(false)
+  const [page, setPage] = useState(1)
 
   const fetchData = useCallback(async () => {
     try {
@@ -175,7 +179,7 @@ const Campaign = () => {
         return
       }
 
-      const response = await campaignApis.retrieveCampaign(orgIds)
+      const response = await campaignApis.retrieveCampaign(orgIds, null, page)
       const { numberOfStatus, pageCampaign } = response.results
       setCountOfStatus(numberOfStatus)
       const newData = pageCampaign
@@ -194,15 +198,24 @@ const Campaign = () => {
     } finally {
       setIsLoading(false)
     }
-  }, [orgIds])
+  }, [orgIds, page])
 
   const handleSearchChange = (e) => {
     setSearchQuery(e.target.value)
+    setPage(1)
   }
 
   const handleFilterChange = (value) => {
     setFilterQuery(value)
+    setPage(1)
   }
+
+  const handleChangePage = useCallback(
+    (nextPage) => {
+      setPage((prev) => (prev === nextPage ? prev : nextPage))
+    },
+    [setPage]
+  )
 
   // 조직/검색 조건만 적용한 집합 (상태 카드/드롭다운 집계의 기준)
   const orgSearchFiltered = useMemo(
@@ -226,8 +239,12 @@ const Campaign = () => {
     (campaign) => filterQuery === 'all' || campaign.jobStatus === filterQuery
   )
 
+  // 서버 페이지네이션이므로 전체 건수는 응답의 집계값(numberOfStatus)을 사용한다
+  const totalCount = countOfStatus.allCampaigns ?? 0
+
   const handleResetSearch = () => {
     setSearchQuery('')
+    setPage(1)
   }
 
   const handleAbort = useCallback(
@@ -361,6 +378,7 @@ const Campaign = () => {
   const handleSelectOrg = useCallback((info) => {
     setOrgFilter({ actualOrgs: info.actualOrgs, matchesOrg: info.matchesOrg })
     setInitialOrg(true)
+    setPage(1)
   }, [])
 
   const handleRowClicked = useCallback(
@@ -413,12 +431,12 @@ const Campaign = () => {
             </Button>
           </ButtonWrap>
         </HeaderTitleGroup>
-        {!isLoading && filteredData.length === 0 ? (
+        {!isLoading && totalCount === 0 ? (
           <NoData>{tCommon('noData')}</NoData>
         ) : (
           <Suspense fallback={<div>Loading...</div>}>
             <div style={{ margin: '16px 0', fontSize: '14px', fontWeight: 'bold' }}>
-              {tCommon('count')} : {filteredData.length}
+              {tCommon('count')} : {totalCount}
             </div>
             <CampaignTable
               columns={columns}
@@ -426,7 +444,12 @@ const Campaign = () => {
               noData={tCommon('noData')}
               isLoading={isLoading}
               pagination
-              paginationRowsPerPageOptions={[5]}
+              paginationServer
+              paginationTotalRows={totalCount}
+              paginationPerPage={CAMPAIGN_PAGE_SIZE}
+              paginationDefaultPage={page}
+              paginationRowsPerPageOptions={[CAMPAIGN_PAGE_SIZE]}
+              onChangePage={handleChangePage}
               handleAbort={handleAbort}
               handleRollback={handleRollback}
               onUpdateCampaign={handleUpdateCampaign}

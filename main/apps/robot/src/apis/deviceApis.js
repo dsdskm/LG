@@ -86,12 +86,12 @@ export const getDeviceErrors = async (deviceId, params = undefined) => {
  * @returns {Promise<any>}
  */
 export const getDeviceNotifications = async (params = undefined) => {
-  const size = GETSIZE
+  const { size, ...rest } = params ?? {}
 
   const response = await axiosRobot.get(pathDevices + '/notification', {
     params: {
-      size,
-      ...(params ?? {}) // params가 있으면 추가
+      size: size ?? GETSIZE, // params에 size가 있으면 그 값을 우선 사용
+      ...rest
     }
   })
   return response

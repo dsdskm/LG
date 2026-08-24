@@ -1,7 +1,8 @@
 import styled from 'styled-components'
 
 export const ManageActions = styled.div`
-  display: inline-flex;
+  display: flex;
+  width: 100%;
   gap: 5px;
   align-items: center;
   justify-content: center;
@@ -9,7 +10,9 @@ export const ManageActions = styled.div`
 
 export const BaseActionButton = styled.button`
   min-width: 36px;
+  width: auto;
   height: 24px;
+  padding: 0 8px;
 
   font-size: 11px;
   font-weight: 500;

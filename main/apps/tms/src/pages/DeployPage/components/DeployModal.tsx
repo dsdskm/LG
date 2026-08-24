@@ -1,19 +1,32 @@
-import { TaskFlow } from '@/types/taskflow'
-import { useEffect, useState } from 'react'
+import { SimpleRobotInfo, TaskFlow } from '@/types/taskflow'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import ReactDOM from 'react-dom'
-import { DeployMode } from '..'
+import { DeployMode } from '../hooks/useDeploy'
+
+export interface DeployTaskFlow {
+  name: string
+  id: number
+  version: number
+}
+
+export interface DeployRequestParam {
+  orgInfo: string[]
+  taskFlowId: number
+  robotList: SimpleRobotInfo[]
+}
 
 interface DeployModalProps {
-  taskFlow: TaskFlow
-  targetCount: number
+  title: string
+  desc: string
+  subDesc?: string
   mode: DeployMode
   status: 'READY' | 'WORKING' | 'SUCCESS' | 'FAILURE'
   onClose?: () => void
   onDeploy?: () => void
 }
 
-const DeployModal = ({ taskFlow, targetCount, mode, status, onClose, onDeploy }: DeployModalProps) => {
+const DeployModal = ({ title, desc, subDesc, mode, status, onClose, onDeploy }: DeployModalProps) => {
   const { t } = useTranslation(['tms', 'common'])
   // 생성된 모달 컨테이너를 저장할 상태
   const [container, setContainer] = useState<HTMLElement | null>(null)
@@ -47,82 +60,30 @@ const DeployModal = ({ taskFlow, targetCount, mode, status, onClose, onDeploy }:
   if (!container) return null
 
   const renderContents = () => {
-    switch (status) {
-      case 'READY':
-        return (
-          <>
-            <p
-              style={{
-                margin: 0,
-                fontSize: '14px',
-                textAlign: 'start',
-                marginTop: '20px'
-              }}
-            >
-              {mode === 'DEPLOY' ? (
-                <>
-                  {t('deploy.modal.selectedPrefix')}<strong>{t('deploy.unit', { count: targetCount })}</strong>{t('deploy.modal.deploySuffix')}
-                </>
-              ) : (
-                <>
-                  {t('deploy.modal.selectedPrefix')}<strong>{t('deploy.unit', { count: targetCount })}</strong>{t('deploy.modal.undeploySuffix')}
-                </>
-              )}
-            </p>
-            <p
-              style={{
-                color: '#191b1e',
-                fontSize: '12px',
-                marginTop: '4px',
-                textAlign: 'start'
-              }}
-            >
-              {t('deploy.modal.irreversible')}
-            </p>
-          </>
-        )
-      case 'WORKING':
-        return (
-          <>
-            <p
-              style={{
-                margin: 0,
-                fontSize: '14px',
-                textAlign: 'start',
-                marginTop: '20px'
-              }}
-            >
-              {mode === 'DEPLOY' ? t('deploy.modal.deploying') : t('deploy.modal.undeploying')}
-            </p>
-          </>
-        )
-      case 'SUCCESS':
-        return (
-          <p
-            style={{
-              margin: 0,
-              fontSize: '14px',
-              textAlign: 'start',
-              marginTop: '20px'
-            }}
-          >
-            {mode === 'DEPLOY' ? t('deploy.modal.deployRequested') : t('deploy.modal.undeployRequested')}
-          </p>
-        )
-      case 'FAILURE':
-        return (
-          <p
-            style={{
-              margin: 0,
-              fontSize: '14px',
-              textAlign: 'start',
-              marginTop: '20px'
-            }}
-          >
-            {mode === 'DEPLOY' ? t('deploy.modal.deployFailed') : t('deploy.modal.undeployFailed')}
-          </p>
-        )
-    }
+    return (
+      <>
+        <p
+          style={{
+            margin: 0,
+            fontSize: '14px',
+            textAlign: 'start',
+            marginTop: '20px'
+          }}
+        >
+          {desc}
+        </p>
+        <p
+          style={{
+            color: '#191b1e',
+            fontSize: '12px',
+            marginTop: '4px',
+            textAlign: 'start'
+          }}
+        >
+          {subDesc}
+        </p>
+      </>
+    )
   }
 
   return ReactDOM.createPortal(
@@ -162,12 +123,7 @@ const DeployModal = ({ taskFlow, targetCount, mode, status, onClose, onDeploy }:
               minHeight: 80
             }}
           >
-            <h3 style={{ margin: '0 0 8px 0', textAlign: 'start' }}>
-              {taskFlow.name}{' '}
-              {mode === 'DEPLOY'
-                ? t('deploy.modal.deployTitleSuffix', { version: taskFlow.version })
-                : t('deploy.modal.undeployTitleSuffix')}
-            </h3>
+            <h3 style={{ margin: '0 0 8px 0', textAlign: 'start' }}>{title}</h3>
             {renderContents()}
           </div>
         </div>

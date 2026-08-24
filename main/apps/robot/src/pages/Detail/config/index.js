@@ -3,10 +3,14 @@ const environment = import.meta.env.MODE || 'development'
 
 const configs = {
   development: {
-    proxyServerUrl: import.meta.env.REACT_APP_PROXY_SERVER_URL || 'http://localhost:8080',
-    wsUrl: import.meta.env.REACT_APP_WS_URL || 'ws://localhost:8080',
+    // proxyServerUrl: import.meta.env.REACT_APP_PROXY_SERVER_URL || 'http://localhost:8080',
+    // wsUrl: import.meta.env.REACT_APP_WS_URL || 'ws://localhost:8080',
+    // debug: true,
+    // logLevel: 'debug'
+    proxyServerUrl: import.meta.env.REACT_APP_PROXY_SERVER_URL || 'https://robot-proxy.qa.hcrsp.com',
+    wsUrl: import.meta.env.REACT_APP_WS_URL || 'wss://robot-proxy-ws.qa.hcrsp.com',
     debug: true,
-    logLevel: 'debug'
+    logLevel: 'info'
   },
   qa: {
     proxyServerUrl: import.meta.env.REACT_APP_PROXY_SERVER_URL || 'https://robot-proxy.qa.hcrsp.com',

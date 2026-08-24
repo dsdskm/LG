@@ -129,15 +129,6 @@ export const FlowInactiveBadge = styled.span`
   }
 `
 
-export const FlowId = styled.p`
-  margin: 8px 0 0;
-  color: #667085;
-  font-size: 14px;
-  line-height: 1.45;
-  font-weight: 600;
-  font-style: italic;
-`
-
 export const FlowDesc = styled.p`
   margin: 8px 0 0;
   color: #667085;

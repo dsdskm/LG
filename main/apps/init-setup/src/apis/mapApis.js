@@ -16,8 +16,8 @@ export const { create, list, getById, update, remove } = createCrud('maps')
  * 프론트엔드 상태/격자맵을 초기화하므로 저장하지 않은 데이터는 폐기된다.
  * 그래서 세 동작 모두 /robot-hub/mapping/start 를 호출하고, 의도 구분은 UI 쪽에만 있다.
  *
- * 진행 상태는 이 API 로 폴링하지 않는다 — foxglove-bridge 로 /lio_node/status 를
- * 직접 구독한다(useFoxglove + STATUS_TOPICS).
+ * 진행 상태는 이 API 로 폴링하지 않는다 — 텔레메트리 릴레이로 /lio_node/status 를
+ * 직접 구독한다(useTelemetry + STATUS_TOPICS).
  */
 
 /**
@@ -26,6 +26,28 @@ export const { create, list, getById, update, remove } = createCrud('maps')
  */
 export const healthCheck = async () => {
   return await axiosHealthApi.get('/health')
+}
+
+/**
+ * 저장된 맵으로 측위 전환 (POST /robot-hub/switch-mode).
+ *
+ * lio_node 가 3D 맵을 로드하고 재정위를 시작한다 — 응답은 "맵 로드 완료" 시점에 돌아오고
+ * 재정위 완료는 /lio_node/status 가 "ready" 가 되는 것으로 판단한다(중간: loading_map →
+ * relocalizing_pose|relocalizing_gkr → loading_grid_map → ready).
+ * 이동(nav_goto)은 이 상태가 ready 여야 의미가 있다.
+ *
+ * @param {{mapPath: string, setInitialPose?: boolean, x?: number, y?: number, z?: number, yaw?: number}} payload
+ *   mapPath: lio_node 가 보는 맵 디렉터리 경로(맵 레코드의 imagePath 가 있는 폴더).
+ *   setInitialPose: true 면 x/y/z/yaw(도) 를 초기 추정 위치로 준다(생략 시 GKR 360° 재정위).
+ * @returns {Promise<{success: boolean, data: {message: string}}>}
+ */
+export const loadMapForLocalization = async ({ mapPath, setInitialPose, x, y, z, yaw } = {}) => {
+  if (!mapPath) throw new Error('mapPath is required to switch to localization')
+  return await axiosApi.post('/robot-hub/switch-mode', {
+    mode: 'localization',
+    map_path: mapPath,
+    ...(setInitialPose ? { set_initial_pose: true, x, y, z, yaw } : {})
+  })
 }
 
 /**

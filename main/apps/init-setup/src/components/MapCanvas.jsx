@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react'
-import { SPATIAL_TOPICS, subscribedTopicOf } from '@/constants/topics'
+import { FOOTPRINT_TOPICS, SPATIAL_TOPICS, subscribedTopicOf } from '@/constants/topics'
+import { transformPoint } from '@/utils/tf'
 
 // OccupancyGrid의 장애물 확률(0~100)에 따른 밝기(0~255) 값을 미리 계산한 캐시 배열
 const BRIGHTNESS_CACHE = new Uint8Array(101)
@@ -12,6 +13,13 @@ const ZOOM_MIN_RATIO = 0.5 // fit 대비 최소 배율(전체보기보다 조금
 const ZOOM_MAX_RATIO = 40 // fit 대비 최대 배율
 const ZOOM_STEP = 1.1 // 휠 한 칸당 배율
 const KEEP_VISIBLE = 0.3 // 팬 시 지도가 뷰포트와 최소로 겹쳐야 하는 비율
+// 클릭으로 인정하는 이동 허용치(px) — 이보다 움직이면 팬(드래그)으로 본다.
+const CLICK_SLOP = 4
+// footprint 토픽(nav2 costmap)이 없을 때 로봇 마커에 쓰는 반경(m).
+// 격자 칸 수가 아니라 미터로 잡아야 지도 해상도가 달라져도 실제 크기로 보인다.
+// nav2 의 robot_radius 는 corepath 이미지 안 파라미터라 저장소에서 읽을 수 없어 대략치다 —
+// 실제 치수가 확인되면 이 상수만 고치면 된다.
+const FALLBACK_ROBOT_RADIUS_M = 0.3
 
 /**
  * MapCanvas
@@ -26,9 +34,29 @@ const KEEP_VISIBLE = 0.3 // 팬 시 지도가 뷰포트와 최소로 겹쳐야 �
  * 렌더링 레이어 순서 (아래에서 위로):
  *   1. OccupancyGrid 격자 지도  (회색/흰색/검정)
  *   2. LaserScan 포인트          (빨간 점들)
- *   3. 로봇 위치 마커             (파란 원 + 방향 화살표)
+ *   3. 로봇 위치 마커             (파란 외형 + 방향 화살표)
+ *      크기는 footprint 토픽(nav2 costmap)이 있으면 실제 폴리곤, 없으면 상수 반경으로 그린다.
+ *
+ * @param {Function} [onMapClick] 지도 클릭 시 호출 — ({x, y, canvasX, canvasY}).
+ *   x/y 는 지도 프레임 월드 좌표(m), canvasX/Y 는 래퍼 기준 픽셀(말풍선 배치용).
+ *   드래그(팬)와 구분하기 위해 CLICK_SLOP 이내로 움직인 경우만 클릭으로 본다.
+ * @param {Function} [onViewChange] 줌/팬/전체보기로 뷰가 바뀔 때 호출 — canvasX/Y 기준 오버레이를
+ *   띄운 쪽이 위치가 어긋난 오버레이를 닫을 수 있게 알려준다.
  */
-function MapCanvas({ mapData, scanData, odomData, robotPose = null, subscribedTopics = [], customTopicsData = {} }) {
+function MapCanvas({
+  mapData,
+  scanData,
+  odomData,
+  robotPose = null,
+  subscribedTopics = [],
+  customTopicsData = {},
+  frameCorrections = {},
+  // 라이다 점군 표시. POI 편집처럼 지도 자체가 관심사인 화면은 false 로 끈다
+  // (구독은 유지되므로 다른 화면/패널의 표시는 영향받지 않는다).
+  showScan = true,
+  onMapClick = null,
+  onViewChange = null
+}) {
   const canvasRef = useRef(null)
   const wrapperRef = useRef(null)
   const mapCacheCanvasRef = useRef(null)
@@ -47,6 +75,26 @@ function MapCanvas({ mapData, scanData, odomData, robotPose = null, subscribedTo
   const dragRef = useRef(null)
   // 최신 render 를 이벤트 핸들러에서 호출하기 위한 ref
   const renderRef = useRef(() => {})
+
+  // 클릭 좌표 역변환에 필요한 지도 기하 정보 — render 가 매번 갱신한다.
+  const geoRef = useRef(null)
+  // 콜백은 ref 로 들고 쓴다 — 리스너를 다시 붙이지 않아도 최신 함수가 호출된다.
+  const onMapClickRef = useRef(onMapClick)
+  const onViewChangeRef = useRef(onViewChange)
+  useEffect(() => {
+    onMapClickRef.current = onMapClick
+    onViewChangeRef.current = onViewChange
+  }, [onMapClick, onViewChange])
+
+  /** 캔버스 픽셀 → ROS 월드 좌표(m). worldToCanvas 의 역변환. 지도 정보가 없으면 null. */
+  const canvasToWorld = useCallback((canvasX, canvasY) => {
+    const geo = geoRef.current
+    const { scale, tx, ty } = viewRef.current
+    if (!geo || !scale) return null
+    const col = (canvasX - tx) / scale
+    const row = geo.gridHeight - (canvasY - ty) / scale
+    return { x: col * geo.resolution + geo.origin.x, y: row * geo.resolution + geo.origin.y }
+  }, [])
 
   // 래퍼는 구독 상태에 따라 마운트/언마운트되므로, 리스너를 다시 붙이도록 state 로도 보관한다
   const [wrapperEl, setWrapperEl] = useState(null)
@@ -149,6 +197,15 @@ function MapCanvas({ mapData, scanData, odomData, robotPose = null, subscribedTo
     mapCacheValidRef.current = true
   }, [mapData])
 
+  /**
+   * 토픽 payload 의 프레임에 맞는 보정량을 찾는다.
+   *
+   * lio_node 는 매핑 중 궤적/경로를 lio_odom 기준으로 발행한다(측위 모드에서는 map 기준).
+   * 루프 클로저로 map->lio_odom 보정이 0이 아니게 되면 그 좌표를 지도에 그대로 찍을 수 없다.
+   * frame_id 가 없거나 이미 map 이면 null 을 돌려줘서 transformPoint 가 좌표를 그대로 쓴다.
+   */
+  const correctionFor = (topicData) => frameCorrections[topicData?.header?.frame_id] ?? null
+
   const getPointsList = (topicData) => {
     if (!topicData) return []
     if (Array.isArray(topicData.poses)) {
@@ -206,6 +263,9 @@ function MapCanvas({ mapData, scanData, odomData, robotPose = null, subscribedTo
     // 지도 원점 또는 임의의 중앙 원점 (-12.5m, -12.5m) 사용해 (0,0)을 중앙에 오게 함
     const origin = hasMap ? (mapData.info.origin?.position ?? { x: 0, y: 0 }) : { x: -12.5, y: -12.5 }
 
+    // 클릭 역변환(canvasToWorld)이 같은 기준을 쓰도록 현재 지도 기하를 남긴다.
+    geoRef.current = { origin, resolution, gridHeight: height }
+
     const worldToCanvas = (wx, wy) => {
       const col = (wx - origin.x) / resolution
       const row = (wy - origin.y) / resolution
@@ -260,7 +320,7 @@ function MapCanvas({ mapData, scanData, odomData, robotPose = null, subscribedTo
     }
 
     // ── Layer 2: LaserScan 또는 PointCloud2 렌더링 ────────────────────────────────────────
-    if (subscribedTopicOf(subscribedTopics, 'scan') && scanData && odomData) {
+    if (showScan && subscribedTopicOf(subscribedTopics, 'scan') && scanData && odomData) {
       const pos = odomData.pose?.pose?.position ?? { x: 0, y: 0 }
       const quat = odomData.pose?.pose?.orientation ?? { x: 0, y: 0, z: 0, w: 1 }
       const yaw = Math.atan2(2 * (quat.w * quat.z + quat.x * quat.y), 1 - 2 * (quat.y * quat.y + quat.z * quat.z))
@@ -335,10 +395,31 @@ function MapCanvas({ mapData, scanData, odomData, robotPose = null, subscribedTo
     if (markerPose) {
       const { yaw } = markerPose
       const { px, py } = worldToCanvas(markerPose.x, markerPose.y)
-      const ROBOT_R = Math.max(6, CELL_SIZE * 2)
+
+      // 크기는 로봇 외형(footprint) 폴리곤이 있으면 그걸 그대로 쓰고, 없으면 상수 반경으로
+      // 폴백한다 — footprint 는 nav2(corepath) 가 떠 있을 때만 발행되므로 매핑 단계에서는 없다.
+      const footprintTopic = FOOTPRINT_TOPICS.find((topic) => subscribedTopics.includes(topic))
+      const footprintData = footprintTopic ? customTopicsData[footprintTopic] : null
+      const footprintPts = footprintData?.polygon?.points ?? []
+      // 폴리곤 점들은 costmap global_frame 기준이라 map 으로 보정해서 찍는다
+      // (global_costmap 은 이미 map 이라 보정량이 null 이 되고 좌표가 그대로 쓰인다).
+      const footprintCorrection = correctionFor(footprintData)
+
+      // 방향 표시선 길이 — footprint 유무와 무관하게 실제 크기에 비례하게 잡는다.
+      const radiusPx = Math.max(6, (FALLBACK_ROBOT_RADIUS_M / resolution) * CELL_SIZE)
 
       ctx.beginPath()
-      ctx.arc(px, py, ROBOT_R, 0, Math.PI * 2)
+      if (footprintPts.length >= 3) {
+        footprintPts.forEach((pt, i) => {
+          const world = transformPoint(footprintCorrection, pt)
+          const corner = worldToCanvas(world.x, world.y)
+          if (i === 0) ctx.moveTo(corner.px, corner.py)
+          else ctx.lineTo(corner.px, corner.py)
+        })
+        ctx.closePath()
+      } else {
+        ctx.arc(px, py, radiusPx, 0, Math.PI * 2)
+      }
       ctx.fillStyle = 'rgba(41, 128, 185, 0.85)'
       ctx.fill()
       ctx.strokeStyle = '#fff'
@@ -347,7 +428,7 @@ function MapCanvas({ mapData, scanData, odomData, robotPose = null, subscribedTo
 
       ctx.beginPath()
       ctx.moveTo(px, py)
-      ctx.lineTo(px + ROBOT_R * 1.5 * Math.cos(yaw), py - ROBOT_R * 1.5 * Math.sin(yaw))
+      ctx.lineTo(px + radiusPx * 1.5 * Math.cos(yaw), py - radiusPx * 1.5 * Math.sin(yaw))
       ctx.strokeStyle = '#fff'
       ctx.lineWidth = 2
       ctx.stroke()
@@ -355,7 +436,7 @@ function MapCanvas({ mapData, scanData, odomData, robotPose = null, subscribedTo
 
     // ── Layer 4: 커스텀 시각적 토픽 렌더링 ──────────────────────────────
     // 1) /scan_matched_points2 (매치된 라이다 점군)
-    if (subscribedTopics.includes('/scan_matched_points2')) {
+    if (showScan && subscribedTopics.includes('/scan_matched_points2')) {
       const ptsData = customTopicsData['/scan_matched_points2']
       const pts = getPointsList(ptsData)
       ctx.fillStyle = 'rgba(52, 152, 219, 0.7)'
@@ -380,40 +461,35 @@ function MapCanvas({ mapData, scanData, odomData, robotPose = null, subscribedTo
       ctx.fill()
     }
 
-    // 2) /trajectory_node_list (궤적 선 그리기)
-    if (subscribedTopics.includes('/trajectory_node_list')) {
-      const trajData = customTopicsData['/trajectory_node_list']
-      const pts = getPointsList(trajData)
-      if (pts.length > 1) {
-        ctx.beginPath()
-        const start = worldToCanvas(pts[0].x, pts[0].y)
-        ctx.moveTo(start.px, start.py)
-        for (let i = 1; i < pts.length; i++) {
-          const pt = worldToCanvas(pts[i].x, pts[i].y)
-          ctx.lineTo(pt.px, pt.py)
-        }
-        ctx.strokeStyle = '#e67e22'
-        ctx.lineWidth = 2
-        ctx.stroke()
+    /** 궤적 선 하나를 그린다 — 점들은 topicData 의 프레임 기준이라 map 으로 보정해서 찍는다. */
+    const drawTrajectory = (topicData, strokeStyle) => {
+      const pts = getPointsList(topicData)
+      if (pts.length < 2) return
+      const correction = correctionFor(topicData)
+
+      ctx.beginPath()
+      const first = transformPoint(correction, pts[0])
+      const start = worldToCanvas(first.x, first.y)
+      ctx.moveTo(start.px, start.py)
+      for (let i = 1; i < pts.length; i++) {
+        const world = transformPoint(correction, pts[i])
+        const pt = worldToCanvas(world.x, world.y)
+        ctx.lineTo(pt.px, pt.py)
       }
+      ctx.strokeStyle = strokeStyle
+      ctx.lineWidth = 2
+      ctx.stroke()
     }
 
-    // 2-1) /lio/path (LIO 주행 궤적 — nav_msgs/Path)
+    // 2) /trajectory_node_list (궤적 선 그리기)
+    if (subscribedTopics.includes('/trajectory_node_list')) {
+      drawTrajectory(customTopicsData['/trajectory_node_list'], '#e67e22')
+    }
+
+    // 2-1) /lio/path (LIO 주행 궤적 — nav_msgs/Path).
+    // 매핑 중에는 lio_odom 기준으로 발행되므로 보정 없이 그리면 루프 클로저 이후 지도와 어긋난다.
     if (subscribedTopics.includes('/lio/path')) {
-      const pathData = customTopicsData['/lio/path']
-      const pts = getPointsList(pathData)
-      if (pts.length > 1) {
-        ctx.beginPath()
-        const start = worldToCanvas(pts[0].x, pts[0].y)
-        ctx.moveTo(start.px, start.py)
-        for (let i = 1; i < pts.length; i++) {
-          const pt = worldToCanvas(pts[i].x, pts[i].y)
-          ctx.lineTo(pt.px, pt.py)
-        }
-        ctx.strokeStyle = '#8e44ad'
-        ctx.lineWidth = 2
-        ctx.stroke()
-      }
+      drawTrajectory(customTopicsData['/lio/path'], '#8e44ad')
     }
 
     // 3) /landmark_poses_list (랜드마크 마커)
@@ -542,7 +618,7 @@ function MapCanvas({ mapData, scanData, odomData, robotPose = null, subscribedTo
     if (subscribedTopics.includes('/tf_static')) {
       drawTF(customTopicsData['/tf_static'])
     }
-  }, [mapData, scanData, odomData, robotPose, subscribedTopics, customTopicsData, applyFit])
+  }, [mapData, scanData, odomData, robotPose, subscribedTopics, customTopicsData, frameCorrections, showScan, applyFit])
 
   // 데이터 변경 시 리렌더링
   useEffect(() => {
@@ -597,6 +673,7 @@ function MapCanvas({ mapData, scanData, odomData, robotPose = null, subscribedTo
       userAdjustedRef.current = true
       clampView()
       renderRef.current()
+      onViewChangeRef.current?.()
     }
 
     // 브라우저가 React 의 onWheel 을 passive 로 등록해 preventDefault 가 먹지 않으므로
@@ -611,7 +688,8 @@ function MapCanvas({ mapData, scanData, odomData, robotPose = null, subscribedTo
     const handleMouseDown = (e) => {
       if (e.button !== 0) return
       e.preventDefault()
-      dragRef.current = { x: e.clientX, y: e.clientY }
+      // startX/Y 는 클릭 판정(이동 거리)과 말풍선 위치 계산에 쓰므로 드래그 중에도 유지한다.
+      dragRef.current = { x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY, moved: false }
       wrapper.style.cursor = 'grabbing'
     }
 
@@ -621,16 +699,32 @@ function MapCanvas({ mapData, scanData, odomData, robotPose = null, subscribedTo
       const view = viewRef.current
       view.tx += e.clientX - drag.x
       view.ty += e.clientY - drag.y
-      dragRef.current = { x: e.clientX, y: e.clientY }
+      const moved =
+        drag.moved || Math.abs(e.clientX - drag.startX) > CLICK_SLOP || Math.abs(e.clientY - drag.startY) > CLICK_SLOP
+      dragRef.current = { ...drag, x: e.clientX, y: e.clientY, moved }
       userAdjustedRef.current = true
       clampView()
       renderRef.current()
     }
 
     const handleMouseUp = () => {
-      if (!dragRef.current) return
+      const drag = dragRef.current
+      if (!drag) return
       dragRef.current = null
       wrapper.style.cursor = 'grab'
+
+      // 팬이었으면 뷰가 바뀐 것만 알리고, 제자리 클릭이면 월드 좌표로 바꿔 올려보낸다.
+      if (drag.moved) {
+        onViewChangeRef.current?.()
+        return
+      }
+      const handler = onMapClickRef.current
+      if (!handler) return
+      const rect = (canvasRef.current ?? wrapper).getBoundingClientRect()
+      const canvasX = drag.startX - rect.left
+      const canvasY = drag.startY - rect.top
+      const world = canvasToWorld(canvasX, canvasY)
+      if (world) handler({ ...world, canvasX, canvasY })
     }
 
     // 더블클릭 → 전체보기로 초기화
@@ -641,6 +735,7 @@ function MapCanvas({ mapData, scanData, odomData, robotPose = null, subscribedTo
       applyFit(canvas.width, canvas.height, w, h)
       userAdjustedRef.current = false
       renderRef.current()
+      onViewChangeRef.current?.()
     }
 
     wrapper.addEventListener('wheel', handleWheel, { passive: false })
@@ -655,7 +750,7 @@ function MapCanvas({ mapData, scanData, odomData, robotPose = null, subscribedTo
       window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [wrapperEl, applyFit, clampView])
+  }, [wrapperEl, applyFit, clampView, canvasToWorld])
 
   const hasSpatialSubscription = subscribedTopics.some((t) => SPATIAL_TOPICS.includes(t))
 
@@ -720,7 +815,13 @@ const MemoizedMapCanvas = React.memo(MapCanvas, (prevProps, nextProps) => {
   if (prevProps.scanData !== nextProps.scanData) return false
   if (prevProps.odomData !== nextProps.odomData) return false
   if (prevProps.robotPose !== nextProps.robotPose) return false
+  // 보정량이 갱신되면(루프 클로저 등) 궤적을 다시 그려야 한다.
+  if (prevProps.frameCorrections !== nextProps.frameCorrections) return false
+  if (prevProps.showScan !== nextProps.showScan) return false
   if (prevProps.subscribedTopics !== nextProps.subscribedTopics) return false
+  // 콜백은 ref 로 최신값을 쓰지만, 부모가 새 함수를 넘기면 리스너 재등록이 필요할 수 있어 함께 본다.
+  if (prevProps.onMapClick !== nextProps.onMapClick) return false
+  if (prevProps.onViewChange !== nextProps.onViewChange) return false
 
   // Check spatial keys in customTopicsData
   const spatialKeys = [
@@ -732,7 +833,8 @@ const MemoizedMapCanvas = React.memo(MapCanvas, (prevProps, nextProps) => {
     '/initialpose',
     '/clicked_point',
     '/tf',
-    '/tf_static'
+    '/tf_static',
+    ...FOOTPRINT_TOPICS
   ]
 
   for (const key of spatialKeys) {

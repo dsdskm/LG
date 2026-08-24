@@ -14,13 +14,29 @@ const TableAlarm = ({ robotDatas = [] }) => {
     const fetchNotifications = async () => {
       setIsLoading(true)
       try {
-        const param = { onlyActiveFault: true }
-        const res = await deviceApis.getDeviceNotifications(param)
+        const oneMonthAgo = new Date()
+        oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1)
 
-        // axios라면 res.data.content, fetch 후 이미 파싱했다면 res.content
-        const list = res?.content ?? res?.data?.content ?? []
+        let page = 0
+        let allContent = []
+        let hasNext = true
 
-        setNotifications(list)
+        while (hasNext) {
+          const res = await deviceApis.getDeviceNotifications({ onlyActiveFault: true, size: '300', page })
+          // axios라면 res.data, fetch 후 이미 파싱했다면 res 자체가 페이지 데이터
+          const data = res?.data ?? res
+          const content = data?.content ?? []
+
+          allContent = allContent.concat(content)
+
+          const lastOccurredAt = content[content.length - 1]?.occurredAt
+          const isLastOlderThanOneMonth = lastOccurredAt && new Date(lastOccurredAt) < oneMonthAgo
+
+          hasNext = Boolean(data?.hasNext) && !isLastOlderThanOneMonth
+          page += 1
+        }
+
+        setNotifications(allContent)
       } catch (error) {
         console.error(error)
         setNotifications([])

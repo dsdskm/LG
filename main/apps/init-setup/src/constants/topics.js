@@ -22,6 +22,12 @@ export const ODOM_TOPICS = ['/lio/odom', '/odom']
 // 좌표 변환 트리 (tf2_msgs/TFMessage). 후보 중 하나가 아니라 둘 다 구독한다.
 export const TF_TOPICS = ['/tf', '/tf_static']
 
+// 로봇 외형 폴리곤 (geometry_msgs/PolygonStamped) — nav2 costmap 이 발행한다.
+// 지도 위 로봇 마커를 실제 치수로 그리는 데 쓴다. 없으면 MapCanvas 가 상수 반경으로 폴백한다.
+// global 은 map 프레임이라 그대로 쓸 수 있고, local 은 costmap global_frame(보통 odom)
+// 기준이라 frameCorrections 로 보정해야 하므로 global 을 먼저 고른다.
+export const FOOTPRINT_TOPICS = ['/global_costmap/published_footprint', '/local_costmap/published_footprint']
+
 // 3D 라이다 점군 (sensor_msgs/PointCloud2)
 // 센서 원본(hesai_lidar 프레임)만 사용한다 — MapCanvas가 odom pose로 월드 변환하므로
 // 이미 월드 좌표인 /lio/vis_deskewed_cloud를 넣으면 이중 변환된다.
@@ -30,12 +36,22 @@ export const SCAN_TOPICS = ['/lidar_points']
 // 매핑/측위 진행 상태 (std_msgs/String)
 export const STATUS_TOPICS = ['/lio_node/status']
 
+// 주행(Nav2) 진행 상태 (std_msgs/String, JSON: { cruise, goto_status }).
+// corepath 의 nav_action_command_handler 가 액션 goal/feedback/result 를 추적해 재발행한다 —
+// 이동 명령은 gRPC(navApis)로 보내고 진행 상태는 이 토픽으로만 받는다(gRPC 상태 조회 금지 규칙).
+export const NAV_STATUS_TOPICS = ['/robot_hub/nav_action_status']
+
+// 제자리 회전 진행 상태 (std_msgs/String, JSON: { active, state, target_deg, actual_deg, message }).
+// motor-2wheel 의 WheelCommandHandler 가 /cmd_vel 제어 중 발행한다 — GKR 재정위 보조 회전용.
+export const SPIN_STATUS_TOPICS = ['/robot_hub/nav_spin_status']
+
 // MapCanvas가 그릴 수 있는 기하 토픽 전체
 export const SPATIAL_TOPICS = [
   ...MAP_TOPICS,
   ...ODOM_TOPICS,
   ...SCAN_TOPICS,
   ...TF_TOPICS,
+  ...FOOTPRINT_TOPICS,
   '/lio/path',
   '/scan_matched_points2',
   '/trajectory_node_list',
@@ -49,6 +65,7 @@ export const SPATIAL_TOPICS = [
 
 // cdrParser.js가 해석할 수 있는 스키마. 그 외에는 JSON으로 취급한다.
 const CDR_SCHEMAS = new Set([
+  'geometry_msgs/msg/PolygonStamped',
   'nav_msgs/msg/OccupancyGrid',
   'nav_msgs/msg/Odometry',
   'nav_msgs/msg/Path',

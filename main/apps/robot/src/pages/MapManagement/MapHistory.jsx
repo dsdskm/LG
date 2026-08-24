@@ -127,7 +127,7 @@ const previewHead = {
 }
 // 좁은 화면에서 컬럼 정렬을 유지하며 가로 스크롤
 const scrollX = { overflowX: 'auto' }
-const rowsMin = { minWidth: '60rem' }
+const rowsMin = { minWidth: '75rem' }
 
 const emptyBox = (text) => (
   <div
@@ -138,8 +138,8 @@ const emptyBox = (text) => (
 )
 
 // 공통 그리드 컬럼: 롤백 | 유형 | 파일명 | 일시 | 상태 | 설명 | 비교
-const GRID_COLS = '3.5rem 9.5rem minmax(12rem, 1.3fr) 16rem 7rem minmax(0, 1.6fr) 7rem'
-const ellipsis = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+const GRID_COLS = '3.5rem 9.5rem minmax(14rem, 1.2fr) 16rem 7rem minmax(12rem, 1.8fr) 7rem'
+const ellipsis = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: '1.4' }
 
 const VersionHeader = ({ t }) => (
   <div
@@ -171,7 +171,7 @@ const VersionRow = ({ v, checked, onToggle, canCompare, comparing, onCompare }) 
       gridTemplateColumns: GRID_COLS,
       gap: '0 1.8rem',
       alignItems: 'center',
-      padding: '0.8rem 0',
+      padding: '0.9rem 0',
       borderBottom: '1px solid var(--color-neutral-15)',
       fontSize: '1.25rem'
     }}

@@ -73,8 +73,9 @@ const SiteItem = styled.div`
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 7px 20px 7px 64px;
+  padding: 8px 20px 8px 64px;
   position: relative;
+  line-height: 1.4;
 
   &::before {
     content: '';
@@ -350,7 +351,7 @@ const GroupManagement = () => {
               paginationRowsPerPageOptions={[10, 30, 50, 100]}
               expandableRows
               expandableRowsComponent={ExpandedSitesTable}
-              onRowClicked={(row) => setCurrentRow(row)}
+              onRowClicked={(row) => setCurrentRow(currentRow === row ? null : row)}
               expandableRowExpanded={(row) => row === currentRow}
               onRowExpandToggled={(expanded, row) => {
                 setCurrentRow(expanded ? row : null)

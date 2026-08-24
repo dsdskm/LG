@@ -17,6 +17,7 @@ const TaskFlowSwitchButton = ({
   isTaskFlowUsing,
   controls
 }: TaskFlowSwitchButtonProps) => {
+  console.log('final settings ', controls)
   return (
     <>
       <SegmentedWrap>
@@ -26,7 +27,7 @@ const TaskFlowSwitchButton = ({
           $first
           onClick={(e) => {
             e.stopPropagation()
-            controls[0].execute(controls[0].command[0], taskFlowId)
+            controls[0].execute(controls[0].command, taskFlowId)
           }}
         >
           {controls[0].title}
@@ -37,7 +38,7 @@ const TaskFlowSwitchButton = ({
           $last
           onClick={(e) => {
             e.stopPropagation()
-            controls[1].execute(controls[1].command[1], taskFlowId)
+            controls[1].execute(controls[1].command, taskFlowId)
           }}
         >
           {controls[1].title}

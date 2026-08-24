@@ -24,18 +24,6 @@ function App() {
   const refreshFlows = useTaskFlowStore((state) => state.refreshFlows)
   const appPrefix = useMemo(() => getAppPrefix(pathname), [pathname])
   const { selectedOrgs } = useOrganizationStore()
-
-  useEffect(() => {
-    console.info('[SITE_CONTEXT][ENTRY]', {
-      app: 'tms',
-      pathname,
-      groupId: selectedOrgs?.[0] ?? null,
-      siteId: selectedOrgs?.[1] ?? null,
-      selectedOrgs,
-      timestamp: new Date().toISOString()
-    })
-  }, [pathname, selectedOrgs])
-
   useEffect(() => {
     refreshFlows(selectedOrgs[0], selectedOrgs[1])
   }, [refreshFlows])

@@ -9,6 +9,18 @@
   "connectionInfo": "Connection Info",
   "server": "Server",
   "status": "Status",
+  "navStatus": "Navigation",
+  "navStop": "Stop",
+  "navStopRequested": "Stop requested.",
+  "navArrived": "Arrived at the target.",
+  "navFailed": "Navigation failed.",
+  "navMovingHint": "Robot is moving. Stop it before sending a new target.",
+  "navSpin": "Spin 360°",
+  "navSpinStop": "Stop Spin",
+  "navSpinStatus": "Spin",
+  "navSpinHint": "Rotate the robot one full turn to progress GKR relocalization",
+  "navSpinRequested": "Spin requested.",
+  "navSpinStopRequested": "Spin stop requested.",
   "mapInfo": "Map Info",
   "resolution": "Resolution",
   "size": "Size",
@@ -46,6 +58,12 @@
   "semanticPageTitle": "Semantic (POI)",
   "selectLocationForSemantic": "Select building, floor and area to save new POIs",
   "noPoiLoaded": "No POI to display",
+  "loadMap": "Load Map",
+  "noMapForArea": "No saved map for the selected area",
+  "mapLoadRequested": "Map load requested. Check the localization status.",
+  "moveHere": "Move",
+  "close": "Close",
+  "navGotoRequested": "Move requested.",
   "saveComplete": {
     "title": "Map Saved",
     "description": "Map '{{name}}' has been saved.",
@@ -55,5 +73,8 @@
     "gridUnknown": "Could not verify the 2D grid map files (map directory is not accessible).",
     "close": "Close",
     "goSemantic": "Go to Semantic"
-  }
+  },
+  "mapRecordSkipped": "Map files were saved but registration was skipped (missing: {{fields}})",
+  "mapRecordPartial": "Map registered. Some metadata could not be filled ({{fields}})",
+  "mapRecordFailed": "Map registration failed"
 }

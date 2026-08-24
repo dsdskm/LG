@@ -9,6 +9,18 @@
   "connectionInfo": "接続情報",
   "server": "サーバー",
   "status": "状態",
+  "navStatus": "走行状態",
+  "navStop": "停止",
+  "navStopRequested": "移動の停止を要求しました。",
+  "navArrived": "目標地点に到着しました。",
+  "navFailed": "移動に失敗しました。",
+  "navMovingHint": "走行中です。新しい目標を送るには先に停止してください。",
+  "navSpin": "360°回転",
+  "navSpinStop": "回転停止",
+  "navSpinStatus": "回転",
+  "navSpinHint": "GKR再定位を進めるにはロボットを一周回転させてください",
+  "navSpinRequested": "その場回転を要求しました。",
+  "navSpinStopRequested": "回転の停止を要求しました。",
   "mapInfo": "地図情報",
   "resolution": "解像度",
   "size": "サイズ",
@@ -43,6 +55,12 @@
   "topicInfo": "トピック情報",
   "selectLocationForMapping": "マッピングを開始するには建物・階・エリアをすべて選択してください",
   "connectToStartMapping": "マッピングを開始するには先にロボットへ接続してください",
+  "loadMap": "マップ読み込み",
+  "noMapForArea": "選択したエリアに保存されたマップがありません",
+  "mapLoadRequested": "マップの読み込みを要求しました。自己位置推定の状態を確認してください。",
+  "moveHere": "移動",
+  "close": "閉じる",
+  "navGotoRequested": "移動を要求しました。",
   "saveComplete": {
     "title": "マップ保存完了",
     "description": "マップ「{{name}}」を保存しました。",
@@ -52,5 +70,8 @@
     "gridUnknown": "2Dグリッドマップファイルの生成は確認できません(マップ保存先にアクセスできません)。",
     "close": "閉じる",
     "goSemantic": "セマンティック画面へ移動"
-  }
+  },
+  "mapRecordSkipped": "マップファイルは保存されましたが登録はスキップしました(不足: {{fields}})",
+  "mapRecordPartial": "マップを登録しました。一部のメタデータは取得できませんでした({{fields}})",
+  "mapRecordFailed": "マップ登録に失敗しました"
 }

@@ -25,7 +25,7 @@ import useClickOutSide from '@repo/hooks/useClickOutSide'
 import { useRef } from 'react'
 import Icon from '../../common/Icon'
 
-const Header = () => {
+const Header = ({ notificationSlot }) => {
   const { t } = useTranslation('layout')
   const { toggleSideBar } = useSideBarStore()
   const { theme, toggleTheme } = useThemeStore()
@@ -99,11 +99,13 @@ const Header = () => {
 
           <LearningNotification />
 
-          <StyledHeaderButton type="button" className="notification" aria-label="View Notifications">
-            <i className="icon">
-              <SvgNotification />
-            </i>
-          </StyledHeaderButton>
+          {notificationSlot ?? (
+            <StyledHeaderButton type="button" className="notification" aria-label="View Notifications">
+              <i className="icon">
+                <SvgNotification />
+              </i>
+            </StyledHeaderButton>
+          )}
 
           <StyledProfileContainer ref={profileRef}>
             {responsiveMode === 'PC' ? (

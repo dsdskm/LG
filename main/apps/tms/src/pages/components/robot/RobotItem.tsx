@@ -327,7 +327,7 @@ const RobotItem = ({
                 <button
                   style={{
                     backgroundColor: 'white',
-                    color: '#383838',
+                    color: '#383838', 
                     border: '1px solid #C0C7D0',
                     padding: '8px 16px',
                     borderRadius: '6px',

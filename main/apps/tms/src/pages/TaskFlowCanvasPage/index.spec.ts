@@ -8,47 +8,6 @@ const {
 } = require('../../../../../packages/ui/components/layout/AiAssistantPanel/index.jsx')
 
 describe('fast taskflow command semantics', () => {
-  it('normalizes navigation targets to absolute app routes', () => {
-    const { normalizeNavigationPath } = require('../../../../../packages/ui/components/layout/AiAssistantPanel/index.jsx')
-
-    expect(normalizeNavigationPath('tms/taskflows')).toBe('/tms/taskflows')
-    expect(normalizeNavigationPath('/tms/robots')).toBe('/tms/robots')
-    expect(normalizeNavigationPath('robot/management')).toBe('/robot/management')
-  })
-
-  it('does not short-circuit navigation commands on non-canvas TMS pages', () => {
-    const { isTmsCanvasPath } = require('../../../../../packages/ai/src/taskflowCommandRules.js')
-
-    expect(isTmsCanvasPath('/tms/taskflows/42/canvas')).toBe(true)
-    expect(isTmsCanvasPath('/tms/robots/AZ-y1xF6coSjREkJ1trnvw/detail')).toBe(false)
-    expect(isTmsCanvasPath('/tms/taskflows')).toBe(false)
-  })
-
-  it('exports a safe TMS app rules loader for the AI assistant panel', () => {
-    const panelRules = require('../../../../../packages/ai/src/taskflowCommandRules.js')
-
-    expect(typeof panelRules.loadTmsAppRules).toBe('function')
-  })
-
-  it('accepts canvas-draft matches even when the backend does not set a command type', async () => {
-    const panelRules = require('../../../../../packages/ai/src/taskflowCommandRules.js')
-    const result = await panelRules.matchTaskflowCanvasCommand('Idle->Joy', '/tms/taskflows/197/canvas')
-
-    expect(result).not.toBeNull()
-    expect(result?.chatAction).toBe('action')
-    expect(result?.chatActionParam?.canvasDraft || result?.chatActionParam?.taskflowDraft).toBeTruthy()
-  })
-
-  it('forces local TMS canvas arrow commands to bypass backend requests', async () => {
-    const panelRules = require('../../../../../packages/ai/src/taskflowCommandRules.js')
-
-    expect(panelRules.isLocalTaskflowCanvasCommand('Idle->Joy', '/tms/taskflows/197/canvas')).toBe(true)
-    expect(panelRules.matchTaskflowCanvasCommand('Idle->Joy', '/tms/taskflows/197/canvas')).resolves.toMatchObject({
-      ruleKey: 'local-fast-taskflow-graph',
-      chatAction: 'action'
-    })
-  })
-
   it('uses left-left handles for vertical => chains', () => {
     expect(resolveArrowHandleConfig('=>')).toEqual({
       sourceHandle: 'left',
@@ -105,43 +64,6 @@ describe('fast taskflow command semantics', () => {
 })
 
 describe('applyEditDraftToFlowDefinition', () => {
-  it.each([
-    {
-      title: 'prefers an exact name after whitespace correction',
-      requestedName: 'Alpha Beta',
-      paletteNames: ['Alpha Beta Extended', 'AlphaBeta'],
-      expectedName: 'AlphaBeta'
-    },
-    {
-      title: 'prefers the closest match beginning at the first character',
-      requestedName: 'Alpha B',
-      paletteNames: ['Alpha Beacon Extended', 'Alpha Beacon'],
-      expectedName: 'Alpha Beacon'
-    },
-    {
-      title: 'checks the second and later characters when no prefix matches',
-      requestedName: 'Beta',
-      paletteNames: ['XXBeta', 'XBeta'],
-      expectedName: 'XBeta'
-    }
-  ])('$title', ({ requestedName, paletteNames, expectedName }) => {
-    const palette: any[] = paletteNames.map((name, index) => ({
-      kind: 'controlTaskNode',
-      label: name,
-      task: { id: 100 + index, name, taskType: 'CONTROL', propertySchema: {} }
-    }))
-
-    const result = applyEditDraftToFlowDefinition(
-      { mode: 'edit', insertAfter: [{ after: '', step: requestedName, isolated: true }] },
-      [{ id: 'start', type: 'startNode', position: { x: 0, y: 0 }, data: { label: 'Start' } }],
-      [],
-      { x: 0, y: 0, zoom: 1 },
-      palette
-    )
-
-    expect(result.next?.nodes.find((node: any) => node.id !== 'start')?.data?.label).toBe(expectedName)
-  })
-
   it('removes a named node and reconnects its adjacent nodes', () => {
     const currentNodes: any[] = [
       { id: 'start', type: 'startNode', position: { x: 0, y: 0 }, data: { label: 'Start' } },

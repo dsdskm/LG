@@ -24,6 +24,20 @@ export function toYmdHmKST(isoString) {
   return `${yyyy}.${MM}.${dd} ${HH}:${mm}`
 }
 
+/**
+ * isoString과 now의 차이를 상대 시간 단위로 변환
+ * @returns {{ unit: 'justNow'|'minutesAgo'|'hoursAgo'|'daysAgo', count: number }}
+ */
+export function getRelativeTimeParts(isoString, now = new Date()) {
+  const diffMs = now.getTime() - new Date(isoString).getTime()
+  const diffMin = Math.floor(diffMs / 60000)
+  if (diffMin < 1) return { unit: 'justNow', count: 0 }
+  if (diffMin < 60) return { unit: 'minutesAgo', count: diffMin }
+  const diffHour = Math.floor(diffMin / 60)
+  if (diffHour < 24) return { unit: 'hoursAgo', count: diffHour }
+  return { unit: 'daysAgo', count: Math.floor(diffHour / 24) }
+}
+
 export function toUtcFromLocalDateTime(ymd, time = '00:00:00') {
   const date = new Date(`${ymd}T${time}`)
   return date.toISOString()

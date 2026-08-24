@@ -6,7 +6,7 @@ import styled from 'styled-components'
 import config from '../config'
 import { getClientId } from '../config/clientId'
 
-// ✅ 모든 styled-components 정의
+// 모든 styled-components 정의
 const ConsoleContainer = styled.div`
   padding: 20px;
   background: #f8f9fa;
@@ -96,9 +96,8 @@ const EmptyState = styled.div`
 const WebConsole = ({ t, deviceId, i18n }) => {
   const [showConfigModal, setShowConfigModal] = useState(false)
   const [cards, setCards] = useState([])
-  const cardRefs = useRef({}) // ★ cardId → ref
+  const cardRefs = useRef({})
 
-  // ✅ 카드 타입 정의
   const cardTypes = {
     READONLY: {},
     CONTROL: {
@@ -117,7 +116,6 @@ const WebConsole = ({ t, deviceId, i18n }) => {
     }
   }
 
-  // cardTypes 정의에서 경로로 카드 정보 조회 (module-scope so both load and save can use it)
   const findCardTypeDef = (targetPath) => {
     for (const [categoryKey, category] of Object.entries(cardTypes)) {
       for (const cardInfo of Object.values(category)) {
@@ -127,7 +125,6 @@ const WebConsole = ({ t, deviceId, i18n }) => {
     return null
   }
 
-  // 로컬 스토리지에서 카드 설정 로드
   useEffect(() => {
     const savedCards = localStorage.getItem(`robot-console-cards-${deviceId}`)
     if (savedCards) {
@@ -138,11 +135,11 @@ const WebConsole = ({ t, deviceId, i18n }) => {
           const def = findCardTypeDef(savedPath)
           return {
             cardId: card.cardId ?? `${index + 1}`,
+            cardKey: card.cardKey,
             cardName: card.name ?? card.cardName ?? card.title ?? def?.name ?? 'Unknown',
             targetPath: savedPath,
             targetPort: String(card.port ?? card.targetPort ?? def?.port ?? '3002'),
-            icon: card.icon ?? def?.icon ?? '�',
-            // ✅ � 핵심 수정 (순서 변경)
+            icon: card.icon ?? def?.icon ?? '📱',
             cardType: def?.categoryKey ?? card.type ?? card.cardType ?? 'CONTROL',
             isRealtime: def?.isRealtime ?? card.isRealtime ?? false,
             realtimePort: def?.realtimePort ?? card.realtimePort ?? null,
@@ -155,10 +152,10 @@ const WebConsole = ({ t, deviceId, i18n }) => {
         setCards([])
       }
     } else {
-      // 기본 카드 설정
       const defaultCards = [
         {
           cardId: '1',
+          cardKey: 'RAAT',
           cardName: 'RAAT',
           path: '/',
           port: 3002,
@@ -170,7 +167,6 @@ const WebConsole = ({ t, deviceId, i18n }) => {
     }
   }, [deviceId])
 
-  // ★ unmount 시 모든 카드 리소스 정리 (탭 전환 등)
   useEffect(() => {
     return () => {
       console.log('RobotWebConsole unmounting — cleaning up all cards')
@@ -183,13 +179,13 @@ const WebConsole = ({ t, deviceId, i18n }) => {
     }
   }, [])
 
-  // 카드 설정 저장
   const handleCardConfig = (selectedCards) => {
     const cardsToSave = selectedCards.map((card, index) => {
       const targetPath = card.path || card.targetPath || card.url || '/'
       const def = findCardTypeDef(targetPath)
       return {
         cardId: `${index + 1}`,
+        cardKey: card.cardKey,
         cardName: card.name || card.cardName || card.title || def?.name || 'Unknown',
         targetPath,
         targetPort: String(card.port || card.targetPort || def?.port || '3002'),
@@ -197,11 +193,12 @@ const WebConsole = ({ t, deviceId, i18n }) => {
         cardType: card.type || card.cardType || def?.categoryKey || 'CONTROL',
         isRealtime: def?.isRealtime ?? card.isRealtime ?? false,
         realtimePort: def?.realtimePort ?? card.realtimePort ?? null,
-        realtimePath: def?.realtimePath ?? card.realtimePath ?? null
+        realtimePath: def?.realtimePath ?? card.realtimePath ?? null,
+        path: targetPath,
+        port: card.port || def?.port || 3002
       }
     })
 
-    // ★ 삭제된 카드의 리소스 정리
     const newCardIds = new Set(cardsToSave.map((c) => c.cardId))
     cards.forEach((oldCard) => {
       if (!newCardIds.has(oldCard.cardId)) {
@@ -219,9 +216,8 @@ const WebConsole = ({ t, deviceId, i18n }) => {
     setShowConfigModal(false)
   }
 
-  // ✅ 확대 핸들러 - 팝업으로 변경
   const handleCardExpand = (card) => {
-    console.log('🔍 Expanding card in popup:', card)
+    console.log('Expanding card in popup:', card)
     const cid = getClientId(deviceId, card.targetPort)
     const lang = i18n?.language || 'en-US'
 
@@ -238,7 +234,7 @@ const WebConsole = ({ t, deviceId, i18n }) => {
       return
     }
 
-    console.log('✅ Expand window opened successfully')
+    console.log('Expand window opened successfully')
   }
 
   return (
@@ -262,7 +258,6 @@ const WebConsole = ({ t, deviceId, i18n }) => {
                     robotId={deviceId}
                     card={card}
                     onExpand={handleCardExpand}
-                    //onControlOpen={onControlWindowOpen}
                   />
                 ))}
               </CardsGrid>

@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useState } from 'react'
+import React, { useEffect, useCallback, useMemo, useState } from 'react'
 import { SectionRobot, Table } from '@repo/ui'
 import { useTranslation } from 'react-i18next'
 import { useUserStore } from '@repo/stores'
@@ -53,43 +53,46 @@ const SiteRobotList = ({ siteId, isDefaultSite }) => {
     loadSiteRobotList()
   }, [siteId, isDefaultSite])
 
-  const columns = [
-    {
-      name: t('robotName'),
-      selector: (row) => row.deviceName,
-      sortable: true
-    },
-    {
-      name: t('model'),
-      selector: (row) => (row.deviceModelName ? row.deviceModelName : ''),
-      sortable: true
-    },
-    {
-      name: t('serialNumber'),
-      selector: (row) => row.deviceSerialNumber,
-      sortable: true
-    },
-    {
-      name: t('ownMap'),
-      selector: (row) => 0,
-      sortable: true
-    },
-    {
-      name: t('currentAffiliation'),
-      selector: (row) =>
-        !row.provision.isDefaultSite ? row.provision.groupName + ' > ' + row.provision.siteName : t('unassigned'),
-      sortable: true
-    },
-    {
-      name: t('registerStatus'),
-      selector: (row) => row.deviceRegStatus ?? '', // 정렬용 원시값
-      cell: (row) => {
-        const { className, textKey } = getStatusInfo(row.deviceRegStatus ?? '')
-        return <span className={`px-4 py-[3px] rounded-full text-[10px] ${className}`}>{t(textKey)}</span>
+  const columns = useMemo(
+    () => [
+      {
+        name: t('robotName'),
+        selector: (row) => row.deviceName,
+        sortable: true
       },
-      sortable: true
-    }
-  ]
+      {
+        name: t('model'),
+        selector: (row) => (row.deviceModelName ? row.deviceModelName : ''),
+        sortable: true
+      },
+      {
+        name: t('serialNumber'),
+        selector: (row) => row.deviceSerialNumber,
+        sortable: true
+      },
+      {
+        name: t('ownMap'),
+        selector: (row) => 0,
+        sortable: true
+      },
+      {
+        name: t('currentAffiliation'),
+        selector: (row) =>
+          !row.provision.isDefaultSite ? row.provision.groupName + ' > ' + row.provision.siteName : t('unassigned'),
+        sortable: true
+      },
+      {
+        name: t('registerStatus'),
+        selector: (row) => row.deviceRegStatus ?? '', // 정렬용 원시값
+        cell: (row) => {
+          const { className, textKey } = getStatusInfo(row.deviceRegStatus ?? '')
+          return <span className={`px-4 py-[3px] rounded-full text-[10px] ${className}`}>{t(textKey)}</span>
+        },
+        sortable: true
+      }
+    ],
+    [t]
+  )
 
   return (
     <>
