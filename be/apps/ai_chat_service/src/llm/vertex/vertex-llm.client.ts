@@ -9,7 +9,7 @@
  *  - role:'tool'          → parts[].functionResponse (tool_call_id 로 함수명 역참조)
  *  - 응답 parts[].functionCall → LlmToolCall
  *
- * 인증은 ADC(GOOGLE_APPLICATION_CREDENTIALS). Azure 와 동일한 tool-calling 루프를 지원한다.
+ * 인증은 GOOGLE_APPLICATION_CREDENTIALS 키 파일. Azure 와 동일한 tool-calling 루프를 지원한다.
  */
 import { GoogleAuth } from 'google-auth-library';
 import type { VertexGeminiConfig } from './vertex-gemini.config';
@@ -45,7 +45,10 @@ export class VertexLlmClient implements LlmClient {
   constructor(
     private readonly cfg: VertexGeminiConfig,
   ) {
-    this.auth = new GoogleAuth({ scopes: [cfg.googleAuthScope] });
+    this.auth = new GoogleAuth({
+      scopes: [cfg.googleAuthScope],
+      ...(cfg.keyFilePath ? { keyFile: cfg.keyFilePath } : {}),
+    });
   }
 
   async generateContent(req: LlmGenerateRequest): Promise<LlmGenerateResult> {

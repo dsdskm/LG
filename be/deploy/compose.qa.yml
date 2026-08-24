@@ -146,10 +146,10 @@ services:
       <<: *svc-urls
       SERVICE_NAME: llm_gateway
       PORT_LLM_GATEWAY: "3003"
-      # Vertex(Gemini) 인증: 키 파일은 이미지에 포함되어 있고 ADC가 이 경로로 찾는다.
+      # Vertex(Gemini) 인증: 키 파일은 이미지에 포함되어 있고 앱 루트 기준 상대경로로 참조한다.
       GOOGLE_CLOUD_PROJECT: ailogsystem-493123
       GOOGLE_CLOUD_LOCATION: global
-      GOOGLE_APPLICATION_CREDENTIALS: /app/apps/llm_gateway/src/key/ailogsystem-service-account.json
+      GOOGLE_APPLICATION_CREDENTIALS: src/key/ailogsystem-service-account.json
       AZURE_OPENAI_ENDPOINT: https://hs-prd-lab-robot-oai.openai.azure.com
       AZURE_OPENAI_API_KEY: 5sApBKcEN6hBBS38seWzTCNHlrVvq698A10KuQp7mkVRzty5zH0lJQQJ99CCACNns7RXJ3w3AAABACOGgTBS
       AZURE_OPENAI_API_VERSION: "2024-12-01-preview"
@@ -316,7 +316,7 @@ services:
       # LLM: Azure OpenAI + Vertex(Gemini) 를 직접 호출 (llm_gateway 와 동일 자격 재사용)
       GOOGLE_CLOUD_PROJECT: ailogsystem-493123
       GOOGLE_CLOUD_LOCATION: global
-      GOOGLE_APPLICATION_CREDENTIALS: /app/apps/llm_gateway/src/key/ailogsystem-service-account.json
+      GOOGLE_APPLICATION_CREDENTIALS: src/key/ailogsystem-service-account.json
       AZURE_OPENAI_ENDPOINT: https://hs-prd-lab-robot-oai.openai.azure.com
       AZURE_OPENAI_API_KEY: 5sApBKcEN6hBBS38seWzTCNHlrVvq698A10KuQp7mkVRzty5zH0lJQQJ99CCACNns7RXJ3w3AAABACOGgTBS
       AZURE_OPENAI_API_VERSION: "2024-12-01-preview"

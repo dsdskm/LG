@@ -48,25 +48,14 @@ function toBool(value: string | undefined, fallback = false) {
     return fallback;
 }
 
-/** 이미지에 동봉된 기본 서비스 계정 키 경로 후보들을 순서대로 탐색 */
-function resolveDefaultKeyFilePath(): string {
-    const explicit = (process.env.GOOGLE_APPLICATION_CREDENTIALS ?? "").trim();
-    if (explicit) return explicit;
+/** dist/service/vertex 기준으로 llm_gateway 앱 루트 */
+const APP_ROOT = path.resolve(__dirname, "../../..");
 
-    const candidates = [
-        // 런타임(WORKDIR=/app) 기준
-        path.resolve(process.cwd(), "apps/llm_gateway/src/key/ailogsystem-service-account.json"),
-        // 컴파일 결과물(dist) 기준 상대 경로 (dist/service/vertex -> src/key)
-        path.resolve(__dirname, "../../../src/key/ailogsystem-service-account.json"),
-    ];
-    for (const p of candidates) {
-        try {
-            if (fs.existsSync(p)) return p;
-        } catch {
-            /* ignore */
-        }
-    }
-    return "";
+/** .env 의 GOOGLE_APPLICATION_CREDENTIALS(앱 루트 기준 상대경로)로 키 파일 경로 결정 */
+function resolveKeyFilePath(): string {
+    const configured = (process.env.GOOGLE_APPLICATION_CREDENTIALS ?? "").trim();
+    if (!configured) return "";
+    return path.isAbsolute(configured) ? configured : path.resolve(APP_ROOT, configured);
 }
 
 /** 키 파일에서 project_id 추출 (실패 시 빈 문자열) */
@@ -82,7 +71,7 @@ function readProjectIdFromKeyFile(keyFilePath: string): string {
 }
 
 export function loadVertexGeminiConfig(): VertexGeminiConfig {
-    const keyFilePath = resolveDefaultKeyFilePath();
+    const keyFilePath = resolveKeyFilePath();
 
     // 우선순위: 환경변수 GOOGLE_CLOUD_PROJECT > 키 파일의 project_id
     const projectId =
