@@ -9,7 +9,8 @@ import { useTaskFlowStore } from '@/store/taskflow.store'
 import PropertyPanel from '@/pages/TaskFlowCanvasPage/PropertyPanel'
 import ConfirmModal from '@/pages/components/modal/ConfirmModal'
 
-import { TaskFlow } from '@/types/taskflow'
+import { type DeployActionRequest, type TaskFlow } from '@/types/taskflow'
+import type { InstantActionsPayload } from '@/types/api/deviceControl'
 import { ensureStartNode } from '@/utils/node.util'
 import {
   FLOW_SOURCE_QUERY_KEY,
@@ -19,7 +20,8 @@ import {
   pickEditableFlowDefinition
 } from '@/utils/flowDefinition'
 
-import { useCreateTaskFlow, useGetTaskFlow, useUpdateTaskFlow } from '@/api/taskFlowApis'
+import { useCreateTaskFlow, useDeployTaskFlowAction, useGetTaskFlow, useUpdateTaskFlow } from '@/api/taskFlowApis'
+import { useInstantAction } from '@/api/deviceControlApis'
 import TaskFlowInfoDialog from '../components/dialog/TaskFlowInfoDialog'
 import PalettePanel from './PalettePanel'
 import { buildBehaviorTreeFromFlowDefinition } from '@/bt/build'
@@ -29,9 +31,10 @@ import {
   AI_TASKFLOW_CANVAS_COMMAND_EVENT,
   AI_TASKFLOW_CANVAS_DRAFT_EVENT,
   AI_TASKFLOW_CANVAS_RESULT_EVENT,
-  AI_TASKFLOW_REFRESH_CONTENTS_EVENT
-} from '@repo/ui/components/layout/AiAssistantPanel/taskflowEvents.js'
-import { useOrganizationStore } from '@repo/stores'
+  AI_TASKFLOW_REFRESH_CONTENTS_EVENT,
+  RULE_KEY
+} from '@repo/constants'
+import { useOrganizationStore, useUserStore } from '@repo/stores'
 import { Checkbox } from '@repo/ui'
 import { Main, PageRoot, SaveHint } from './styles'
 import PanelLayout from './PanelLayout'
@@ -39,6 +42,7 @@ import DrawPanel from './DrawPanel'
 import type { PaletteItem } from '@/types/palette'
 import { MarkerType } from '@xyflow/react'
 import { useFlowEditorStore as useFlowEditorStoreHook, type RFEdge, type RFNode } from '@/store/taskflow.canvas.store'
+import { buildAiTaskflowReplyText, resolveAiTaskflowCommandTarget } from '@/utils/aiTaskflowCommand'
 
 type SaveOverride = { name: string; description: string }
 type MoveToMapEntry = { nodeId: string; mapId: string }
@@ -235,23 +239,55 @@ function buildDefaultPropertiesFromSchema(
   return result
 }
 
-function buildPaletteNameBuckets(palette: PaletteItem[]) {
-  const controlNames = new Map<string, PaletteItem>()
-  const contentNames = new Map<string, PaletteItem>()
+function resolvePaletteItemByName(step: AssistantStep, palette: PaletteItem[]): PaletteItem | null {
+  const requestedNames = [step.contentName, step.label, step.taskName]
+    .map((name) => normalizeNameKey(name))
+    .filter((name, index, names) => Boolean(name) && names.indexOf(name) === index)
 
-  for (const item of palette) {
-    if (item.kind === 'controlTaskNode') {
-      const key = normalizeNameKey(item.task.name)
-      if (key) controlNames.set(key, item)
-    }
+  let bestItem: PaletteItem | null = null
+  let bestScore: number[] | null = null
 
-    if (item.kind === 'contentNode') {
-      const key = normalizeNameKey(item.content.name)
-      if (key) contentNames.set(key, item)
+  for (const [itemIndex, item] of palette.entries()) {
+    const itemNames =
+      item.kind === 'contentNode'
+        ? [item.content.name, item.label, item.task.name]
+        : [item.task.name, item.label]
+
+    for (const [nameIndex, itemName] of itemNames.entries()) {
+      const itemKey = normalizeNameKey(itemName)
+      if (!itemKey) continue
+
+      for (const [requestedIndex, requestedName] of requestedNames.entries()) {
+        const matchedIndex = itemKey.indexOf(requestedName)
+        if (matchedIndex < 0) continue
+
+        const score = [
+          itemKey === requestedName ? 0 : 1,
+          matchedIndex,
+          itemKey.length - requestedName.length,
+          requestedIndex,
+          nameIndex,
+          itemIndex
+        ]
+        let firstDifference = -1
+        if (bestScore) {
+          for (let scoreIndex = 0; scoreIndex < score.length; scoreIndex += 1) {
+            if (score[scoreIndex] === bestScore[scoreIndex]) continue
+            firstDifference = scoreIndex
+            break
+          }
+        }
+        const isBetter = !bestScore || (firstDifference >= 0 && score[firstDifference] < bestScore[firstDifference])
+
+        if (isBetter) {
+          bestItem = item
+          bestScore = score
+        }
+      }
     }
   }
 
-  return { controlNames, contentNames }
+  return bestItem
 }
 
 function resolvePaletteItem(step: AssistantStep, palette: PaletteItem[]): PaletteItem | null {
@@ -261,57 +297,11 @@ function resolvePaletteItem(step: AssistantStep, palette: PaletteItem[]): Palett
   const controlItems = palette.filter(
     (item): item is Extract<PaletteItem, { kind: 'controlTaskNode' }> => item.kind === 'controlTaskNode'
   )
-  const { controlNames, contentNames } = buildPaletteNameBuckets(palette)
-
   const stepTaskType = String(step.taskType ?? '')
     .trim()
     .toLowerCase()
-  const stepTaskNameKey = normalizeText(step.taskName)
-  const stepLabelKey = normalizeText(step.label)
-  const looseLabelKey = normalizeLooseText(step.label || step.contentName || step.taskName)
-
-  let byTaskName: PaletteItem | null = null
-  let byLabelControl: PaletteItem | null = null
-  let byContentName: PaletteItem | null = null
-  let byLabelContent: PaletteItem | null = null
-  let byContains: PaletteItem | null = null
-
-  if (stepTaskType === 'control' || stepTaskNameKey || looseLabelKey) {
-    const retryControl = controlItems.find((item) => {
-      const itemText = normalizeLooseText(item.task.name || item.label)
-      return itemText.includes('retry') || itemText.includes('재시도')
-    })
-    if (retryControl && (looseLabelKey.includes('retry') || looseLabelKey.includes('재시도'))) {
-      return retryControl
-    }
-
-    const controlKeyCandidates = [stepTaskNameKey, stepLabelKey, looseLabelKey].filter(Boolean)
-    for (const key of controlKeyCandidates) {
-      const directControlMatch = controlNames.get(normalizeNameKey(key)) ?? null
-      if (directControlMatch) return directControlMatch
-    }
-
-    byTaskName = stepTaskNameKey
-      ? (controlItems.find((item) => normalizeText(item.task.name) === stepTaskNameKey) ?? null)
-      : null
-    if (byTaskName) return byTaskName
-
-    byLabelControl = stepLabelKey
-      ? (controlItems.find(
-          (item) => normalizeText(item.label) === stepLabelKey || normalizeText(item.task.name) === stepLabelKey
-        ) ?? null)
-      : null
-    if (byLabelControl) return byLabelControl
-  }
-
-  if (contentItems.length === 0) return null
 
   const stepContentId = toPositiveNumber(step.contentId)
-  if (stepContentId) {
-    const exact = contentItems.find((item) => Number(item.content.id) === stepContentId)
-    if (exact) return exact
-  }
-
   const stepTaskId = toPositiveNumber(step.taskId)
   if (stepTaskId && stepContentId) {
     const exactPair = contentItems.find(
@@ -319,65 +309,32 @@ function resolvePaletteItem(step: AssistantStep, palette: PaletteItem[]): Palett
     )
     if (exactPair) return exactPair
   }
-
-  const labelKey = normalizeText(step.label)
-  const contentNameKey = normalizeText(step.contentName)
-  const taskNameKey = normalizeText(step.taskName)
-  const contentKeyCandidates = [contentNameKey, labelKey, taskNameKey, looseLabelKey].filter(Boolean)
-  for (const key of contentKeyCandidates) {
-    const directContentMatch = contentNames.get(normalizeNameKey(key)) ?? null
-    if (directContentMatch) return directContentMatch
+  if (stepContentId) {
+    const exactContent = contentItems.find((item) => Number(item.content.id) === stepContentId)
+    if (exactContent) return exactContent
   }
 
-  const strictCandidates = contentItems.filter((item) => {
-    if (stepTaskId && Number(item.task.id) !== stepTaskId) return false
-    if (taskNameKey && normalizeText(item.task.name) !== taskNameKey) return false
-    return true
-  })
-  const candidates = strictCandidates.length > 0 ? strictCandidates : contentItems
+  const taskCandidates = stepTaskId
+    ? contentItems.filter((item) => Number(item.task.id) === stepTaskId)
+    : []
+  const nameCandidates =
+    stepTaskType === 'control'
+      ? controlItems
+      : taskCandidates.length > 0
+        ? taskCandidates
+        : palette
+  const rankedMatch = resolvePaletteItemByName(step, nameCandidates)
+  if (rankedMatch) return rankedMatch
 
-  byContentName =
-    contentNameKey || labelKey
-      ? (candidates.find((item) => normalizeText(item.content.name) === (contentNameKey || labelKey)) ?? null)
-      : null
-  if (byContentName) return byContentName
-
-  byLabelContent = labelKey ? (candidates.find((item) => normalizeText(item.label) === labelKey) ?? null) : null
-  if (byLabelContent) return byLabelContent
-
-  const looseNeedle = normalizeLooseText(step.contentName || step.label)
-  if (looseNeedle) {
-    byContains =
-      candidates.find((item) => {
-        const contentKey = normalizeLooseText(item.content.name)
-        const labelLooseKey = normalizeLooseText(item.label)
-        return (
-          contentKey.includes(looseNeedle) ||
-          looseNeedle.includes(contentKey) ||
-          labelLooseKey.includes(looseNeedle) ||
-          looseNeedle.includes(labelLooseKey)
-        )
+  const looseLabelKey = normalizeLooseText(step.label || step.contentName || step.taskName)
+  if (looseLabelKey.includes('retry') || looseLabelKey.includes('재시도')) {
+    return (
+      controlItems.find((item) => {
+        const itemText = normalizeLooseText(item.task.name || item.label)
+        return itemText.includes('retry') || itemText.includes('재시도')
       }) ?? null
-    if (byContains) return byContains
+    )
   }
-
-  const matchedItem: PaletteItem | null = byContentName ?? byLabelContent ?? byContains ?? byTaskName ?? null
-  const matchedName = (() => {
-    if (!matchedItem) return null
-    const candidate = matchedItem as any
-    return candidate.content?.name ?? candidate.task?.name ?? null
-  })()
-
-  console.log('[AI_TASKFLOW][PALETTE_MATCH_RESULT]', {
-    step: {
-      label: step.label,
-      contentName: step.contentName,
-      taskName: step.taskName,
-      taskType: step.taskType
-    },
-    matched: Boolean(matchedItem),
-    matchedName
-  })
 
   return null
 }
@@ -954,6 +911,22 @@ export function applyEditDraftToFlowDefinition(
     const appendOnly = Boolean(insert?.appendOnly)
     let isolated = Boolean((insert as any)?.isolated)
     const isStartLikeAnchor = ['', 'start', '시작', 'start node'].includes(after.toLowerCase())
+    const startConnectedNodeIds = buildStartConnectedNodeSet(nextNodes, nextEdges)
+    const hasActiveFlowNode = nextNodes.some(
+      (node) => String(node.id) !== 'start' && startConnectedNodeIds.has(String(node.id))
+    )
+
+    if (
+      !isolated &&
+      appendOnly &&
+      !reverseDirection &&
+      !hasActiveFlowNode &&
+      isStartLikeAnchor &&
+      sourceHandle === 'left' &&
+      targetHandle === 'left'
+    ) {
+      isolated = true
+    }
 
     if (
       !isolated &&
@@ -1156,6 +1129,7 @@ export function applyEditDraftToFlowDefinition(
     }
 
     if (!anchorNode) {
+      const missingName = String(after ?? '').trim()
       console.warn('[AI_TASKFLOW][ANCHOR_MISS]', {
         after,
         nodes: nextNodes.map((n) => String((n as any).data?.label ?? n.id)),
@@ -1168,7 +1142,9 @@ export function applyEditDraftToFlowDefinition(
       })
       return {
         next: null,
-        clarification: null
+        clarification: missingName
+          ? `"${missingName}" 노드를 찾지 못했습니다. 현재 캔버스에 있는 이름으로 다시 요청해 주세요.`
+          : '기준 노드를 찾지 못했습니다. 현재 캔버스에 있는 이름으로 다시 요청해 주세요.'
       }
     }
 
@@ -1556,6 +1532,9 @@ export default function TaskFlowCanvasPage() {
   const isNewFlow = Number.isFinite(numericFlowId) && numericFlowId <= 0
 
   const { selectedOrgs, allOrgs } = useOrganizationStore()
+  const { session } = useUserStore()
+  const { mutateAsync: deployTaskFlowActionAsync } = useDeployTaskFlowAction()
+  const { mutateAsync: sendInstantActionAsync } = useInstantAction()
 
   useEffect(() => {
     if (!Number.isFinite(numericFlowId)) {
@@ -1608,12 +1587,12 @@ export default function TaskFlowCanvasPage() {
     [nodes]
   )
 
-  useEffect(() => {
-    const onTaskflowDraft = (event: Event) => {
-      const custom = event as CustomEvent<any>
-      const draft = extractAssistantDraft(custom?.detail)
-      if (!draft) return
-      const assistantMessageId = String(custom?.detail?.assistantMessageId ?? '').trim() || undefined
+  const applyAssistantDraftToCanvas = useCallback(
+    (draftInput: unknown, sourceMessage?: string) => {
+      const draft = extractAssistantDraft(draftInput)
+      if (!draft) return false
+
+      const assistantMessageId = String((draftInput as any)?.assistantMessageId ?? '').trim() || undefined
       if (assistantMessageId) {
         draft.assistantMessageId = assistantMessageId
       }
@@ -1633,7 +1612,7 @@ export default function TaskFlowCanvasPage() {
           paletteSize: palette.length
         })
         pendingDraftRef.current = draft
-        return
+        return false
       }
 
       pendingDraftRef.current = null
@@ -1661,7 +1640,7 @@ export default function TaskFlowCanvasPage() {
             }
           })
         )
-        return
+        return true
       }
 
       const next = draft.mode === 'edit' ? (applied?.next ?? null) : buildLinearFlowDefinitionFromDraft(draft, palette)
@@ -1687,10 +1666,10 @@ export default function TaskFlowCanvasPage() {
             }
           })
         )
-        return
+        return false
       }
 
-      logAppliedAiNodes(next as Record<string, unknown>, String((draft as any)?.message ?? ''))
+      logAppliedAiNodes(next as Record<string, unknown>, String(sourceMessage ?? (draft as any)?.message ?? ''))
       applyFlowDefinitionWithHistory(next as Record<string, unknown>)
 
       const currentIds = new Set(nodes.map((n) => String(n.id)))
@@ -1718,13 +1697,44 @@ export default function TaskFlowCanvasPage() {
           }
         })
       )
+
+      return true
+    },
+    [nodes, edges, viewport, palette, applyFlowDefinitionWithHistory]
+  )
+
+  useEffect(() => {
+    const onTaskflowDraft = (event: Event) => {
+      const custom = event as CustomEvent<any>
+      const draftInput = custom?.detail
+      if (!draftInput) return
+      applyAssistantDraftToCanvas(draftInput, String(draftInput?.message ?? ''))
     }
 
     window.addEventListener(AI_TASKFLOW_CANVAS_DRAFT_EVENT, onTaskflowDraft)
     return () => {
       window.removeEventListener(AI_TASKFLOW_CANVAS_DRAFT_EVENT, onTaskflowDraft)
     }
-  }, [nodes, edges, viewport, palette, applyFlowDefinitionWithHistory])
+  }, [applyAssistantDraftToCanvas])
+
+  useEffect(() => {
+    window.__AI_TASKFLOW_CANVAS_APPLY__ = (draft: any) => {
+      const sourceMessage = String(draft?.message ?? '')
+      const applied = applyAssistantDraftToCanvas(draft, sourceMessage)
+      if (applied) {
+        console.log('[AI_TASKFLOW][DIRECT_APPLY_OK]', {
+          message: sourceMessage,
+          hasDraft: Boolean(extractAssistantDraft(draft))
+        })
+      }
+    }
+
+    return () => {
+      if (window.__AI_TASKFLOW_CANVAS_APPLY__) {
+        delete window.__AI_TASKFLOW_CANVAS_APPLY__
+      }
+    }
+  }, [applyAssistantDraftToCanvas])
 
   useEffect(() => {
     const pending = pendingDraftRef.current
@@ -2336,12 +2346,38 @@ export default function TaskFlowCanvasPage() {
     leaveCanvas()
   }, [isDirty, leaveCanvas, saving])
 
+  const resolveDeployRunTargets = (command: Record<string, unknown>) => {
+    const fallbackTaskFlowId = Number.isFinite(Number(selectedFlowId ?? numericFlowId))
+      ? Number(selectedFlowId ?? numericFlowId)
+      : Number.NaN
+
+    const fallbackRobotId = (() => {
+      const pathname = String(window.location.pathname ?? '').trim()
+      const match = pathname.match(/\/tms\/robots\/([^/]+)\/detail(?:\/.*)?$/)
+      return match?.[1] ? decodeURIComponent(match[1]) : ''
+    })()
+
+    return resolveAiTaskflowCommandTarget(command, {
+      robotId: fallbackRobotId,
+      taskFlowId: fallbackTaskFlowId
+    })
+  }
+
   useEffect(() => {
     const onTaskflowCanvasCommand = async (event: Event) => {
       const custom = event as CustomEvent<any>
       const command = custom?.detail?.command
       if (!command || typeof command !== 'object') return
       const replyText = String(custom?.detail?.replyText ?? '').trim()
+      const type = String(command?.type ?? '')
+        .trim()
+        .toLowerCase()
+
+      console.info('[AI_TASKFLOW][RAW_EVENT_RECEIVED]', {
+        page: 'TaskFlowCanvasPage',
+        type,
+        command
+      })
 
       const dispatchResult = (success: boolean, message?: string) => {
         window.dispatchEvent(
@@ -2352,15 +2388,13 @@ export default function TaskFlowCanvasPage() {
               success,
               didApply: success,
               message: String(message ?? '').trim() || replyText,
+              assistantMessageId: String(custom?.detail?.assistantMessageId ?? '').trim() || undefined,
               historyContext: custom?.detail?.historyContext
             }
           })
         )
       }
 
-      const type = String(command?.type ?? '')
-        .trim()
-        .toLowerCase()
       if (!type) return
 
       // 저장 방식이 하나로 통합되어, 예전 temp-save 커맨드도 같은 저장으로 처리한다.
@@ -2477,6 +2511,155 @@ export default function TaskFlowCanvasPage() {
         alignSelectedNodesAuto()
         dispatchResult(true)
         return
+      }
+
+      if (
+        type === RULE_KEY.TASKFLOW_DEPLOY ||
+        type === RULE_KEY.TASKFLOW_RUN ||
+        type === RULE_KEY.TASKFLOW_PAUSE ||
+        type === RULE_KEY.TASKFLOW_RESUME ||
+        type === RULE_KEY.TASKFLOW_STOP ||
+        type === 'deploy-taskflow' ||
+        type === 'run-taskflow' ||
+        type === 'pause-taskflow' ||
+        type === 'resume-taskflow' ||
+        type === 'stop-taskflow'
+      ) {
+        const { resolvedRobotId: robotId, taskFlowIdValue: taskFlowId } = resolveDeployRunTargets(command)
+        const resolvedGroupId = selectedGroupId || normalizeOrgId(selectedFlow?.groupId)
+        const resolvedSiteId = selectedSiteId || normalizeOrgId(selectedFlow?.siteId)
+
+        console.info('[AI_TASKFLOW][COMMAND_RECEIVED]', {
+          page: 'TaskFlowCanvasPage',
+          type,
+          robotId,
+          taskFlowId,
+          resolvedGroupId,
+          resolvedSiteId,
+          command
+        })
+
+        if (!robotId || !Number.isFinite(taskFlowId) || taskFlowId <= 0 || (!resolvedGroupId && (type === RULE_KEY.TASKFLOW_DEPLOY || type === 'deploy-taskflow')) || (!resolvedSiteId && (type === RULE_KEY.TASKFLOW_DEPLOY || type === 'deploy-taskflow'))) {
+          console.warn('[AI_TASKFLOW][COMMAND_BLOCKED_BY_GUARD]', {
+            page: 'TaskFlowCanvasPage',
+            type,
+            robotId,
+            taskFlowId,
+            resolvedGroupId,
+            resolvedSiteId,
+            requiresDeployOrg: type === RULE_KEY.TASKFLOW_DEPLOY || type === 'deploy-taskflow'
+          })
+          dispatchResult(false, String(command?.notFoundText ?? '배포/실행 대상 정보를 찾지 못했습니다.'))
+          return
+        }
+
+        try {
+          if (type === RULE_KEY.TASKFLOW_DEPLOY || type === 'deploy-taskflow') {
+            const deployPayload: DeployActionRequest = {
+              taskFlowId,
+              param: {
+                action: 'DEPLOY',
+                groupId: resolvedGroupId,
+                siteId: resolvedSiteId,
+                robotInfos: [{ groupId: String(resolvedGroupId ?? ''), siteId: String(resolvedSiteId ?? ''), id: robotId }],
+                description: String(command?.description ?? 'AI command deploy taskflow')
+              }
+            }
+
+            console.info('[AI_TASKFLOW][DEPLOY_API_CALL]', {
+              type,
+              robotId,
+              taskFlowId,
+              groupId: resolvedGroupId,
+              siteId: resolvedSiteId,
+              payload: deployPayload,
+              message: replyText || `${robotId} 로봇에 ${taskFlowId} 태스크플로우 배포를 요청했습니다.`
+            })
+
+            const deployResult = await deployTaskFlowActionAsync(deployPayload)
+            console.info('[AI_TASKFLOW][DEPLOY_API_RESULT]', {
+              type,
+              robotId,
+              taskFlowId,
+              result: deployResult,
+            })
+            const finalDeployReply = buildAiTaskflowReplyText(replyText || `${robotId} 로봇에 ${taskFlowId} 태스크플로우 배포를 요청했습니다.`, robotId, taskFlowId)
+            dispatchResult(true, finalDeployReply || `${robotId} 로봇에 ${taskFlowId} 태스크플로우 배포를 요청했습니다.`)
+            return
+          }
+
+          const userId = String(session?.userId ?? '')
+          if (!userId) {
+            dispatchResult(false, '실행/제어를 요청하려면 로그인된 사용자 정보가 필요합니다.')
+            return
+          }
+
+          const instantActionTypeMap: Record<string, string> = {
+            [RULE_KEY.TASKFLOW_RUN]: 'start',
+            [RULE_KEY.TASKFLOW_PAUSE]: 'startPause',
+            [RULE_KEY.TASKFLOW_RESUME]: 'stopPause',
+            [RULE_KEY.TASKFLOW_STOP]: 'stop',
+            'run-taskflow': 'start',
+            'pause-taskflow': 'startPause',
+            'resume-taskflow': 'stopPause',
+            'stop-taskflow': 'stop',
+          }
+
+          const actionType = instantActionTypeMap[type] ?? 'start'
+          const instantPayload: InstantActionsPayload = {
+            userId,
+            actions: [
+              {
+                actionType,
+                actionId: crypto.randomUUID(),
+                blockingType: 'HARD',
+                actionParameters: [{ key: 'tms_id', value: String(taskFlowId) }]
+              }
+            ]
+          }
+
+          const instantRequest = {
+            deviceId: robotId,
+            body: instantPayload
+          }
+
+          console.info('[AI_TASKFLOW][INSTANT_ACTION_CALL]', {
+            type,
+            robotId,
+            taskFlowId,
+            actionType,
+            userId,
+            payload: instantRequest,
+          })
+
+          const instantResult = await sendInstantActionAsync(instantRequest)
+          console.info('[AI_TASKFLOW][INSTANT_ACTION_RESULT]', {
+            type,
+            robotId,
+            taskFlowId,
+            actionType,
+            result: instantResult,
+          })
+
+          const defaultReplyMap: Record<string, string> = {
+            [RULE_KEY.TASKFLOW_RUN]: `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 실행을 요청했습니다.`,
+            [RULE_KEY.TASKFLOW_PAUSE]: `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 일시정지를 요청했습니다.`,
+            [RULE_KEY.TASKFLOW_RESUME]: `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 재개를 요청했습니다.`,
+            [RULE_KEY.TASKFLOW_STOP]: `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 정지를 요청했습니다.`,
+            'run-taskflow': `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 실행을 요청했습니다.`,
+            'pause-taskflow': `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 일시정지를 요청했습니다.`,
+            'resume-taskflow': `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 재개를 요청했습니다.`,
+            'stop-taskflow': `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 정지를 요청했습니다.`,
+          }
+
+          const finalReplyText = buildAiTaskflowReplyText(replyText || defaultReplyMap[type] || `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 제어를 요청했습니다.`, robotId, taskFlowId)
+          dispatchResult(true, finalReplyText || `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 제어를 요청했습니다.`)
+          return
+        } catch (error) {
+          console.error('[AI_TASKFLOW][COMMAND_RUN_FAILED]', error)
+          dispatchResult(false, String(command?.notFoundText ?? '배포/실행 요청에 실패했습니다.'))
+          return
+        }
       }
 
       dispatchResult(false, t('canvas.commandErrors.unsupported'))

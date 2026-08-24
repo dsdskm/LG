@@ -38,7 +38,7 @@ export const StyledAiFloatingTrigger = styled.button`
   width: 4.4rem;
   height: 4.4rem;
   border-radius: 50% 0 0 50%;
-  background: linear-gradient(135deg, #CD7B94 0%, #BF2D59 50%, #B91C4C 100%);
+  background: linear-gradient(135deg, #cd7b94 0%, #bf2d59 50%, #b91c4c 100%);
   color: #fff;
   border: none;
   display: flex;
@@ -50,7 +50,9 @@ export const StyledAiFloatingTrigger = styled.button`
   user-select: none;
   touch-action: none;
   transform: translateY(-50%);
-  transition: box-shadow 0.15s, opacity 0.15s;
+  transition:
+    box-shadow 0.15s,
+    opacity 0.15s;
 
   &:hover {
     box-shadow: -4px 4px 18px rgba(205, 123, 148, 0.6);
@@ -90,7 +92,7 @@ export const StyledAiBotAvatar = styled.div`
   width: 2.8rem;
   height: 2.8rem;
   border-radius: 50%;
-  background: linear-gradient(135deg, #CD7B94 0%, #BF2D59 50%, #B91C4C 100%);
+  background: linear-gradient(135deg, #cd7b94 0%, #bf2d59 50%, #b91c4c 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -210,7 +212,9 @@ export const StyledAiSuggestChip = styled.button`
   text-align: left;
   cursor: pointer;
   line-height: 1.45;
-  transition: background 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
 
   &:hover {
     background: var(--color-secondary-10, #f4f5f7);
@@ -252,6 +256,104 @@ export const StyledAiAssistantMessageBubble = styled.div`
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
+`
+
+export const StyledAiCommandTip = styled.aside`
+  width: 90%;
+  margin-top: 0.4rem;
+  padding: 1rem 1.2rem;
+  border-left: 3px solid #b91c4c;
+  background: #fff7f9;
+  color: var(--color-secondary-70, #525b70);
+  font-size: 1.2rem;
+  line-height: 1.55;
+`
+
+export const StyledAiCommandTipTitle = styled.strong`
+  display: block;
+  color: var(--color-secondary-90, #262f44);
+  font-size: 1.3rem;
+  font-weight: 700;
+`
+
+export const StyledAiCommandTipExamples = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.7rem;
+`
+
+export const StyledAiCommandTipExample = styled.code`
+  padding: 0.3rem 0.6rem;
+  border: 1px solid rgba(185, 28, 76, 0.2);
+  background: #ffffff;
+  color: #a71945;
+  font-size: 1.2rem;
+  font-weight: 700;
+`
+
+export const StyledAiHelpContent = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+  width: 100%;
+`
+
+export const StyledAiHelpIntro = styled.p`
+  margin: 0;
+  color: var(--color-secondary-70, #525b70);
+  white-space: pre-wrap;
+`
+
+export const StyledAiHelpSection = styled.section`
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--color-secondary-20, #dadde2);
+
+  &:first-of-type {
+    padding-top: 0;
+    border-top: 0;
+  }
+`
+
+export const StyledAiHelpSectionTitle = styled.h3`
+  margin: 0;
+  color: var(--color-secondary-90, #262f44);
+  font-size: 1.55rem;
+  font-weight: 700;
+  line-height: 1.45;
+`
+
+export const StyledAiHelpCommandList = styled.div`
+  display: flex;
+  flex-direction: column;
+`
+
+export const StyledAiHelpCommand = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid rgba(173, 181, 189, 0.35);
+
+  &:last-child {
+    border-bottom: 0;
+  }
+`
+
+export const StyledAiHelpCommandExample = styled.strong`
+  color: #a71945;
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.45;
+`
+
+export const StyledAiHelpCommandDescription = styled.span`
+  color: var(--color-secondary-60, #687086);
+  font-size: 1.2rem;
+  line-height: 1.5;
 `
 
 export const StyledAiAssistantPipelineTrace = styled.div`
@@ -328,7 +430,9 @@ export const StyledAiActionCard = styled.button`
   text-align: left;
   padding: 0.9rem 1rem;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
 
   &:hover {
     border-color: var(--color-secondary-30, #c0c4cc);
@@ -396,13 +500,16 @@ export const StyledAiAssistantLoadingBubble = styled.div`
     const strongAlpha = (0.14 + strength * 0.14).toFixed(3)
     return `linear-gradient(135deg, rgba(${tone}, ${lightAlpha}), rgba(${tone}, ${strongAlpha}))`
   }};
-  border: 1px solid ${({ $stage, $elapsed }) => {
-    const tone = resolveLoadingTone($stage)
-    const strength = resolveLoadingStrength($elapsed)
-    const borderAlpha = (0.16 + strength * 0.22).toFixed(3)
-    return `rgba(${tone}, ${borderAlpha})`
-  }};
-  transition: background 0.22s ease, border-color 0.22s ease;
+  border: 1px solid
+    ${({ $stage, $elapsed }) => {
+      const tone = resolveLoadingTone($stage)
+      const strength = resolveLoadingStrength($elapsed)
+      const borderAlpha = (0.16 + strength * 0.22).toFixed(3)
+      return `rgba(${tone}, ${borderAlpha})`
+    }};
+  transition:
+    background 0.22s ease,
+    border-color 0.22s ease;
 `
 
 export const StyledAiAssistantLoadingRow = styled.div`
@@ -430,9 +537,15 @@ export const StyledAiAssistantLoadingDots = styled.div`
     transition: background 0.18s ease;
   }
 
-  & > span:nth-child(1) { animation-delay: 0s; }
-  & > span:nth-child(2) { animation-delay: 0.2s; }
-  & > span:nth-child(3) { animation-delay: 0.4s; }
+  & > span:nth-child(1) {
+    animation-delay: 0s;
+  }
+  & > span:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+  & > span:nth-child(3) {
+    animation-delay: 0.4s;
+  }
 `
 
 export const StyledAiAssistantLoadingText = styled.div`
@@ -461,10 +574,12 @@ export const StyledAiComposerBox = styled.div`
   border-radius: 12px;
   background: #fff;
   overflow: hidden;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
 
   &:focus-within {
-    border-color: #BF2D59;
+    border-color: #bf2d59;
     box-shadow: 0 0 0 3px rgba(191, 45, 89, 0.12);
   }
 `
@@ -519,8 +634,8 @@ export const StyledAiContextChip = styled.button`
   white-space: nowrap;
 
   &:hover {
-    border-color: #BF2D59;
-    color: #BF2D59;
+    border-color: #bf2d59;
+    color: #bf2d59;
     background: rgba(191, 45, 89, 0.06);
   }
 `
@@ -530,7 +645,8 @@ export const StyledAiSendButton = styled.button`
   height: 3.2rem;
   border-radius: 50%;
   border: none;
-  background: ${({ disabled }) => (disabled ? 'var(--color-secondary-20, #dadde2)' : 'linear-gradient(135deg,#CD7B94,#BF2D59,#B91C4C)')};
+  background: ${({ disabled }) =>
+    disabled ? 'var(--color-secondary-20, #dadde2)' : 'linear-gradient(135deg,#CD7B94,#BF2D59,#B91C4C)'};
   color: ${({ disabled }) => (disabled ? 'var(--color-secondary-40, #adb5bd)' : '#fff')};
   display: flex;
   align-items: center;
@@ -539,7 +655,9 @@ export const StyledAiSendButton = styled.button`
   flex-shrink: 0;
   font-size: 1.6rem;
   line-height: 1;
-  transition: background 0.15s, opacity 0.15s;
+  transition:
+    background 0.15s,
+    opacity 0.15s;
 
   &:hover:not(:disabled) {
     opacity: 0.88;
@@ -557,7 +675,10 @@ export const StyledAiStopButton = styled.button`
   font-weight: 700;
   line-height: 1;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
 
   &:hover {
     background: #ffe4e6;

@@ -65,6 +65,7 @@ const TaskFlowItem = ({
         >
           <Checkbox checked={checked} onChange={() => onItemChecked(taskFlow.id)} />
           <div style={{ fontSize: '16px', fontWeight: 600 }}>{taskFlow.name}</div>
+          <div style={{ fontSize: '16px', color: 'gray' }}>{taskFlow.id}</div>
           <div style={{ fontSize: '14px' }}>v{taskFlow.version}</div>
           {taskFlow.latestVersion > taskFlow.version && (
             <div style={{ fontSize: '14px', color: 'blue' }}>(new version {taskFlow.latestVersion})</div>

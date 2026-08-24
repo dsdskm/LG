@@ -30,6 +30,7 @@
     "prettier": "^3.7.4"
   },
   "dependencies": {
+    "@repo/ai": "workspace:*",
     "@uiw/react-json-view": "2.0.0-alpha.43",
     "date-fns": "^4.1.0",
     "i18next": "25.8.0",

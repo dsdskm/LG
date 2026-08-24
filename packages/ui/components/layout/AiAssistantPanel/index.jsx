@@ -1,8 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAiAssistantStore, useUserStore, useOrganizationStore, useAiLogEventStore } from '@repo/stores'
 import { getAppPrefix } from '@repo/utils'
-import { getChatSettings, getGuidanceList, saveLocalChatHistory } from '@repo/apis/ai/chatSettings.js'
+import {
+  getChatHistory,
+  getChatSettings,
+  getGuidanceList,
+  matchChatRule,
+  saveLocalChatHistory
+} from '@repo/apis/ai/chatSettings.js'
 import Icon from '../../common/Icon'
 import {
   StyledAiAssistantComposer,
@@ -25,6 +31,18 @@ import {
   StyledAiAssistantImageTitle,
   StyledAiAssistantMessageList,
   StyledAiAssistantMessageMeta,
+  StyledAiCommandTip,
+  StyledAiCommandTipExample,
+  StyledAiCommandTipExamples,
+  StyledAiCommandTipTitle,
+  StyledAiHelpCommand,
+  StyledAiHelpCommandDescription,
+  StyledAiHelpCommandExample,
+  StyledAiHelpCommandList,
+  StyledAiHelpContent,
+  StyledAiHelpIntro,
+  StyledAiHelpSection,
+  StyledAiHelpSectionTitle,
   StyledAiAssistantPipelineTrace,
   StyledAiAssistantTextarea,
   StyledAiBotAvatar,
@@ -47,13 +65,7 @@ import {
   StyledAiStopButton
 } from './styles'
 import { postSiteAssistantChat } from '@repo/apis/ai/chat.js'
-import { isTmsCanvasPath } from './taskflowCommandRules.js'
-import {
-  AI_TASKFLOW_CANVAS_CLARIFY_EVENT,
-  AI_TASKFLOW_CANVAS_COMMAND_EVENT,
-  AI_TASKFLOW_CANVAS_DRAFT_EVENT,
-  AI_TASKFLOW_CANVAS_RESULT_EVENT
-} from './taskflowEvents.js'
+import { ruleCheck } from '@repo/ai/rules/tms/chat-rule-matcher.js'
 
 const ENABLE_QUICK_COMMANDS = true
 const ENABLE_MESSAGE_SUGGESTED_ACTIONS = false
@@ -128,6 +140,22 @@ const buildSendingStagePlan = (message) => {
 
 const TYPEWRITER_INTERVAL_MS = 110
 const ASSISTANT_TYPEWRITER_INTERVAL_MS = 24
+const ASSISTANT_TYPEWRITER_MIN_INTERVAL_MS = 10
+const ASSISTANT_TYPEWRITER_MAX_INTERVAL_MS = 24
+
+const getAssistantTypingPace = (text = '') => {
+  const length = String(text).length
+
+  if (length >= 1400) return { intervalMs: ASSISTANT_TYPEWRITER_MIN_INTERVAL_MS, charsPerTick: 10 }
+  if (length >= 900) return { intervalMs: 12, charsPerTick: 8 }
+  if (length >= 500) return { intervalMs: 14, charsPerTick: 6 }
+  if (length >= 260) return { intervalMs: 18, charsPerTick: 4 }
+
+  return {
+    intervalMs: Math.max(ASSISTANT_TYPEWRITER_MIN_INTERVAL_MS, ASSISTANT_TYPEWRITER_MAX_INTERVAL_MS),
+    charsPerTick: 1
+  }
+}
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -220,8 +248,13 @@ const findGuidanceExamplesForPath = (guidanceItems, pathname) => {
       return {
         key,
         examples,
-        appKey: String(item?.appKey ?? '').trim().toLowerCase(),
-        isCommon: String(item?.appKey ?? '').trim().toLowerCase() === 'common' || key === 'common'
+        appKey: String(item?.appKey ?? '')
+          .trim()
+          .toLowerCase(),
+        isCommon:
+          String(item?.appKey ?? '')
+            .trim()
+            .toLowerCase() === 'common' || key === 'common'
       }
     })
     .filter((item) => item.key && item.examples.length > 0)
@@ -257,8 +290,13 @@ const findInputHintForPath = (guidanceItems, pathname) => {
       return {
         key,
         examples,
-        appKey: String(item?.appKey ?? '').trim().toLowerCase(),
-        isCommon: String(item?.appKey ?? '').trim().toLowerCase() === 'common' || key === 'common'
+        appKey: String(item?.appKey ?? '')
+          .trim()
+          .toLowerCase(),
+        isCommon:
+          String(item?.appKey ?? '')
+            .trim()
+            .toLowerCase() === 'common' || key === 'common'
       }
     })
     .filter((item) => item.key && item.examples.length > 0)
@@ -297,6 +335,93 @@ const buildMessageId = () => {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+const buildMessagesFromHistory = (items) =>
+  [...(Array.isArray(items) ? items : [])].reverse().flatMap((item) => {
+    const logId = String(item?.id ?? '')
+    const createdAt = item?.createdAt ? new Date(item.createdAt).toISOString() : new Date().toISOString()
+    const context = {
+      pathname: String(item?.currentPath ?? ''),
+      appPrefix: String(item?.currentApp ?? ''),
+      conversationId: String(item?.conversationId ?? '')
+    }
+    const historyMessages = []
+    const userMessage = String(item?.userMessage ?? '').trim()
+    const assistantText = String(item?.assistantText ?? '').trim()
+
+    if (userMessage) {
+      historyMessages.push({ id: `history-${logId}-user`, role: 'user', content: userMessage, createdAt, context })
+    }
+    if (assistantText) {
+      historyMessages.push({
+        id: `history-${logId}-assistant`,
+        role: 'assistant',
+        content: assistantText,
+        createdAt,
+        context
+      })
+    }
+    return historyMessages
+  })
+
+const getChatDateKey = (value) => {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`
+}
+
+const formatChatDate = (value) => {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat('ko-KR', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    weekday: 'long'
+  }).format(date)
+}
+
+const formatChatTime = (value) => {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: 'numeric',
+    minute: '2-digit'
+  }).format(date)
+}
+
+const parseTmsHelpContent = (value) => {
+  const lines = String(value || '').split('\n')
+  const introLines = []
+  const sections = []
+  let currentSection = null
+
+  for (const line of lines) {
+    if (line.startsWith('### ')) {
+      currentSection = { title: line.slice(4).trim(), commands: [] }
+      sections.push(currentSection)
+      continue
+    }
+
+    if (!currentSection) {
+      if (line.trim()) introLines.push(line)
+      continue
+    }
+
+    const separatorIndex = line.indexOf(' : ')
+    if (separatorIndex < 0) continue
+    currentSection.commands.push({
+      example: line.slice(0, separatorIndex).trim(),
+      description: line.slice(separatorIndex + 3).trim()
+    })
+  }
+
+  if (sections.length <= 0) return null
+  return { intro: introLines.join('\n'), sections }
+}
+
 const normalizeAppPrefix = (pathname) => {
   const raw = getAppPrefix(pathname)
   if (!raw || raw === '/') return ''
@@ -311,269 +436,6 @@ const buildRouteContext = (location) => ({
   title: typeof document !== 'undefined' ? document.title : ''
 })
 
-const parseTaskflowIdFromPath = (pathname) => {
-  const matched = String(pathname ?? '')
-    .trim()
-    .match(/^\/tms\/taskflows\/(\d+)\/canvas(?:\/|$)/)
-  if (!matched) return null
-  const id = Number(matched[1])
-  return Number.isFinite(id) && id > 0 ? id : null
-}
-
-const normalizeNodeLabel = (node) => {
-  const data = node?.data ?? {}
-  return String(data.label ?? data.contentName ?? data.taskName ?? '').trim()
-}
-
-const buildLinearOrderLabels = (nodes, edges) => {
-  const byId = new Map(nodes.map((node) => [String(node.id), node]))
-  const outgoing = new Map()
-
-  for (const edge of Array.isArray(edges) ? edges : []) {
-    const source = String(edge?.source ?? '')
-    const target = String(edge?.target ?? '')
-    if (!byId.has(source) || !byId.has(target)) continue
-    const list = outgoing.get(source) ?? []
-    list.push(target)
-    outgoing.set(source, list)
-  }
-
-  const visited = new Set()
-  const ordered = []
-  let cursor = 'start'
-
-  while (cursor && !visited.has(cursor)) {
-    visited.add(cursor)
-    const outs = outgoing.get(cursor) ?? []
-    if (!Array.isArray(outs) || outs.length !== 1) break
-    const nextId = String(outs[0])
-    if (nextId === 'start') break
-    const node = byId.get(nextId)
-    if (!node) break
-    const label = normalizeNodeLabel(node)
-    if (label) ordered.push(label)
-    cursor = nextId
-  }
-
-  return ordered
-}
-
-const buildTaskListFromTaskPanel = (items) => {
-  const uniq = new Map()
-
-  for (const item of Array.isArray(items) ? items : []) {
-    const taskId = Number(item?.taskId)
-    if (!Number.isFinite(taskId) || taskId <= 0) continue
-
-    const taskName = String(item?.taskName ?? '').trim()
-    const label = String(item?.label ?? taskName).trim()
-    const key = `${taskId}:${taskName || label}`
-    if (!label || uniq.has(key)) continue
-
-    uniq.set(key, {
-      taskId,
-      label,
-      taskName: taskName || undefined
-    })
-  }
-
-  return Array.from(uniq.values())
-}
-
-const buildTaskContentsFromTaskPanel = (items) => {
-  const uniq = new Map()
-
-  for (const item of Array.isArray(items) ? items : []) {
-    const taskId = Number(item?.taskId)
-    const label = String(item?.label ?? '').trim()
-    if (!Number.isFinite(taskId) || taskId <= 0 || !label) continue
-
-    const taskName = String(item?.taskName ?? '').trim()
-    const contentIdRaw = Number(item?.contentId)
-    const contentId = Number.isFinite(contentIdRaw) && contentIdRaw > 0 ? contentIdRaw : undefined
-    const contentName = String(item?.contentName ?? '').trim() || undefined
-    const kind = String(item?.kind ?? '').trim()
-
-    const key = `${taskId}:${contentId ?? '-'}:${label}:${taskName}`
-    if (uniq.has(key)) continue
-
-    uniq.set(key, {
-      kind,
-      taskId,
-      taskName: taskName || undefined,
-      label,
-      contentId,
-      contentName
-    })
-  }
-
-  return Array.from(uniq.values())
-}
-
-const buildTaskflowFlowContext = (pathname) => {
-  if (!isTmsCanvasPath(pathname)) return undefined
-  if (typeof window === 'undefined') return undefined
-
-  const taskFlowId = parseTaskflowIdFromPath(pathname)
-  if (!taskFlowId) return undefined
-
-  try {
-    const runtimeContext = window.__AI_TASKFLOW_CONTEXT__
-    if (!runtimeContext || Number(runtimeContext?.taskFlowId ?? 0) !== Number(taskFlowId)) {
-      return undefined
-    }
-
-    const nodes = Array.isArray(runtimeContext?.nodes) ? runtimeContext.nodes : []
-    const taskNodes = nodes.filter((node) => String(node?.id ?? '') !== 'start')
-    const edges = Array.isArray(runtimeContext?.edges) ? runtimeContext.edges : []
-    if (nodes.length === 0) return undefined
-
-    const addableNodes = Array.isArray(runtimeContext?.addableNodes) ? runtimeContext.addableNodes : []
-    const taskList = Array.isArray(runtimeContext?.taskList)
-      ? runtimeContext.taskList
-      : buildTaskListFromTaskPanel(addableNodes)
-    const taskContents = Array.isArray(runtimeContext?.taskContents)
-      ? runtimeContext.taskContents
-      : Array.isArray(runtimeContext?.taskcontents)
-        ? runtimeContext.taskcontents
-        : buildTaskContentsFromTaskPanel(addableNodes)
-
-    const outgoingCount = new Map(nodes.map((node) => [String(node.id), 0]))
-    for (const edge of edges) {
-      const source = String(edge?.source ?? '')
-      if (!outgoingCount.has(source)) continue
-      outgoingCount.set(source, Number(outgoingCount.get(source) ?? 0) + 1)
-    }
-
-    const tails = taskNodes
-      .filter((node) => Number(outgoingCount.get(String(node.id)) ?? 0) === 0)
-      .map((node) => normalizeNodeLabel(node))
-      .filter(Boolean)
-
-    const branchingCount = Array.from(outgoingCount.values()).filter((count) => count > 1).length
-
-    return {
-      taskFlowId,
-      nodeCount: nodes.length,
-      edgeCount: edges.length,
-      tails: tails.slice(0, 8),
-      branchingCount,
-      ambiguousInsertion: tails.length !== 1 || branchingCount > 0,
-      linearOrder: buildLinearOrderLabels(nodes, edges),
-      addableNodes,
-      taskList,
-      taskContents,
-      nodes: nodes
-        .map((node) => ({
-          id: String(node?.id ?? '').trim(),
-          label: normalizeNodeLabel(node) || (String(node?.id ?? '') === 'start' ? 'start' : ''),
-          nodeType: String(node?.type ?? '').trim(),
-          taskName: String(node?.data?.taskName ?? '').trim(),
-          contentName: String(node?.data?.contentName ?? '').trim()
-        }))
-        .filter((node) => node.id),
-      flowDefinition: {
-        nodes,
-        edges,
-        viewport:
-          runtimeContext?.viewport &&
-          typeof runtimeContext.viewport === 'object' &&
-          !Array.isArray(runtimeContext.viewport)
-            ? runtimeContext.viewport
-            : { x: 0, y: 0, zoom: 1 },
-        flowMode: runtimeContext?.flowMode === 'tree' ? 'tree' : 'default'
-      },
-      fullFlow: {
-        nodes,
-        edges,
-        viewport:
-          runtimeContext?.viewport &&
-          typeof runtimeContext.viewport === 'object' &&
-          !Array.isArray(runtimeContext.viewport)
-            ? runtimeContext.viewport
-            : { x: 0, y: 0, zoom: 1 },
-        flowMode: runtimeContext?.flowMode === 'tree' ? 'tree' : 'default'
-      }
-    }
-  } catch {
-    return undefined
-  }
-}
-
-const buildTaskflowRequestContext = (flowContext) => {
-  if (!flowContext || typeof flowContext !== 'object') return undefined
-
-  const flowForEdges = flowContext?.fullFlow ?? flowContext?.flowDefinition
-  const flowModeSource = flowContext?.fullFlow ?? flowContext?.flowDefinition ?? flowContext
-
-  return {
-    taskFlowId: Number(flowContext?.taskFlowId ?? 0) || undefined,
-    flowMode: String(flowModeSource?.flowMode ?? 'default'),
-    nodeCount: Number(flowContext?.nodeCount ?? 0),
-    edgeCount: Number(flowContext?.edgeCount ?? 0),
-    branchingCount: Number(flowContext?.branchingCount ?? 0),
-    tails: Array.isArray(flowContext?.tails) ? flowContext.tails : [],
-    ambiguousInsertion: Boolean(flowContext?.ambiguousInsertion),
-    linearOrder: Array.isArray(flowContext?.linearOrder) ? flowContext.linearOrder : [],
-    taskList: Array.isArray(flowContext?.taskList) ? flowContext.taskList : [],
-    taskContents: Array.isArray(flowContext?.taskContents) ? flowContext.taskContents : [],
-    currentNodeList: Array.isArray(flowContext?.nodes) ? flowContext.nodes : [],
-    currentEdgeList: Array.isArray(flowForEdges?.edges)
-      ? flowForEdges.edges.map((edge) => ({
-          id: String(edge?.id ?? ''),
-          source: String(edge?.source ?? ''),
-          target: String(edge?.target ?? ''),
-          sourceHandle: String(edge?.sourceHandle ?? ''),
-          targetHandle: String(edge?.targetHandle ?? '')
-        }))
-      : [],
-    fullFlow: flowContext?.fullFlow && typeof flowContext.fullFlow === 'object' ? flowContext.fullFlow : undefined,
-    addableNodes: Array.isArray(flowContext?.addableNodes) ? flowContext.addableNodes : []
-  }
-}
-
-const extractTaskflowDraftParam = (value) => {
-  if (!value || typeof value !== 'object') return null
-
-  const row = value
-
-  if (row.canvasDraft && typeof row.canvasDraft === 'object') return row.canvasDraft
-  if (row.taskflowDraft && typeof row.taskflowDraft === 'object') return row.taskflowDraft
-  if (row.canvas && typeof row.canvas === 'object') return row.canvas
-  if (row.flowDefinition && typeof row.flowDefinition === 'object') return row.flowDefinition
-
-  if (row.toolResult && typeof row.toolResult === 'object') {
-    const nested = extractTaskflowDraftParam(row.toolResult)
-    if (nested) return nested
-  }
-
-  if (row.executed && typeof row.executed === 'object') {
-    const nested = extractTaskflowDraftParam(row.executed)
-    if (nested) return nested
-  }
-
-  return null
-}
-
-const extractTaskflowCanvasCommandParam = (value) => {
-  if (!value || typeof value !== 'object') return null
-
-  const row = value
-  if (row.canvasCommand && typeof row.canvasCommand === 'object') return row.canvasCommand
-
-  if (row.toolResult && typeof row.toolResult === 'object') {
-    const nested = extractTaskflowCanvasCommandParam(row.toolResult)
-    if (nested) return nested
-  }
-
-  if (row.executed && typeof row.executed === 'object') {
-    const nested = extractTaskflowCanvasCommandParam(row.executed)
-    if (nested) return nested
-  }
-
-  return null
-}
-
 const extractAssistantText = (result) => {
   const payload = result?.data ?? result ?? null
   if (!payload) return '응답을 받았지만 표시할 수 있는 내용이 없습니다.'
@@ -583,223 +445,6 @@ const extractAssistantText = (result) => {
   if (typeof payload?.text === 'string' && payload.text.trim()) return payload.text.trim()
   if (typeof payload?.answer === 'string' && payload.answer.trim()) return payload.answer.trim()
   return '응답을 받았지만 표시할 수 있는 내용이 없습니다.'
-}
-
-const extractPipelineTrace = (result) => {
-  const payload = result?.data ?? result ?? null
-  if (!payload || typeof payload !== 'object') return ''
-
-  const directTrace = String(payload?.pipelineTrace ?? payload?.pipeline_trace ?? '').trim()
-  if (directTrace) return directTrace
-
-  const param = payload?.chat_action_param
-  if (!param || typeof param !== 'object') return ''
-
-  return String(param?.pipelineTrace ?? param?.pipeline_trace ?? '').trim()
-}
-
-const extractPipelineConfidence = (result) => {
-  const payload = result?.data ?? result ?? null
-  if (!payload || typeof payload !== 'object') return undefined
-
-  const direct = Number(payload?.pipelineConfidence)
-  if (Number.isFinite(direct)) return direct
-
-  const param = payload?.chat_action_param
-  if (!param || typeof param !== 'object') return undefined
-  const nested = Number(param?.pipelineConfidence)
-  return Number.isFinite(nested) ? nested : undefined
-}
-
-const extractRagMatchInfo = (result) => {
-  const payload = result?.data ?? result ?? null
-  if (!payload || typeof payload !== 'object') {
-    return { usedCollection: '', usedChunkKeys: [], ragScores: [] }
-  }
-
-  const usedCollection = String(payload?.usedCollection ?? '').trim()
-  const usedChunks = Array.isArray(payload?.usedChunks) ? payload.usedChunks : []
-  const ragScores = Array.isArray(payload?.ragScores) ? payload.ragScores : []
-
-  return {
-    usedCollection,
-    usedChunkKeys: usedChunks.map((item) => String(item ?? '').trim()).filter(Boolean),
-    ragScores: ragScores.map((item) => ({
-      collection: String(item?.collection ?? '').trim(),
-      topScore: Number(item?.topScore ?? 0),
-      adjustedScore: Number(item?.adjustedScore ?? 0),
-      hitCount: Number(item?.hitCount ?? 0),
-      topChunkIds: Array.isArray(item?.topChunkIds)
-        ? item.topChunkIds.map((chunkId) => String(chunkId ?? '').trim()).filter(Boolean)
-        : [],
-      relaxed: Boolean(item?.relaxed)
-    }))
-  }
-}
-
-const extractMatchedRuleInfo = (result) => {
-  const payload = result?.data ?? result ?? null
-  if (!payload || typeof payload !== 'object') {
-    return {
-      source: '',
-      ruleKey: '',
-      ruleType: '',
-      reason: '',
-      confidence: undefined
-    }
-  }
-
-  const direct = payload?.matchedRule && typeof payload.matchedRule === 'object' ? payload.matchedRule : undefined
-  const nested =
-    payload?.chat_action_param?.matchedRule && typeof payload.chat_action_param.matchedRule === 'object'
-      ? payload.chat_action_param.matchedRule
-      : undefined
-  const row = direct ?? nested ?? {}
-
-  const confidence = Number(row?.confidence)
-  return {
-    source: String(row?.source ?? '').trim(),
-    ruleKey: String(row?.ruleKey ?? '').trim() || String(payload?.chat_action_param?.matchedRuleKey ?? '').trim(),
-    ruleType: String(row?.ruleType ?? '').trim(),
-    reason: String(row?.reason ?? '').trim(),
-    confidence: Number.isFinite(confidence) ? confidence : undefined
-  }
-}
-
-const resolveAssistantAssetUrl = (src) => {
-  const value = String(src ?? '').trim()
-  if (!value) return ''
-  if (/^(https?:)?\/\//i.test(value) || value.startsWith('data:')) return value
-  if (value.startsWith('/')) return AI_CHAT_SERVICE_URL ? `${AI_CHAT_SERVICE_URL}${value}` : value
-  return AI_CHAT_SERVICE_URL ? `${AI_CHAT_SERVICE_URL}/${value.replace(/^\/+/, '')}` : value
-}
-
-const extractAssistantImages = (result) => {
-  const payload = result?.data ?? result ?? null
-  const list = Array.isArray(payload?.images) ? payload.images : []
-
-  return list
-    .map((item, idx) => {
-      const src = resolveAssistantAssetUrl(item?.src ?? item?.url ?? item?.path)
-      if (!src) return null
-
-      return {
-        id: String(item?.id ?? `assistant-image-${idx + 1}`),
-        src,
-        alt: String(item?.alt ?? item?.title ?? 'assistant image').trim(),
-        title: String(item?.title ?? '').trim(),
-        caption: String(item?.caption ?? '').trim()
-      }
-    })
-    .filter(Boolean)
-    .slice(0, 1)
-}
-
-const extractSuggestedActions = (result) => {
-  if (!ENABLE_MESSAGE_SUGGESTED_ACTIONS) return []
-
-  const payload = result?.data ?? result ?? null
-  const list = payload?.chat_action_param?.suggested_actions
-  if (!Array.isArray(list)) return []
-
-  return list
-    .map((item, idx) => {
-      const id = String(item?.id ?? `suggested-${idx + 1}`)
-      const label = String(item?.label ?? '').trim()
-      const keyword = String(item?.keyword ?? '').trim()
-      const chatAction = String(item?.chat_action ?? '').trim()
-      const chatActionParam =
-        item?.chat_action_param && typeof item.chat_action_param === 'object' ? item.chat_action_param : undefined
-
-      if (!label || !chatAction) return null
-
-      return {
-        id,
-        label,
-        keyword,
-        chatAction,
-        chatActionParam
-      }
-    })
-    .filter(Boolean)
-    .slice(0, 3)
-}
-
-const PATH_PARAM_LABELS = {
-  robotId: '로봇 아이디'
-}
-
-const extractPathParams = (path) => {
-  const normalized = String(path ?? '')
-    .trim()
-    .replace(/^\/+/, '')
-  if (!normalized) return []
-
-  return normalized
-    .split('/')
-    .filter((segment) => segment.startsWith(':'))
-    .map((segment) => segment.slice(1))
-    .filter(Boolean)
-}
-
-const resolveParamLabel = (paramName) => {
-  const key = String(paramName ?? '').trim()
-  if (!key) return '필수 파라미터'
-  if (PATH_PARAM_LABELS[key]) return PATH_PARAM_LABELS[key]
-  return `${key} 값`
-}
-
-const fillPathTemplate = (pathTemplate, params) => {
-  const normalized = String(pathTemplate ?? '')
-    .trim()
-    .replace(/^\/+/, '')
-  if (!normalized) return ''
-
-  return normalized.replace(/:([a-zA-Z0-9_]+)/g, (_, name) => {
-    const value = String(params?.[name] ?? '').trim()
-    return encodeURIComponent(value)
-  })
-}
-
-const parseNavigationParamInput = (text, paramNames) => {
-  const trimmed = String(text ?? '').trim()
-  if (!trimmed) return null
-  if (!Array.isArray(paramNames) || paramNames.length === 0) return {}
-
-  if (paramNames.length === 1) {
-    return { [paramNames[0]]: trimmed }
-  }
-
-  const parsed = {}
-  const tokens = trimmed.split(/[\s,]+/).filter(Boolean)
-  for (const token of tokens) {
-    const [key, ...rest] = token.split('=')
-    if (!key || rest.length === 0) continue
-    parsed[key.trim()] = rest.join('=').trim()
-  }
-
-  const hasAll = paramNames.every((name) => String(parsed[name] ?? '').trim())
-  return hasAll ? parsed : null
-}
-
-const buildNavigationFallbackActions = (pathTemplate) => {
-  const normalized = String(pathTemplate ?? '')
-    .trim()
-    .replace(/^\/+/, '')
-
-  if (normalized.startsWith('robot/robots/:robotId/detail')) {
-    return [
-      {
-        id: 'fallback-robot-management',
-        label: '로봇 목록 화면으로 이동',
-        keyword: '로봇 상세 이동이 어려우면 목록에서 직접 선택',
-        chatAction: 'navigation',
-        chatActionParam: { path: 'robot/management', app: 'robot' }
-      }
-    ]
-  }
-
-  return []
 }
 
 const STORAGE_KEY = 'ai-assistant-trigger-y'
@@ -870,13 +515,14 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
   const location = useLocation()
   const session = useUserStore((state) => state.session)
   const selectedOrgs = useOrganizationStore((state) => state.selectedOrgs)
-  const currentEventFilters = useAiLogEventStore((state) => state.currentFilters)
 
   const isOpen = useAiAssistantStore((state) => state.isOpen)
   const openPanel = useAiAssistantStore((state) => state.openPanel)
   const closePanel = useAiAssistantStore((state) => state.closePanel)
   const messages = useAiAssistantStore((state) => state.messages)
   const appendMessage = useAiAssistantStore((state) => state.appendMessage)
+  const replaceMessages = useAiAssistantStore((state) => state.replaceMessages)
+  const prependMessages = useAiAssistantStore((state) => state.prependMessages)
   const updateMessageById = useAiAssistantStore((state) => state.updateMessageById)
   const resetMessages = useAiAssistantStore((state) => state.resetMessages)
 
@@ -887,14 +533,21 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
   const [typedStageLabel, setTypedStageLabel] = useState('')
   const [typedAssistantMessages, setTypedAssistantMessages] = useState({})
   const [pageContextOn, setPageContextOn] = useState(true)
-  const [pendingNavigation, setPendingNavigation] = useState(null)
   const [screenSuggestions, setScreenSuggestions] = useState([])
   const [chatInputPlaceholder, setChatInputPlaceholder] = useState('')
   const [isAssistantTyping, setIsAssistantTyping] = useState(false)
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false)
 
   const messageListRef = useRef(null)
   const textareaRef = useRef(null)
   const abortRef = useRef(null)
+  const activeRequestIdRef = useRef(0)
+  const historyPageRef = useRef(0)
+  const historyHasMoreRef = useRef(false)
+  const historyLoadingRef = useRef(false)
+  const historyRequestIdRef = useRef(0)
+  const pendingScrollRestoreRef = useRef(null)
+  const shouldScrollToBottomRef = useRef(true)
   const sendingStartedAtRef = useRef(null)
   const assistantTypingTimerRef = useRef(null)
   const assistantMessageContentRef = useRef(
@@ -912,10 +565,127 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
   const stageTypingIndexRef = useRef(0)
   const stageHoldUntilRef = useRef(0)
   const submitInFlightRef = useRef(false)
-  // 멀티턴: 직전에 이벤트 표에 적용된 필터. 후속 발화("심각도 높음만") 병합 기준.
   const lastFiltersRef = useRef(null)
 
   const routeContext = useMemo(() => buildRouteContext(location), [location])
+  const routeMetadataCacheRef = useRef(new Map())
+  const [routeAppKey, setRouteAppKey] = useState('common')
+  const [routeScreenKey, setRouteScreenKey] = useState('common')
+
+  useEffect(() => {
+    const rawPath = String(routeContext?.pathname ?? '').trim()
+    const normalizedPath = rawPath.replace(/^\/+|\/+$/g, '')
+    const pathParts = normalizedPath.split('/').filter(Boolean)
+
+    setRouteAppKey(pathParts[0] || 'common')
+    setRouteScreenKey(normalizedPath || 'common')
+  }, [routeContext.pathname])
+
+  const markHistoryMessagesAsDisplayed = useCallback((historyMessages) => {
+    const assistantMessages = historyMessages.filter((message) => message?.role === 'assistant' && message?.id)
+    if (assistantMessages.length === 0) return
+
+    setTypedAssistantMessages((current) => {
+      const next = { ...current }
+      for (const message of assistantMessages) {
+        const id = String(message.id)
+        const content = String(message.content ?? '')
+        next[id] = content
+        assistantMessageContentRef.current.set(id, content)
+      }
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    const author = String(session?.email ?? '').trim()
+    const historyRequestId = historyRequestIdRef.current + 1
+    historyRequestIdRef.current = historyRequestId
+    let cancelled = false
+
+    activeRequestIdRef.current += 1
+    abortRef.current?.abort()
+    abortRef.current = null
+    historyPageRef.current = 0
+    historyHasMoreRef.current = false
+    historyLoadingRef.current = Boolean(author)
+    pendingScrollRestoreRef.current = null
+    shouldScrollToBottomRef.current = true
+    resetMessages()
+    setTypedAssistantMessages({})
+    setIsHistoryLoading(Boolean(author))
+
+    if (!author) return undefined
+
+    const loadInitialHistory = async () => {
+      try {
+        const response = await getChatHistory({ page: 1, pageSize: 20, author })
+        if (cancelled || historyRequestIdRef.current !== historyRequestId) return
+
+        const historyMessages = buildMessagesFromHistory(response?.data?.items)
+        const pagination = response?.data?.pagination ?? {}
+        markHistoryMessagesAsDisplayed(historyMessages)
+        replaceMessages(historyMessages)
+        historyPageRef.current = Number(pagination.page ?? 1)
+        historyHasMoreRef.current = Boolean(pagination.hasNext)
+      } catch {
+        if (!cancelled) {
+          replaceMessages([])
+        }
+      } finally {
+        if (!cancelled) {
+          historyLoadingRef.current = false
+          setIsHistoryLoading(false)
+        }
+      }
+    }
+
+    loadInitialHistory()
+
+    return () => {
+      cancelled = true
+    }
+  }, [session?.email, markHistoryMessagesAsDisplayed, replaceMessages, resetMessages])
+
+  const loadOlderHistory = useCallback(async () => {
+    const author = String(session?.email ?? '').trim()
+    const messageList = messageListRef.current
+    if (!author || !messageList || historyLoadingRef.current || !historyHasMoreRef.current) return
+
+    historyLoadingRef.current = true
+    const historyRequestId = historyRequestIdRef.current + 1
+    historyRequestIdRef.current = historyRequestId
+    setIsHistoryLoading(true)
+    pendingScrollRestoreRef.current = {
+      scrollHeight: messageList.scrollHeight,
+      scrollTop: messageList.scrollTop
+    }
+
+    try {
+      const response = await getChatHistory({ page: historyPageRef.current + 1, pageSize: 20, author })
+      if (historyRequestIdRef.current !== historyRequestId) return
+      const historyMessages = buildMessagesFromHistory(response?.data?.items)
+      const pagination = response?.data?.pagination ?? {}
+      markHistoryMessagesAsDisplayed(historyMessages)
+      prependMessages(historyMessages)
+      historyPageRef.current = Number(pagination.page ?? historyPageRef.current + 1)
+      historyHasMoreRef.current = Boolean(pagination.hasNext)
+    } catch {
+      pendingScrollRestoreRef.current = null
+    } finally {
+      historyLoadingRef.current = false
+      setIsHistoryLoading(false)
+    }
+  }, [session?.email, markHistoryMessagesAsDisplayed, prependMessages])
+
+  const handleMessageListScroll = useCallback(
+    (event) => {
+      if (event.currentTarget.scrollTop <= 48) {
+        loadOlderHistory()
+      }
+    },
+    [loadOlderHistory]
+  )
 
   const quickCommands = useMemo(
     () => pickRandomItems(screenSuggestions, Math.min(3, screenSuggestions.length)),
@@ -966,10 +736,34 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
   const userName = session?.email ? session.email.split('@')[0].replace(/[._-]/g, ' ') : null
 
   useEffect(() => {
-    if (messageListRef.current) {
-      messageListRef.current.scrollTop = messageListRef.current.scrollHeight
+    const messageList = messageListRef.current
+    if (!messageList || !isOpen) return
+
+    const pendingScrollRestore = pendingScrollRestoreRef.current
+    if (pendingScrollRestore) {
+      pendingScrollRestoreRef.current = null
+      requestAnimationFrame(() => {
+        messageList.scrollTop =
+          messageList.scrollHeight - pendingScrollRestore.scrollHeight + pendingScrollRestore.scrollTop
+      })
+      return
     }
-  }, [messages, isSending, isOpen])
+
+    if (shouldScrollToBottomRef.current) {
+      shouldScrollToBottomRef.current = false
+      requestAnimationFrame(() => {
+        messageList.scrollTop = messageList.scrollHeight
+      })
+    }
+  }, [messages, isOpen])
+
+  useEffect(() => {
+    if (!isOpen || !hasConversation) return
+    const messageList = messageListRef.current
+    if (messageList) {
+      messageList.scrollTop = messageList.scrollHeight
+    }
+  }, [isOpen, hasConversation])
 
   useEffect(() => {
     if (isOpen) textareaRef.current?.focus()
@@ -1096,9 +890,10 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
     }))
     setIsAssistantTyping(true)
 
+    const { intervalMs, charsPerTick } = getAssistantTypingPace(fullText)
     let index = 0
     assistantTypingTimerRef.current = setInterval(() => {
-      index += 1
+      index += charsPerTick
       const next = fullText.slice(0, index)
       setTypedAssistantMessages((prev) => ({
         ...prev,
@@ -1112,7 +907,7 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
         }
         setIsAssistantTyping(false)
       }
-    }, ASSISTANT_TYPEWRITER_INTERVAL_MS)
+    }, intervalMs)
 
     return () => {
       if (assistantTypingTimerRef.current) {
@@ -1137,11 +932,16 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
     let cancelled = false
 
     const loadSuggestions = async () => {
+      const cacheKey = String(routeContext.pathname ?? '').trim()
+      const cached = routeMetadataCacheRef.current.get(cacheKey)
+      if (cached) {
+        setScreenSuggestions(cached.examples)
+        setChatInputPlaceholder(cached.inputHint || '')
+        return
+      }
+
       try {
-        const [settingsResponse, guidanceResponse] = await Promise.all([
-          getChatSettings(),
-          getGuidanceList(),
-        ])
+        const [settingsResponse, guidanceResponse] = await Promise.all([getChatSettings(), getGuidanceList()])
         if (cancelled) return
 
         const settingsGuidance = Array.isArray(settingsResponse?.data?.management?.guidance)
@@ -1151,26 +951,19 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
           ? guidanceResponse.data.items
           : settingsGuidance
 
-        console.info('[AI_CHAT][COMMON_HINT_SOURCE]', {
-          pathname: routeContext.pathname,
-          settingsGuidanceCount: settingsGuidance.length,
-          guidanceCount: guidanceItems.length,
-          guidanceSample: guidanceItems.slice(0, 5),
-        })
-
         const examples = findGuidanceExamplesForPath(guidanceItems, routeContext.pathname)
         const inputHint = findInputHintForPath(guidanceItems, routeContext.pathname)
         const commonHint = guidanceItems.find(
-          (item) => String(item?.appKey ?? '').trim().toLowerCase() === 'common' && String(item?.screenKey ?? item?.key ?? '').trim().toLowerCase() === 'common',
+          (item) =>
+            String(item?.appKey ?? '')
+              .trim()
+              .toLowerCase() === 'common' &&
+            String(item?.screenKey ?? item?.key ?? '')
+              .trim()
+              .toLowerCase() === 'common'
         )
 
-        console.info('[AI_CHAT][COMMON_HINT_RESULT]', {
-          pathname: routeContext.pathname,
-          examplesCount: examples.length,
-          inputHint,
-          selectedCommonHint: commonHint,
-        })
-
+        routeMetadataCacheRef.current.set(cacheKey, { examples, inputHint })
         setScreenSuggestions(examples)
         setChatInputPlaceholder(inputHint || '')
       } catch {
@@ -1198,570 +991,139 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
 
   const handleBackToInitial = () => {
     if (isSending) return
+    historyRequestIdRef.current += 1
+    historyHasMoreRef.current = false
+    historyLoadingRef.current = false
+    pendingScrollRestoreRef.current = null
+    setIsHistoryLoading(false)
     resetMessages()
-    setPendingNavigation(null)
     setDraft('')
     setTimeout(() => {
       textareaRef.current?.focus()
     }, 0)
   }
 
-  useEffect(() => {
-    const onTaskflowClarify = (event) => {
-      const custom = event
-      const message = String(custom?.detail?.message ?? '').trim()
-      const replaceMessageId = String(custom?.detail?.assistantMessageId ?? '').trim()
-      if (!message) return
-
-      if (replaceMessageId) {
-        updateMessageById(replaceMessageId, {
-          content: message,
-          createdAt: new Date().toISOString(),
-          context: routeContext
-        })
-        return
-      }
-
-      appendMessage({
-        id: buildMessageId(),
-        role: 'assistant',
-        content: message,
-        createdAt: new Date().toISOString(),
-        context: routeContext
-      })
-    }
-
-    window.addEventListener(AI_TASKFLOW_CANVAS_CLARIFY_EVENT, onTaskflowClarify)
-    return () => {
-      window.removeEventListener(AI_TASKFLOW_CANVAS_CLARIFY_EVENT, onTaskflowClarify)
-    }
-  }, [appendMessage, updateMessageById, routeContext])
-
-  useEffect(() => {
-    const onTaskflowCommandResult = (event) => {
-      const detail = event?.detail
-      const message = String(detail?.message ?? '').trim()
-      if (!message) return
-
-      if (detail?.kind === 'draft') {
-        const assistantMessageId = String(detail?.assistantMessageId ?? '').trim()
-        if (!assistantMessageId) return
-        updateMessageById(assistantMessageId, {
-          content: message,
-          createdAt: new Date().toISOString(),
-          context: routeContext
-        })
-        return
-      }
-
-      if (detail?.kind !== 'command') return
-
-      appendMessage({
-        id: buildMessageId(),
-        role: 'assistant',
-        content: message,
-        createdAt: new Date().toISOString(),
-        context: routeContext
-      })
-
-      const historyContext = detail?.historyContext
-      if (historyContext && typeof historyContext === 'object') {
-        void saveLocalChatHistory({
-          ...historyContext,
-          assistantText: message,
-          chatAction: 'taskflow-command',
-          debugMeta: {
-            source: 'local-command',
-            commandType: String(detail?.commandType ?? '').trim() || undefined,
-            success: Boolean(detail?.success),
-            didApply: Boolean(detail?.didApply)
-          }
-        }).catch((error) => {
-          console.warn('[AI_CHAT][LOCAL_COMMAND_HISTORY_SAVE_FAILED]', error)
-        })
-      }
-    }
-
-    window.addEventListener(AI_TASKFLOW_CANVAS_RESULT_EVENT, onTaskflowCommandResult)
-    return () => {
-      window.removeEventListener(AI_TASKFLOW_CANVAS_RESULT_EVENT, onTaskflowCommandResult)
-    }
-  }, [appendMessage, updateMessageById, routeContext])
-
-  // chat_action 분기 처리.
-  const handleChatAction = useCallback(
-    (chatAction, param, assistantMessage, assistantMessageId) => {
-      const taskflowDraft = extractTaskflowDraftParam(param)
-      const taskflowCommand = extractTaskflowCanvasCommandParam(param)
-      console.log('[AI_TASKFLOW][CHAT_ACTION]', {
-        chatAction,
-        hasParam: Boolean(param),
-        hasTaskflowDraft: Boolean(taskflowDraft),
-        hasTaskflowCommand: Boolean(taskflowCommand),
-        isTmsCanvas: isTmsCanvasPath(location.pathname),
-        paramKeys: param && typeof param === 'object' ? Object.keys(param) : [],
-        rawParamPreview: param && typeof param === 'object' ? JSON.stringify(param) : param,
-        taskflowDraftPreview:
-          taskflowDraft && typeof taskflowDraft === 'object' ? JSON.stringify(taskflowDraft) : taskflowDraft
-      })
-      const finalMessage = String(assistantMessage ?? '').trim()
-      const finalMessageId = String(assistantMessageId ?? '').trim()
-
-      const emitFinalMessage = (message, messageId) => {
-        if (!message) return
-        if (messageId) {
-          updateMessageById(messageId, {
-            content: message,
-            createdAt: new Date().toISOString(),
-            context: routeContext
-          })
-          return
-        }
-        appendMessage({
-          id: buildMessageId(),
-          role: 'assistant',
-          content: message,
-          createdAt: new Date().toISOString(),
-          context: routeContext
-        })
-      }
-
-      if (taskflowCommand && isTmsCanvasPath(location.pathname)) {
-        window.dispatchEvent(
-          new CustomEvent(AI_TASKFLOW_CANVAS_COMMAND_EVENT, {
-            detail: {
-              command: taskflowCommand,
-              chatAction,
-              rawParam: param,
-              message: finalMessage,
-              assistantMessageId: finalMessageId
-            }
-          })
-        )
-      }
-      if (taskflowDraft && isTmsCanvasPath(location.pathname)) {
-        let handled = false
-        let appliedSuccessfully = false
-        try {
-          const applyDraft = window.__AI_TASKFLOW_CANVAS_APPLY__
-          if (typeof applyDraft === 'function') {
-            console.log('[AI_TASKFLOW][DIRECT_APPLY]', {
-              chatAction,
-              pathname: location.pathname,
-              draftKeys: Object.keys(taskflowDraft || {}),
-              draftPayload: JSON.stringify({
-                ...taskflowDraft,
-                message: finalMessage
-              })
-            })
-            applyDraft({
-              ...taskflowDraft,
-              message: finalMessage
-            })
-            handled = true
-            appliedSuccessfully = true
-          }
-        } catch (error) {
-          console.warn('[AI_TASKFLOW][SETTER_DISPATCH_FAIL]', error)
-        }
-
-        if (!handled) {
-          try {
-            window.dispatchEvent(
-              new CustomEvent(AI_TASKFLOW_CANVAS_DRAFT_EVENT, {
-                detail: {
-                  draft: taskflowDraft,
-                  chatAction,
-                  rawParam: param,
-                  message: finalMessage,
-                  assistantMessageId: finalMessageId
-                }
-              })
-            )
-            appliedSuccessfully = true
-          } catch (error) {
-            console.warn('[AI_TASKFLOW][DRAFT_DISPATCH_FAIL]', error)
-          }
-        }
-
-        console.log('[AI_TASKFLOW][DISPATCH_DRAFT]', {
-          chatAction,
-          pathname: location.pathname,
-          draftKeys: Object.keys(taskflowDraft || {}),
-          handledBySetter: handled,
-          appliedSuccessfully,
-          draftPayload: JSON.stringify({
-            ...taskflowDraft,
-            message: finalMessage
-          })
-        })
-
-        if (!appliedSuccessfully) {
-          const failureReason = '캔버스 적용 중 오류가 발생했습니다.'
-          const failureMessage = finalMessage
-            ? `${finalMessage}\n\n실패 이유: ${failureReason}`
-            : `실패 이유: ${failureReason}`
-          emitFinalMessage(failureMessage, finalMessageId)
-        }
-        return
-      }
-
-      emitFinalMessage(finalMessage, finalMessageId)
-
-      switch (chatAction) {
-        // 화면 이동
-        case 'navigation': {
-          const path = String(param?.path ?? '')
-            .trim()
-            .replace(/^\/+/, '')
-          if (!path) break
-          const pathParams = extractPathParams(path)
-
-          if (pathParams.length > 0) {
-            const primaryParamLabel = resolveParamLabel(pathParams[0])
-            const fallbackActions = buildNavigationFallbackActions(path)
-
-            setPendingNavigation({
-              pathTemplate: path,
-              app: String(param?.app ?? '').trim() || undefined,
-              paramNames: pathParams,
-              screenName: String(param?.screenName ?? '').trim() || undefined,
-              fallbackActions
-            })
-
-            appendMessage({
-              id: buildMessageId(),
-              role: 'assistant',
-              content: `${primaryParamLabel}를 알려주세요.`,
-              suggestedActions: fallbackActions,
-              createdAt: new Date().toISOString(),
-              context: routeContext
-            })
-            break
-          }
-
-          setPendingNavigation(null)
-          const isCrossApp = getAppPrefix(path) !== getAppPrefix(location.pathname)
-          if (isCrossApp) window.location.href = '/' + path
-          else navigate(path)
-          break
-        }
-
-        // 데이터 조회: 이벤트 표에 필터 적용
-        case 'ailog/event/filter': {
-          const filters = param?.filters
-          if (!filters) break
-          const target = '/robot/ailog/event'
-          if (location.pathname !== target) navigate(target)
-          // 이벤트 탭(useAiLogData)이 소비.
-          useAiLogEventStore.getState().requestFilters(filters)
-          // 멀티턴: 다음 발화에서 이어받을 수 있게 마지막 필터 보관.
-          lastFiltersRef.current = filters
-          break
-        }
-
-        // 정보 문의 / 액션 실행 결과: 답변 텍스트는 이미 표시됨 (추가 UI 동작 없음)
-        case 'ailog/event':
-        case 'ailog/event/action':
-        default:
-          break
-      }
-    },
-    [navigate, location.pathname, appendMessage, routeContext]
+  const requestAssistantReply = useCallback(
+    async ({ content, currentPath, currentApp, conversationId, author, groupId, siteId, context, signal }) =>
+      postSiteAssistantChat({
+        message: content,
+        currentPath: currentPath || undefined,
+        currentApp: currentApp || undefined,
+        conversationId,
+        author,
+        groupId,
+        siteId,
+        context,
+        signal
+      }),
+    []
   )
 
-  const handleSubmit = async (text) => {
-    const content = (text ?? draft).trim()
-    if (!content || isSending || submitInFlightRef.current) return
-    submitInFlightRef.current = true
-
-    const latestAssistantMessage = [...(Array.isArray(messages) ? messages : [])]
-      .reverse()
-      .find((item) => item?.role === 'assistant' && String(item?.content ?? '').trim())?.content
-    const scopedLastAssistantMessage = isTmsCanvasPath(routeContext.pathname)
-      ? String(latestAssistantMessage ?? '').trim() || undefined
-      : undefined
-
-    const createdAt = new Date().toISOString()
-    const now = new Date()
-    const conversationId = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
-    const context = { ...routeContext, sentAt: createdAt }
-
-    appendMessage({ id: buildMessageId(), role: 'user', content, createdAt, context })
-
-    let localCommandRule = null
-    if (commandAdapter?.isActive?.(routeContext.pathname)) {
-      try {
-        localCommandRule = await commandAdapter.match(content, routeContext.pathname)
-      } catch (error) {
-        console.warn('[AI_CHAT][LOCAL_COMMAND_MATCH_FAILED]', error)
-      }
-    }
-    if (localCommandRule) {
-      window.dispatchEvent(
-        new CustomEvent(AI_TASKFLOW_CANVAS_COMMAND_EVENT, {
-          detail: {
-            command: localCommandRule.command,
-            replyText: localCommandRule.replyText,
-            historyContext: {
-              author: session?.email || undefined,
-              conversationId,
-              currentApp: routeContext.appPrefix || undefined,
-              currentPath: routeContext.pathname,
-              userMessage: content
-            }
-          }
-        })
-      )
-      setDraft('')
-      submitInFlightRef.current = false
-      return
-    }
-
-    if (pendingNavigation) {
-      const parsedParams = parseNavigationParamInput(content, pendingNavigation.paramNames)
-
-      if (!parsedParams) {
-        const primaryParamLabel = resolveParamLabel(pendingNavigation.paramNames?.[0])
-        appendMessage({
-          id: buildMessageId(),
-          role: 'assistant',
-          content: `${primaryParamLabel}를 다시 알려주세요.`,
-          suggestedActions: pendingNavigation.fallbackActions ?? [],
-          createdAt: new Date().toISOString(),
-          context
-        })
-        submitInFlightRef.current = false
-        return
-      }
-
-      const resolvedPath = fillPathTemplate(pendingNavigation.pathTemplate, parsedParams)
-      if (!resolvedPath || extractPathParams(resolvedPath).length > 0) {
-        appendMessage({
-          id: buildMessageId(),
-          role: 'assistant',
-          content: '상세 화면 이동이 어려워서 대체 화면을 제안드릴게요.',
-          suggestedActions: pendingNavigation.fallbackActions ?? [],
-          createdAt: new Date().toISOString(),
-          context
-        })
-        submitInFlightRef.current = false
-        return
-      }
-
+  const showAssistantReply = useCallback(
+    (assistantText, context) => {
+      shouldScrollToBottomRef.current = true
       appendMessage({
         id: buildMessageId(),
         role: 'assistant',
-        content: '네 상세화면으로 이동하겠습니다.',
-        suggestedActions: pendingNavigation.fallbackActions ?? [],
+        content: assistantText,
         createdAt: new Date().toISOString(),
         context
       })
+    },
+    [appendMessage]
+  )
 
-      setPendingNavigation(null)
-      setDraft('')
+  const handleSubmit = async (text) => {
+    // handle message
+    const content = String(text ?? draft ?? '').trim()
+    if (!content || isSending || submitInFlightRef.current) return
 
-      const isCrossApp = getAppPrefix(resolvedPath) !== getAppPrefix(location.pathname)
-      if (isCrossApp) window.location.href = '/' + resolvedPath
-      else navigate(resolvedPath)
-      submitInFlightRef.current = false
-      return
-    }
+    submitInFlightRef.current = true
+    const requestId = activeRequestIdRef.current + 1
+    activeRequestIdRef.current = requestId
+    const now = new Date()
+    const createdAt = now.toISOString()
 
-    setDraft('')
-    sendingStartedAtRef.current = Date.now()
-    setSendingElapsedSec(0)
-    setIsSending(true)
-    setSendingStage(SENDING_STAGE.NODE_WORKING)
-    sendingStagePlanRef.current = [SENDING_STAGE.NODE_WORKING]
-    stageQueueRef.current = []
-    displayedStageRef.current = SENDING_STAGE.NODE_WORKING
-    if (stageAdvanceTimerRef.current) {
-      clearTimeout(stageAdvanceTimerRef.current)
-      stageAdvanceTimerRef.current = null
-    }
+    const conversationId = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
+    const context = { ...routeContext, sentAt: createdAt }
 
+    shouldScrollToBottomRef.current = true
+    appendMessage({ id: buildMessageId(), role: 'user', content, createdAt, context })
     setDraft('')
     sendingStartedAtRef.current = Date.now()
     setSendingElapsedSec(0)
     setIsSending(true)
     setSendingStage(SENDING_STAGE.REQUESTING)
-    sendingStagePlanRef.current = buildSendingStagePlan(content)
-    stageQueueRef.current = buildSendingStagePlan(content).slice(1)
+    sendingStagePlanRef.current = [SENDING_STAGE.REQUESTING, SENDING_STAGE.SCREEN_CHECK, SENDING_STAGE.ASSEMBLING]
+    stageQueueRef.current = [SENDING_STAGE.SCREEN_CHECK, SENDING_STAGE.ASSEMBLING]
     displayedStageRef.current = SENDING_STAGE.IDLE
-    if (stageAdvanceTimerRef.current) {
-      clearTimeout(stageAdvanceTimerRef.current)
-      stageAdvanceTimerRef.current = null
-    }
-
     const controller = new AbortController()
     abortRef.current = controller
 
+    // rule check
     try {
-      const flowContext = buildTaskflowFlowContext(routeContext.pathname)
-      const taskflowContext = buildTaskflowRequestContext(flowContext)
-      console.log('[AI_TASKFLOW][1단계:컨텍스트_구성]', {
-        pathname: routeContext.pathname,
-        taskFlowId: flowContext?.taskFlowId,
-        nodeCount: Number(flowContext?.nodeCount ?? 0),
-        edgeCount: Number(flowContext?.edgeCount ?? 0),
-        taskListCount: Array.isArray(flowContext?.taskList) ? flowContext.taskList.length : 0,
-        taskContentsCount: Array.isArray(flowContext?.taskContents) ? flowContext.taskContents.length : 0,
-        currentNodeListCount: Array.isArray(flowContext?.nodes) ? flowContext.nodes.length : 0,
-        flowDefinitionNodeCount: Array.isArray(flowContext?.flowDefinition?.nodes)
-          ? flowContext.flowDefinition.nodes.length
-          : 0,
-        flowDefinitionEdgeCount: Array.isArray(flowContext?.flowDefinition?.edges)
-          ? flowContext.flowDefinition.edges.length
-          : 0,
-        taskList: Array.isArray(flowContext?.taskList) ? flowContext.taskList : [],
-        taskContents: Array.isArray(flowContext?.taskContents) ? flowContext.taskContents : [],
-        currentNodeList: Array.isArray(flowContext?.nodes) ? flowContext.nodes : []
-      })
+      setSendingStage(SENDING_STAGE.SCREEN_CHECK)
 
-      console.log('[AI_TASKFLOW][2단계:요청페이로드_검증]', {
-        hasTaskflowContext: Boolean(taskflowContext),
-        hasFlowDefinition: false,
-        hasFullFlow: Boolean(taskflowContext?.fullFlow),
-        taskflowNodeCount: Array.isArray(taskflowContext?.fullFlow?.nodes) ? taskflowContext.fullFlow.nodes.length : 0,
-        taskflowEdgeCount: Array.isArray(taskflowContext?.fullFlow?.edges) ? taskflowContext.fullFlow.edges.length : 0,
-        taskflowFlowDefinition: undefined
-      })
+      // local rule check
 
-      console.log('[AI_CHAT][RULE_MATCH][요청]', {
-        message: content,
-        currentPath: pageContextOn ? routeContext.pathname : undefined,
-        currentApp: pageContextOn ? routeContext.appPrefix || undefined : undefined
+      // rule check
+      const rule = await ruleCheck(routeAppKey, routeScreenKey, content, navigate, {
+        groupId: selectedOrgs?.[0],
+        siteId: selectedOrgs?.[1],
+        userId: session?.userId,
+        description: 'AI command from assistant panel',
+        screenKey: routeScreenKey,
+        signal: controller.signal
       })
+      if (activeRequestIdRef.current !== requestId || controller.signal.aborted) return
+      console.log(`rule`, rule)
+      if (rule?.ok && rule.replyText) {
+        setSendingStage(SENDING_STAGE.COMPLETED)
+        await sleep(180)
+        if (activeRequestIdRef.current !== requestId || controller.signal.aborted) return
+        showAssistantReply(rule.replyText, context)
+        void saveLocalChatHistory({
+          author: session?.email || undefined,
+          conversationId,
+          currentApp: routeContext.appPrefix || undefined,
+          currentPath: routeContext.pathname || undefined,
+          chatAction: rule.ruleKey || 'local-rule',
+          userMessage: content,
+          assistantText: rule.replyText
+        }).catch(() => undefined)
+        return
+      }
 
-      const result = await postSiteAssistantChat({
-        message: content,
+      // send message to backend
+      setSendingStage(SENDING_STAGE.REQUESTING)
+      const result = await requestAssistantReply({
+        content,
         currentPath: pageContextOn ? routeContext.pathname : undefined,
         currentApp: pageContextOn ? routeContext.appPrefix || undefined : undefined,
         conversationId,
-        // 작성자(대화기록 저장용)
         author: session?.email || undefined,
-        // data/action 인텐트에서 robot/AI API 호출에 필요한 자격증명·엔드포인트
-        accessToken: session?.accessToken,
-        apiBaseUrl: import.meta.env.VITE_API_BASE_URL,
-        eventAnalyzerUrl: import.meta.env.VITE_EVENT_ANALYZER_URL,
-        configManagerUrl: import.meta.env.VITE_CONFIG_MANAGER_URL,
-        previousFilters: lastFiltersRef.current || undefined,
-        lastAssistantMessage: scopedLastAssistantMessage,
-        context: {
-          groupId: selectedOrgs?.[0],
-          siteId: selectedOrgs?.[1],
-          // 이벤트 화면의 현재 필터(기간 포함). 백엔드가 기간 미지정 질의 처리 시 참고할 수 있다.
-          eventFilters:
-            currentEventFilters &&
-            typeof currentEventFilters === 'object' &&
-            currentEventFilters.startDate &&
-            currentEventFilters.endDate
-              ? currentEventFilters
-              : undefined,
-          taskflow: taskflowContext
-        },
+        groupId: selectedOrgs?.[0],
+        siteId: selectedOrgs?.[1],
+        context: { ...routeContext },
         signal: controller.signal
       })
+      if (activeRequestIdRef.current !== requestId || controller.signal.aborted) return
 
-      console.log(`result`, result)
-      const data = result?.data ?? {}
-      const chat_action = data.chat_action
-      const chat_action_param = data.chat_action_param
-      const pipelineTrace = extractPipelineTrace(result)
-      const pipelineConfidence = extractPipelineConfidence(result)
-      const ragMatchInfo = extractRagMatchInfo(result)
-      const matchedRuleInfo = extractMatchedRuleInfo(result)
-      if (pipelineConfidence !== undefined) {
-        console.log(`[AI_CHAT][PIPELINE_CONFIDENCE] ${pipelineConfidence.toFixed(2)}`)
-      }
-      if (pipelineTrace) {
-        console.log(`[AI_CHAT][PIPELINE_TRACE] ${pipelineTrace}`)
-      }
-      console.log('[AI_CHAT][RAG_MATCH]', {
-        usedCollection: ragMatchInfo.usedCollection || '-',
-        usedChunkKeys: ragMatchInfo.usedChunkKeys
-      })
-      console.log('[AI_CHAT][RAG_SCORES]', ragMatchInfo.ragScores)
-      if (matchedRuleInfo.ruleKey || matchedRuleInfo.reason) {
-        console.log('[AI_CHAT][MATCHED_RULE]', matchedRuleInfo)
-      }
+      const assistantText = extractAssistantText(result)
 
-      const ruleCanvasDraft = extractTaskflowDraftParam(chat_action_param)
-
-      console.log('[AI_CHAT][RULE_MATCH][응답]', {
-        matched: Boolean(matchedRuleInfo.ruleKey || matchedRuleInfo.reason),
-        source: matchedRuleInfo.source || '-',
-        ruleKey: matchedRuleInfo.ruleKey || '-',
-        ruleType: matchedRuleInfo.ruleType || '-',
-        confidence: matchedRuleInfo.confidence,
-        reason: matchedRuleInfo.reason || '-',
-        chatAction: chat_action || '-',
-        hasCanvasDraft: Boolean(ruleCanvasDraft),
-        canvasDraft: ruleCanvasDraft,
-        pipelineTrace: pipelineTrace || '-'
-      })
-
-      if (!matchedRuleInfo.ruleKey && !matchedRuleInfo.reason) {
-        console.warn('[AI_CHAT][RULE_MATCH][미매칭] 룰 매칭 없이 LLM 파이프라인으로 처리됨', {
-          message: content,
-          currentPath: pageContextOn ? routeContext.pathname : undefined,
-          pipelineTrace: pipelineTrace || '-'
-        })
-      }
-      const navigationPath = String(chat_action_param?.path ?? '')
-        .trim()
-        .replace(/^\/+/, '')
-      const hasNavigationParams = chat_action === 'navigation' && extractPathParams(navigationPath).length > 0
-      const suggestedActions = chat_action === 'ailog/event/filter' ? [] : extractSuggestedActions(result)
-      const images = extractAssistantImages(result)
-
-      setSendingStage(SENDING_STAGE.COMPLETED)
-      await sleep(280)
-
-      if (!hasNavigationParams) {
-        const assistantMessageId = buildMessageId()
-        appendMessage({
-          id: assistantMessageId,
-          role: 'assistant',
-          content: extractAssistantText(result),
-          pipelineTrace,
-          pipelineConfidence,
-          matchedRule: matchedRuleInfo,
-          images,
-          suggestedActions,
-          createdAt: new Date().toISOString(),
-          context
-        })
-
-        handleChatAction(chat_action, chat_action_param, extractAssistantText(result), assistantMessageId)
-      } else {
-        handleChatAction(chat_action, chat_action_param, extractAssistantText(result))
-      }
+      setSendingStage(SENDING_STAGE.ASSEMBLING)
+      await sleep(220)
+      if (activeRequestIdRef.current !== requestId || controller.signal.aborted) return
+      showAssistantReply(assistantText, context)
     } catch (error) {
-      // 사용자가 "중지" 를 눌러 취소한 경우: 에러 메시지 대신 안내만.
-      if (error?.name === 'AbortError') {
+      if (activeRequestIdRef.current === requestId && error?.name !== 'AbortError') {
         setSendingStage(SENDING_STAGE.COMPLETED)
         await sleep(180)
-        appendMessage({
-          id: buildMessageId(),
-          role: 'assistant',
-          content: '답변 생성을 중지했습니다.',
-          createdAt: new Date().toISOString(),
-          context
-        })
-      } else {
-        setSendingStage(SENDING_STAGE.COMPLETED)
-        await sleep(180)
-        appendMessage({
-          id: buildMessageId(),
-          role: 'assistant',
-          content: error?.message || '답변을 가져오지 못했습니다.',
-          createdAt: new Date().toISOString(),
-          context
-        })
+        if (activeRequestIdRef.current !== requestId) return
+        showAssistantReply(error?.message || '답변을 가져오지 못했습니다.', context)
       }
     } finally {
+      if (activeRequestIdRef.current !== requestId) return
       abortRef.current = null
       setIsSending(false)
       setSendingStage(SENDING_STAGE.IDLE)
@@ -1777,7 +1139,38 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
   // 답변 생성 중지
   const handleStop = useCallback(() => {
     if (isSending) {
+      activeRequestIdRef.current += 1
       abortRef.current?.abort()
+      abortRef.current = null
+      if (stageTypingTimerRef.current) clearInterval(stageTypingTimerRef.current)
+      if (stageAdvanceTimerRef.current) clearTimeout(stageAdvanceTimerRef.current)
+      stageTypingTimerRef.current = null
+      stageAdvanceTimerRef.current = null
+      stageQueueRef.current = []
+      displayedStageRef.current = SENDING_STAGE.IDLE
+      sendingStartedAtRef.current = null
+      submitInFlightRef.current = false
+      setTypedStageLabel('')
+      setSendingElapsedSec(0)
+      setSendingStage(SENDING_STAGE.IDLE)
+      setIsSending(false)
+
+      const stoppedMessageId = buildMessageId()
+      const stoppedMessage = '답변 생성이 중지되었습니다.'
+      assistantMessageContentRef.current.set(stoppedMessageId, stoppedMessage)
+      setTypedAssistantMessages((prev) => ({
+        ...prev,
+        [stoppedMessageId]: stoppedMessage
+      }))
+      shouldScrollToBottomRef.current = true
+      appendMessage({
+        id: stoppedMessageId,
+        role: 'assistant',
+        content: stoppedMessage,
+        createdAt: new Date().toISOString(),
+        context: { ...routeContext }
+      })
+      textareaRef.current?.focus()
       return
     }
 
@@ -1799,7 +1192,7 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
       return next
     })
     setIsAssistantTyping(false)
-  }, [isSending, messages])
+  }, [appendMessage, isSending, messages, routeContext])
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -1889,73 +1282,101 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
               ) : null}
             </>
           ) : (
-            <StyledAiAssistantMessageList ref={messageListRef}>
-              {messages.map((m) => (
-                <StyledAiAssistantMessage key={m.id} $role={m.role}>
-                  <StyledAiAssistantMessageMeta>
-                    {m.role === 'user' ? '나' : 'AI Assistant'}
-                  </StyledAiAssistantMessageMeta>
+            <StyledAiAssistantMessageList ref={messageListRef} onScroll={handleMessageListScroll}>
+              {isHistoryLoading && historyPageRef.current > 0 && (
+                <div style={{ textAlign: 'center', color: '#848c9d', fontSize: '12px' }}>
+                  이전 대화를 불러오는 중...
+                </div>
+              )}
+              {messages.map((m, index) => {
+                const dateKey = getChatDateKey(m.createdAt)
+                const previousDateKey = getChatDateKey(messages[index - 1]?.createdAt)
+                const isUserMessage = m.role === 'user'
+                const displayedContent =
+                  m.role === 'assistant' ? (typedAssistantMessages[m.id] ?? m.content) : m.content
+                const helpContent = m.role === 'assistant' ? parseTmsHelpContent(displayedContent) : null
+                const showNodeCommandTip =
+                  m.role === 'assistant' && displayedContent.includes('노드 이름을 다시 확인해주세요')
 
-                  <StyledAiAssistantMessageBubble $role={m.role}>
-                    {m.role === 'assistant' ? (typedAssistantMessages[m.id] ?? m.content) : m.content}
-                  </StyledAiAssistantMessageBubble>
-
-                  {m.role === 'assistant' && (m?.matchedRule?.ruleKey || m?.matchedRule?.reason || m?.pipelineTrace) ? (
-                    <StyledAiAssistantPipelineTrace>
-                      {m?.matchedRule?.ruleKey || m?.matchedRule?.reason
-                        ? `매칭 룰: ${String(m?.matchedRule?.ruleKey || '-')} ${String(m?.matchedRule?.ruleType || '').trim() ? `(${String(m.matchedRule.ruleType).trim()})` : ''}${Number.isFinite(Number(m?.matchedRule?.confidence)) ? ` · ${Number(m.matchedRule.confidence).toFixed(2)}` : ''}`
-                        : `흐름: ${String(m?.pipelineTrace ?? '').trim() || '-'}`}
-                    </StyledAiAssistantPipelineTrace>
-                  ) : null}
-
-                  {m.role === 'assistant' && Array.isArray(m.images) && m.images[0] ? (
-                    <StyledAiAssistantImageList>
-                      <StyledAiAssistantImageCard key={m.images[0].id || m.images[0].src}>
-                        <StyledAiAssistantImage
-                          src={m.images[0].src}
-                          alt={m.images[0].alt || m.images[0].title || 'assistant image'}
-                          loading="lazy"
-                        />
-                        {m.images[0].title || m.images[0].caption ? (
-                          <StyledAiAssistantImageCaption>
-                            {m.images[0].title ? (
-                              <StyledAiAssistantImageTitle>{m.images[0].title}</StyledAiAssistantImageTitle>
-                            ) : null}
-                            {m.images[0].caption ? (
-                              <StyledAiAssistantImageText>{m.images[0].caption}</StyledAiAssistantImageText>
-                            ) : null}
-                          </StyledAiAssistantImageCaption>
-                        ) : null}
-                      </StyledAiAssistantImageCard>
-                    </StyledAiAssistantImageList>
-                  ) : null}
-
-                  {ENABLE_MESSAGE_SUGGESTED_ACTIONS &&
-                    m.role === 'assistant' &&
-                    Array.isArray(m.suggestedActions) &&
-                    m.suggestedActions.length > 0 && (
-                      <>
-                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#6b7280', fontWeight: 700 }}>
-                          아래 명령어를 추천드려요.
-                        </div>
-                        <StyledAiActionCards>
-                          {m.suggestedActions.map((item) => (
-                            <StyledAiActionCard
-                              key={item.id}
-                              type="button"
-                              onClick={() => handleChatAction(item.chatAction, item.chatActionParam)}
-                            >
-                              <StyledAiActionCardTitle>{item.label}</StyledAiActionCardTitle>
-                              {item.keyword ? (
-                                <StyledAiActionCardKeyword>{item.keyword}</StyledAiActionCardKeyword>
-                              ) : null}
-                            </StyledAiActionCard>
-                          ))}
-                        </StyledAiActionCards>
-                      </>
+                return (
+                  <Fragment key={m.id}>
+                    {dateKey && dateKey !== previousDateKey && (
+                      <div
+                        style={{
+                          alignSelf: 'center',
+                          padding: '4px 10px',
+                          borderRadius: '999px',
+                          background: '#f1f3f5',
+                          color: '#6b7280',
+                          fontSize: '11px'
+                        }}
+                      >
+                        {formatChatDate(m.createdAt)}
+                      </div>
                     )}
-                </StyledAiAssistantMessage>
-              ))}
+                    <StyledAiAssistantMessage $role={m.role}>
+                      <StyledAiAssistantMessageMeta>
+                        {m.role === 'user' ? '나' : 'AI Assistant'} · {formatChatTime(m.createdAt)}
+                      </StyledAiAssistantMessageMeta>
+
+                      <StyledAiAssistantMessageBubble
+                        $role={m.role}
+                        role={isUserMessage ? 'button' : undefined}
+                        tabIndex={isUserMessage ? 0 : undefined}
+                        title={isUserMessage ? '클릭하여 다시 실행' : undefined}
+                        aria-disabled={isUserMessage ? isSending : undefined}
+                        onClick={isUserMessage && !isSending ? () => handleSubmit(m.content) : undefined}
+                        onKeyDown={
+                          isUserMessage && !isSending
+                            ? (event) => {
+                                if (event.key !== 'Enter' && event.key !== ' ') return
+                                event.preventDefault()
+                                handleSubmit(m.content)
+                              }
+                            : undefined
+                        }
+                        style={isUserMessage ? { cursor: isSending ? 'default' : 'pointer' } : undefined}
+                      >
+                        {helpContent ? (
+                          <StyledAiHelpContent>
+                            {helpContent.intro && <StyledAiHelpIntro>{helpContent.intro}</StyledAiHelpIntro>}
+                            {helpContent.sections.map((section) => (
+                              <StyledAiHelpSection key={section.title}>
+                                <StyledAiHelpSectionTitle>{section.title}</StyledAiHelpSectionTitle>
+                                <StyledAiHelpCommandList>
+                                  {section.commands.map((command, commandIndex) => (
+                                    <StyledAiHelpCommand key={`${section.title}-${command.example}-${commandIndex}`}>
+                                      <StyledAiHelpCommandExample>{command.example}</StyledAiHelpCommandExample>
+                                      <StyledAiHelpCommandDescription>
+                                        {command.description}
+                                      </StyledAiHelpCommandDescription>
+                                    </StyledAiHelpCommand>
+                                  ))}
+                                </StyledAiHelpCommandList>
+                              </StyledAiHelpSection>
+                            ))}
+                          </StyledAiHelpContent>
+                        ) : (
+                          displayedContent
+                        )}
+                      </StyledAiAssistantMessageBubble>
+                      {showNodeCommandTip && (
+                        <StyledAiCommandTip>
+                          <StyledAiCommandTipTitle>
+                            단축 명령어를 활용하여 더 많은 노드 작업을 한번에 할 수 있어요.
+                          </StyledAiCommandTipTitle>
+                          <StyledAiCommandTipExamples>
+                            <StyledAiCommandTipExample>A-&gt;B-&gt;C</StyledAiCommandTipExample>
+                            <StyledAiCommandTipExample>A-&gt;B=&gt;C</StyledAiCommandTipExample>
+                            <StyledAiCommandTipExample>-&gt;A-&gt;B</StyledAiCommandTipExample>
+                            <StyledAiCommandTipExample>-&gt;A=&gt;C</StyledAiCommandTipExample>
+                          </StyledAiCommandTipExamples>
+                        </StyledAiCommandTip>
+                      )}
+                    </StyledAiAssistantMessage>
+                  </Fragment>
+                )
+              })}
 
               {isSending && (
                 <StyledAiAssistantMessage $role="assistant">

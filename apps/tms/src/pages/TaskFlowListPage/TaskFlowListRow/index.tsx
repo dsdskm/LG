@@ -24,7 +24,6 @@ import {
 import { TaskFlowWithDeployment, TaskFlowStatus, DeploymentStatus } from '@/types/taskflow'
 import { getTaskFlowStatusLabel } from '@/utils/taskflowStatus'
 import { convertDateToString } from '@repo/utils'
-import { TextAlignStart } from 'lucide-react'
 function EmptyValue() {
   return <>-</>
 }
@@ -37,7 +36,7 @@ function renderFlowStatusBadge(flow: TaskFlowWithDeployment, t: TFunction) {
   const status = flow?.status as TaskFlowStatus | undefined
   const statusText = getTaskFlowStatusLabel(status, t)
 
-  if (status !== TaskFlowStatus.ACTIVE) {
+  if (status === TaskFlowStatus.ACTIVE) {
     return (
       <FlowActiveBadge>
         <span className="dot" />
@@ -46,12 +45,12 @@ function renderFlowStatusBadge(flow: TaskFlowWithDeployment, t: TFunction) {
     )
   }
 
-  // return (
-  //   <FlowInactiveBadge>
-  //     <span className="dot" />
-  //     {statusText}
-  //   </FlowInactiveBadge>
-  // )
+  return (
+    <FlowInactiveBadge>
+      <span className="dot" />
+      {statusText}
+    </FlowInactiveBadge>
+  )
 }
 
 function renderDeployStatusBadge(flow: TaskFlowWithDeployment, t: TFunction) {
@@ -155,11 +154,8 @@ export default function TaskFlowListRow({
   const isSelectable = selectMode && flow.id > 0
 
   const handleToggle = () => {
-    if (!isSelectable) {
-      onClickDetail(flow.id)
-    } else {
-      onToggleSelect?.(flow.id)
-    }
+    if (!isSelectable) return
+    onToggleSelect?.(flow.id)
   }
 
   return (
@@ -178,7 +174,7 @@ export default function TaskFlowListRow({
             <FlowVersionBadge>{getVersionText(flow)}</FlowVersionBadge>
             {renderFlowStatusBadge(flow, t)}
           </FlowTitleRow>
-
+          <FlowDesc>{flow.id || <EmptyValue />}</FlowDesc>
           {flow.description && <FlowDesc>{flow.description}</FlowDesc>}
         </FlowMain>
       </CardLeft>

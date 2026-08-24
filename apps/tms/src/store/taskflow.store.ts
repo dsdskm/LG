@@ -25,7 +25,7 @@ type TaskFlowState = {
   updateFlowInfo: (id: number, patch: Pick<Partial<TaskFlow>, 'name' | 'description'>) => Promise<TaskFlow | null>
 
   /** Flow 통째로 복사 (id 만 새로 발급되고 나머지 값은 원본과 동일) */
-  copyFlow: (id: number) => Promise<TaskFlow>
+  copyFlow: (id: number, customName?: string) => Promise<TaskFlow>
 }
 
 /**
@@ -164,7 +164,7 @@ export const useTaskFlowStore = create<TaskFlowState>()((set, get) => ({
     }
   },
 
-  copyFlow: async (id) => {
+  copyFlow: async (id, customName) => {
     // 목록 응답에는 flowDefinition 등이 빠져 있을 수 있으므로 원본을 단건 조회해서 그대로 복사한다.
     const source = await getTaskFlow(id)
     if (!source) throw new Error('원본 Task Flow 를 불러오지 못했습니다.')
@@ -185,8 +185,8 @@ export const useTaskFlowStore = create<TaskFlowState>()((set, get) => ({
       ...rest
     } = source as TaskFlow & Record<string, unknown>
 
-    // 목록에 같은 이름이 겹치지 않게 "원본이름 (복사본1), (복사본2) ..." 로 붙인다.
-    const name = buildCopyName(
+    const requestedName = String(customName ?? '').trim()
+    const name = requestedName || buildCopyName(
       source.name,
       get().flows.map((flow) => flow.name)
     )

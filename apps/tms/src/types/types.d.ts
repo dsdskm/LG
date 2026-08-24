@@ -24,6 +24,7 @@ declare module '@repo/ui/styles' {
 
 declare module '@repo/ui' {
   export const MainLayout: React.ComponentType<any>
+  export const AiAssistantPanel: React.ComponentType<any>
   export const Toast: React.ComponentType<any>
   export const Title: any
   export const StyledPageContent: any

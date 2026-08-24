@@ -5,6 +5,7 @@ import React, { Suspense, useEffect, useMemo } from 'react'
 import { Routes, useLocation, Navigate } from 'react-router-dom'
 import { Toast } from '@repo/ui'
 import 'react-toastify/dist/ReactToastify.css'
+import { clearChatRuleListCache } from '@repo/apis/ai/chatSettings.js'
 
 import { useTaskFlowStore } from './store/taskflow.store'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -26,6 +27,10 @@ function App() {
   useEffect(() => {
     refreshFlows(selectedOrgs[0], selectedOrgs[1])
   }, [refreshFlows])
+
+  useEffect(() => {
+    clearChatRuleListCache('tms')
+  }, [pathname])
 
   const processedAppRoutes = useMemo(() => {
     const processRoutes = (routes: any) => {

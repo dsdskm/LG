@@ -100,6 +100,32 @@ export async function updateChatSettings(payload) {
   return response.json()
 }
 
+export async function createChatScreen(payload) {
+  const response = await fetch(`${BASE_URL}/chat/settings/screens`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return response.json()
+}
+
+export async function updateChatScreen(id, payload) {
+  const response = await fetch(`${BASE_URL}/chat/settings/screens/${encodeURIComponent(String(id))}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return response.json()
+}
+
+export async function deleteChatScreen(id) {
+  const response = await fetch(`${BASE_URL}/chat/settings/screens/${encodeURIComponent(String(id))}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  return response.json()
+}
+
 export async function updateChatPrompt(id, payload) {
   const response = await fetch(`${BASE_URL}/chat/settings/prompts/${encodeURIComponent(String(id))}`, {
     method: 'PUT',
@@ -109,18 +135,18 @@ export async function updateChatPrompt(id, payload) {
   return response.json()
 }
 
-export async function listPrompts({ appKey, screenKey, system, type } = {}) {
+export async function listPrompts({ appKey, screenKey, instruction, type } = {}) {
   const query = new URLSearchParams()
   if (appKey) query.set('app_key', String(appKey))
   if (screenKey) query.set('screen_key', String(screenKey))
-  if (system !== undefined && system !== null && system !== '') query.set('system', String(system))
+  if (instruction !== undefined && instruction !== null && instruction !== '') query.set('instruction', String(instruction))
   if (type) query.set('type', String(type))
 
   const endpoint = query.toString() ? `${BASE_URL}/chat/settings/prompts?${query.toString()}` : `${BASE_URL}/chat/settings/prompts`
   console.info('[chat-settings] GET /chat/settings/prompts', {
     appKey: appKey ?? null,
     screenKey: screenKey ?? null,
-    system: system ?? null,
+    instruction: instruction ?? null,
     type: type ?? null,
     endpoint,
   })
@@ -143,6 +169,14 @@ export async function createChatPrompt(payload) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
+  })
+  return response.json()
+}
+
+export async function deleteChatPrompt(id) {
+  const response = await fetch(`${BASE_URL}/chat/settings/prompts/${encodeURIComponent(String(id))}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
   })
   return response.json()
 }
@@ -222,6 +256,14 @@ export async function createChatGuidance(payload) {
   return response.json()
 }
 
+export async function deleteChatGuidance(id) {
+  const response = await fetch(`${BASE_URL}/chat/settings/guidance/${encodeURIComponent(String(id))}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  return response.json()
+}
+
 export async function updateChatRagDoc(id, payload) {
   const response = await fetch(
     `${BASE_URL}/chat/settings/rag-docs/${encodeURIComponent(String(id))}`,
@@ -252,16 +294,53 @@ export async function createCommonChatRagDoc(payload) {
   return response.json()
 }
 
-export async function listChatRules({ appKey, screenKey } = {}) {
+const SCREEN_RULE_LIST_CACHE = new Map()
+
+export function clearChatRuleListCache(appKey, screenKey) {
+  const normalizedAppKey = String(appKey ?? '').trim() || 'common'
+  const normalizedScreenKey = String(screenKey ?? '').trim() || 'common'
+  const cacheKey = `${normalizedAppKey}::${normalizedScreenKey}`
+  SCREEN_RULE_LIST_CACHE.delete(cacheKey)
+
+  if (!screenKey) {
+    for (const key of SCREEN_RULE_LIST_CACHE.keys()) {
+      if (key.startsWith(`${normalizedAppKey}::`)) SCREEN_RULE_LIST_CACHE.delete(key)
+    }
+  }
+}
+
+export async function listChatRules({ appKey, screenKey, forceRefresh = true } = {}) {
+  const normalizedAppKey = String(appKey ?? '').trim() || 'common'
+  const normalizedScreenKey = String(screenKey ?? '').trim() || 'common'
+  const cacheKey = screenKey ? `${normalizedAppKey}::${normalizedScreenKey}` : `${normalizedAppKey}::app-all`
+
+  if (!forceRefresh) {
+    const cached = SCREEN_RULE_LIST_CACHE.get(cacheKey)
+    if (cached) {
+      console.info('[chat-settings] GET /chat/settings/rules cache-hit', {
+        appKey: normalizedAppKey,
+        screenKey: normalizedScreenKey,
+        cacheKey,
+        itemCount: Array.isArray(cached?.data?.items) ? cached.data.items.length : Array.isArray(cached?.items) ? cached.items.length : 0,
+      })
+      return cached
+    }
+  } else {
+    SCREEN_RULE_LIST_CACHE.delete(cacheKey)
+  }
+
   const query = new URLSearchParams()
   if (appKey) query.set('app_key', String(appKey))
   if (screenKey) query.set('screen_key', String(screenKey))
 
   const endpoint = query.toString() ? `${BASE_URL}/chat/settings/rules?${query.toString()}` : `${BASE_URL}/chat/settings/rules`
   console.info('[chat-settings] GET /chat/settings/rules request', {
-    appKey: appKey ?? null,
-    screenKey: screenKey ?? null,
+    appKey: normalizedAppKey,
+    screenKey: normalizedScreenKey,
+    cacheKey,
     endpoint,
+    scope: screenKey ? 'screen' : 'app',
+    forceRefresh,
   })
 
   const response = await fetch(endpoint, {
@@ -269,23 +348,38 @@ export async function listChatRules({ appKey, screenKey } = {}) {
     headers: { 'Content-Type': 'application/json' },
   })
   const json = await response.json()
+  SCREEN_RULE_LIST_CACHE.set(cacheKey, json)
   console.info('[chat-settings] GET /chat/settings/rules response', {
     status: response.status,
     ok: response.ok,
     itemCount: Array.isArray(json?.data?.items) ? json.data.items.length : Array.isArray(json?.items) ? json.items.length : 0,
-    appKey: appKey ?? null,
-    screenKey: screenKey ?? null,
+    appKey: normalizedAppKey,
+    screenKey: normalizedScreenKey,
+    cacheKey,
+    scope: screenKey ? 'screen' : 'app',
+    forceRefresh,
   })
   return json
 }
 
+export async function listAllChatRules() {
+  const response = await fetch(`${BASE_URL}/chat/settings/rules/all`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  return response.json()
+}
+
 export async function matchChatRule({ appKey, screenKey, message } = {}) {
+  const payload = { appKey, screenKey, message }
   const response = await fetch(`${BASE_URL}/chat/settings/rules/match`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ appKey, screenKey, message }),
+    body: JSON.stringify(payload),
   })
-  return response.json()
+
+  const json = await response.json()
+  return json
 }
 
 export async function upsertChatRule(payload) {
