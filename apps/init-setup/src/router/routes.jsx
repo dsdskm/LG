@@ -20,7 +20,9 @@ import { USER_ROLE_LEVEL } from '@repo/constants'
 // - mapSetup: 지도 ~ 업로드 (맵 스캔/시맨틱/업로드 단계)
 // - admin: DB 데이터 브라우저. 사이드바 항목은 고정 목록이 아니라 GET /admin/schema 로 받은
 //   테이블 목록이라 App 에서 런타임에 만든다 (여기서는 라우트만 정의).
-// robotSetup.status === 'completed' 이면 initialSetup 그룹은 탭/사이드바/라우트에서 모두 제거된다.
+// robotSetup.status === 'completed'(= 마지막 단계인 업로드까지 끝낸 전역 완료)이면 initialSetup 그룹은
+// 탭/사이드바/라우트에서 모두 제거되고(App.jsx) 단계 순서 잠금도 풀린다.
+// 그 전에는 currentStep(작업 중인 단계)까지만 열린다 — 아래 getSetupProgress.
 export const SETUP_GROUP = {
   INITIAL: 'initialSetup',
   MAP: 'mapSetup',

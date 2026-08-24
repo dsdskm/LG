@@ -15,6 +15,35 @@ export const ButtonWrapper = styled.div`
   justify-content: flex-end;
 `
 
+export const CommandButtons = styled.div`
+  display: flex;
+  gap: 1.6rem;
+  justify-content: flex-end;
+`
+
+export const CommandRow = styled.div`
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.6rem;
+  flex-wrap: wrap;
+`
+
+export const CommandFilters = styled.div`
+  display: flex;
+  gap: 0.8rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+`
+
+// 명령바는 버튼 높이에 맞춰야 하므로, 공용 Section 의 flex:1(늘어남)을 이 자리에서만 끈다
+// (공용 Section 컴포넌트는 건드리지 않는다).
+export const CommandBar = styled.div`
+  & > section {
+    flex: 0 0 auto;
+  }
+`
+
 export const DetailWrapper = styled.div`
   display: flex;
   flex-direction: column;

@@ -16,8 +16,8 @@ export const { create, list, getById, update, remove } = createCrud('maps')
  * 프론트엔드 상태/격자맵을 초기화하므로 저장하지 않은 데이터는 폐기된다.
  * 그래서 세 동작 모두 /robot-hub/mapping/start 를 호출하고, 의도 구분은 UI 쪽에만 있다.
  *
- * 진행 상태는 이 API 로 폴링하지 않는다 — foxglove-bridge 로 /lio_node/status 를
- * 직접 구독한다(useFoxglove + STATUS_TOPICS).
+ * 진행 상태는 이 API 로 폴링하지 않는다 — 텔레메트리 릴레이로 /lio_node/status 를
+ * 직접 구독한다(useTelemetry + STATUS_TOPICS).
  */
 
 /**

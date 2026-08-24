@@ -5,10 +5,10 @@ import { toRobotInfo } from '@/pages/components/robot/toRobotInfo'
 import { Navigation, Hand, Mic, Smile, Eye } from 'lucide-react'
 import type { DeployStatusType, RobotInfo } from '../../types/RobotInfo'
 import { useDeviceList } from '../../api/deviceApis'
-import DeployModal from './components/DeployModal'
+import DeployModal, { DeployTaskFlow } from './components/DeployModal'
 import { useParams } from 'react-router-dom'
 
-import { StyledPageContent, Title, Tabs, Tab, Dropdown, Search, HeaderTitleGroup } from '@repo/ui'
+import { StyledPageContent, Title, Tabs, Tab, Dropdown, Search, HeaderTitleGroup, Checkbox, Button } from '@repo/ui'
 import { useDeployTaskFlowAction, useGetTaskFlow } from '@/api/taskFlowApis'
 import { useDeployTaskFlow } from '@/api/deployApis'
 import { DeployActionRequest, TaskFlow } from '@/types/taskflow'
@@ -18,6 +18,7 @@ import { useGetLatestDeployments } from '@/api/robotDeployApis'
 import { Content } from '@/types/api/deviceDeployment'
 import { useOrganizationStore } from '@repo/stores'
 import { DeployContent, DeploySearchContainer } from './styles'
+import useDeploy, { DeployMode } from './hooks/useDeploy'
 
 const skillRenderMap = {
   MANIPULATION: (
@@ -69,27 +70,6 @@ const deployStatusOptions = [
   { value: 'CANCELED', name: 'canceled' }
 ]
 
-const makeDeployState = (robotId: string, deployContents: Content[]) => {
-  const deployments = deployContents.find((content) => content.robotId === robotId)?.deployments ?? []
-  if (deployments.length < 1) {
-    return undefined
-  }
-  const deployment = deployments?.reduce((max, cur) => (max.taskFlowVersion >= cur.taskFlowVersion ? max : cur))
-  return {
-    taskFlowId: deployment.taskFlowId,
-    taskFlowVersion: deployment.taskFlowVersion,
-    status: deployment.status as DeployStatusType
-  }
-}
-
-const makeDeployableInfo = (deployMode: DeployMode, device: DeviceResponse, taskFlow?: TaskFlow | null) => {
-  if (deployMode === 'DEPLOY') {
-    return checkDeployability(taskFlow, device)
-  } else {
-    return checkUndeployability(taskFlow, device)
-  }
-}
-
 //todo
 function checkDeployability(taskFlow?: TaskFlow | null, robot?: DeviceResponse) {
   // taskFlow가 필요로 하는 skill과 로봇의 지원 skill이 다를 경우
@@ -140,8 +120,6 @@ function getRobotForMode(
   // UNDEPLOY: 동일 id가 깔려 있는 디바이스
   return content.filter((device) => !!findInstalled(device))
 }
-
-export type DeployMode = 'DEPLOY' | 'DELETE_DEPLOY'
 
 const DeployPage = () => {
   const { t } = useTranslation(['tms', 'common'])
@@ -213,12 +191,15 @@ const DeployPage = () => {
   console.log('devicesData', devicesData)
 
   const {
-    mutate: deployActionMutate,
-    reset: deployActionReset,
-    isPending: isDeployActionPending,
-    isSuccess: isDeployActionSuccess,
-    isError: isDeployActionError
-  } = useDeployTaskFlowAction()
+    execDeployAction,
+    execUnDeployAction,
+    getDeployActionStatus,
+    deployActionReset,
+    isDeployActionSuccess,
+    isDeployActionPending,
+    makeDeployState,
+    makeDeployableInfo
+  } = useDeploy()
 
   const robotList: RobotInfo[] = useMemo(() => {
     const targetRobots = getRobotForMode(deployMode, devicesData?.content, taskFlowData)
@@ -303,68 +284,12 @@ const DeployPage = () => {
     console.log('onTabClick', deployMode)
   }
 
-  const execDeployAction = () => {
-    deployActionMutate(makeDeployActionRequest(), {
-      onSuccess: (data) => {
-        console.log('deploy 성공!', data)
-        //dismissPopup()
-      },
-      onError: (error) => {
-        console.error('deploy 실패', error)
-        //dismissPopup()
-      }
-    })
-    console.log('deploy')
-  }
-
-  const execUnDeployAction = () => {
-    deployActionMutate(makeUndeployActionRequest(), {
-      onSuccess: (data) => {
-        console.log('un deploy 성공!', data)
-        //dismissPopup()
-      },
-      onError: (error) => {
-        console.error('undeploy 실패', error)
-        //dismissPopup()
-      }
-    })
-    console.log('undeploy')
-  }
-
   const onOperationStatusOptionChaged = (value: string) => {
     active.setOperationStatusFilter(value)
   }
 
   const onDeployStatusOptionChaged = (value: string) => {
     active.setDeployStatusFilter(value)
-  }
-
-  const makeUndeployActionRequest = (): DeployActionRequest => {
-    const [selectedGroupId, selectedSiteId] = selectedOrgs
-    return {
-      taskFlowId: taskFlowData?.id ?? -1,
-      param: {
-        action: 'UNDEPLOY',
-        groupId: selectedGroupId,
-        siteId: selectedSiteId,
-        robotInfos: [...active.selectedRobotList],
-        description: 'fixme'
-      }
-    }
-  }
-
-  const makeDeployActionRequest = (): DeployActionRequest => {
-    const [selectedGroupId, selectedSiteId] = selectedOrgs
-    return {
-      taskFlowId: taskFlowData?.id ?? -1,
-      param: {
-        action: 'DEPLOY',
-        groupId: selectedGroupId,
-        siteId: selectedSiteId,
-        robotInfos: [...active.selectedRobotList],
-        description: 'fixme'
-      }
-    }
   }
 
   const dismissPopup = () => {
@@ -390,32 +315,62 @@ const DeployPage = () => {
     active.onSelectAllChanged(!active.selectAll)
   }
 
-  const getDeployActionStatus = () => {
-    if (isDeployActionPending) {
-      return 'WORKING'
-    }
-    if (isDeployActionError) {
-      return 'FAILURE'
-    }
-    if (isDeployActionSuccess) {
-      return 'SUCCESS'
-    }
-    return 'READY'
-  }
   const skills = taskFlowData?.robotSkillInfos ?? []
 
   console.log('skillset ', skills)
+
+  const title =
+    taskFlowData?.name +
+    ' ' +
+    (deployMode === 'DEPLOY'
+      ? t('deploy.modal.deployTitleSuffix', { version: taskFlowData?.version })
+      : t('deploy.modal.undeployTitleSuffix'))
+
+  const mainDesc = () => {
+    switch (getDeployActionStatus()) {
+      case 'READY':
+        let desc =
+          deployMode === 'DEPLOY'
+            ? t('deploy.modal.selectedPrefix') + t('deploy.unit', { count: 1 }) + t('deploy.modal.deploySuffix')
+            : t('deploy.modal.selectedPrefix') + t('deploy.unit', { count: 2 }) + t('deploy.modal.undeploySuffix')
+        return desc
+
+      case 'WORKING':
+        return deployMode === 'DEPLOY' ? t('deploy.modal.deploying') : t('deploy.modal.undeploying')
+
+      case 'SUCCESS':
+        return deployMode === 'DEPLOY' ? t('deploy.modal.deployRequested') : t('deploy.modal.undeployRequested')
+
+      case 'FAILURE':
+        return deployMode === 'DEPLOY' ? t('deploy.modal.deployFailed') : t('deploy.modal.undeployFailed')
+    }
+  }
+
+  const subDesc = () => {
+    if (getDeployActionStatus() === 'READY') {
+      return t('deploy.modal.irreversible')
+    }
+  }
 
   return (
     <>
       {popup && (
         <DeployModal
+          title={title}
+          desc={mainDesc()}
+          subDesc={subDesc()}
           mode={deployMode}
-          taskFlow={taskFlowData as TaskFlow}
-          targetCount={active.selectedRobotList.length}
           status={getDeployActionStatus()}
           onClose={dismissPopup}
-          onDeploy={deployMode === 'DEPLOY' ? execDeployAction : execUnDeployAction}
+          onDeploy={() => {
+            if (!taskFlowData?.id) return
+            const params = {
+              orgInfo: selectedOrgs,
+              taskFlowId: taskFlowData.id,
+              robotList: [...active.selectedRobotList]
+            }
+            deployMode === 'DEPLOY' ? execDeployAction(params) : execUnDeployAction(params)
+          }}
         ></DeployModal>
       )}
 
@@ -485,12 +440,7 @@ const DeployPage = () => {
           </Tabs>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-            <input
-              type="checkbox"
-              checked={active.selectAll}
-              onChange={handleSelectAll}
-              style={{ height: '16px', width: '16px', cursor: 'pointer' }}
-            />
+            <Checkbox checked={active.selectAll} onChange={handleSelectAll} />
             <label style={{ fontSize: '14px', fontWeight: 500, color: '#374151' }}>{t('deploy.selectAll')}</label>
           </div>
           <HeaderTitleGroup style={{ marginBottom: '16px', justifyContent: 'flex-start' }}>
@@ -541,20 +491,10 @@ const DeployPage = () => {
             <p style={{ margin: 0, fontSize: '14px', color: '#4b5563' }}>
               {t('deploy.selectedCount', { count: active.selectedRobotList.length })}
             </p>
-            <button
-              disabled={active.selectedRobotList.length === 0 || isDeployActionPending}
-              style={{
-                backgroundColor: active.selectedRobotList.length === 0 ? '#d1d5db' : '#7BA5C1',
-                color: 'white',
-                border: 'none',
-                padding: '8px 16px',
-                borderRadius: '6px',
-                cursor: active.selectedRobotList.length === 0 ? 'not-allowed' : 'pointer'
-              }}
-              onClick={onClickDeploy}
-            >
-              {deployMode === 'DEPLOY' ? t('deploy.deploy') : t('deploy.undeploy')}
-            </button>
+            <Button disabled={active.selectedRobotList.length === 0 || isDeployActionPending} onClick={onClickDeploy}>
+              {' '}
+              {deployMode === 'DEPLOY' ? t('deploy.deploy') : t('deploy.undeploy')}{' '}
+            </Button>
           </div>
         </DeployContent>
       </StyledPageContent>

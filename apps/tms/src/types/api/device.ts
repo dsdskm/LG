@@ -97,9 +97,11 @@ export interface RobotTaskFlow {
   name: string
   id: number
   version: number
+  latestVersion: number
   isActive: boolean
   isEnabled: boolean
   operationStatus: string
+  deployStatus: string
 }
 
 interface BatteryState {

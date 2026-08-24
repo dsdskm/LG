@@ -9,6 +9,7 @@ import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
 import { ColladaLoader } from 'three/examples/jsm/loaders/ColladaLoader.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 
+import { fileApis } from '@/apis'
 import { pickNearestJointStateSample, applyJointStateToRobot } from './urdf/jointStateBinding'
 
 /**
@@ -47,6 +48,60 @@ function fitCameraToBox(camera, controlsRef, box, padding = 1.6) {
 const GLOBAL_MESH_CACHE = new Map() // key(요청 경로) -> THREE.Object3D 프로토타입
 // 메시 머티리얼 1개를 세션 내내 공유(캐시된 메시가 참조하므로 dispose하지 않는다).
 const SHARED_ROBOT_MATERIAL = new THREE.MeshStandardMaterial({ color: 0xcfd6e6, roughness: 0.5, metalness: 0.1 })
+
+// 로봇 메시 CDN 인증 캐시(세션 영구, configId::version 단위) — download-auth는 Set-Cookie로 CDN 접근 권한을
+// 내려주는 방식(3600초)이라, 첫 로드 성공 후에는 GLOBAL_MESH_CACHE가 영구 보관하므로 만료 이후에도 재요청이 필요 없다.
+const MESH_CDN_CACHE = new Map() // key `${configId}::${version}` -> { baseUrl, expiresAt }
+const meshCdnInflight = new Map() // key -> Promise<string|null>
+
+// URDF의 <robot name="..."> 속성값 = CDN에서 이 로봇의 메시를 찾는 폴더명(configs/cloid/<모델명>/...).
+// 서버가 cloid/ 아래를 모델명 단위로 나누기로 했으므로, package:// 이름이 아니라 이 값 기준으로 CDN을 조회한다.
+function extractRobotModelName(robotDescription) {
+  const m = /<robot\s+[^>]*\bname\s*=\s*"([^"]+)"/i.exec(String(robotDescription || ''))
+  return m ? m[1] : null
+}
+
+// 로컬(public/urdf) STL은 삭제됐고 메시는 전부 CDN에서 온다 → 모델명(=<robot name>) 하나로
+// 이 함수를 한 번만 호출해 CDN을 조회한다(URDF가 참조하는 package:// 개수와 무관).
+// 이 함수의 성공 여부가 곧 메시 로딩 성공 여부다.
+async function getMeshCdnBase(configId, modelName) {
+  const key = `${configId}::${modelName}`
+  const now = Date.now()
+  const cached = MESH_CDN_CACHE.get(key)
+  if (cached && cached.expiresAt - now > 10_000) return cached
+  if (meshCdnInflight.has(key)) return meshCdnInflight.get(key)
+
+  const p = fileApis
+    .getMeshDownloadAuth(configId, modelName)
+    .then((resp) => {
+      const baseUrl = String(resp?.cdnBaseUrl || '').replace(/\/$/, '')
+      if (!baseUrl) throw new Error('empty cdnBaseUrl')
+      // download-auth가 실제로 존재/인가된 파일 목록을 내려주므로, 파일명(기준) -> url로 매핑해둔다.
+      // URDF의 package:// 상대경로를 그대로 CDN 경로로 추측하지 않고, 이 목록에 있는 것만 요청하기 위함.
+      const filesByName = new Map()
+      for (const f of Array.isArray(resp?.files) ? resp.files : []) {
+        const baseName = String(f?.name || '').split('/').pop()
+        if (baseName && f?.url) filesByName.set(baseName.toLowerCase(), f.url)
+      }
+      const expiresAt = new Date(resp?.expiresAt).getTime()
+      const entry = { baseUrl, filesByName, expiresAt: Number.isFinite(expiresAt) ? expiresAt : now + 55 * 60_000 }
+      MESH_CDN_CACHE.set(key, entry)
+      return entry
+    })
+    .catch((err) => {
+      console.error(`[URDF] mesh CDN auth failed (${key}):`, err?.message || err)
+      // 실패도 짧게 캐싱 — 로그 전환 때마다 아직 미지원인 configId를 반복 호출하지 않도록(60초 후 재시도).
+      const entry = { baseUrl: null, filesByName: new Map(), expiresAt: now + 60_000 }
+      MESH_CDN_CACHE.set(key, entry)
+      return entry
+    })
+    .finally(() => {
+      meshCdnInflight.delete(key)
+    })
+
+  meshCdnInflight.set(key, p)
+  return p
+}
 
 // ───────────── STL 파싱 워커 풀(세션 영구) ─────────────
 // 파싱을 메인 스레드 밖에서 병렬 처리 → UI 멈춤 제거 + 메시 동시 파싱으로 wall-clock 단축.
@@ -112,30 +167,30 @@ function URDFRobot({ robotRef, controlsRef, robotDescription }) {
   const { scene, camera } = useThree()
 
   useEffect(() => {
-    // ✅ baseURI 기반으로 계산 (서브패스 안전)
-    const urdfUrl = new URL('urdf/hmc_v2_hand/hmc_v2_hand.urdf', document.baseURI).toString()
-    const urdfRoot = new URL('urdf/hmc_v2_hand/', document.baseURI).toString()
-
     const manager = new THREE.LoadingManager()
     if (typeof manager.resolveURL !== 'function') manager.resolveURL = (url) => url
 
     const loader = new URDFLoader(manager)
 
-    const piperRoot = new URL('urdf/ButlerModel_ver2_bracket/', document.baseURI).toString().replace(/\/$/, '')
+    // 로컬 public/urdf STL은 삭제됐고, 모든 메시는 CDN(dynamicPackageRoots, startLoad에서 사전 확보)에서만 온다.
+    const dynamicPackageRoots = {} // targetPkg -> CDN baseUrl (startLoad에서 모든 패키지에 대해 채움)
+    const dynamicPackageFiles = {} // targetPkg -> Map(파일명(소문자) -> download-auth가 내려준 실제 url)
+    loader.packages = (targetPkg) => dynamicPackageRoots[targetPkg] || ''
 
-    // 알려진 패키지는 기존과 동일하게 매핑(동작 불변),
-    // 미등록 패키지(예: 새 MCAP의 cloid_description)는 public/urdf/<패키지명> 규약으로 폴백.
-    // → object 매핑일 때 발생하던 "not found in provided package list" 에러 폭주도 제거됨.
-    // - hmc_description: 신규 MCAP의 URDF가 쓰는 패키지명. 담당자 안내대로 기존 hmc_v2_hand 메시를 재사용.
-    const KNOWN_PACKAGE_ROOTS = {
-      piper_description: piperRoot,
-      hmc_v2_hand_description: urdfRoot,
-      hmc_description: urdfRoot
-    }
-    loader.packages = (targetPkg) => {
-      if (KNOWN_PACKAGE_ROOTS[targetPkg]) return KNOWN_PACKAGE_ROOTS[targetPkg]
-      // 폴백: public/urdf/<pkg> 아래에 메시가 있다고 가정
-      return new URL(`urdf/${targetPkg}`, document.baseURI).toString()
+    // URDFLoader는 packages(pkg) + URDF 상대경로를 그대로 이어붙여 최종 경로를 만드는데,
+    // 이건 URDF의 상대경로가 CDN 실제 경로와 같다는 "추측"일 뿐이다. download-auth가 내려준
+    // files 목록(=실제로 존재/인가된 파일)에 파일명이 있을 때만 그 url을 쓰고, 없으면 존재하지
+    // 않는 CDN 경로로 요청을 보내지 않도록 null을 반환한다(호출부에서 에러 로그 후 중단).
+    const resolveActualMeshPath = (rawPath) => {
+      const raw = String(rawPath || '')
+      const cdnPkg = Object.keys(dynamicPackageRoots).find(
+        (pkg) => dynamicPackageRoots[pkg] && raw.startsWith(dynamicPackageRoots[pkg])
+      )
+      if (!cdnPkg) return raw // 이 패키지는 CDN 조회 자체가 안 된 경우(모델명 없음/조회 실패) — 그대로 반환해 자연스럽게 404 처리
+
+      const baseName = raw.split('/').pop() || ''
+      const matchedUrl = dynamicPackageFiles[cdnPkg]?.get(baseName.toLowerCase())
+      return matchedUrl || null
     }
 
     // ✅ material 1개를 세션 내내 공유 (캐시된 메시가 참조 → effect마다 새로 만들지 않음)
@@ -168,7 +223,13 @@ function URDFRobot({ robotRef, controlsRef, robotDescription }) {
       }
     }
 
-    loader.loadMeshCb = (path, _manager, done) => {
+    loader.loadMeshCb = (rawPath, _manager, done) => {
+      const path = resolveActualMeshPath(rawPath)
+      if (!path) {
+        console.error('[URDF] mesh not found in CDN files list, skip:', rawPath)
+        done(null)
+        return
+      }
       const key = String(path || '')
       const lower = key.toLowerCase()
 
@@ -207,8 +268,9 @@ function URDFRobot({ robotRef, controlsRef, robotDescription }) {
         }
 
         // fetch → (워커 가능 시) 워커 병렬 파싱, 아니면 메인 스레드 폴백
+        // credentials: 'include' — CDN이 쿠키(Set-Cookie, download-auth 발급)로 인증하므로 필요.
         const loadFrom = async (url) => {
-          const resp = await fetch(url)
+          const resp = await fetch(url, { credentials: 'include' })
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
           const buf = await resp.arrayBuffer()
           if (getStlWorkerPool().length) {
@@ -298,39 +360,62 @@ function URDFRobot({ robotRef, controlsRef, robotDescription }) {
 
     if (!robotDescription) return
 
-    const blob = new Blob([robotDescription], { type: 'text/xml' })
-    const blobUrl = URL.createObjectURL(blob)
+    const startLoad = async () => {
+      // 로컬 public/urdf STL은 삭제됐으므로 CDN(download-auth) 성공 여부가 곧 메시 로딩 성공 여부다
+      // (피처 플래그/화이트리스트 없음 — 특정 모델명을 예외 취급하지 않음).
+      // packages는 URDF 파싱 중 동기 호출되므로, 로드 전에 base URL을 미리 확보해둔다.
+      // 서버는 configs/cloid/<모델명>/ 단위로 메시를 나눠두므로, 모델명 하나로 CDN을 한 번만 조회하고
+      // URDF가 참조하는 모든 package://에 동일하게 적용한다.
+      const referencedPkgs = Array.from(new Set([...robotDescription.matchAll(/package:\/\/([^/]+)\//g)].map((m) => m[1])))
+      const modelName = extractRobotModelName(robotDescription)
 
-    loader.load(
-      blobUrl,
-      (robot) => {
-        if (disposed) return
-
-        scene.add(robot)
-        robotRef.current = robot
-
-        // ROS(Z-up) → three.js(Y-up)
-        robot.rotation.x = -Math.PI / 2
-        robot.updateMatrixWorld(true)
-
-        // ✅ 조건 없이 항상 스케일 정규화 (목표 높이 2.5 기준)
-        const box1 = new THREE.Box3().setFromObject(robot)
-        const size1 = box1.getSize(new THREE.Vector3())
-        const maxDim1 = Math.max(size1.x, size1.y, size1.z)
-
-        if (Number.isFinite(maxDim1) && maxDim1 > 0) {
-          const s = 2.5 / maxDim1
-          robot.scale.setScalar(s)
-          robot.updateMatrixWorld(true)
+      if (modelName) {
+        const meshCdn = await getMeshCdnBase('cloid', modelName)
+        if (meshCdn?.baseUrl) {
+          for (const pkg of referencedPkgs) {
+            dynamicPackageRoots[pkg] = meshCdn.baseUrl
+            dynamicPackageFiles[pkg] = meshCdn.filesByName
+          }
         }
+      }
+      if (disposed) return
 
-        // 스케일 적용 후 다시 box 계산
-        const box2 = new THREE.Box3().setFromObject(robot)
-        fitCameraToBox(camera, controlsRef, box2, 1.8)
-      },
-      undefined,
-      (err) => console.error('[URDF] load failed:', err)
-    )
+      const blob = new Blob([robotDescription], { type: 'text/xml' })
+      const blobUrl = URL.createObjectURL(blob)
+
+      loader.load(
+        blobUrl,
+        (robot) => {
+          if (disposed) return
+
+          scene.add(robot)
+          robotRef.current = robot
+
+          // ROS(Z-up) → three.js(Y-up)
+          robot.rotation.x = -Math.PI / 2
+          robot.updateMatrixWorld(true)
+
+          // ✅ 조건 없이 항상 스케일 정규화 (목표 높이 2.5 기준)
+          const box1 = new THREE.Box3().setFromObject(robot)
+          const size1 = box1.getSize(new THREE.Vector3())
+          const maxDim1 = Math.max(size1.x, size1.y, size1.z)
+
+          if (Number.isFinite(maxDim1) && maxDim1 > 0) {
+            const s = 2.5 / maxDim1
+            robot.scale.setScalar(s)
+            robot.updateMatrixWorld(true)
+          }
+
+          // 스케일 적용 후 다시 box 계산
+          const box2 = new THREE.Box3().setFromObject(robot)
+          fitCameraToBox(camera, controlsRef, box2, 1.8)
+        },
+        undefined,
+        (err) => console.error('[URDF] load failed:', err)
+      )
+    }
+
+    startLoad()
 
     return () => {
       disposed = true

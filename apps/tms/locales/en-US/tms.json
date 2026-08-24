@@ -240,6 +240,7 @@
     "deployFail": "배포 실패",
     "deployPending": "배포 대기",
     "unit": "{{count}}대",
+    "taskFlowUnit": "{{count}}개",
     "processError": "처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
     "invalidAccess": "잘못된 접근입니다. 유효한 TaskFlow ID가 필요합니다.",
     "loadError": "데이터를 불러오는 중 오류가 발생했습니다.",
@@ -289,6 +290,7 @@
     "searchRobot": "로봇명 검색",
     "selectedCount": "총 {{count}}대가 선택 되었습니다.",
     "unit": "{{count}}대",
+    "taskFlowUnit": "{{count}}개",
     "unassignedGroup": "미지정 그룹",
     "unassignedSite": "미지정 사이트",
     "skill": {
@@ -304,6 +306,7 @@
       "selectedPrefix": "선택하신 ",
       "deploySuffix": "의 로봇에 배포하시겠습니까?",
       "undeploySuffix": "의 로봇에 대한 배포를 삭제하시겠습니까?",
+      "undeployTasksSuffix": "의 TaskFlow를 배포 삭제하시겠습니까?",
       "irreversible": "이 작업이 실행되면 취소할 수 없습니다.",
       "deploying": "배포중",
       "undeploying": "배포 삭제중",

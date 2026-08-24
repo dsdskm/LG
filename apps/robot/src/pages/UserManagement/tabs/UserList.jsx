@@ -223,7 +223,8 @@ const UserList = () => {
           </ManageActions>
         )
       },
-      sortable: false
+      sortable: false,
+      minWidth: '210px'
     }
   ]
 

@@ -68,6 +68,14 @@ function dedupeSortedLogEntries(arr) {
 }
 const EMPTY_OPTION = { id: '__empty__', labelKey: 'logreplay.header.noFile' }
 
+const TOPICS = {
+  grid: '/carto_service/occupancygrid',
+  trackedpose: '/carto_service/trackedpose',
+  path: '/master_service/path',
+  lidar: '/lidar_service/data',
+  localCostmap: '/debug/dwa_local_costmap'
+}
+
 // ✅ 맵 통합 로더: pose 윈도우를 읽는 "같은 청크 스캔"에 costmap/path/goal을 편승시켜
 //   같은 청크를 토픽마다 반복 압축해제하던 낭비를 제거한다(ReplayControls 편승 패턴 이식).
 //   편승 대상 토픽(kind별 후보 + 다운샘플).
@@ -319,6 +327,12 @@ export default function useLogReplayData({
   const [appliedKeyword, setAppliedKeyword] = useState('')
 
   const { ready: searchReady, add: searchAdd, clear: searchClear, query: searchQuery } = useLogSearch()
+  // ✅ searchAdd는 useLogSearch 내부에서 stats.count에 따라 참조가 바뀜(불안정) —
+  //    handleViewLog(등) deps에 직접 넣으면 로그 인덱싱마다 재생성되므로 ref로 감싸 안정화.
+  const searchAddRef = useRef(searchAdd)
+  useEffect(() => {
+    searchAddRef.current = searchAdd
+  }, [searchAdd])
   const logSeqRef = useRef(0)
 
   // ✅ tick의 정상 재생 step(초) EMA
@@ -978,13 +992,6 @@ export default function useLogReplayData({
     if (popup) popup.opener = null
   }, [selectedLogId, logOptions, getPresignedUrl, t])
 
-  const TOPICS = {
-    grid: '/carto_service/occupancygrid',
-    trackedpose: '/carto_service/trackedpose',
-    path: '/master_service/path',
-    lidar: '/lidar_service/data',
-    localCostmap: '/debug/dwa_local_costmap'
-  }
   // ──────────────────────────────────────────────────────────────
   // 조회(스트리밍)
   // ──────────────────────────────────────────────────────────────
@@ -1137,10 +1144,10 @@ export default function useLogReplayData({
       // ✅ 누적 모드: pose "자체 캐시"가 이미 center를 충분히 덮으면 skip
       //   ⚠️ 과거 버그: log window 전용 accEndCoveredRef를 참조해 pose 요청이 막혀
       //      재생 중 로봇 위치가 초기 윈도우(~12s)에 고정되던 문제 → pose 캐시 range 기준으로 수정.
-        const pc = poseWindowCacheRef.current
-        const maxCachedT = Array.isArray(pc) && pc.length ? Number(pc[pc.length - 1]?.tSec) : NaN
-        if (Number.isFinite(maxCachedT) && centerSec <= maxCachedT - 2) {
-          return
+      const pc = poseWindowCacheRef.current
+      const maxCachedT = Array.isArray(pc) && pc.length ? Number(pc[pc.length - 1]?.tSec) : NaN
+      if (Number.isFinite(maxCachedT) && centerSec <= maxCachedT - 2) {
+        return
       }
 
       activePoseWindowRef.current = { startSec, endSec }
@@ -1326,7 +1333,7 @@ export default function useLogReplayData({
           onBatch: (batch) => {
             // ✅ 검색 인덱싱이 필요하면 유지(원치 않으면 이 블록 제거 가능)
             try {
-              searchAdd?.(
+              searchAddRef.current?.(
                 batch.map((e) => ({
                   ts: logSeqRef.current++,
                   level: e.level,
@@ -1504,8 +1511,6 @@ export default function useLogReplayData({
           maybeSetReady()
           return null
         })
-
-      Promise.allSettled([gridPromise]).then(() => {})
     } catch (err) {
       console.error('[Logreplay] 로그 뷰 로드 실패:', err)
       setLogError(err?.message || String(err))
@@ -1528,7 +1533,12 @@ export default function useLogReplayData({
     renderNow,
     updateBuffer,
     buildOdomChartsFromPoses,
-    t
+    t,
+    setDurationMs,
+    searchClear,
+    getPlayTimeSec,
+    applyPoseByPlayhead,
+    applyLogsByPlayhead
   ])
 
   const formatDate = useCallback(function (yyyyMMdd) {

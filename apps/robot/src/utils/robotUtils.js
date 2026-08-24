@@ -5,7 +5,7 @@ export const STATUS_MAP = {
   },
   STANDBY: {
     className: 'bg-[#f5f3ff] text-[#7c3aed]',
-    textKey: 'wait'
+    textKey: 'standby'
   },
   CHARGE: {
     className: 'bg-[#d1fae5] text-[#059669]',
@@ -52,7 +52,7 @@ export const allRegStatus = [
 ]
 
 export const allOperationStatus = [
-  { value: 'STANDBY', token: 'wait' },
+  { value: 'STANDBY', token: 'standby' },
   { value: 'CHARGE', token: 'charge' },
   { value: 'OPERATION', token: 'operation' },
   { value: 'OFFLINE', token: 'offline' },

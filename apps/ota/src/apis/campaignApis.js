@@ -3,10 +3,11 @@ import { ENDPOINTS } from './constants'
 
 const axiosOta = client(import.meta.env.VITE_OTA_API_BASE_URL)
 
-const retrieveCampaign = async (orgIds, id = null) => {
+const retrieveCampaign = async (orgIds, id = null, page = null) => {
   try {
     const data = { orgIds: orgIds }
     if (id) data.id = String(id)
+    if (page !== null) data.page = Number(page)
     const response = await axiosOta.post(ENDPOINTS.CAMPAIGN.BASE, data)
     return response
   } catch (error) {

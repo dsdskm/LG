@@ -73,8 +73,9 @@ const SiteItem = styled.div`
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 7px 20px 7px 64px;
+  padding: 8px 20px 8px 64px;
   position: relative;
+  line-height: 1.4;
 
   &::before {
     content: '';

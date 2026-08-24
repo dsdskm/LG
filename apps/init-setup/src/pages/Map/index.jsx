@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useFoxglove } from '@/hooks/useFoxglove'
+import { useTelemetry } from '@/hooks/useTelemetry'
 import ConnectionBar from '@/components/ConnectionBar'
 import { LocationBar, resolveLocationName, Section, Title } from '@repo/ui'
 import MapCanvas from '@/components/MapCanvas'
@@ -21,7 +21,7 @@ import { StyledMapPageContent, BadgeRow, MapWorkspace, LocationRow, MappingStatu
  *
  * 메인 페이지.
  * - wsUrl 상태 관리
- * - useFoxglove 훅으로 데이터 수신
+ * - useTelemetry 훅으로 데이터 수신
  * - 위치 계층(Building/Floor/Area) 목록 조회 및 선택 상태 관리 (LocationBar 는 표현만 담당)
  * - ConnectionBar + MapCanvas + StatusPanel 조합
  *
@@ -177,7 +177,7 @@ export default function Map() {
     unsubscribeTopics,
     connect,
     disconnect
-  } = useFoxglove(wsUrl, fps)
+  } = useTelemetry(wsUrl, fps)
 
   // 매핑 진행 상태는 폴링이 아니라 /lio_node/status 구독으로 들어온다.
   // 상태 토픽 이름은 로봇 구성에 따라 달라서 구독 목록에서 실제로 잡힌 것을 쓴다.

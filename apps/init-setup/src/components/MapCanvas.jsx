@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react'
-import { SPATIAL_TOPICS, subscribedTopicOf } from '@/constants/topics'
+import { FOOTPRINT_TOPICS, SPATIAL_TOPICS, subscribedTopicOf } from '@/constants/topics'
 import { transformPoint } from '@/utils/tf'
 
 // OccupancyGrid의 장애물 확률(0~100)에 따른 밝기(0~255) 값을 미리 계산한 캐시 배열
@@ -15,6 +15,11 @@ const ZOOM_STEP = 1.1 // 휠 한 칸당 배율
 const KEEP_VISIBLE = 0.3 // 팬 시 지도가 뷰포트와 최소로 겹쳐야 하는 비율
 // 클릭으로 인정하는 이동 허용치(px) — 이보다 움직이면 팬(드래그)으로 본다.
 const CLICK_SLOP = 4
+// footprint 토픽(nav2 costmap)이 없을 때 로봇 마커에 쓰는 반경(m).
+// 격자 칸 수가 아니라 미터로 잡아야 지도 해상도가 달라져도 실제 크기로 보인다.
+// nav2 의 robot_radius 는 corepath 이미지 안 파라미터라 저장소에서 읽을 수 없어 대략치다 —
+// 실제 치수가 확인되면 이 상수만 고치면 된다.
+const FALLBACK_ROBOT_RADIUS_M = 0.3
 
 /**
  * MapCanvas
@@ -29,7 +34,8 @@ const CLICK_SLOP = 4
  * 렌더링 레이어 순서 (아래에서 위로):
  *   1. OccupancyGrid 격자 지도  (회색/흰색/검정)
  *   2. LaserScan 포인트          (빨간 점들)
- *   3. 로봇 위치 마커             (파란 원 + 방향 화살표)
+ *   3. 로봇 위치 마커             (파란 외형 + 방향 화살표)
+ *      크기는 footprint 토픽(nav2 costmap)이 있으면 실제 폴리곤, 없으면 상수 반경으로 그린다.
  *
  * @param {Function} [onMapClick] 지도 클릭 시 호출 — ({x, y, canvasX, canvasY}).
  *   x/y 는 지도 프레임 월드 좌표(m), canvasX/Y 는 래퍼 기준 픽셀(말풍선 배치용).
@@ -389,10 +395,31 @@ function MapCanvas({
     if (markerPose) {
       const { yaw } = markerPose
       const { px, py } = worldToCanvas(markerPose.x, markerPose.y)
-      const ROBOT_R = Math.max(6, CELL_SIZE * 2)
+
+      // 크기는 로봇 외형(footprint) 폴리곤이 있으면 그걸 그대로 쓰고, 없으면 상수 반경으로
+      // 폴백한다 — footprint 는 nav2(corepath) 가 떠 있을 때만 발행되므로 매핑 단계에서는 없다.
+      const footprintTopic = FOOTPRINT_TOPICS.find((topic) => subscribedTopics.includes(topic))
+      const footprintData = footprintTopic ? customTopicsData[footprintTopic] : null
+      const footprintPts = footprintData?.polygon?.points ?? []
+      // 폴리곤 점들은 costmap global_frame 기준이라 map 으로 보정해서 찍는다
+      // (global_costmap 은 이미 map 이라 보정량이 null 이 되고 좌표가 그대로 쓰인다).
+      const footprintCorrection = correctionFor(footprintData)
+
+      // 방향 표시선 길이 — footprint 유무와 무관하게 실제 크기에 비례하게 잡는다.
+      const radiusPx = Math.max(6, (FALLBACK_ROBOT_RADIUS_M / resolution) * CELL_SIZE)
 
       ctx.beginPath()
-      ctx.arc(px, py, ROBOT_R, 0, Math.PI * 2)
+      if (footprintPts.length >= 3) {
+        footprintPts.forEach((pt, i) => {
+          const world = transformPoint(footprintCorrection, pt)
+          const corner = worldToCanvas(world.x, world.y)
+          if (i === 0) ctx.moveTo(corner.px, corner.py)
+          else ctx.lineTo(corner.px, corner.py)
+        })
+        ctx.closePath()
+      } else {
+        ctx.arc(px, py, radiusPx, 0, Math.PI * 2)
+      }
       ctx.fillStyle = 'rgba(41, 128, 185, 0.85)'
       ctx.fill()
       ctx.strokeStyle = '#fff'
@@ -401,7 +428,7 @@ function MapCanvas({
 
       ctx.beginPath()
       ctx.moveTo(px, py)
-      ctx.lineTo(px + ROBOT_R * 1.5 * Math.cos(yaw), py - ROBOT_R * 1.5 * Math.sin(yaw))
+      ctx.lineTo(px + radiusPx * 1.5 * Math.cos(yaw), py - radiusPx * 1.5 * Math.sin(yaw))
       ctx.strokeStyle = '#fff'
       ctx.lineWidth = 2
       ctx.stroke()
@@ -806,7 +833,8 @@ const MemoizedMapCanvas = React.memo(MapCanvas, (prevProps, nextProps) => {
     '/initialpose',
     '/clicked_point',
     '/tf',
-    '/tf_static'
+    '/tf_static',
+    ...FOOTPRINT_TOPICS
   ]
 
   for (const key of spatialKeys) {

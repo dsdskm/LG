@@ -5,6 +5,8 @@ import { StyledPageContent, Title, SectionRobot, OrganizationSelector, Dropdown,
 import { mapApis, siteApis, deviceApis } from '@/apis'
 import '../../index.css'
 
+const ALL_BUILDINGS = 'all'
+
 const MAP_TYPES = ['navi', 'poi', 'svg']
 const TYPE_BADGE_STYLE = {
   navi: { background: '#dbeafe', color: '#2563eb' },
@@ -79,8 +81,7 @@ const MapManagement = () => {
   const [buildings, setBuildings] = useState([]) // 선택 사이트의 buildings→floors→areas 계층
   const [items, setItems] = useState([]) // searchMaps 결과
   const [loading, setLoading] = useState(false)
-  const [buildingFilter, setBuildingFilter] = useState('')
-  const [floorFilter, setFloorFilter] = useState('')
+  const [buildingFilter, setBuildingFilter] = useState(ALL_BUILDINGS)
 
   const effectiveGroupId = org.groupId || (org.siteId ? siteGroupMap[org.siteId] : null)
   const hasScope = !!(org.siteId && effectiveGroupId)
@@ -115,8 +116,7 @@ const MapManagement = () => {
 
   // 사이트 선택 시 계층 조회 + 필터 초기화
   useEffect(() => {
-    setBuildingFilter('')
-    setFloorFilter('')
+    setBuildingFilter(ALL_BUILDINGS)
     if (!org.siteId) {
       setBuildings([])
       return
@@ -194,33 +194,18 @@ const MapManagement = () => {
 
   const buildingOptions = useMemo(
     () => [
-      { name: t('mapMgmt.allBuildings'), value: '' },
+      { name: t('mapMgmt.allBuildings'), value: ALL_BUILDINGS },
       ...buildings.map((b) => ({ name: b.buildingName ?? b.buildingId, value: b.buildingId }))
     ],
     [buildings, t]
   )
 
-  const floorSource = useMemo(
-    () =>
-      buildingFilter
-        ? (buildings.find((b) => b.buildingId === buildingFilter)?.floors ?? [])
-        : buildings.flatMap((b) => b.floors ?? []),
-    [buildings, buildingFilter]
-  )
-  const floorOptions = useMemo(
-    () => [
-      { name: t('mapMgmt.allFloors'), value: '' },
-      ...floorSource.map((f) => ({ name: f.floorName ?? f.floorId, value: f.floorId }))
-    ],
-    [floorSource, t]
-  )
+  const isAllBuildings = buildingFilter === ALL_BUILDINGS
 
-  // 사이트 맵(영역) 행 + 로봇 맵 행 (빌딩/층 필터 미적용 시 로봇 맵도 함께 표시)
+  // 사이트 맵(영역) 행 + 로봇 맵 행 (빌딩 필터 미적용 시 로봇 맵도 함께 표시)
   const rows = useMemo(() => {
     const areaRows = allAreas
-      .filter(
-        (a) => (!buildingFilter || a.buildingId === buildingFilter) && (!floorFilter || a.floorId === floorFilter)
-      )
+      .filter((a) => isAllBuildings || a.buildingId === buildingFilter)
       .map((a) => ({
         _key: `a-${a.areaId}`,
         isRobot: false,
@@ -233,25 +218,23 @@ const MapManagement = () => {
         robotName: '-',
         mapItem: mapsByArea[a.areaId]
       }))
-    const robotRows =
-      buildingFilter || floorFilter
-        ? []
-        : robotItems.map((it) => ({
-            _key: `r-${it.mapId}`,
-            isRobot: true,
-            deviceId: it.mapScope.deviceId,
-            buildingName: '-',
-            floorName: '-',
-            areaName: '-',
-            robotName: deviceNames[it.mapScope.deviceId] ?? it.mapScope.deviceId,
-            mapItem: it
-          }))
+    const robotRows = !isAllBuildings
+      ? []
+      : robotItems.map((it) => ({
+          _key: `r-${it.mapId}`,
+          isRobot: true,
+          deviceId: it.mapScope.deviceId,
+          buildingName: '-',
+          floorName: '-',
+          areaName: '-',
+          robotName: deviceNames[it.mapScope.deviceId] ?? it.mapScope.deviceId,
+          mapItem: it
+        }))
     return [...areaRows, ...robotRows]
-  }, [allAreas, buildingFilter, floorFilter, mapsByArea, robotItems, deviceNames])
+  }, [allAreas, buildingFilter, isAllBuildings, mapsByArea, robotItems, deviceNames])
 
   const handleBuildingChange = (v) => {
     setBuildingFilter(v)
-    setFloorFilter('')
   }
 
   const columns = useMemo(
@@ -282,16 +265,14 @@ const MapManagement = () => {
     [t]
   )
 
-  // 항목이 2개 이상일 때만 필터 노출 (기본값은 '전체' = '')
-  // 층 필터는 빌딩 필터가 보일 때만 노출
+  // 항목이 2개 이상일 때만 빌딩 필터 노출 (기본값은 '전체' = ALL_BUILDINGS)
   const showBuildingFilter = buildings.length >= 2
-  const showFloorFilter = showBuildingFilter && floorSource.length >= 2
 
   return (
     <StyledPageContent className="column">
       <Title>{t('mapMgmt.listTitle')}</Title>
 
-      {/* 필터 — 사이트 필터 옆에 빌딩/층 필터 배치 (카드 없이) */}
+      {/* 필터 — 사이트 필터 옆에 빌딩 필터 배치 (카드 없이) */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '2rem', flexWrap: 'wrap' }}>
         <OrganizationSelector onChange={handleOrgChange} supportNone={[false, false]} />
         {hasScope && showBuildingFilter && (
@@ -302,9 +283,6 @@ const MapManagement = () => {
             options={buildingOptions}
             onChange={handleBuildingChange}
           />
-        )}
-        {hasScope && showFloorFilter && (
-          <Dropdown size="lg" minWidth="16rem" value={floorFilter} options={floorOptions} onChange={setFloorFilter} />
         )}
       </div>
 

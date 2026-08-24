@@ -155,8 +155,11 @@ export default function TaskFlowListRow({
   const isSelectable = selectMode && flow.id > 0
 
   const handleToggle = () => {
-    if (!isSelectable) return
-    onToggleSelect?.(flow.id)
+    if (!isSelectable) {
+      onClickDetail(flow.id)
+    } else {
+      onToggleSelect?.(flow.id)
+    }
   }
 
   return (

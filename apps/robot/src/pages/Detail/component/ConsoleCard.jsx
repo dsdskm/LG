@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useImperativeHandle, f
 import styled from 'styled-components'
 import config from '../config'
 import { getClientId } from '../config/clientId'
+import { getForceConnect } from '../config/forceConnect'
 import { useTranslation } from 'react-i18next'
 import { useUserStore } from '@repo/stores'
 import { deviceApis } from '@/apis'
@@ -310,6 +311,14 @@ const ConsoleCard = forwardRef(({ robotId, card, onExpand, onControlOpen }, ref)
   useEffect(() => {
     return () => {
       precheckAbortRef.current = true
+    }
+  }, [])
+
+  // ★ 강제 연결(ON) 시 사전 점검(checkAndStartConnection)을 건너뛰고 바로 연결 진행
+  useEffect(() => {
+    if (getForceConnect()) {
+      setShouldConnect(true)
+      setConnectionStatus('connecting')
     }
   }, [])
 

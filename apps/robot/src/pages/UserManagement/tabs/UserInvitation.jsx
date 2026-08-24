@@ -145,7 +145,8 @@ const UserInvitation = () => {
         )
       },
       grow: 0.6,
-      sortable: false
+      sortable: false,
+      minWidth: '85px'
     }
   ]
 

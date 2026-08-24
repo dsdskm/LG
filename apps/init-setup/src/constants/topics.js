@@ -22,6 +22,12 @@ export const ODOM_TOPICS = ['/lio/odom', '/odom']
 // 좌표 변환 트리 (tf2_msgs/TFMessage). 후보 중 하나가 아니라 둘 다 구독한다.
 export const TF_TOPICS = ['/tf', '/tf_static']
 
+// 로봇 외형 폴리곤 (geometry_msgs/PolygonStamped) — nav2 costmap 이 발행한다.
+// 지도 위 로봇 마커를 실제 치수로 그리는 데 쓴다. 없으면 MapCanvas 가 상수 반경으로 폴백한다.
+// global 은 map 프레임이라 그대로 쓸 수 있고, local 은 costmap global_frame(보통 odom)
+// 기준이라 frameCorrections 로 보정해야 하므로 global 을 먼저 고른다.
+export const FOOTPRINT_TOPICS = ['/global_costmap/published_footprint', '/local_costmap/published_footprint']
+
 // 3D 라이다 점군 (sensor_msgs/PointCloud2)
 // 센서 원본(hesai_lidar 프레임)만 사용한다 — MapCanvas가 odom pose로 월드 변환하므로
 // 이미 월드 좌표인 /lio/vis_deskewed_cloud를 넣으면 이중 변환된다.
@@ -45,6 +51,7 @@ export const SPATIAL_TOPICS = [
   ...ODOM_TOPICS,
   ...SCAN_TOPICS,
   ...TF_TOPICS,
+  ...FOOTPRINT_TOPICS,
   '/lio/path',
   '/scan_matched_points2',
   '/trajectory_node_list',
@@ -58,6 +65,7 @@ export const SPATIAL_TOPICS = [
 
 // cdrParser.js가 해석할 수 있는 스키마. 그 외에는 JSON으로 취급한다.
 const CDR_SCHEMAS = new Set([
+  'geometry_msgs/msg/PolygonStamped',
   'nav_msgs/msg/OccupancyGrid',
   'nav_msgs/msg/Odometry',
   'nav_msgs/msg/Path',

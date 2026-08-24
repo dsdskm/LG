@@ -38,7 +38,9 @@ const App = () => {
   const { t: appT } = useTranslation('route')
 
   const appPrefix = useMemo(() => getAppPrefix(pathname), [pathname])
-  // 초기 설정이 완료된 로봇은 '초기 설정' 탭/메뉴/라우트를 아예 갖지 않는다.
+  // 셋업 완료(status 'completed' = 마지막 단계인 업로드까지 끝냄) 여부로
+  // 초기 설정 그룹 노출 · 단계 순서 잠금 · 기본 착지점을 결정한다.
+  // 완료 이력은 되돌아가지 않으므로(utils/setupProgress) 완료 후 맵을 다시 스캔해도 그대로 유지된다.
   const { loading: setupLoading, completed: setupCompleted, setup } = useRobotSetupStatus()
 
   const processedAppRoutes = useMemo(() => {
@@ -51,9 +53,17 @@ const App = () => {
       })
     }
 
-    const visible = setupCompleted ? appRoutes.filter((route) => route.group !== SETUP_GROUP.INITIAL) : appRoutes
-    return processRoutes(visible)
-  }, [setupCompleted])
+    return processRoutes(appRoutes)
+  }, [])
+
+  // 셋업을 완료한 로봇은 초기 설정 그룹을 탭 · 사이드바 · 라우트에서 모두 제거한다 — 설치가 끝난 뒤에는
+  // 언어/네트워크/지점 같은 최초 설치 항목을 다시 밟을 일이 없다(맵은 언제든 다시 스캔할 수 있다).
+  // 제거된 경로로 직접 들어오면 Router 의 catch-all 이 landingPath 로 되돌린다.
+  const visibleAppRoutes = useMemo(
+    () =>
+      setupCompleted ? processedAppRoutes.filter((route) => route.group !== SETUP_GROUP.INITIAL) : processedAppRoutes,
+    [processedAppRoutes, setupCompleted]
+  )
 
   // admin 탭은 SYSTEM_MANAGER 이상만 본다. 세션이 바뀌면 탭도 따라가야 하므로 store 를 구독한다.
   const userLevel = useUserStore((state) => state.session?.userLevel)
@@ -78,10 +88,10 @@ const App = () => {
     () =>
       HEADER_GNB.filter(
         (tab) =>
-          !(setupCompleted && tab.group === SETUP_GROUP.INITIAL) &&
-          (tab.minUserLevel === undefined || (Number(userLevel) || 0) >= tab.minUserLevel)
+          (tab.minUserLevel === undefined || (Number(userLevel) || 0) >= tab.minUserLevel) &&
+          !(setupCompleted && tab.group === SETUP_GROUP.INITIAL)
       ).map((tab) => (gate && lockedPaths.has(tab.path) ? { ...tab, locked: true, ...gate } : tab)),
-    [setupCompleted, userLevel, gate, lockedPaths]
+    [userLevel, gate, lockedPaths, setupCompleted]
   )
 
   // admin 사이드바는 DB 테이블 목록이라 런타임에 만든다. admin 화면 밖에서는 조회하지 않는다.
@@ -120,11 +130,11 @@ const App = () => {
   )
 
   const allRoutes = useMemo(
-    () => flattenRoutes(processedAppRoutes, <RootGuard landingPath={setupLandingPath} />),
-    [processedAppRoutes, setupLandingPath]
+    () => flattenRoutes(visibleAppRoutes, <RootGuard landingPath={setupLandingPath} />),
+    [visibleAppRoutes, setupLandingPath]
   )
 
-  // 상태를 모르는 동안 라우트를 그리면 감춰야 할 초기 설정 화면이 한 프레임 노출될 수 있다.
+  // 상태 조회가 끝나기 전에 라우트를 그리면 완료 여부에 따른 착지점이 순간적으로 달라질 수 있다.
   // /version 은 예외 — BE 가 죽어 셋업 조회가 늦어도 버전은 확인할 수 있어야 한다.
   if (setupLoading && pathname !== '/version') {
     return (
@@ -147,12 +157,12 @@ const App = () => {
         <Router
           allRoutes={allRoutes}
           appPrefix={appPrefix}
-          processedAppRoutes={processedAppRoutes}
+          processedAppRoutes={visibleAppRoutes}
           headerRoutes={headerRoutes}
           groupSideBarRoutes={groupSideBarRoutes}
           lockedPaths={lockedPaths}
           gate={gate}
-          // 없는 URL(셋업 완료로 제거된 초기 설정 경로 등)의 착지점.
+          // 없는 URL의 착지점.
           // 진행 중인 단계로 보내고, 계산이 불가하면 설치 플로우 첫 탭으로 떨어뜨린다 (admin 은 제외).
           landingPath={
             setupLandingPath || headerRoutes.find((tab) => tab.group !== SETUP_GROUP.ADMIN)?.path || '/login'

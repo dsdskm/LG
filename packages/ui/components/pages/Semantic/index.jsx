@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react'
-import { Section, Button } from '@repo/ui'
-import { ButtonWrapper, SemanticWorkspace } from './styles'
+import { Section, Button, Dropdown } from '@repo/ui'
+import { CommandBar, CommandButtons, CommandRow, CommandFilters, SemanticWorkspace } from './styles'
 import SemanticTable from './SemanticTable'
 import SemanticDetail from './SemanticDetail'
+
+const SEMANTIC_TYPES = ['POI', 'ETC']
+const OPERATION_TYPES = ['IN-USE', 'WORKING']
 
 /**
  * POI(시맨틱) 편집 화면 본문.
@@ -14,26 +17,33 @@ import SemanticDetail from './SemanticDetail'
  * @param {React.ReactNode} [mapSlot] 왼쪽 지도 칸에 넣을 내용.
  *   지도 렌더러는 앱마다 달라서(init-setup 은 foxglove 기반 MapCanvas) 주입받는다.
  */
-const SemanticPage = ({ poiList, onSave, onCancel, mapSlot }) => {
+const SemanticPage = ({ poiVersion, poiList, onSave, onCancel, mapSlot }) => {
   const [loading, setLoading] = useState(false)
   const [mode, setMode] = useState('MODE_LIST')
   const [selectedRow, setSeletedRow] = useState(null)
   const [pois, setPois] = useState([])
+  const [workingPois, setWorkingPois] = useState([])
+  // Table 의 operation 필터(IN-USE/WORKING). SemanticTable 은 상세 진입 시 언마운트되므로
+  // 필터가 리셋되지 않도록 여기(부모)에서 들고 있는다.
+  const [operationMode, setOperationMode] = useState('IN-USE')
+  const [semanticType, setSemanticType] = useState('POI')
 
   useEffect(() => {
-    const newPois = poiList.map((poi) => ({
-      ...poi,
-      _work: {
-        saved: true
-      }
-    }))
-    setPois(newPois)
+    const inUse = poiList.filter((poi) => !poi.editStatus)
+    const working = poiList.filter((poi) => poi.editStatus)
+
+    // poiId 기준으로 IN-USE 에는 있으나 WORKING 에 없는 POI 는 작업본으로 복사한다.
+    const workingPoiIds = new Set(working.map((poi) => poi.poiId))
+    const copies = inUse
+      .filter((poi) => !workingPoiIds.has(poi.poiId))
+      .map((poi) => ({ ...poi, editStatus: { inUsed: true } }))
+    setPois(inUse)
+    setWorkingPois([...working, ...copies])
     setLoading(true)
   }, [poiList])
 
   const handleSave = () => {
-    console.log(pois)
-    onSave(pois)
+    onSave(workingPois)
   }
 
   const handleCancel = () => {
@@ -48,22 +58,24 @@ const SemanticPage = ({ poiList, onSave, onCancel, mapSlot }) => {
   }
 
   const handleCreated = (newObj) => {
-    console.log('onCreated')
-    setPois((prev) => [...prev, newObj])
+    console.log('handleCreated newObj', newObj)
+    setWorkingPois((prev) => [...prev, newObj])
 
     setSeletedRow(null)
     setMode('MODE_LIST')
+    setOperationMode('WORKING')
   }
 
   const handlePoiDeleted = (ids) => {
-    setPois((prev) =>
+    setWorkingPois((prev) =>
       prev.map((poi) =>
         ids.includes(poi.id)
           ? {
               ...poi,
-              _work: {
-                ...poi._work,
-                softDelete: true
+              editStatus: {
+                ...poi.editStatus,
+                softDelete: true,
+                needToSave: true
               }
             }
           : poi
@@ -75,14 +87,15 @@ const SemanticPage = ({ poiList, onSave, onCancel, mapSlot }) => {
   }
 
   const handlePoiRestore = (row) => {
-    setPois((prev) =>
+    setWorkingPois((prev) =>
       prev.map((poi) =>
         poi.id === row.id
           ? {
               ...poi,
-              _work: {
-                ...poi._work,
-                softDelete: false
+              editStatus: {
+                ...poi.editStatus,
+                softDelete: false,
+                needToSave: true
               }
             }
           : poi
@@ -92,18 +105,16 @@ const SemanticPage = ({ poiList, onSave, onCancel, mapSlot }) => {
 
   const handleEdited = (editedObj) => {
     console.log('onEdited')
-    setPois((prev) => prev.map((poi) => (poi.id === editedObj.id ? editedObj : poi)))
+    setWorkingPois((prev) => prev.map((poi) => (poi.poiId === editedObj.poiId ? editedObj : poi)))
     setSeletedRow(null)
     setMode('MODE_LIST')
+    setOperationMode('WORKING')
   }
 
   const handleNameClick = (row) => {
-    console.log('onNameClick :', row.id)
-    if (row._work.state === 'DELETED') {
-    } else {
-      setSeletedRow(row)
-      setMode('MODE_DETAIL')
-    }
+    setSeletedRow(row)
+    // IN-USE 는 읽기 전용 조회, WORKING 은 편집.
+    setMode(operationMode === 'IN-USE' ? 'MODE_VIEW' : 'MODE_DETAIL')
   }
 
   const handlePoiCancel = () => {
@@ -117,16 +128,38 @@ const SemanticPage = ({ poiList, onSave, onCancel, mapSlot }) => {
       // — Section 안에 Section 을 겹치면 카드가 이중으로 보인다.
       <>
         {/* Command Button area */}
-        <Section>
-          <ButtonWrapper>
-            <Button disabled={mode === 'MODE_DETAIL'} size="md" onClick={handleSave}>
-              저장
-            </Button>
-            <Button disabled={mode === 'MODE_DETAIL'} size="md" onClick={handleCancel}>
-              취소
-            </Button>
-          </ButtonWrapper>
-        </Section>
+        <CommandBar>
+          <Section>
+            <CommandRow>
+              <CommandFilters>
+                <Dropdown
+                  label="type"
+                  size="md"
+                  value={semanticType}
+                  options={SEMANTIC_TYPES.map((tp) => ({ name: tp, value: tp }))}
+                  onChange={setSemanticType}
+                />
+                <Dropdown
+                  label="operation"
+                  size="md"
+                  value={operationMode}
+                  options={OPERATION_TYPES.map((op) => ({ name: op, value: op }))}
+                  onChange={setOperationMode}
+                />
+              </CommandFilters>
+              {operationMode === 'WORKING' && (
+                <CommandButtons>
+                  <Button disabled={mode === 'MODE_DETAIL'} size="md" onClick={handleSave}>
+                    임시 저장
+                  </Button>
+                  <Button disabled={mode === 'MODE_DETAIL'} size="md" onClick={handleCancel}>
+                    취소
+                  </Button>
+                </CommandButtons>
+              )}
+            </CommandRow>
+          </Section>
+        </CommandBar>
 
         <SemanticWorkspace className="row">
           {/* Map */}
@@ -135,7 +168,10 @@ const SemanticPage = ({ poiList, onSave, onCancel, mapSlot }) => {
           <Section>
             {mode === 'MODE_LIST' ? (
               <SemanticTable
+                poiVersion={poiVersion}
                 data={pois}
+                workingData={workingPois}
+                operationMode={operationMode}
                 onCreate={handleCreate} // create
                 onNameClick={handleNameClick} // update
                 onPoiDeleted={handlePoiDeleted} // delete
@@ -145,6 +181,7 @@ const SemanticPage = ({ poiList, onSave, onCancel, mapSlot }) => {
             ) : (
               <SemanticDetail
                 row={selectedRow}
+                readOnly={mode === 'MODE_VIEW'}
                 onPoiCreated={handleCreated}
                 onPoiEdited={handleEdited}
                 onPoiCancel={handlePoiCancel}

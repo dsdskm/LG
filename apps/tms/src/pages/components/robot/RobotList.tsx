@@ -24,7 +24,7 @@ type RobotListProps = {
   selectedRobotIds: SimpleRobotInfo[]
   mode: 'DEPLOY' | 'CONTROL'
   onChangeCheckbox?: (robot: RobotInfo) => void
-  onClickItem?: (robotId: string) => void
+  onClickItem?: (robot: RobotInfo) => void
   onClickControlItem?: (robotId: string) => void
   showControlButton?: boolean
 }

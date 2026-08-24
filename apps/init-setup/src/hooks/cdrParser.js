@@ -84,6 +84,19 @@ export function parseCDR(buffer, schemaName) {
       return { transforms }
     }
 
+    // ── geometry_msgs/msg/PolygonStamped ────────────────────────────
+    // /global_costmap/published_footprint — 로봇 외형 폴리곤. Point32(float32) 라
+    // Point(float64) 와 정렬/크기가 다르므로 별도 리더를 쓴다.
+    if (schemaName === 'geometry_msgs/msg/PolygonStamped') {
+      const header = readHeader()
+      const pointsLen = readU32()
+      const points = []
+      for (let i = 0; i < pointsLen; i++) {
+        points.push({ x: readF32(), y: readF32(), z: readF32() })
+      }
+      return { header, polygon: { points } }
+    }
+
     // ── nav_msgs/msg/OccupancyGrid ──────────────────────────────────
     if (schemaName === 'nav_msgs/msg/OccupancyGrid') {
       const header = readHeader()

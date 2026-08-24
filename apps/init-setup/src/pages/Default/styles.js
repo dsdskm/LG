@@ -732,3 +732,196 @@ export const ManualLabel = styled.div`
 `
 
 
+
+// Language / Terms (EULA) — legacy GUI guide의 흐름을 Modern Neutral 테마에 맞춰 재구성.
+export const LanguageList = styled.div`
+  display: grid;
+  gap: 1rem;
+`
+
+export const LanguageOption = styled.button`
+  width: 100%;
+  min-height: 8rem;
+  display: flex;
+  align-items: center;
+  gap: 1.4rem;
+  border: 1px solid ${({ $active }) => ($active ? 'var(--t-primary-btn-bg)' : 'var(--color-neutral-20)')};
+  border-radius: 1.4rem;
+  background: ${({ $active }) => ($active ? 'var(--color-neutral-15)' : 'var(--color-neutral-10)')};
+  padding: 1.4rem 1.6rem;
+  text-align: left;
+  cursor: pointer;
+  transition: 0.15s ease;
+  box-shadow: ${({ $active }) => ($active ? '0 0 0 3px rgba(125, 119, 106, 0.10)' : 'none')};
+
+  &:hover {
+    border-color: var(--color-neutral-40);
+    background: var(--color-neutral-15);
+  }
+`
+
+export const LanguageRadio = styled.span`
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 2rem;
+  border: 2px solid ${({ $active }) => ($active ? 'var(--t-primary-btn-bg)' : 'var(--color-neutral-40)')};
+  border-radius: 50%;
+  background: ${({ $active }) => ($active ? 'var(--t-primary-btn-bg)' : 'transparent')};
+  box-shadow: ${({ $active }) => ($active ? 'inset 0 0 0 5px var(--color-neutral-10)' : 'none')};
+`
+
+export const LanguageBadge = styled.span`
+  width: 5.2rem;
+  height: 5.2rem;
+  flex: 0 0 5.2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: ${({ $active }) => ($active ? 'var(--t-primary-btn-text)' : 'var(--color-neutral-70)')};
+  background: ${({ $active }) => ($active ? 'var(--t-primary-btn-bg)' : 'var(--color-neutral-20)')};
+  font-size: 1.55rem;
+  font-weight: 900;
+`
+
+export const LanguageText = styled.span`
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+`
+
+export const LanguageName = styled.span`
+  color: var(--color-neutral-90);
+  font-size: 1.65rem;
+  font-weight: 800;
+`
+
+export const LanguageSubName = styled.span`
+  color: var(--color-neutral-60);
+  font-size: 1.2rem;
+  font-weight: 600;
+`
+
+export const WizardButtonWrapSingle = styled.div`
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 3.2rem;
+
+  > button {
+    width: min(36rem, 100%);
+    min-height: 5.2rem;
+    font-size: 1.4rem;
+  }
+`
+
+export const TermsList = styled.div`
+  overflow: hidden;
+  border: 1px solid var(--color-neutral-20);
+  border-radius: 1.5rem;
+  background: var(--color-neutral-10);
+`
+
+export const TermRow = styled.div`
+  min-height: 7.4rem;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1.3rem;
+  padding: 1.2rem 1.5rem;
+
+  & + & {
+    border-top: 1px solid var(--color-neutral-20);
+  }
+`
+
+export const TermCheckButton = styled.button`
+  width: 2.5rem;
+  height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid ${({ $checked }) => ($checked ? 'var(--t-primary-btn-bg)' : 'var(--color-neutral-40)')};
+  border-radius: 50%;
+  background: ${({ $checked }) => ($checked ? 'var(--t-primary-btn-bg)' : 'transparent')};
+  color: var(--t-primary-btn-text);
+  cursor: pointer;
+  padding: 0;
+`
+
+export const TermCheckMark = styled.span`
+  font-size: 1.45rem;
+  font-weight: 900;
+  line-height: 1;
+`
+
+export const TermLabel = styled.div`
+  color: var(--color-neutral-90);
+  font-size: 1.5rem;
+  font-weight: 750;
+  line-height: 1.45;
+`
+
+export const TermArrowButton = styled.button`
+  min-width: 4.2rem;
+  min-height: 4.2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 1rem;
+  background: transparent;
+  color: var(--color-neutral-60);
+  font-size: 3.2rem;
+  font-weight: 300;
+  line-height: 1;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--color-neutral-15);
+    color: var(--color-neutral-90);
+  }
+`
+
+export const TermsDetailHeader = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  margin-bottom: 1.8rem;
+`
+
+export const TermsBackButton = styled.button`
+  width: 4.4rem;
+  height: 4.4rem;
+  flex: 0 0 4.4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-neutral-20);
+  border-radius: 1.1rem;
+  background: var(--color-neutral-10);
+  color: var(--color-neutral-90);
+  font-size: 2.4rem;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--color-neutral-15);
+  }
+`
+
+export const TermsDetailTitle = styled.h3`
+  margin: 0;
+  color: var(--color-neutral-90);
+  font-size: 1.7rem;
+  font-weight: 850;
+`
+
+export const TermsDetailBody = styled.div`
+  min-height: 38rem;
+  max-height: 52rem;
+  overflow-y: auto;
+  border: 1px solid var(--color-neutral-20);
+  border-radius: 1.5rem;
+  background: var(--color-neutral-15);
+  padding: 2rem;
+`

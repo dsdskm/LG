@@ -101,7 +101,7 @@ const AssetInfo = ({ t, deviceId }) => {
         text = t('operation')
         break
       case 'STANDBY':
-        text = t('wait')
+        text = t('standby')
         break
       case 'CHARGE':
         text = t('charge')

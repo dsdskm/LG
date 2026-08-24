@@ -9,6 +9,7 @@ import {
   waitForGridMap,
   create as createMapRecord
 } from '@/apis/mapApis'
+import { SETUP_STEPS, tryAdvanceSetupProgress } from '@/utils/setupProgress'
 import { buildMapRecordBody } from '@/utils/mapRecord'
 import { isMappingSession } from '@/utils/lioStatus'
 import { resolveWsUrl } from '@/utils/wsUrl'
@@ -164,7 +165,11 @@ export default function ConnectionBar({
 
   const handleStart = async () => {
     await runMappingAction(startMapping, {
-      onSuccess: () => setStartedLocally(true),
+      onSuccess: () => {
+        setStartedLocally(true)
+        // 매핑을 시작했을 뿐이므로 이 단계는 아직 완료되지 않은 것으로 기록한다(작업 중인 단계 = 맵 스캔).
+        tryAdvanceSetupProgress(SETUP_STEPS.MAP_SCAN)
+      },
       onError: () => setStartedLocally(false),
       successMessage: 'Mapping started'
     })
@@ -179,6 +184,8 @@ export default function ConnectionBar({
         // 저장해도 lio_node 는 매핑 세션을 유지하지만(status 가 다시 mapping), 이 화면의 한 사이클은
         // 끝났으므로 상태 토픽이 없는 구성에서는 시작 버튼으로 되돌린다.
         setStartedLocally(false)
+        // 맵 저장이 끝났으므로 이 단계를 완료로 기록한다 — 다음 작업 단계(시맨틱)를 가리킨다.
+        tryAdvanceSetupProgress(SETUP_STEPS.MAP_SEMANTIC)
         // 저장 응답 성공 = 3D 맵(PCD + trajectory) 저장 완료 → 완료 모달을 띄운다.
         // 이름은 백엔드가 확정한 값을 쓴다(미지정 시 map_YYMMDD_HHMMSS 로 생성된다).
         const savedName = response?.data?.name || name

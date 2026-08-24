@@ -17,6 +17,7 @@ const MainLayout = ({
   useSubRoutes = false,
   LogoComponent,
   HeaderComponent,
+  notificationSlot,
   aiGreetingExtra,
   aiAssistantCommandAdapter,
   useAiAssistant = true,
@@ -74,9 +75,19 @@ const MainLayout = ({
   return (
     <StyledLayout $compact={compactSideBar} $sideBarOpen={!compactSideBar && responsiveMode !== 'PC'}>
       {HeaderComponent ? (
-        <HeaderComponent headerRoutes={headerRoutes || appRoutes} t={t} LogoComponent={LogoComponent} />
+        <HeaderComponent
+          headerRoutes={headerRoutes || appRoutes}
+          t={t}
+          LogoComponent={LogoComponent}
+          notificationSlot={notificationSlot}
+        />
       ) : (
-        <Header headerRoutes={headerRoutes || appRoutes} t={t} LogoComponent={LogoComponent} />
+        <Header
+          headerRoutes={headerRoutes || appRoutes}
+          t={t}
+          LogoComponent={LogoComponent}
+          notificationSlot={notificationSlot}
+        />
       )}
 
       <SideBar routes={finalSideBarRoutes} t={t} crossAppLinks={crossAppLinks} />
@@ -87,11 +98,13 @@ const MainLayout = ({
         <Footer routes={footerRoutes} />
       </ScrollArea>
 
-      <AiAssistantPanel
-        className="aiAssistantPanel"
-        greetingExtra={aiGreetingExtra}
-        commandAdapter={aiAssistantCommandAdapter}
-      />
+      {useAiAssistant && (
+        <AiAssistantPanel
+          className="aiAssistantPanel"
+          greetingExtra={aiGreetingExtra}
+          commandAdapter={aiAssistantCommandAdapter}
+        />
+      )}
     </StyledLayout>
   )
 }

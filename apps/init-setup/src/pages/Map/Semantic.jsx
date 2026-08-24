@@ -3,9 +3,10 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'react-toastify'
 import { Button, LocationBar, Section, SemanticPage, Title } from '@repo/ui'
 import MapCanvas from '@/components/MapCanvas'
-import { useFoxglove } from '@/hooks/useFoxglove'
+import { useTelemetry } from '@/hooks/useTelemetry'
 import { NAV_STATUS_TOPICS, SPIN_STATUS_TOPICS, STATUS_TOPICS } from '@/constants/topics'
 import { syncLevelSelection } from '@/utils/location'
+import { SETUP_STEPS, tryAdvanceSetupProgress } from '@/utils/setupProgress'
 import { useLocationStore } from '@/stores/useLocationStore'
 import {
   isNavMoving,
@@ -102,6 +103,7 @@ const Semantic = () => {
   const { t } = useTranslation('map')
   const [state, setState] = useState('STATE_IDLE')
   const [pois, setPois] = useState([])
+  const [poiVersion, setPoiVersion] = useState(null)
 
   // 위치 선택은 스토어 공유 — 맵 스캔에서 고른 값을 그대로 이어받고 새로고침에도 유지된다.
   // zustand v5 는 객체 셀렉터가 매 렌더 새 참조를 내므로 필드 단위로 구독한다.
@@ -128,9 +130,9 @@ const Semantic = () => {
   const [isSendingGoto, setIsSendingGoto] = useState(false)
   const [isSendingSpin, setIsSendingSpin] = useState(false)
 
-  // 왼쪽 지도 칸은 Map(스캔) 페이지와 같은 foxglove 캔버스를 쓴다.
+  // 왼쪽 지도 칸은 Map(스캔) 페이지와 같은 캔버스를 쓴다.
   // 이 화면에는 연결 툴바가 없으므로 진입 시 바로 연결하고 떠날 때 끊는다
-  // (구독은 advertise 를 받은 useFoxglove 가 역할별로 자동 처리한다).
+  // (구독은 advertise 를 받은 useTelemetry 가 역할별로 자동 처리한다).
   const [wsUrl] = useState(resolveWsUrl)
   const {
     mapData,
@@ -142,7 +144,7 @@ const Semantic = () => {
     customTopicsData,
     connect,
     disconnect
-  } = useFoxglove(wsUrl, 10)
+  } = useTelemetry(wsUrl, 10)
 
   // 맵 로드(측위) 진행 상태와 주행 상태 — 둘 다 폴링이 아니라 토픽 구독으로 들어온다.
   const lioStatusTopic = STATUS_TOPICS.find((topic) => subscribedTopics.includes(topic)) ?? null
@@ -251,7 +253,10 @@ const Semantic = () => {
     let alive = true
     mapApi
       .list({ areaId })
-      .then((res) => alive && setMapRecord(res?.data?.[0] ?? null))
+      .then((res) => {
+        alive && setMapRecord(res?.data?.[0] ?? null)
+        alive && setPoiVersion(res?.data?.[0]?.poiVersion ?? null)
+      })
       .catch(() => alive && setMapRecord(null))
     return () => {
       alive = false
@@ -358,6 +363,7 @@ const Semantic = () => {
 
   // 위치를 고르면 그 맵의 POI 만, 아직 안 골랐으면 전체 POI 를 보여준다
   // (위치 계층을 쓰지 않는 로봇도 POI 는 편집해야 한다).
+  // 저장 후 단계 완료 판정에도 이 결과를 쓰므로 조회한 목록을 돌려준다(실패 시 빈 배열).
   const fetchData = useCallback(async () => {
     setState('STATE_LOADING')
     try {
@@ -383,11 +389,14 @@ const Semantic = () => {
         delete poi.oriZ
         delete poi.oriW
       })
-      setPois(res.data ?? [])
+      const items = res.data ?? []
+      setPois(items)
       setState('STATE_EDITING')
+      return items
     } catch (error) {
       console.error('[SemanticPage] POI 조회 실패:', error)
       setState('STATE_IDLE')
+      return []
     }
   }, [mapId])
 
@@ -395,12 +404,31 @@ const Semantic = () => {
     fetchData()
   }, [fetchData])
 
-  const onSave = async (pois) => {
-    const toCreatPois = pois.filter((e) => e._work.created && !e._work.softDelete).map(({ _work, ...rest }) => rest)
-    const toUpadtePois = pois
-      .filter((e) => e._work.saved && e._work.edited && !e._work.softDelete)
-      .map(({ _work, ...rest }) => rest)
-    const toDeletePois = pois.filter((e) => e._work.saved && e._work.softDelete).map(({ _work, ...rest }) => rest)
+  const onSave = async (workingPois) => {
+    const toCreatPois = []
+    const toUpadtePois = []
+
+    for (const poi of workingPois) {
+      console.log('needToSave :', poi.editStatus.needToSave)
+      if (poi.editStatus.needToSave) {
+        if (!poi.editStatus.tempSaved) {
+          console.log('case 1')
+          poi.editStatus = {
+            ...poi.editStatus,
+            needToSave: false,
+            tempSaved: true
+          }
+          toCreatPois.push(poi)
+        } else if (poi.editStatus.tempSaved) {
+          console.log('case 2')
+          poi.editStatus = {
+            ...poi.editStatus,
+            needToSave: false
+          }
+          toUpadtePois.push(poi)
+        }
+      }
+    }
 
     // 새 POI 는 소속 맵(mapId)이 있어야 저장된다(BE 가 없으면 400). 수정/삭제는 mapId 없이도 된다.
     if (toCreatPois.length > 0 && !mapId) {
@@ -413,10 +441,16 @@ const Semantic = () => {
     for (const poi of toUpadtePois) {
       await poiApi.update(poi.id, poi)
     }
-    for (const poi of toDeletePois) {
-      await poiApi.remove(poi.id)
+
+    // 저장 결과를 다시 읽어(= 서버에 남은 POI) 화면을 갱신한다.
+    const saved = await fetchData()
+
+    // POI 가 실제로 남아 있을 때만 시맨틱 단계를 완료로 기록한다 — 다음 작업 단계(업로드)를 가리킨다.
+    // 이 기록이 없으면 currentStep 이 시맨틱에 머물러 업로드 화면이 잠긴 채로 남는다(router/routes.jsx).
+    // POI 가 하나도 없는 상태로는 통과시키지 않는다.
+    if (saved.length > 0) {
+      await tryAdvanceSetupProgress(SETUP_STEPS.UPLOAD)
     }
-    fetchData()
   }
 
   const onCancel = () => {
@@ -494,6 +528,7 @@ const Semantic = () => {
       {/* POI 편집 — SemanticPage 가 Section(명령 버튼) + Section(지도 | 목록/상세)을 직접 내보낸다 */}
       {state === 'STATE_EDITING' ? (
         <SemanticPage
+          poiVersion={poiVersion}
           poiList={pois}
           onSave={onSave}
           onCancel={onCancel}
