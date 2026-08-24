@@ -40,7 +40,6 @@ export default defineConfig(({ mode }) => {
       })
     ],
     server: {
-      host: '0.0.0.0',
       port: 5173,
       proxy: {
         '/tms': {
@@ -94,7 +93,6 @@ export default defineConfig(({ mode }) => {
       }
     },
     preview: {
-      host: '0.0.0.0',
       port: 4173,
       proxy: {
         '/tms': {

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import type { DeployStatus, RobotInfo } from '../../../types/RobotInfo'
 import { getRunningTaskFlowStatusLabel } from '@/utils/taskflowStatus'
 import { Div } from '@/assets'
+import { Checkbox } from '@repo/ui'
 
 // export type RobotItem =
 //   | { type: 'groupSection'; key: string; label: string; deployable: boolean }
@@ -19,7 +20,7 @@ type RobotItemProps = {
   displayTaskFlow?: boolean
   deployStatus?: DeployStatus
   onChangeCheckbox?: (robot: RobotInfo) => void
-  onClick?: (robotId: string) => void
+  onClick?: (robotId: RobotInfo) => void
   onClickControl?: (robotId: string) => void
   showControlButton?: boolean
 }
@@ -66,8 +67,8 @@ const RobotItem = ({
 
   const onClickItem = () => {
     if (onClick) {
-      onClick(robot.id)
-    }
+      onClick(robot)
+    } else if (onChangeCheckbox) onChangeCheckbox(robot)
   }
 
   const onClickControlItem = () => {
@@ -88,6 +89,7 @@ const RobotItem = ({
         transition: 'all 0.2s',
         boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)'
       }}
+      onClick={onClickItem}
     >
       <div
         style={{
@@ -96,21 +98,7 @@ const RobotItem = ({
           gap: isNarrowScreen ? '12px' : '24px'
         }}
       >
-        {onChangeCheckbox && (
-          <input
-            type="checkbox"
-            checked={checked}
-            onChange={onChange}
-            disabled={isDisabled}
-            style={{
-              marginTop: '4px',
-              height: '16px',
-              width: '16px',
-              cursor: isDisabled ? 'not-allowed' : 'pointer',
-              opacity: isDisabled ? 0.5 : 1
-            }}
-          />
-        )}
+        {onChangeCheckbox && <Checkbox checked={checked} onChange={onChange} disabled={isDisabled} />}
         <div style={{ flexShrink: 0 }}>
           <div
             style={{
@@ -346,7 +334,12 @@ const RobotItem = ({
                     whiteSpace: 'nowrap',
                     cursor: 'pointer'
                   }}
-                  onClick={onClickItem}
+                  onClick={(event) => {
+                    // 행에도 같은 핸들러가 걸려 있다. 여기서 끊지 않으면 onClickItem 이 두 번 돌아
+                    // navigate 가 히스토리에 두 번 쌓인다(= 뒤로가기를 두 번 눌러야 한다).
+                    event.stopPropagation()
+                    onClickItem()
+                  }}
                 >
                   {t('common:detail')}
                 </button>
@@ -362,7 +355,11 @@ const RobotItem = ({
                     whiteSpace: 'nowrap',
                     cursor: 'pointer'
                   }}
-                  onClick={onClickControlItem}
+                  onClick={(event) => {
+                    // 제어 버튼 클릭이 행 클릭(상세 이동)까지 번지지 않게 끊는다.
+                    event.stopPropagation()
+                    onClickControlItem()
+                  }}
                 >
                   {t('robots.controlButton')}
                 </button>
