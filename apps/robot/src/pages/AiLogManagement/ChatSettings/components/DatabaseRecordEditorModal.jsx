@@ -1,0 +1,423 @@
+import { useState } from 'react'
+import styled from 'styled-components'
+
+import {
+    createChatScreen,
+    createChatGuidance,
+    createChatPrompt,
+    createChatRagDoc,
+    deleteChatScreen,
+    deleteChatGuidance,
+    deleteChatPrompt,
+    deleteChatRagDoc,
+    deleteChatRule,
+    updateChatScreen,
+    updateChatGuidance,
+    updateChatPrompt,
+    updateChatRagDoc,
+    upsertChatRule,
+} from '@repo/apis/ai/chatSettings.js'
+
+import {
+    ModalActions,
+    ModalBackdrop,
+    ModalCard,
+    ModalTitle,
+    PrimaryButton,
+    SecondaryTextButton,
+} from '../styles'
+
+const APP_OPTIONS = ['cms', 'ota', 'robot', 'tms', 'learning']
+
+const FORM_CONFIG = {
+    screen: {
+        label: '화면',
+        fields: [
+            { key: 'appKey', label: '앱', required: true },
+            { key: 'screenKey', label: '화면 Key', required: true, identity: true },
+            { key: 'screenName', label: '화면 이름', required: true },
+            { key: 'enabled', label: '활성', type: 'checkbox', defaultValue: true },
+        ],
+    },
+    guidance: {
+        label: '가이드/힌트',
+        fields: [
+            { key: 'appKey', label: '앱', identity: true },
+            { key: 'screenKey', label: '화면', required: true, identity: true },
+            { key: 'examples', label: '가이드/힌트 JSON', type: 'json', rows: 12, defaultValue: [] },
+        ],
+    },
+    prompt: {
+        label: '프롬프트',
+        fields: [
+            { key: 'appKey', label: '앱', identity: true },
+            { key: 'screenKey', label: '화면', required: true, identity: true },
+            {
+                key: 'type',
+                label: '유형',
+                required: true,
+                identity: true,
+                type: 'select',
+                options: ['instruction', 'intent-classifier', 'rag'],
+                defaultValue: 'instruction',
+            },
+            { key: 'prompt', label: '프롬프트', type: 'textarea', rows: 14 },
+            { key: 'enabled', label: '활성', type: 'checkbox', defaultValue: true },
+        ],
+    },
+    rag: {
+        label: 'RAG 문서',
+        fields: [
+            { key: 'appKey', label: '앱', identity: true },
+            { key: 'chunkKey', label: 'Chunk Key', required: true, identity: true },
+            { key: 'title', label: '제목' },
+            { key: 'keywords', label: '키워드 JSON', type: 'json', rows: 5, defaultValue: [] },
+            { key: 'body', label: '본문', type: 'textarea', rows: 12 },
+            { key: 'imageUrl', label: '이미지 URL' },
+            { key: 'intentType', label: '인텐트 유형', type: 'select', options: ['info', 'action'], defaultValue: 'info' },
+            { key: 'enabled', label: '활성', type: 'checkbox', defaultValue: true },
+        ],
+    },
+    rule: {
+        label: 'Rule',
+        fields: [
+            { key: 'appKey', label: '앱 (appKey)', required: true, identity: true },
+            { key: 'screenKey', label: '화면 (screenKey)', required: true, identity: true },
+            { key: 'ruleKey', label: '규칙 키 (ruleKey)', required: true, identity: true },
+            { key: 'command', label: '명령 (command)' },
+            { key: 'patternRegex', label: '정규식 (patternRegex)' },
+            { key: 'description', label: '설명 (description)', type: 'textarea', rows: 4 },
+            { key: 'replyText', label: '응답 문구 (replyText)', type: 'textarea', rows: 4 },
+            { key: 'fallbackText', label: '실패 문구 (fallbackText)', type: 'textarea', rows: 4 },
+            { key: 'example', label: '예시 JSON (example)', type: 'json', rows: 5, defaultValue: [] },
+            { key: 'extraJson', label: '추가 메타데이터 JSON (extraJson)', type: 'json', rows: 8, defaultValue: {} },
+            { key: 'enabled', label: '활성 (enabled)', type: 'checkbox', defaultValue: true },
+        ],
+    },
+}
+
+const getRecordValue = (record, key) => {
+    if (record?.[key] !== undefined) return record[key]
+    const snakeKey = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
+    return record?.[snakeKey]
+}
+
+const createDraft = (fields, record) => Object.fromEntries(fields.map((field) => {
+    const sourceValue = getRecordValue(record, field.key)
+    const value = sourceValue === undefined ? field.defaultValue ?? '' : sourceValue
+    return [field.key, field.type === 'json' ? JSON.stringify(value, null, 2) : value]
+}))
+
+const parseJsonField = (value, label) => {
+    try {
+        return JSON.parse(String(value || 'null'))
+    } catch {
+        throw new Error(`${label} 형식이 올바른 JSON이 아닙니다.`)
+    }
+}
+
+const assertSuccessful = (response) => {
+    if (Number(response?.code) !== 200) {
+        throw new Error(String(response?.message || '요청 처리에 실패했습니다.'))
+    }
+    return response?.data
+}
+
+export const DatabaseRecordEditorModal = ({ kind, item, screens, onClose, onChanged }) => {
+    const config = FORM_CONFIG[kind] ?? FORM_CONFIG.guidance
+    const editing = Boolean(item?.id)
+    const screenOptions = (Array.isArray(screens) ? screens : [])
+        .map((screen) => ({
+            appKey: String(getRecordValue(screen, 'appKey') ?? ''),
+            screenKey: String(getRecordValue(screen, 'screenKey') ?? ''),
+            screenName: String(getRecordValue(screen, 'screenName') ?? ''),
+        }))
+        .filter((screen) => screen.screenKey)
+        .sort((left, right) => left.screenKey.localeCompare(right.screenKey))
+    const [draft, setDraft] = useState(() => createDraft(config.fields, item))
+    const [saving, setSaving] = useState(false)
+    const [deleting, setDeleting] = useState(false)
+    const [confirmingDelete, setConfirmingDelete] = useState(false)
+    const [error, setError] = useState('')
+    const selectedAppKey = String(draft.appKey ?? '')
+    const filteredScreenOptions = screenOptions.filter((screen) => screen.appKey === selectedAppKey)
+
+    const setField = (key, value) => {
+        setDraft((current) => ({ ...current, [key]: value }))
+    }
+
+    const selectApp = (appKey) => {
+        setDraft((current) => ({
+            ...current,
+            appKey,
+            screenKey: kind === 'screen' ? current.screenKey : '',
+        }))
+    }
+
+    const selectScreen = (screenKey) => {
+        setDraft((current) => ({ ...current, screenKey }))
+    }
+
+    const buildPayload = () => {
+        const payload = {}
+        for (const field of config.fields) {
+            const value = draft[field.key]
+            if (field.required && !String(value ?? '').trim()) {
+                throw new Error(`${field.label} 값을 입력해 주세요.`)
+            }
+            if (field.type === 'json') payload[field.key] = parseJsonField(value, field.label)
+            else if (field.type === 'number') payload[field.key] = Number(value)
+            else if (field.type === 'checkbox') payload[field.key] = Boolean(value)
+            else payload[field.key] = String(value ?? '')
+        }
+        return payload
+    }
+
+    const save = async () => {
+        setSaving(true)
+        setError('')
+        try {
+            const payload = buildPayload()
+            if (kind === 'screen') {
+                if (editing) {
+                    assertSuccessful(await updateChatScreen(item.id, {
+                        appKey: payload.appKey,
+                        screenName: payload.screenName,
+                        enabled: payload.enabled,
+                    }))
+                } else {
+                    assertSuccessful(await createChatScreen(payload))
+                }
+            } else if (kind === 'guidance') {
+                if (editing) {
+                    assertSuccessful(await updateChatGuidance(item.id, { examples: payload.examples }))
+                } else {
+                    const created = assertSuccessful(await createChatGuidance({ appKey: payload.appKey, screenKey: payload.screenKey }))
+                    assertSuccessful(await updateChatGuidance(created.id, { examples: payload.examples }))
+                }
+            } else if (kind === 'prompt') {
+                if (editing) assertSuccessful(await updateChatPrompt(item.id, { prompt: payload.prompt, enabled: payload.enabled }))
+                else assertSuccessful(await createChatPrompt(payload))
+            } else if (kind === 'rag') {
+                const writable = {
+                    title: payload.title,
+                    keywords: payload.keywords,
+                    body: payload.body,
+                    imageUrl: payload.imageUrl,
+                    intentType: payload.intentType,
+                    enabled: payload.enabled,
+                }
+                if (editing) assertSuccessful(await updateChatRagDoc(item.id, writable))
+                else assertSuccessful(await createChatRagDoc({ ...payload, screenKey: payload.appKey }))
+            } else if (kind === 'rule') {
+                assertSuccessful(await upsertChatRule(payload))
+            }
+            await onChanged()
+            onClose()
+        } catch (requestError) {
+            setError(requestError?.message || '저장하지 못했습니다.')
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    const remove = async () => {
+        setDeleting(true)
+        setError('')
+        try {
+            if (kind === 'screen') assertSuccessful(await deleteChatScreen(item.id))
+            else if (kind === 'guidance') assertSuccessful(await deleteChatGuidance(item.id))
+            else if (kind === 'prompt') assertSuccessful(await deleteChatPrompt(item.id))
+            else if (kind === 'rag') assertSuccessful(await deleteChatRagDoc(item.id))
+            else if (kind === 'rule') assertSuccessful(await deleteChatRule(item.id))
+            await onChanged()
+            onClose()
+        } catch (requestError) {
+            setError(requestError?.message || '삭제하지 못했습니다.')
+        } finally {
+            setDeleting(false)
+        }
+    }
+
+    return (
+        <ModalBackdrop onClick={onClose}>
+            <ModalCard style={{ width: 'min(860px, 100%)', maxHeight: '86vh', overflowY: 'auto' }} onClick={(event) => event.stopPropagation()}>
+                <ModalTitle>{config.label} {editing ? '수정' : '추가'}</ModalTitle>
+                <FormGrid>
+                    {config.fields.map((field) => (
+                        <FormField key={field.key} $wide={field.type === 'textarea' || field.type === 'json'}>
+                            <FormLabel htmlFor={`${kind}-${field.key}`}>
+                                {field.label}{field.required ? ' *' : ''}
+                            </FormLabel>
+                            {!editing && field.key === 'appKey' ? (
+                                <FormSelect
+                                    id={`${kind}-${field.key}`}
+                                    value={selectedAppKey}
+                                    onChange={(event) => selectApp(event.target.value)}
+                                >
+                                    <option value="">앱을 선택하세요</option>
+                                    {APP_OPTIONS.map((appKey) => <option key={appKey} value={appKey}>{appKey}</option>)}
+                                </FormSelect>
+                            ) : !editing && kind !== 'screen' && field.key === 'screenKey' ? (
+                                <FormSelect
+                                    id={`${kind}-${field.key}`}
+                                    value={String(draft.screenKey ?? '')}
+                                    disabled={!selectedAppKey}
+                                    onChange={(event) => selectScreen(event.target.value)}
+                                >
+                                    <option value="">{selectedAppKey ? '화면을 선택하세요' : '앱을 먼저 선택하세요'}</option>
+                                    {filteredScreenOptions.map((screen) => (
+                                        <option key={screen.screenKey} value={screen.screenKey}>
+                                            {screen.screenName ? `${screen.screenKey} - ${screen.screenName}` : screen.screenKey}
+                                        </option>
+                                    ))}
+                                </FormSelect>
+                            ) : field.type === 'checkbox' ? (
+                                <CheckboxLabel>
+                                    <input
+                                        id={`${kind}-${field.key}`}
+                                        type="checkbox"
+                                        checked={Boolean(draft[field.key])}
+                                        onChange={(event) => setField(field.key, event.target.checked)}
+                                    />
+                                    사용
+                                </CheckboxLabel>
+                            ) : field.type === 'select' ? (
+                                <FormSelect
+                                    id={`${kind}-${field.key}`}
+                                    value={String(draft[field.key] ?? '')}
+                                    onChange={(event) => setField(field.key, event.target.value)}
+                                >
+                                    {editing && field.key === 'intentType' && draft[field.key] === 'both' ? (
+                                        <option value="both">both (기존 데이터)</option>
+                                    ) : null}
+                                    {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
+                                </FormSelect>
+                            ) : field.type === 'textarea' || field.type === 'json' ? (
+                                <FormTextarea
+                                    id={`${kind}-${field.key}`}
+                                    rows={field.rows}
+                                    value={String(draft[field.key] ?? '')}
+                                    onChange={(event) => setField(field.key, event.target.value)}
+                                />
+                            ) : (
+                                <FormInput
+                                    id={`${kind}-${field.key}`}
+                                    type={field.type === 'number' ? 'number' : 'text'}
+                                    value={String(draft[field.key] ?? '')}
+                                    placeholder={field.placeholder}
+                                    disabled={(editing && field.identity) || (!editing && kind !== 'screen' && field.key === 'appKey')}
+                                    onChange={(event) => setField(field.key, event.target.value)}
+                                />
+                            )}
+                        </FormField>
+                    ))}
+                </FormGrid>
+
+                {error ? <ErrorMessage>{error}</ErrorMessage> : null}
+                {confirmingDelete ? <DeleteWarning>삭제하면 복구할 수 없습니다. 정말 삭제하시겠습니까?</DeleteWarning> : null}
+
+                <ModalActions>
+                    {editing ? (
+                        confirmingDelete ? (
+                            <DangerButton type="button" onClick={remove} disabled={deleting}>{deleting ? '삭제 중...' : '삭제 확인'}</DangerButton>
+                        ) : (
+                            <DangerButton type="button" onClick={() => setConfirmingDelete(true)}>삭제</DangerButton>
+                        )
+                    ) : null}
+                    <ActionSpacer />
+                    <SecondaryTextButton type="button" onClick={onClose}>취소</SecondaryTextButton>
+                    <PrimaryButton type="button" onClick={save} disabled={saving || deleting}>{saving ? '저장 중...' : '저장'}</PrimaryButton>
+                </ModalActions>
+            </ModalCard>
+        </ModalBackdrop>
+    )
+}
+
+const FormGrid = styled.div`
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    margin-top: 18px;
+
+    @media (max-width: 720px) {
+        grid-template-columns: 1fr;
+    }
+`
+const FormField = styled.div`
+    display: grid;
+    grid-column: ${({ $wide }) => ($wide ? '1 / -1' : 'auto')};
+    gap: 6px;
+    min-width: 0;
+`
+const FormLabel = styled.label`
+    color: #475569;
+    font-size: 12px;
+    font-weight: 800;
+`
+const inputStyle = `
+    width: 100%;
+    border: 1px solid #dbe3ef;
+    border-radius: 7px;
+    background: #fff;
+    color: #1f2937;
+    font-family: inherit;
+    font-size: 13px;
+    &:focus { border-color: #2563eb; outline: 2px solid #dbeafe; }
+    &:disabled { background: #f1f5f9; color: #64748b; }
+`
+const FormInput = styled.input`
+    ${inputStyle}
+    height: 38px;
+    padding: 0 10px;
+`
+const FormSelect = styled.select`
+    ${inputStyle}
+    height: 38px;
+    padding: 0 10px;
+`
+const FormTextarea = styled.textarea`
+    ${inputStyle}
+    min-height: 100px;
+    padding: 10px;
+    line-height: 1.55;
+    resize: vertical;
+`
+const CheckboxLabel = styled.label`
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 38px;
+    color: #334155;
+    font-size: 13px;
+`
+const ErrorMessage = styled.div`
+    margin-top: 14px;
+    padding: 10px 12px;
+    border: 1px solid #fecaca;
+    border-radius: 7px;
+    background: #fef2f2;
+    color: #b91c1c;
+    font-size: 12px;
+`
+const DeleteWarning = styled.div`
+    margin-top: 14px;
+    color: #b91c1c;
+    font-size: 12px;
+    font-weight: 700;
+`
+const DangerButton = styled.button`
+    height: 36px;
+    padding: 0 13px;
+    border: 1px solid #dc2626;
+    border-radius: 7px;
+    background: #fff;
+    color: #dc2626;
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+    &:disabled { cursor: default; opacity: 0.5; }
+`
+const ActionSpacer = styled.span`
+    flex: 1;
+`

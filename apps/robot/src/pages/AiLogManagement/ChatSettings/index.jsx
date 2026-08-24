@@ -4,6 +4,7 @@ import {
   getChatHistory,
   getGuidanceList,
   getRagList,
+  listAllChatRules,
   listPrompts,
   createChatPrompt,
   createChatRagDoc,
@@ -45,6 +46,7 @@ import { AppSideTabs } from './components/AppSideTabs'
 import { CommonSettingsTab } from './sections/CommonSettingsTab'
 import { AppScopeSettingsCard, AppScreenSettingsTab } from './sections/AppScreenSettingsTab'
 import { HistoryTab } from './sections/HistoryTab'
+import { DatabaseTableSettingsTab } from './sections/DatabaseTableSettingsTab'
 
 const normalizeKeywordArray = (value) => {
   const rows = Array.isArray(value)
@@ -265,11 +267,12 @@ const ChatSettings = () => {
     setError('')
 
     try {
-      const [settingsRes, guidanceRes, commonPromptRes, commonRagRes] = await Promise.all([
+      const [settingsRes, guidanceRes, promptRes, ragRes, ruleRes] = await Promise.all([
         getChatSettings(),
         getGuidanceList(),
-        listPrompts({ appKey: 'common', screenKey: 'common' }),
-        getRagList({ appKey: 'common', screenKey: 'common' }),
+        listPrompts(),
+        getRagList(),
+        listAllChatRules(),
       ])
       const data = settingsRes?.data ?? {}
       const guidanceItems = Array.isArray(guidanceRes?.data?.items)
@@ -277,21 +280,23 @@ const ChatSettings = () => {
         : Array.isArray(guidanceRes?.items)
           ? guidanceRes.items
           : []
-      const promptItemsFromList = Array.isArray(commonPromptRes?.data?.items)
-        ? commonPromptRes.data.items
-        : Array.isArray(commonPromptRes?.items)
-          ? commonPromptRes.items
+      const promptItemsFromList = Array.isArray(promptRes?.data?.items)
+        ? promptRes.data.items
+        : Array.isArray(promptRes?.items)
+          ? promptRes.items
           : []
-      const ragItemsFromList = Array.isArray(commonRagRes?.data?.items)
-        ? commonRagRes.data.items
-        : Array.isArray(commonRagRes?.items)
-          ? commonRagRes.items
+      const ragItemsFromList = Array.isArray(ragRes?.data?.items)
+        ? ragRes.data.items
+        : Array.isArray(ragRes?.items)
+          ? ragRes.items
+          : []
+      const ruleItems = Array.isArray(ruleRes?.data?.items)
+        ? ruleRes.data.items
+        : Array.isArray(ruleRes?.items)
+          ? ruleRes.items
           : []
 
       console.info('[chat-settings] common prompt listPrompts result', {
-        appKey: 'common',
-        screenKey: 'common',
-        system: true,
         promptItemsFromList,
       })
       console.info('[chat-settings] common rag getRagList result', {
@@ -309,9 +314,10 @@ const ChatSettings = () => {
 
       const normalizedManagement = {
         screens: Array.isArray(nextManagement.screens) ? nextManagement.screens : [],
-        prompts: Array.isArray(nextManagement.prompts) && nextManagement.prompts.length > 0 ? nextManagement.prompts : promptItemsFromList,
+        prompts: promptItemsFromList.length > 0 ? promptItemsFromList : Array.isArray(nextManagement.prompts) ? nextManagement.prompts : [],
         guidance: guidanceItems,
-        ragDocs: Array.isArray(nextManagement.ragDocs) && nextManagement.ragDocs.length > 0 ? nextManagement.ragDocs : ragItemsFromList,
+        ragDocs: ragItemsFromList.length > 0 ? ragItemsFromList : Array.isArray(nextManagement.ragDocs) ? nextManagement.ragDocs : [],
+        rules: ruleItems,
         history: Array.isArray(nextManagement.history) ? nextManagement.history : [],
       }
 
@@ -320,6 +326,7 @@ const ChatSettings = () => {
         prompts: normalizedManagement.prompts.length,
         guidance: normalizedManagement.guidance.length,
         ragDocs: normalizedManagement.ragDocs.length,
+        rules: normalizedManagement.rules.length,
       })
 
       setManagement(normalizedManagement)
@@ -342,9 +349,9 @@ const ChatSettings = () => {
         const appKey = String(item?.appKey ?? item?.app_key ?? '').trim().toLowerCase()
         const screenKey = String(item?.screenKey ?? item?.screen_key ?? item?.key ?? '').trim().toLowerCase()
         const type = String(item?.type ?? item?.promptType ?? item?.category ?? '').trim().toLowerCase()
-        return appKey === 'common' && screenKey === 'common' && type === 'system'
+        return appKey === 'common' && screenKey === 'common' && type === 'instruction'
       }) ?? normalizedManagement.prompts.find(
-        (item) => String(item?.key ?? '') === 'common' && String(item?.promptType ?? item?.category ?? '').toLowerCase() === 'system'
+        (item) => String(item?.key ?? '') === 'common' && String(item?.promptType ?? item?.category ?? '').toLowerCase() === 'instruction'
       )
 
       console.info('[chat-settings] common prompt resolved', {
@@ -363,16 +370,16 @@ const ChatSettings = () => {
         const appKey = String(item?.appKey ?? item?.app_key ?? '').trim().toLowerCase()
         const screenKey = String(item?.screenKey ?? item?.screen_key ?? item?.key ?? '').trim().toLowerCase()
         const type = String(item?.type ?? item?.promptType ?? item?.category ?? '').trim().toLowerCase()
-        return appKey === 'common' && (screenKey === 'common' || screenKey === 'common_intent') && type === 'intent-hint'
+        return appKey === 'common' && (screenKey === 'common' || screenKey === 'common_intent') && type === 'intent-classifier'
       }) ?? normalizedManagement.prompts.find(
-        (item) => String(item?.key ?? '') === 'common' && String(item?.promptType ?? item?.category ?? '').toLowerCase() === 'intent-hint'
+        (item) => String(item?.key ?? '') === 'common' && String(item?.promptType ?? item?.category ?? '').toLowerCase() === 'intent-classifier'
       ) ?? null
 
       const nextCommonRagPrompt = normalizedManagement.prompts.find((item) => {
         const appKey = String(item?.appKey ?? item?.app_key ?? '').trim().toLowerCase()
         const screenKey = String(item?.screenKey ?? item?.screen_key ?? item?.key ?? '').trim().toLowerCase()
         const type = String(item?.type ?? item?.promptType ?? item?.category ?? '').trim().toLowerCase()
-        return appKey === 'common' && screenKey === 'common' && type === 'rag-system'
+        return appKey === 'common' && screenKey === 'common' && type === 'rag'
       }) ?? null
 
       setCommonPromptDraft({
@@ -489,11 +496,11 @@ const ChatSettings = () => {
         const appKey = String(item?.appKey ?? item?.app_key ?? '').trim().toLowerCase()
         const screenKey = String(item?.screenKey ?? item?.screen_key ?? item?.key ?? '').trim().toLowerCase()
         const type = String(item?.type ?? item?.promptType ?? item?.category ?? '').trim().toLowerCase()
-        return appKey === 'common' && screenKey === 'common' && type === 'system'
+        return appKey === 'common' && screenKey === 'common' && type === 'instruction'
       }) ?? management.prompts.find(
         (item) =>
           String(item?.key ?? '') === 'common' &&
-          String(item?.promptType ?? item?.category ?? '').toLowerCase() === 'system'
+          String(item?.promptType ?? item?.category ?? '').toLowerCase() === 'instruction'
       ) ?? null,
     [management.prompts]
   )
@@ -504,11 +511,11 @@ const ChatSettings = () => {
         const appKey = String(item?.appKey ?? item?.app_key ?? '').trim().toLowerCase()
         const screenKey = String(item?.screenKey ?? item?.screen_key ?? item?.key ?? '').trim().toLowerCase()
         const type = String(item?.type ?? item?.promptType ?? item?.category ?? '').trim().toLowerCase()
-        return appKey === 'common' && (screenKey === 'common' || screenKey === 'common_intent') && type === 'intent-hint'
+        return appKey === 'common' && (screenKey === 'common' || screenKey === 'common_intent') && type === 'intent-classifier'
       }) ?? management.prompts.find(
         (item) =>
           String(item?.key ?? '') === 'common' &&
-          String(item?.promptType ?? item?.category ?? '').toLowerCase() === 'intent-hint'
+          String(item?.promptType ?? item?.category ?? '').toLowerCase() === 'intent-classifier'
       ) ?? null,
     [management.prompts]
   )
@@ -519,7 +526,7 @@ const ChatSettings = () => {
         const appKey = String(item?.appKey ?? item?.app_key ?? '').trim().toLowerCase()
         const screenKey = String(item?.screenKey ?? item?.screen_key ?? item?.key ?? '').trim().toLowerCase()
         const type = String(item?.type ?? item?.promptType ?? item?.category ?? '').trim().toLowerCase()
-        return appKey === 'common' && screenKey === 'common' && type === 'rag-system'
+        return appKey === 'common' && screenKey === 'common' && type === 'rag'
       }) ?? null,
     [management.prompts]
   )
@@ -550,7 +557,7 @@ const ChatSettings = () => {
   )
 
   useEffect(() => {
-    if (activeAppTab === APP_TAB.COMMON || activeAppTab === APP_TAB.HISTORY) {
+    if (activeAppTab === APP_TAB.COMMON) {
       if (activeRouteKey) setActiveRouteKey('')
       return
     }
@@ -654,7 +661,7 @@ const ChatSettings = () => {
         const res = await createChatPrompt({
           appKey: 'common',
           screenKey: 'common',
-          type: 'intent-hint',
+          type: 'intent-classifier',
           prompt: content,
           enabled,
         })
@@ -694,7 +701,7 @@ const ChatSettings = () => {
         const res = await createChatPrompt({
           appKey: 'common',
           screenKey: 'common',
-          type: 'rag-system',
+          type: 'rag',
           prompt,
           enabled,
         })
@@ -1184,138 +1191,32 @@ const ChatSettings = () => {
             <CommonSettingsTab
               providerItem={providerItem}
               values={values}
-              settingDrafts={settingDrafts}
               draftProvider={draftProvider}
               setDraftProvider={setDraftProvider}
               isDirty={isDirty}
               saving={saving}
-              savingSettingScope={savingSettingScope}
               onSaveProvider={handleSaveProvider}
-              onSettingDraftChange={handleSettingDraftChange}
-              onSaveSettingGroup={handleSaveSettingGroup}
-              commonPromptItem={commonPromptItem}
-              commonPromptDraft={commonPromptDraft}
-              savingCommonPrompt={savingCommonPrompt}
-              onCommonPromptChange={handleCommonPromptChange}
-              onSaveCommonPrompt={handleSaveCommonPrompt}
-              commonIntentPromptItem={commonIntentPromptItem}
-              commonIntentPromptDraft={commonIntentPromptDraft}
-              savingCommonIntentPrompt={savingCommonIntentPrompt}
-              onCommonIntentPromptChange={handleCommonIntentPromptChange}
-              onSaveCommonIntentPrompt={handleSaveCommonIntentPrompt}
-              commonRagPromptItem={commonRagPromptItem}
-              commonRagPromptDraft={commonRagPromptDraft}
-              savingCommonRagPrompt={savingCommonRagPrompt}
-              onCommonRagPromptChange={handleCommonRagPromptChange}
-              onSaveCommonRagPrompt={handleSaveCommonRagPrompt}
-              commonInputHintPromptItem={commonInputHintPromptItem}
-              commonInputHintPromptDraft={commonInputHintPromptDraft}
-              savingCommonInputHintPrompt={savingCommonInputHintPrompt}
-              onCommonInputHintPromptChange={handleCommonInputHintPromptChange}
-              onSaveCommonInputHintPrompt={handleSaveCommonInputHintPrompt}
-              commonRagDocs={commonRagDocs}
-              ragDrafts={ragDrafts}
-              savingRagKey={savingRagKey}
-              onRagChange={handleRagChange}
-              onSaveRag={handleSaveRag}
-              newCommonInfoRagDraft={newCommonInfoRagDraft}
-              newCommonActionRagDraft={newCommonActionRagDraft}
-              savingCreateCommonInfoRag={savingCreateCommonInfoRag}
-              savingCreateCommonActionRag={savingCreateCommonActionRag}
-              deletingCommonRagKey={deletingCommonRagKey}
-              onNewCommonInfoRagChange={handleNewCommonInfoRagChange}
-              onNewCommonActionRagChange={handleNewCommonActionRagChange}
-              onCreateCommonInfoRag={handleCreateCommonInfoRag}
-              onCreateCommonActionRag={handleCreateCommonActionRag}
-              onDeleteCommonRag={handleDeleteCommonRag}
             />
           ) : null}
 
-          {activeAppTab === APP_TAB.HISTORY ? (
-            <HistoryTab
-              history={management.history}
-              ragDocs={management.ragDocs}
-              onRefresh={() => loadHistoryPage(historyPagination.page, historyPagination.pageSize)}
-              refreshing={historyLoading}
-              pagination={historyPagination}
-              onChangePage={(nextPage) => loadHistoryPage(nextPage, historyPagination.pageSize)}
-              onChangePageSize={(nextPageSize) => loadHistoryPage(1, nextPageSize)}
-            />
+          {activeAppTab === APP_TAB.GUIDANCE ? (
+            <DatabaseTableSettingsTab kind="guidance" items={management.guidance} screens={management.screens} onChanged={load} />
           ) : null}
 
-          {activeAppTab !== APP_TAB.COMMON && activeAppTab !== APP_TAB.HISTORY ? (
-            <>
-              <AppScopeSettingsCard
-                appKey={activeAppTab}
-                allPrompts={management.prompts}
-                commonInputHintPromptDraft={commonInputHintPromptDraft}
-                promptDrafts={promptDrafts}
-                creatingPromptRouteKey={creatingPromptRouteKey}
-                ragDrafts={ragDrafts}
-                savingRagKey={savingRagKey}
-                deletingRagKey={deletingCommonRagKey}
-                savingCreateRag={savingCreateScreenRag}
-                commonIntentPromptItem={commonIntentPromptItem}
-                commonIntentPromptDraft={commonIntentPromptDraft}
-                onPromptChange={handlePromptChange}
-                onSavePrompt={handleSavePrompt}
-                onCreatePrompt={handleCreatePrompt}
-                onRagChange={handleRagChange}
-                onSaveRag={handleSaveRag}
-                onCreateRag={handleCreateScreenRag}
-                onDeleteRag={handleDeleteRag}
-                screenGroups={screenGroups}
-              />
+          {activeAppTab === APP_TAB.SCREEN ? (
+            <DatabaseTableSettingsTab kind="screen" items={management.screens} screens={management.screens} onChanged={load} />
+          ) : null}
 
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '260px minmax(0, 1fr)',
-                  gap: '20px',
-                  alignItems: 'start',
-                }}
-              >
-                <AppSideTabs routeTree={appRouteTree} activeRouteKey={activeRouteKey} onChange={setActiveRouteKey} />
+          {activeAppTab === APP_TAB.PROMPT ? (
+            <DatabaseTableSettingsTab kind="prompt" items={management.prompts} screens={management.screens} onChanged={load} />
+          ) : null}
 
-                <AppScreenSettingsTab
-                  appKey={activeAppTab}
-                  activeRouteKey={activeRouteKey}
-                  values={values}
-                  settingDrafts={settingDrafts}
-                  savingSettingScope={savingSettingScope}
-                  screenGroups={screenGroups}
-                  commonRagDocs={commonRagDocs}
-                  onGoToCommonTab={() => handleChangeAppTab(APP_TAB.COMMON)}
-                  commonPromptItem={commonPromptItem}
-                  commonPromptDraft={commonPromptDraft}
-                  commonInputHintPromptItem={commonInputHintPromptItem}
-                  commonInputHintPromptDraft={commonInputHintPromptDraft}
-                  allPrompts={management.prompts}
-                  promptDrafts={promptDrafts}
-                  guidanceDrafts={guidanceDrafts}
-                  ragDrafts={ragDrafts}
-                  savingPromptKey={savingPromptKey}
-                  creatingPromptRouteKey={creatingPromptRouteKey}
-                  savingGuidanceKey={savingGuidanceKey}
-                  creatingGuidanceRouteKey={creatingGuidanceRouteKey}
-                  savingRagKey={savingRagKey}
-                  deletingRagKey={deletingCommonRagKey}
-                  savingCreateRag={savingCreateScreenRag}
-                  onSettingDraftChange={handleSettingDraftChange}
-                  onSaveSettingGroup={handleSaveSettingGroup}
-                  onPromptChange={handlePromptChange}
-                  onSavePrompt={handleSavePrompt}
-                  onCreatePrompt={handleCreatePrompt}
-                  onGuidanceChange={handleGuidanceChange}
-                  onSaveGuidance={handleSaveGuidance}
-                  onCreateGuidance={handleCreateGuidance}
-                  onRagChange={handleRagChange}
-                  onSaveRag={handleSaveRag}
-                  onCreateRag={handleCreateScreenRag}
-                  onDeleteRag={handleDeleteRag}
-                />
-              </div>
-            </>
+          {activeAppTab === APP_TAB.RAG ? (
+            <DatabaseTableSettingsTab kind="rag" items={management.ragDocs} screens={management.screens} onChanged={load} />
+          ) : null}
+
+          {activeAppTab === APP_TAB.RULE ? (
+            <DatabaseTableSettingsTab kind="rule" items={management.rules} screens={management.screens} onChanged={load} />
           ) : null}
         </>
       )}
