@@ -145,11 +145,16 @@ export const ruleCheck = async (appKey, screenKey, message, navigate, context = 
         replyText = await executeNodeContentsRefresh({ rule, replyText })
         break
       case RULE_KEY.NODE_CREATE_HORIZON:
-      case RULE_KEY.NODE_APPEND_HORIZON: {
+      case RULE_KEY.NODE_APPEND_HORIZON:
+      case RULE_KEY.NODE_CREATE_VERTICAL:
+      case RULE_KEY.NODE_APPEND_VERTICAL: {
+        const directionWords = new Set(['수직', '수평', '세로', '가로', 'vertical', 'horizontal'])
         const nodeNames = (Array.isArray(params) ? params : [])
           .map((value) => String(value || '').trim())
           .filter(Boolean)
-        const isAppendRule = ruleKey === RULE_KEY.NODE_APPEND_HORIZON
+          .filter((value) => !directionWords.has(value))
+        const isAppendRule =
+          ruleKey === RULE_KEY.NODE_APPEND_HORIZON || ruleKey === RULE_KEY.NODE_APPEND_VERTICAL
         const expectedNodeCount = isAppendRule ? 1 : 2
 
         if (nodeNames.length !== expectedNodeCount) {

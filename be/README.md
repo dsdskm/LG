@@ -37,6 +37,24 @@ gh codespace stop -c fictional-lamp-x99gpvjw7963jv5
 gh codespace start -c fictional-lamp-x99gpvjw7963jv5
 
 # sql
-docker exec -it ai-chat-service-pg sh
-psql -U root -d ai_chat_service_db
-\dtse
+## 접속
+docker exec -it ai-chat-service-pg psql -U root -d ai_chat_service_db 
+
+# DB Restore
+## 백업 파일 복사
+docker cp ./ai_chat_service_db ai-chat-service-pg:/tmp/ai_chat_service_db
+
+## DB 초기화
+docker exec -it ai-chat-service-pg psql -U root -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'ai_chat_service_db' AND pid <> pg_backend_pid();"
+docker exec -it ai-chat-service-pg psql -U root -d postgres -c "DROP DATABASE IF EXISTS ai_chat_service_db;"
+docker exec -it ai-chat-service-pg psql -U root -d postgres -c "CREATE DATABASE ai_chat_service_db OWNER root;"
+
+## Resetore(dump)
+docker exec -it ai-chat-service-pg pg_restore -U root -d ai_chat_service_db --clean --if-exists /tmp/ai_chat_service_db
+
+## 확인
+docker exec -it ai-chat-service-pg psql -U root -d ai_chat_service_db -c "\dt"
+
+
+## full_log query
+ALTER TABLE events ADD COLUMN IF NOT EXISTS full_log JSONB;

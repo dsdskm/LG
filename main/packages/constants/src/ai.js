@@ -34,5 +34,7 @@ export const RULE_KEY = {
   NODE_CONTENTS_REFRESH: 'node-contents-refresh',
   NODE_CREATE_HORIZON: 'node-create-horizon',
   NODE_APPEND_HORIZON: 'node-append-horizon',
+  NODE_CREATE_VERTICAL: 'node-create-vertical',
+  NODE_APPEND_VERTICAL: 'node-append-vertical',
   NODE_DELETE: 'node-delete'
 }

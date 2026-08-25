@@ -116,8 +116,14 @@ export class ChatRuleController {
     const ruleKey = String(body?.ruleKey ?? body?.rule_key ?? '').trim();
 
     const command = String(body?.command ?? '').trim() || undefined;
+    const patternRegexRaw =
+      body?.patternRegex !== undefined
+        ? body.patternRegex
+        : body?.regex !== undefined
+          ? body.regex
+          : undefined;
     const patternRegex =
-      String(body?.patternRegex ?? body?.regex ?? '').trim() || undefined;
+      patternRegexRaw === undefined ? undefined : String(patternRegexRaw).trim();
     const description =
       String(
         body?.description ?? body?.display ?? body?.help ?? body?.label ?? '',

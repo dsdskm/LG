@@ -21,7 +21,7 @@ import { AdminDbService } from './service/admin-db.service';
       entities: [ReceiverEventEntity],
       // read 전용: 소유 앱(event_receiver)이 스키마를 관리한다.
       // synchronize를 켜면 ReceiverEventEntity에 없는 full_log 컬럼이 drop됨.
-      synchronize: true,
+      synchronize: false,
       logging: false,
     }),
     TypeOrmModule.forRoot({
