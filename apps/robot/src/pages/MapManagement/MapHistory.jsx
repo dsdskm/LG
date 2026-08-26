@@ -3,10 +3,37 @@ import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import JSZip from 'jszip'
 import { StyledPageContent, Title, SectionRobot as Section, Button, Checkbox } from '@repo/ui'
-import { mapApis } from '@/apis'
+import { mapApis, groupApis, siteApis, deviceApis } from '@/apis'
 import { toYmdHmKST } from '@/utils/dateUtils'
 import SiteMap3D from '../../common/SiteMap3D'
 import '../../index.css'
+
+const buildNameMap = (res, idKeys, nameKeys) => {
+  const list = Array.isArray(res) ? res : res?.content || []
+  const map = {}
+  list.forEach((o) => {
+    const id = idKeys.map((k) => o?.[k]).find(Boolean)
+    const name = nameKeys.map((k) => o?.[k]).find(Boolean)
+    if (id) map[id] = name || id
+  })
+  return map
+}
+
+const flattenSite = (site) => {
+  const building = {}
+  const floor = {}
+  const area = {}
+  ;(site?.buildings ?? []).forEach((b) => {
+    if (b.buildingId) building[b.buildingId] = b.buildingName ?? b.buildingId
+    ;(b.floors ?? []).forEach((f) => {
+      if (f.floorId) floor[f.floorId] = f.floorName ?? f.floorId
+      ;(f.areas ?? []).forEach((a) => {
+        if (a.areaId) area[a.areaId] = a.areaName ?? a.areaId
+      })
+    })
+  })
+  return { building, floor, area }
+}
 
 const TYPE_BADGE = {
   navi: { bg: '#dbeafe', c: '#2563eb' },
@@ -211,6 +238,7 @@ const MapHistory = () => {
   const [compare, setCompare] = useState(null) // { mapData, mapServer }
   const [compareLoading, setCompareLoading] = useState(false)
   const [rolling, setRolling] = useState(false)
+  const [names, setNames] = useState({ group: {}, site: {}, building: {}, floor: {}, area: {}, device: {} })
   const objUrlsRef = useRef([]) // 생성한 object URL 모음 (언마운트 시 일괄 정리)
 
   const load = useCallback(async () => {
@@ -236,6 +264,44 @@ const MapHistory = () => {
   useEffect(() => {
     load()
   }, [load])
+
+  // scope 설정 후 names 로드
+  useEffect(() => {
+    if (!scope) return
+    let canceled = false
+    Promise.allSettled([
+      groupApis.getGroups({}),
+      siteApis.getSites({}),
+      deviceApis.getDevices({ includeTaskFlowState: false })
+    ]).then(([g, s, d]) => {
+      if (canceled) return
+      const val = (r) => (r.status === 'fulfilled' ? r.value : null)
+      setNames((prev) => ({
+        ...prev,
+        group: buildNameMap(val(g), ['groupId', 'id', 'code'], ['groupName', 'name', 'displayName']),
+        site: buildNameMap(val(s), ['siteId', 'id', 'code'], ['siteName', 'name', 'displayName']),
+        device: buildNameMap(val(d), ['deviceId', 'id'], ['deviceName', 'name'])
+      }))
+    })
+    return () => {
+      canceled = true
+    }
+  }, [scope])
+
+  // scope의 siteId가 있으면 사이트 계층 조회
+  useEffect(() => {
+    if (!scope?.siteId) return
+    let canceled = false
+    siteApis
+      .getSiteById(scope.siteId)
+      .then((data) => {
+        if (!canceled) setNames((prev) => ({ ...prev, ...flattenSite(data) }))
+      })
+      .catch((e) => console.error('사이트 계층 조회 실패:', e))
+    return () => {
+      canceled = true
+    }
+  }, [scope?.siteId])
 
   useEffect(
     () => () => {
@@ -455,9 +521,30 @@ const MapHistory = () => {
     }
   }, [scope, selected, versions, load, latestNaviId, t])
 
+  const isRobotMap = !!scope?.deviceId
+  const tagName = scope ? (isRobotMap ? names.device?.[scope.deviceId] : names.site?.[scope.siteId]) : null
+
   return (
     <StyledPageContent className="column">
-      <Title>{t('mapMgmt.historyTitle')}</Title>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '1rem' }}>
+        <Title>{t('mapMgmt.historyTitle')}</Title>
+        {tagName && (
+          <span
+            style={{
+              padding: '0.4rem 0.8rem',
+              borderRadius: '999px',
+              fontSize: '1.2rem',
+              fontWeight: 600,
+              backgroundColor: 'var(--t-tag-bg)',
+              color: '#fff',
+              whiteSpace: 'nowrap',
+              marginBottom: '0.8rem'
+            }}
+          >
+            {tagName}
+          </span>
+        )}
+      </div>
 
       {loading ? (
         <Section>{emptyBox(t('mapMgmt.loadingHistory'))}</Section>

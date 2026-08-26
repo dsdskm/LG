@@ -50,6 +50,7 @@ export interface TaskFlow {
   robotSkillIds: number[] // 로봇 스킬 ID 목록
   robotSkillInfos: Record<string, any>[] // 로봇 스킬 정보
   behaviorTree: string
+  isPublished:boolean
 }
 
 // listTaskFlows(include=lastDeployment) 응답은 마지막 배포 정보(deployment)를 포함할 수 있다.

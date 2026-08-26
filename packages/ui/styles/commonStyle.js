@@ -289,9 +289,10 @@ export const SearchContainer = styled.div`
   }
 
   @media all and (max-width: 767px) {
-    width: 100%;
+    width: auto;
+    flex: 1;
+    min-width: 200px;
     flex-wrap: wrap;
-    margin-bottom: 0.8rem;
 
     .search {
       width: 100%;

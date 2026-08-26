@@ -207,6 +207,7 @@ const GroupManagement = () => {
               {/*정지기능 API 준비 안*/}
               <EditButton
                 type="button"
+                style={{ paddingLeft: '8px', paddingRight: '8px' }}
                 //disabled={isEditDisable}
                 onClick={() => openModalEditGroup(row.groupId, jsonGroupInfo)}
               >
@@ -214,7 +215,7 @@ const GroupManagement = () => {
               </EditButton>
               <AddButton
                 type="button"
-                style={{ paddingLeft: '5px', paddingRight: '5px' }}
+                style={{ paddingLeft: '8px', paddingRight: '8px' }}
                 //disabled={isEditDisable}
                 onClick={() => openModalEditSite(row.groupId, 'new', {})}
               >
@@ -226,7 +227,7 @@ const GroupManagement = () => {
         sortable: false
       }
     ],
-    []
+    [t]
   )
 
   const handleSearchChange = (e) => {
@@ -254,6 +255,7 @@ const GroupManagement = () => {
             <ManageActions>
               <EditButton
                 type="button"
+                style={{ paddingLeft: '8px', paddingRight: '8px' }}
                 disabled={site.isDefaultSite}
                 onClick={() =>
                   openModalEditSite(site.groupId, site.siteId, {
@@ -323,22 +325,21 @@ const GroupManagement = () => {
     <>
       <StyledPageContent className="column">
         <Title>{t('groupManagement')}</Title>
+        <HeaderTitleGroup style={{ maxWidth: '1600px', width: '100%', margin: '0 auto 16px' }}>
+          <SearchContainer>
+            <Search
+              value={searchQuery}
+              onChange={handleSearchChange}
+              onReset={handleResetSearch}
+              placeholder={tCommon('searchPlaceHolder') || 'Search...'}
+            />
+          </SearchContainer>
+          <div className="alignRight" style={{ marginBottom: '0' }}>
+            <Button onClick={handleClickGroupCreate} style={{ whiteSpace: 'nowrap' }}>{t('groupAdd')}</Button>
+          </div>
+        </HeaderTitleGroup>
         <SectionRobot style={{ maxWidth: '1600px' }}>
-          <HeaderTitleGroup>
-            <SearchContainer>
-              <Search
-                value={searchQuery}
-                onChange={handleSearchChange}
-                onReset={handleResetSearch}
-                placeholder={tCommon('searchPlaceHolder') || 'Search...'}
-              />
-            </SearchContainer>
-            <div className="alignRight" style={{ marginBottom: '0', minWidth: '90px' }}>
-              <Button onClick={handleClickGroupCreate}>{t('groupAdd')}</Button>
-            </div>
-          </HeaderTitleGroup>
-
-          <div style={{ margin: '16px 0', fontSize: '14px', fontWeight: 'bold' }}>
+          <div style={{ margin: '0 0 16px 0', fontSize: '14px', fontWeight: 'bold' }}>
             {t('count')} : {groupsSites.length}
           </div>
 

@@ -336,6 +336,7 @@ export function buildTaskFlowPersistPayload({
     edges: normalizedEdges,
     canvasNotes: normalizedCanvasNotes,
     viewport: resolvedViewport,
-    flowMode: resolvedFlowMode
+    flowMode: resolvedFlowMode,
+    isPublished: isFinal
   }
 }

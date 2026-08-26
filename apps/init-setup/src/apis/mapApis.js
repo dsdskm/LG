@@ -10,6 +10,8 @@ export const { create, list, getById, update, remove } = createCrud('maps')
  * 맵 리소스 CRUD(/maps)와 달리 DB 를 건드리지 않는 로봇 명령이므로 경로가 /robot-hub 다.
  *   POST /robot-hub/mapping/start → lio_switch_mode(mode=mapping)
  *   POST /robot-hub/save-map      → lio_save_map(save_path)
+ * 예외로 POST /robot-hub/save-map/publish 는 로봇 명령이 아니라 BE 의 파일 작업이다
+ * (작업본 디렉터리 rename + 맵 레코드 경로 갱신). 경로만 같은 그룹에 있다.
  *
  * 시작 / 재시작(reset) / 취소(cancel)는 lio_node 입장에서 모두 같은 호출
  * (switch_mode mode=mapping)이다 — mapping 진입 시 lio_node 가 백엔드를 재생성하고
@@ -135,6 +137,31 @@ export const waitForGridMap = async (name, { timeoutMs = 20000, intervalMs = 100
     if (Date.now() >= deadline) return { state: 'pending', artifacts }
     await new Promise((resolve) => setTimeout(resolve, intervalMs))
   }
+}
+
+/**
+ * 작업본 맵을 확정본으로 승격 (POST /robot-hub/save-map/publish).
+ *
+ * 매핑 저장은 '<Building>_<Floor>_<Area>_working' 디렉터리에 떨어진다. 업로드 단계에서 이 API 가
+ * 접미사를 뗀 디렉터리로 rename 하고, 그 디렉터리를 가리키던 맵 레코드의 경로/이름도 BE 가 함께
+ * 갱신한다. 파일 이동이라 robot-hub 를 거치지 않는다(로봇 명령이 아니다).
+ *
+ * 전역 에러 팝업을 끈다(skipErrorPopup) — 409(이미 확정본 존재)는 덮어쓰기 확인으로 이어져야 하고
+ * 나머지도 화면에서 상황별 토스트로 안내하는 편이 낫다.
+ *
+ * @param {{name?: string, savePath?: string, overwrite?: boolean}} payload
+ *   name: 작업본 맵 이름, savePath: 작업본 디렉터리 절대 경로(둘 중 하나 필수).
+ *   overwrite: 같은 이름의 확정본이 있을 때 교체 여부(기존 확정본은 .bak-<ts> 로 보존).
+ * @returns {Promise<{success: boolean, data: {name: string, savePath: string, previousPath: string,
+ *   backupPath: string|null, maps: number[]}}>}
+ */
+export const publishMap = async ({ name, savePath, overwrite = false } = {}) => {
+  if (!name && !savePath) throw new Error('name or savePath is required to publish a map')
+  return await axiosApi.post(
+    '/robot-hub/save-map/publish',
+    { ...(name ? { name } : {}), ...(savePath ? { save_path: savePath } : {}), overwrite },
+    { skipErrorPopup: true }
+  )
 }
 
 /**

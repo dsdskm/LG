@@ -13,10 +13,42 @@ const Detail = () => {
   const [searchParams] = useSearchParams()
   const deviceId = searchParams.get('deviceId')
   const [deviceInfo, setDeviceInfo] = useState({})
+  const [deviceName, setDeviceName] = useState('')
+
+  useEffect(() => {
+    if (!deviceId) return
+    deviceApis
+      .getDeviceInfo(deviceId)
+      .then((data) => {
+        setDeviceName(data?.deviceName || data?.name || deviceId)
+      })
+      .catch((e) => {
+        console.error('로봇 정보 조회 실패:', e)
+        setDeviceName(deviceId)
+      })
+  }, [deviceId])
 
   return (
     <StyledPageContent className="column">
-      <Title>{t('robotDetail')}</Title>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '1rem' }}>
+        <Title>{t('robotDetail')}</Title>
+        {deviceName && (
+          <span
+            style={{
+              padding: '0.4rem 0.8rem',
+              borderRadius: '999px',
+              fontSize: '1.2rem',
+              fontWeight: 600,
+              backgroundColor: 'var(--t-tag-bg)',
+              color: '#fff',
+              whiteSpace: 'nowrap',
+              marginBottom: '0.8rem'
+            }}
+          >
+            {deviceName}
+          </span>
+        )}
+      </div>
       <Tabs defaultActiveId="tabAssetInfo">
         <Tab id="tabAssetInfo" label={t('basicInformation')}>
           <AssetInfo t={t} deviceId={deviceId} />

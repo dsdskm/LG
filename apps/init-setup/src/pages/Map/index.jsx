@@ -8,11 +8,12 @@ import StatusPanel from '@/components/StatusPanel'
 import { list as listBuildings } from '@/apis/buildingApis'
 import { list as listFloors } from '@/apis/floorApis'
 import { list as listAreas } from '@/apis/areaApis'
-import { NAV_STATUS_TOPICS, STATUS_TOPICS } from '@/constants/topics'
+import { STATUS_TOPICS } from '@/constants/topics'
 import { resolveMappingMode } from '@/utils/lioStatus'
 import { syncLevelSelection } from '@/utils/location'
+// 접미사는 업로드 단계의 승격(_working 제거)과 짝이라 utils/mapRecord 를 정본으로 쓴다.
+import { WORKING_SUFFIX } from '@/utils/mapRecord'
 import { useLocationStore } from '@/stores/useLocationStore'
-import { isNavMoving, parseNavStatus, summarizeNavStatus } from '@/utils/navStatus'
 import { resolveWsUrl } from '@/utils/wsUrl'
 import { StyledMapPageContent, BadgeRow, MapWorkspace, LocationRow, MappingStatusBadge } from './styles'
 
@@ -25,11 +26,14 @@ import { StyledMapPageContent, BadgeRow, MapWorkspace, LocationRow, MappingStatu
  * - 위치 계층(Building/Floor/Area) 목록 조회 및 선택 상태 관리 (LocationBar 는 표현만 담당)
  * - ConnectionBar + MapCanvas + StatusPanel 조합
  *
+ * 위치 선택 바는 화면에 상시 노출하지 않는다 — 저장할 때만 필요하므로 ConnectionBar 의 저장
+ * 모달(MapSaveLocationModal) 안에서만 보여준다. 목록 조회와 선택 상태는 그대로 이 페이지가 갖는다.
+ *
  * 레이아웃은 cms 콘텐츠 페이지와 동일한 구성이다
- * (StyledPageContent > Title / 위치 선택 / Section):
+ * (StyledPageContent > Title / 상태 배지 / Section):
  * ┌────────────────────────────────────────────┐
  * │ Title (페이지 제목)                          │
- * │ LocationBar (위치 선택)      [매핑 상태 배지] │
+ * │                             [매핑 상태 배지] │
  * │ ┌─ Section ───────────────┐ ┌─ Section ──┐ │
  * │ │ ConnectionBar (툴바)     │ │ StatusPanel│ │
  * │ │ MapCanvas               │ │ (정보 패널) │ │
@@ -44,15 +48,15 @@ const sanitizeSegment = (value) =>
     .replace(/[/\\]+/g, '_')
 
 /**
- * 선택된 위치 계층으로 저장할 맵 이름과 매핑 시작 가능 여부를 계산한다.
+ * 선택된 위치 계층으로 저장할 맵 이름을 만든다: [Building명]_[Floor명]_[Area명]_working
  *
- * 건물 정보를 못 받아온 경우(목록이 비어 있음)는 고를 위치가 없으므로 이름을 'Default' 로 두고
- * 매핑 시작을 허용한다 — 위치 계층 없이 쓰는 로봇도 매핑은 해야 한다.
- * 건물 정보가 있으면 목록을 받아온 계층이 모두 선택돼야 시작할 수 있고(Floor/Area 도 내려오면 셋 다),
- * 이름은 선택된 값들을 Building명-Floor명-Area명 순으로 잇는다.
+ * 건물 정보를 못 받아온 경우(목록이 비어 있음)는 고를 위치가 없으므로 'Default_working' 으로 둔다
+ * — 위치 계층 없이 쓰는 로봇도 매핑/저장은 해야 한다.
+ * 건물 정보가 있으면 목록을 받아온 계층이 모두 선택돼야 이름이 나오고(Floor/Area 도 내려오면 셋 다),
+ * 미선택 상태에서는 빈 문자열을 돌려 저장 모달이 저장 버튼을 막는다.
  */
-const resolveMappingTarget = ({ buildings, floors, areas, location, language }) => {
-  if (!buildings.length) return { mapName: 'Default', canStart: true }
+const resolveMapName = ({ buildings, floors, areas, location, language }) => {
+  if (!buildings.length) return `Default_${WORKING_SUFFIX}`
 
   const levels = [
     [buildings, location.buildingId],
@@ -63,12 +67,13 @@ const resolveMappingTarget = ({ buildings, floors, areas, location, language }) 
   const parts = []
   for (const [items, selectedId] of levels) {
     if (!items.length) continue
-    if (!selectedId) return { mapName: '', canStart: false }
+    if (!selectedId) return ''
     const selected = items.find((item) => String(item.id) === String(selectedId))
     parts.push(sanitizeSegment(resolveLocationName(selected, language)))
   }
 
-  return { mapName: parts.filter(Boolean).join('-') || 'Default', canStart: true }
+  const base = parts.filter(Boolean).join('_')
+  return `${base || 'Default'}_${WORKING_SUFFIX}`
 }
 
 export default function Map() {
@@ -157,9 +162,14 @@ export default function Map() {
   )
   const mapOwner = useMemo(() => ({ siteId: selectedBuilding?.siteId, areaId }), [selectedBuilding, areaId])
 
-  const { mapName, canStart: canStartMapping } = useMemo(
-    () => resolveMappingTarget({ buildings, floors, areas, location, language: i18n.language }),
+  const mapName = useMemo(
+    () => resolveMapName({ buildings, floors, areas, location, language: i18n.language }),
     [buildings, floors, areas, location, i18n.language]
+  )
+
+  // 저장 모달에 넣을 위치 선택 UI. 선택은 스토어에 남으므로 저장 후에도 그대로 유지된다.
+  const locationSelector = (
+    <LocationBar buildings={buildings} floors={floors} areas={areas} value={location} onChange={setLocation} />
   )
 
   const {
@@ -187,36 +197,23 @@ export default function Map() {
   const mappingMode = resolveMappingMode(mappingStatus)
   const isMapping = mappingMode === 'mapping' || mappingMode === 'saving'
 
-  // 주행 진행 상태도 같은 방식이다 — 이동 명령은 gRPC(navApis)로 보내고 상태는 토픽으로만 받는다.
-  // payload 는 std_msgs/String 에 담긴 JSON 이라 파싱이 한 단계 더 필요하다.
-  const navStatusTopic = NAV_STATUS_TOPICS.find((topic) => subscribedTopics.includes(topic)) ?? null
-  const navStatus = useMemo(
-    () => parseNavStatus(navStatusTopic ? customTopicsData[navStatusTopic]?.data : null),
-    [navStatusTopic, customTopicsData]
-  )
-  const navSummary = summarizeNavStatus(navStatus)
+  // 주행 상태는 이 화면에서 보여주지 않는다 — 맵 스캔은 매핑 세션이라 이동 명령을 걸 수 없고
+  // (map 프레임 기준 목표를 잡을 수 없다), 주행은 시맨틱 화면의 일이다.
 
   return (
     <StyledMapPageContent className="column">
       <Title>{t('pageTitle')}</Title>
 
       <LocationRow>
-        {/* 위치 계층 선택 (Building > Floor > Area) */}
-        <LocationBar buildings={buildings} floors={floors} areas={areas} value={location} onChange={setLocation} />
+        {/* 위치 계층 선택(Building > Floor > Area)은 여기 두지 않는다 — 저장 모달에서만 보여준다. */}
 
         {/* 상태 배지 묶음 — LocationRow 가 space-between 이라 배지를 감싸야 오른쪽에 붙는다
-            (배지 두 개를 그대로 두면 가운데 하나가 중앙에 떠 보인다). */}
+            (배지를 그대로 두면 가운데에 떠 보인다). */}
         <BadgeRow>
           {/* 매핑 진행 상태 (/lio_node/status) */}
           <MappingStatusBadge $active={isMapping}>
             <span className="label typographyBody5">{t('status')}</span>
             <strong className="value typographyBody5">{mappingStatus || t('waitingForData')}</strong>
-          </MappingStatusBadge>
-
-          {/* 주행 진행 상태 (/robot_hub/nav_action_status) */}
-          <MappingStatusBadge $active={isNavMoving(navStatus)}>
-            <span className="label typographyBody5">{t('navStatus')}</span>
-            <strong className="value typographyBody5">{navSummary || t('waitingForData')}</strong>
           </MappingStatusBadge>
         </BadgeRow>
       </LocationRow>
@@ -233,7 +230,7 @@ export default function Map() {
             fps={fps}
             onFpsChange={setFps}
             mapName={mapName}
-            canStartMapping={canStartMapping}
+            locationSelector={locationSelector}
             mode={mappingMode}
             mapOwner={mapOwner}
             mapInfo={mapData?.info ?? null}

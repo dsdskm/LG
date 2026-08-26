@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import styled from 'styled-components'
 
 import {
@@ -139,6 +139,8 @@ export const DatabaseRecordEditorModal = ({ kind, item, screens, onClose, onChan
     const [deleting, setDeleting] = useState(false)
     const [confirmingDelete, setConfirmingDelete] = useState(false)
     const [error, setError] = useState('')
+    const [regexTestText, setRegexTestText] = useState('')
+    const [regexTestResult, setRegexTestResult] = useState(null)
     const selectedAppKey = String(draft.appKey ?? '')
     const filteredScreenOptions = screenOptions.filter((screen) => screen.appKey === selectedAppKey)
 
@@ -156,6 +158,39 @@ export const DatabaseRecordEditorModal = ({ kind, item, screens, onClose, onChan
 
     const selectScreen = (screenKey) => {
         setDraft((current) => ({ ...current, screenKey }))
+    }
+
+    const testRegexPattern = (patternText, sampleText) => {
+        const trimmedPattern = String(patternText ?? '').trim()
+        if (!trimmedPattern) {
+            return { ok: false, matches: false, message: '정규식을 먼저 입력해 주세요.' }
+        }
+
+        try {
+            let regex
+            const slashIndex = trimmedPattern.lastIndexOf('/')
+            if (trimmedPattern.startsWith('/') && slashIndex > 0) {
+                const pattern = trimmedPattern.slice(1, slashIndex)
+                const flags = trimmedPattern.slice(slashIndex + 1)
+                regex = new RegExp(pattern, flags)
+            } else {
+                regex = new RegExp(trimmedPattern)
+            }
+
+            const testValue = String(sampleText ?? '')
+            const matches = regex.test(testValue)
+            return {
+                ok: true,
+                matches,
+                message: matches ? '매칭됨' : '매칭되지 않음',
+            }
+        } catch (requestError) {
+            return {
+                ok: false,
+                matches: false,
+                message: requestError?.message || '정규식이 올바르지 않습니다.',
+            }
+        }
     }
 
     const buildPayload = () => {
@@ -240,78 +275,108 @@ export const DatabaseRecordEditorModal = ({ kind, item, screens, onClose, onChan
     }
 
     return (
-        <ModalBackdrop onClick={onClose}>
-            <ModalCard style={{ width: 'min(860px, 100%)', maxHeight: '86vh', overflowY: 'auto' }} onClick={(event) => event.stopPropagation()}>
+        <ModalBackdrop>
+            <ModalCard style={{ width: 'min(860px, 100%)', maxHeight: '86vh', overflowY: 'auto' }}>
                 <ModalTitle>{config.label} {editing ? '수정' : '추가'}</ModalTitle>
                 <FormGrid>
-                    {config.fields.map((field) => (
-                        <FormField key={field.key} $wide={field.type === 'textarea' || field.type === 'json'}>
-                            <FormLabel htmlFor={`${kind}-${field.key}`}>
-                                {field.label}{field.required ? ' *' : ''}
-                            </FormLabel>
-                            {!editing && field.key === 'appKey' ? (
-                                <FormSelect
-                                    id={`${kind}-${field.key}`}
-                                    value={selectedAppKey}
-                                    onChange={(event) => selectApp(event.target.value)}
-                                >
-                                    <option value="">앱을 선택하세요</option>
-                                    {APP_OPTIONS.map((appKey) => <option key={appKey} value={appKey}>{appKey}</option>)}
-                                </FormSelect>
-                            ) : !editing && kind !== 'screen' && field.key === 'screenKey' ? (
-                                <FormSelect
-                                    id={`${kind}-${field.key}`}
-                                    value={String(draft.screenKey ?? '')}
-                                    disabled={!selectedAppKey}
-                                    onChange={(event) => selectScreen(event.target.value)}
-                                >
-                                    <option value="">{selectedAppKey ? '화면을 선택하세요' : '앱을 먼저 선택하세요'}</option>
-                                    {filteredScreenOptions.map((screen) => (
-                                        <option key={screen.screenKey} value={screen.screenKey}>
-                                            {screen.screenName ? `${screen.screenKey} - ${screen.screenName}` : screen.screenKey}
-                                        </option>
-                                    ))}
-                                </FormSelect>
-                            ) : field.type === 'checkbox' ? (
-                                <CheckboxLabel>
-                                    <input
-                                        id={`${kind}-${field.key}`}
-                                        type="checkbox"
-                                        checked={Boolean(draft[field.key])}
-                                        onChange={(event) => setField(field.key, event.target.checked)}
-                                    />
-                                    사용
-                                </CheckboxLabel>
-                            ) : field.type === 'select' ? (
-                                <FormSelect
-                                    id={`${kind}-${field.key}`}
-                                    value={String(draft[field.key] ?? '')}
-                                    onChange={(event) => setField(field.key, event.target.value)}
-                                >
-                                    {editing && field.key === 'intentType' && draft[field.key] === 'both' ? (
-                                        <option value="both">both (기존 데이터)</option>
-                                    ) : null}
-                                    {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
-                                </FormSelect>
-                            ) : field.type === 'textarea' || field.type === 'json' ? (
-                                <FormTextarea
-                                    id={`${kind}-${field.key}`}
-                                    rows={field.rows}
-                                    value={String(draft[field.key] ?? '')}
-                                    onChange={(event) => setField(field.key, event.target.value)}
-                                />
-                            ) : (
-                                <FormInput
-                                    id={`${kind}-${field.key}`}
-                                    type={field.type === 'number' ? 'number' : 'text'}
-                                    value={String(draft[field.key] ?? '')}
-                                    placeholder={field.placeholder}
-                                    disabled={(editing && field.identity) || (!editing && kind !== 'screen' && field.key === 'appKey')}
-                                    onChange={(event) => setField(field.key, event.target.value)}
-                                />
-                            )}
-                        </FormField>
-                    ))}
+                    {config.fields.map((field) => {
+                        const isPatternRegexField = kind === 'rule' && field.key === 'patternRegex'
+
+                        return (
+                            <React.Fragment key={field.key}>
+                                <FormField $wide={isPatternRegexField || field.type === 'textarea' || field.type === 'json'}>
+                                    <FormLabel htmlFor={`${kind}-${field.key}`}>
+                                        {field.label}{field.required ? ' *' : ''}
+                                    </FormLabel>
+                                    {!editing && field.key === 'appKey' ? (
+                                        <FormSelect
+                                            id={`${kind}-${field.key}`}
+                                            value={selectedAppKey}
+                                            onChange={(event) => selectApp(event.target.value)}
+                                        >
+                                            <option value="">앱을 선택하세요</option>
+                                            {APP_OPTIONS.map((appKey) => <option key={appKey} value={appKey}>{appKey}</option>)}
+                                        </FormSelect>
+                                    ) : !editing && kind !== 'screen' && field.key === 'screenKey' ? (
+                                        <FormSelect
+                                            id={`${kind}-${field.key}`}
+                                            value={String(draft.screenKey ?? '')}
+                                            disabled={!selectedAppKey}
+                                            onChange={(event) => selectScreen(event.target.value)}
+                                        >
+                                            <option value="">{selectedAppKey ? '화면을 선택하세요' : '앱을 먼저 선택하세요'}</option>
+                                            {filteredScreenOptions.map((screen) => (
+                                                <option key={screen.screenKey} value={screen.screenKey}>
+                                                    {screen.screenName ? `${screen.screenKey} - ${screen.screenName}` : screen.screenKey}
+                                                </option>
+                                            ))}
+                                        </FormSelect>
+                                    ) : field.type === 'checkbox' ? (
+                                        <CheckboxLabel>
+                                            <input
+                                                id={`${kind}-${field.key}`}
+                                                type="checkbox"
+                                                checked={Boolean(draft[field.key])}
+                                                onChange={(event) => setField(field.key, event.target.checked)}
+                                            />
+                                            사용
+                                        </CheckboxLabel>
+                                    ) : field.type === 'select' ? (
+                                        <FormSelect
+                                            id={`${kind}-${field.key}`}
+                                            value={String(draft[field.key] ?? '')}
+                                            onChange={(event) => setField(field.key, event.target.value)}
+                                        >
+                                            {editing && field.key === 'intentType' && draft[field.key] === 'both' ? (
+                                                <option value="both">both (기존 데이터)</option>
+                                            ) : null}
+                                            {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
+                                        </FormSelect>
+                                    ) : field.type === 'textarea' || field.type === 'json' ? (
+                                        <FormTextarea
+                                            id={`${kind}-${field.key}`}
+                                            rows={field.rows}
+                                            value={String(draft[field.key] ?? '')}
+                                            onChange={(event) => setField(field.key, event.target.value)}
+                                        />
+                                    ) : (
+                                        <FormInput
+                                            id={`${kind}-${field.key}`}
+                                            type={field.type === 'number' ? 'number' : 'text'}
+                                            value={String(draft[field.key] ?? '')}
+                                            placeholder={field.placeholder}
+                                            disabled={(editing && field.identity) || (!editing && kind !== 'screen' && field.key === 'appKey')}
+                                            onChange={(event) => setField(field.key, event.target.value)}
+                                        />
+                                    )}
+                                </FormField>
+
+                                {isPatternRegexField && kind === 'rule' ? (
+                                    <RegexTestSection>
+                                        <RegexTestHeader>
+                                            <FormLabel>실제 문장 테스트</FormLabel>
+                                        </RegexTestHeader>
+                                        <RegexTestControls>
+                                            <RegexTestInput
+                                                value={regexTestText}
+                                                onChange={(event) => setRegexTestText(event.target.value)}
+                                                placeholder="예: 사용자 메시지 입력"
+                                            />
+                                            <PrimaryButton
+                                                type="button"
+                                                onClick={() => setRegexTestResult(testRegexPattern(draft.patternRegex, regexTestText))}
+                                            >
+                                                테스트
+                                            </PrimaryButton>
+                                        </RegexTestControls>
+                                        <RegexTestResult $matched={Boolean(regexTestResult?.matches && regexTestResult?.ok)}>
+                                            {regexTestResult ? regexTestResult.message : '정규식과 입력 문장을 넣고 테스트 버튼을 눌러보세요.'}
+                                        </RegexTestResult>
+                                    </RegexTestSection>
+                                ) : null}
+                            </React.Fragment>
+                        )
+                    })}
                 </FormGrid>
 
                 {error ? <ErrorMessage>{error}</ErrorMessage> : null}
@@ -390,6 +455,38 @@ const CheckboxLabel = styled.label`
     height: 38px;
     color: #334155;
     font-size: 13px;
+`
+const RegexTestSection = styled.div`
+    display: grid;
+    grid-column: 1 / -1;
+    gap: 8px;
+    padding: 12px 14px;
+    border: 1px solid #dbe3ef;
+    border-radius: 10px;
+    background: #f8fafc;
+`
+const RegexTestHeader = styled.div`
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+`
+const RegexTestControls = styled.div`
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+`
+const RegexTestInput = styled.input`
+    ${inputStyle}
+    height: 38px;
+    padding: 0 10px;
+    min-width: 0;
+`
+const RegexTestResult = styled.div`
+    min-height: 20px;
+    color: ${({ $matched }) => ($matched ? '#15803d' : '#475569')};
+    font-size: 12px;
+    font-weight: 700;
 `
 const ErrorMessage = styled.div`
     margin-top: 14px;

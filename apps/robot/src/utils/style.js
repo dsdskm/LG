@@ -16,12 +16,19 @@ export const NoUnderlineExpandable = styled.div`
 
 export const BaseActionButton = styled.button`
   min-width: 36px;
-  height: 24px;
+  height: 28px;
+  padding: 4px 8px;
 
   font-size: 11px;
   font-weight: 500;
-  line-height: 1;
+  line-height: 1.2;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
 
   border-radius: 6px;
   border: 1px solid transparent;

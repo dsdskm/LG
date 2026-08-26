@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom'
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { MainLayout } from '@repo/ui'
+import { useSideBarStore } from '@repo/stores'
 import CustomHeader from '@/components/CustomHeader'
 import SetupOrderModal from '@/components/SetupOrderModal'
 import { getRouteGroup } from './routes'
@@ -24,6 +25,17 @@ const LayoutShell = ({ allRoutes, appPrefix, processedAppRoutes, headerRoutes, g
       (activeGroup ? processedAppRoutes.filter((route) => route.group === activeGroup) : processedAppRoutes),
     [groupSideBarRoutes, activeGroup, processedAppRoutes]
   )
+
+  // 하위 메뉴(depth)를 가진 부모 항목의 펼침 상태는 공용 사이드바 store 의 openDepth 하나로 관리되고,
+  // 그 값은 사이드바 클릭으로만 바뀐다(@repo/ui GnbButton). 그래서 /map/scan 으로 URL 직접 진입하거나
+  // 헤더 탭으로 넘어오면 '지도' 가 active 인데도 접힌 채로 남는다 — 현재 경로가 속한 부모를 펼쳐 준다.
+  const setOpenDepth = useSideBarStore((state) => state.setOpenDepth)
+  useEffect(() => {
+    const parent = sideBarRoutes.find((route) =>
+      route.depth?.some(({ path }) => path && (pathname === path || pathname.startsWith(`${path}/`)))
+    )
+    if (parent) setOpenDepth(parent.name)
+  }, [pathname, sideBarRoutes, setOpenDepth])
 
   return (
     <MainLayout

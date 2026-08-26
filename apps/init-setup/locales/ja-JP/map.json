@@ -1,5 +1,5 @@
 {
-  "pageTitle": "マップスキャンビューア",
+  "pageTitle": "マップスキャン",
   "disconnected": "切断",
   "connecting": "接続中",
   "connected": "接続完了",
@@ -55,8 +55,13 @@
   "topicInfo": "トピック情報",
   "selectLocationForMapping": "マッピングを開始するには建物・階・エリアをすべて選択してください",
   "connectToStartMapping": "マッピングを開始するには先にロボットへ接続してください",
+  "noPoiLoaded": "表示するPOIがありません",
   "loadMap": "マップ読み込み",
+  "loadAnotherMap": "別のマップを読み込み",
   "noMapForArea": "選択したエリアに保存されたマップがありません",
+  "mapSelect": "マップ",
+  "noMaps": "保存されたマップがありません",
+  "noMapSelected": "編集するマップを選択してください",
   "mapLoadRequested": "マップの読み込みを要求しました。自己位置推定の状態を確認してください。",
   "moveHere": "移動",
   "close": "閉じる",
@@ -70,6 +75,14 @@
     "gridUnknown": "2Dグリッドマップファイルの生成は確認できません(マップ保存先にアクセスできません)。",
     "close": "閉じる",
     "goSemantic": "セマンティック画面へ移動"
+  },
+  "saveLocation": {
+    "title": "マップ保存先の選択",
+    "description": "保存するマップの建物／階／エリアを選択してください。",
+    "nameLabel": "保存名",
+    "selectAll": "建物・階・エリアをすべて選択してください",
+    "save": "保存",
+    "cancel": "キャンセル"
   },
   "mapRecordSkipped": "マップファイルは保存されましたが登録はスキップしました(不足: {{fields}})",
   "mapRecordPartial": "マップを登録しました。一部のメタデータは取得できませんでした({{fields}})",

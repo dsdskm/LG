@@ -110,6 +110,13 @@ const MAP_EXTRA_TOPICS = [
     kind: 'goal',
     downsampleMs: 0,
     candidates: ['/goal_pose', '/move_base_simple/goal', '/debug/dwa_goal', '/dwa_goal', '/goal']
+  },
+  {
+    // ✅ 로컬 코스트맵이 odom 프레임으로 퍼블리시될 때 map 프레임으로 옮기기 위한 보정용.
+    //   /carto_service/trackedpose(map, SLAM 보정됨)와의 시간 매칭 차이 = odom→map 보정값.
+    kind: 'odomRaw',
+    downsampleMs: 50,
+    candidates: ['/odom']
   }
 ]
 
@@ -119,6 +126,8 @@ export default function useLogReplayData({
   setLocalCostmapData,
   setLocalCostmapFrames,
   setPlannedPathPoints,
+  setFullTrajectoryPoints,
+  setOdomRawPoints,
   setLidarScans,
   setDwaGoals,
   setLoadPhase,
@@ -252,7 +261,9 @@ export default function useLogReplayData({
   const overlayRef = useRef({
     costmap: { seq: 0, cache: [], active: { s: null, e: null }, lastIdx: -1, inflight: false },
     path: { seq: 0, cache: [], active: { s: null, e: null }, lastIdx: -1, inflight: false },
-    goalPose: { seq: 0, cache: [], active: { s: null, e: null }, lastIdx: -1, inflight: false }
+    goalPose: { seq: 0, cache: [], active: { s: null, e: null }, lastIdx: -1, inflight: false },
+    // ✅ odom→map 보정용 raw odom 시계열(재생 위치 선택 없이 전체 구간을 그대로 씀)
+    odomRaw: { seq: 0, cache: [], active: { s: null, e: null }, lastIdx: -1, inflight: false }
   })
   const requestChartOverviewRef = useRef(null)
 
@@ -1032,6 +1043,8 @@ export default function useLogReplayData({
       setLocalCostmapData?.(null)
       setLocalCostmapFrames?.([])
       setPlannedPathPoints?.([])
+      setFullTrajectoryPoints?.([])
+      setOdomRawPoints?.([])
       setLidarScans?.([])
       setDwaGoals?.([])
       setLogLines([])
@@ -1157,7 +1170,7 @@ export default function useLogReplayData({
 
       try {
         // 편승으로 같이 받아온 overlay를 임시로 모았다가, 최신 요청일 때만 캐시에 반영
-        const extraTmp = { costmap: [], path: [], goal: [] }
+        const extraTmp = { costmap: [], path: [], goal: [], odomRaw: [] }
         const raw = await loadPosesFromMcapUrl(url, {
           startSec,
           endSec,
@@ -1239,6 +1252,9 @@ export default function useLogReplayData({
           mergeOverlay(ov.costmap, extraTmp.costmap, 400)
           mergeOverlay(ov.path, extraTmp.path, 800)
           mergeOverlay(ov.goalPose, extraTmp.goal, 800)
+          // ✅ odom→map 보정용 raw odom 시계열. 재생 위치 선택 없이 전체 caches를 그대로 넘긴다(render2d가 직접 탐색).
+          mergeOverlay(ov.odomRaw, extraTmp.odomRaw, 4000)
+          if (extraTmp.odomRaw.length) setOdomRawPoints?.(ov.odomRaw.cache)
 
           // ✅ seek 직후 첫 리로드: 새 위치에 데이터가 없는 overlay만 표시를 비운다(잔상 방지).
           //    데이터가 있으면 applyOverlayByPlayhead가 다음 프레임에 자연스럽게 교체 → 깜박임 없음.
@@ -1251,6 +1267,7 @@ export default function useLogReplayData({
             }
             if (ov.path.cache.length === 0) setPlannedPathPoints?.([])
             if (ov.goalPose.cache.length === 0) setDwaGoals?.([])
+            if (ov.odomRaw.cache.length === 0) setOdomRawPoints?.([])
           }
         }
 
@@ -1397,8 +1414,10 @@ export default function useLogReplayData({
     // 외부(polling)에서 호출할 수 있게 ref 연결
     requestLogWindowRef.current = requestLogWindow
 
-    // ✅ Overview 차트 (전체 범위, 1회)
+    // ✅ Overview 차트 + 남은 경로(회색) 미리보기 (전체 범위 1회 sparse 스캔, 공용)
     // - chartOverviewStarted: onTimeBounds/그리드 완료 양쪽에서 호출될 수 있어 중복 실행 방지
+    // - 남은 경로도 이 스캔 결과를 그대로 재사용한다(별도 스캔을 따로 돌리면 같은 메인스레드를
+    //   두 스캔이 나눠 써서 둘 다 늦게 끝나고, 그만큼 회색 선이 늦게 나타난다).
     let chartOverviewStarted = false
     const requestChartOverview = async () => {
       const url = currentMcapUrlRef.current
@@ -1410,16 +1429,17 @@ export default function useLogReplayData({
       let firstBatch = true
       try {
         await loadPosesSparseFromMcapUrl(url, {
-          // 차트는 "전체 주행"을 한 번에 보여주는 overview(1회 로드).
-          // numSamples = 차트 점 개수(= 디코드할 청크 수). 클수록 디테일↑·로드 비용↑.
-          // 20: 디테일과 로드 속도의 절충(단일 노브 — 필요 시 조정).
+          // numSamples = 표본 개수(= 디코드할 청크 수). 클수록 디테일↑·로드 비용↑.
+          // 차트(시계열)와 지도 위 남은 경로(공간 궤적) 양쪽이 이 값을 함께 쓴다.
+          // 40: 기존 차트 전용 20보다 지도 경로 모양이 유지되도록 소폭 상향(단일 노브).
           // ※ 이 로드는 맵 표시 이후 백그라운드에서 점진적으로(파이프라인+양보) 진행되어 맵/재생을 막지 않는다.
-          numSamples: 20,
+          numSamples: 40,
           onBatch: (posesSoFar) => {
             if (!currentMcapUrlRef.current) return
             const { c1, c2 } = buildOdomChartsFromPoses(posesSoFar)
             setOdomChart1(c1)
             setOdomChart2(c2)
+            setFullTrajectoryPoints?.(posesSoFar)
             if (firstBatch) {
               firstBatch = false
               setChartLoading(false)
@@ -1490,7 +1510,7 @@ export default function useLogReplayData({
               //    overlay(costmap/path/goal)는 pose 편승으로 함께 로드됨 → 별도 요청 불필요.
               await requestPoseWindowRef.current?.(0, 'grid-ready')
               requestLogWindowRef.current?.(0, 'grid-ready')
-              // 2) 차트 overview는 마지막에 시작(critical 로더와 메인스레드 경쟁 최소화)
+              // 2) 차트/남은경로 overview는 마지막에 시작(critical 로더와 메인스레드 경쟁 최소화)
               requestChartOverviewRef.current?.()
             }, 0)
           }
@@ -1526,6 +1546,8 @@ export default function useLogReplayData({
     setLocalCostmapData,
     setLocalCostmapFrames,
     setPlannedPathPoints,
+    setFullTrajectoryPoints,
+    setOdomRawPoints,
     setLidarScans,
     setDwaGoals,
     setT0EpochMs,

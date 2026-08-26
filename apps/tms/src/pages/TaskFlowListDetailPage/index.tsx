@@ -160,15 +160,6 @@ const TaskFlowListDetailPage = () => {
 
   const selectedFlowDefinition = useMemo(() => getFlowDefinitionBySource(taskFlow, flowSource), [taskFlow, flowSource])
 
-  // 실행 조건: 선택된 정의의 nodes 중 startNode 의 data.properties.execution_condition
-  const executionCondition = useMemo(() => {
-    const nodes = (selectedFlowDefinition as any)?.nodes
-    if (!Array.isArray(nodes)) return ''
-    const startNode = nodes.find((node: any) => node?.type === 'startNode')
-    const value = startNode?.data?.properties?.[EXECUTION_CONDITION_KEY]
-    return value == null ? '' : String(value)
-  }, [selectedFlowDefinition])
-
   const [isMoreOpen, setIsMoreOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState<SubmitState>(null)
 
@@ -652,12 +643,6 @@ const TaskFlowListDetailPage = () => {
                     </TableCellRight>
                   </td>
                 </tr>
-                <tr>
-                  <th>{t('detail.executionCondition')}</th>
-                  <td>
-                    <TableCellRight>{executionCondition || ''}</TableCellRight>
-                  </td>
-                </tr>
               </tbody>
             </SummaryTable>
           </SummaryCard>
@@ -731,6 +716,17 @@ const TaskFlowListDetailPage = () => {
         <Section>
           <FlowTabsWrap>
             <Tabs activeId={flowSource} onChange={(id: string) => setFlowSource(id as FlowDefinitionSource)}>
+              <Tab id="final" label={t('detail.flowTab.final')}>
+                <FlowArea>
+                  <FlowCanvasWrap>
+                    {hasFinal(taskFlow) ? (
+                      <TaskFlowReadonlyCanvas flowDefinition={selectedFlowDefinition} />
+                    ) : (
+                      <PageMessage>{t('detail.flowTab.finalEmpty')}</PageMessage>
+                    )}
+                  </FlowCanvasWrap>
+                </FlowArea>
+              </Tab>
               {showSavedTab && (
                 <Tab id="saved" label={t('detail.flowTab.saved')}>
                   <FlowArea>
@@ -745,17 +741,6 @@ const TaskFlowListDetailPage = () => {
                 </Tab>
               )}
 
-              <Tab id="final" label={t('detail.flowTab.final')}>
-                <FlowArea>
-                  <FlowCanvasWrap>
-                    {hasFinal(taskFlow) ? (
-                      <TaskFlowReadonlyCanvas flowDefinition={selectedFlowDefinition} />
-                    ) : (
-                      <PageMessage>{t('detail.flowTab.finalEmpty')}</PageMessage>
-                    )}
-                  </FlowCanvasWrap>
-                </FlowArea>
-              </Tab>
             </Tabs>
           </FlowTabsWrap>
         </Section>

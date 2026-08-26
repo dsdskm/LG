@@ -260,6 +260,8 @@
   --t-ai-accent-rgb: 189, 38, 84;
 
   --t-footer-fg: var(--color-neutral-80);
+
+  --t-tag-bg: rgba(140, 134, 120, 0.6);
 }
 
 /* ── legacy theme ("기존 스타일") — toggled on <html data-theme="legacy"> ── */
@@ -320,6 +322,8 @@
   --t-ai-gradient: linear-gradient(135deg, #7b5ef8 0%, #5b8dee 100%);
   --t-ai-accent: #7b5ef8;
   --t-ai-accent-rgb: 123, 94, 248;
+
+  --t-tag-bg: rgba(91, 161, 194, 0.6);
 
   /* Copyright(Footer) 색은 테마 공통(또렷한 뉴트럴) 유지 → legacy 미override */
 }

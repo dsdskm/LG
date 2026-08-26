@@ -1,5 +1,5 @@
 import { SimpleRobotInfo } from '@/types/taskflow'
-import type { RobotInfo } from '../../../types/RobotInfo'
+import type { RobotInfo, SkillType } from '../../../types/RobotInfo'
 import RobotItem from './RobotItem'
 
 export type UnselectableRobot = {
@@ -22,6 +22,7 @@ type RobotListProps = {
   robotList: RobotInfo[]
   searchQuery: string
   selectedRobotIds: SimpleRobotInfo[]
+  necessarySkills?: SkillType[]
   mode: 'DEPLOY' | 'CONTROL'
   onChangeCheckbox?: (robot: RobotInfo) => void
   onClickItem?: (robot: RobotInfo) => void
@@ -34,6 +35,7 @@ const RobotList = ({
   robotList,
   searchQuery,
   selectedRobotIds,
+  necessarySkills,
   onChangeCheckbox,
   onClickItem,
   onClickControlItem,
@@ -66,6 +68,7 @@ const RobotList = ({
                 onClick={onClickItem}
                 onClickControl={onClickControlItem}
                 displaySpec={mode === 'DEPLOY'}
+                necessarySkills={necessarySkills}
                 displayTaskFlow={mode === 'CONTROL'}
                 deployStatus={robotStatus}
                 showControlButton={showControlButton}

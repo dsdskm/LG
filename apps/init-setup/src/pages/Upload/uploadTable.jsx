@@ -10,6 +10,7 @@ import * as areaApi from '@/apis/areaApis'
 import * as mapApi from '@/apis/mapApis'
 import * as poiApi from '@/apis/mapPoiApis'
 import { buildApplyPoiBatchBody } from '@/utils/poiBatch'
+import { isWorkingMapDir, publishedNameOf, resolveMapDir, visibleMaps } from '@/utils/mapRecord'
 
 // 다국어 이름 {default, ko-KR, en-US} 에서 표시 문자열을 고른다.
 const nameOf = (n) => n?.default ?? n?.['ko-KR'] ?? n?.['en-US'] ?? '-'
@@ -32,10 +33,15 @@ const toOptions = (rows, idKey, nameKey) => {
 // POI 표시 라벨 — poiId 우선, 없으면 DB id.
 const poiLabel = (p) => p.poiId ?? `#${p.id}`
 
+// 행에 딸린 맵 이름 표시 — 맵이 없으면 '-'.
+const mapNames = (row) => (row.maps ?? []).map((m) => nameOf(m.name)).join(', ') || '-'
+
 const UploadTable = () => {
   const [allRows, setAllRows] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [filter, setFilter] = useState({ buildingId: '', floorId: '', areaId: '' })
+  // 승격(맵 업로드) 후 목록을 다시 읽기 위한 트리거 — 맵 이름/경로가 바뀌므로 화면도 갱신해야 한다.
+  const [reloadKey, setReloadKey] = useState(0)
 
   // 업로드 요약 모달
   const [summaryOpen, setSummaryOpen] = useState(false)
@@ -49,37 +55,71 @@ const UploadTable = () => {
       setIsLoading(true)
       try {
         // 위치 계층: Area.floorId → Floor.buildingId → Building.siteId → Site
-        const [sitesRes, buildingsRes, floorsRes, areasRes] = await Promise.all([
+        // 맵도 함께 받는다 — 행마다 업로드 대상 맵을 붙여야 하고, 구역에 매이지 않은 맵
+        // (건물 정보가 없는 로봇의 Default_working 등)도 목록에 올려야 한다.
+        const [sitesRes, buildingsRes, floorsRes, areasRes, mapsRes] = await Promise.all([
           siteApi.list(),
           buildingApi.list(),
           floorApi.list(),
-          areaApi.list()
+          areaApi.list(),
+          mapApi.list()
         ])
         if (!alive) return
         const sites = indexById(sitesRes?.data)
         const buildings = indexById(buildingsRes?.data)
         const floors = indexById(floorsRes?.data)
-        const nextRows = (areasRes?.data ?? []).map((area) => {
+        const areas = indexById(areasRes?.data)
+        // archived(업로드로 대체된 이전 맵)는 업로드 대상이 아니므로 목록에서 뺀다.
+        const maps = visibleMaps(mapsRes?.data)
+
+        const mapsByArea = maps.reduce((acc, map) => {
+          if (map.areaId == null) return acc
+          ;(acc[map.areaId] ??= []).push(map)
+          return acc
+        }, {})
+
+        const areaRows = (areasRes?.data ?? []).map((area) => {
           const floor = floors[area.floorId]
           const building = floor && buildings[floor.buildingId]
           const site = building && sites[building.siteId]
           return {
-            id: area.id,
+            id: `area-${area.id}`,
             site: site ? nameOf(site.siteName) : '-',
             buildingId: floor?.buildingId,
             building: building ? nameOf(building.name) : '-',
             floorId: area.floorId,
             floor: floor ? nameOf(floor.name) : '-',
             areaId: area.id,
-            area: nameOf(area.name)
+            area: nameOf(area.name),
+            maps: mapsByArea[area.id] ?? []
           }
         })
-        setAllRows(nextRows)
+
+        // 구역에 매이지 않은 맵 — areaId 가 없거나(위치 계층 없이 저장) 가리키는 구역이 사라진 경우.
+        // 이 맵들은 구역 행이 없어 지금까지 화면에서 아예 보이지 않았다.
+        const orphanRows = maps
+          .filter((map) => map.areaId == null || !areas[map.areaId])
+          .map((map) => {
+            const site = map.siteId != null ? sites[map.siteId] : null
+            return {
+              id: `map-${map.id}`,
+              site: site ? nameOf(site.siteName) : '-',
+              buildingId: undefined,
+              building: '-',
+              floorId: undefined,
+              floor: '-',
+              areaId: null,
+              area: '-',
+              maps: [map]
+            }
+          })
+
+        setAllRows([...areaRows, ...orphanRows])
       } catch (error) {
-        console.error('[Upload] 위치 정보 조회 실패:', error)
+        console.error('[Upload] 위치/맵 정보 조회 실패:', error)
         if (alive) {
           setAllRows([])
-          toast.error('위치 정보를 불러오지 못했습니다.', { autoClose: 3000 })
+          toast.error('위치·맵 정보를 불러오지 못했습니다.', { autoClose: 3000 })
         }
       } finally {
         if (alive) setIsLoading(false)
@@ -89,7 +129,7 @@ const UploadTable = () => {
     return () => {
       alive = false
     }
-  }, [])
+  }, [reloadKey])
 
   // 계층 연동 옵션: 층은 선택 빌딩으로, 구역은 선택 빌딩+층으로 좁힌다.
   const buildingOptions = useMemo(() => toOptions(allRows, 'buildingId', 'building'), [allRows])
@@ -121,6 +161,77 @@ const UploadTable = () => {
   const handleFloorChange = (v) => setFilter((p) => ({ ...p, floorId: v, areaId: '' }))
   const handleAreaChange = (v) => setFilter((p) => ({ ...p, areaId: v }))
 
+  // 맵 업로드(작업본 → 확정본 승격) 상태. conflict 는 확정본이 이미 있어 교체 확인이 필요한 경우다.
+  const [publishing, setPublishing] = useState(false)
+  const [conflict, setConflict] = useState(null) // { row, savePath, publishedName }
+
+  /**
+   * 작업본 맵 디렉터리를 확정본으로 승격한다 (POST /robot-hub/save-map/publish).
+   *
+   * 승격 후 로봇의 정위 맵 경로는 여기서 바꾸지 않는다 — 초기 위치 없이 switch-mode 를 다시 부르면
+   * GKR 360° 재정위가 돌아 현재 추정 위치를 잃는다. 정위 전환은 맵 화면에서 사용자가 한다.
+   */
+  const publishMapDir = async ({ savePath, overwrite = false }) => {
+    setPublishing(true)
+    try {
+      const res = await mapApi.publishMap({ savePath, overwrite })
+      const published = res?.data
+      toast.success(`맵 업로드 완료: ${published?.name ?? savePath}`, { autoClose: 3000 })
+      setConflict(null)
+      // 레코드의 경로/이름이 확정본으로 바뀌었다 — 목록을 다시 읽어야 '이미 업로드됨' 판정이 맞는다.
+      setReloadKey((key) => key + 1)
+      return true
+    } catch (error) {
+      const status = error?.response?.status
+      const detail = error?.response?.data?.message ?? error?.response?.data?.error
+      if (status === 409 && !overwrite) return 'conflict'
+      if (status === 409) {
+        // overwrite 로도 409 면 격자맵 저장이 아직 안 끝난 경우다(BE 가 미완료 승격을 막는다).
+        toast.error('맵 저장이 아직 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.', { autoClose: 4000 })
+      } else if (status === 404) {
+        toast.error('작업본 맵 폴더를 찾을 수 없습니다. 맵을 다시 저장해 주세요.', { autoClose: 4000 })
+      } else if (status === 422) {
+        toast.error('로봇의 맵 폴더에 쓸 수 없습니다(마운트 권한 확인 필요).', { autoClose: 4000 })
+      } else {
+        console.error('[Upload] 맵 승격 실패:', error)
+        toast.error(`맵 업로드 실패: ${detail ?? error.message}`, { autoClose: 4000 })
+      }
+      return false
+    } finally {
+      setPublishing(false)
+    }
+  }
+
+  // 맵 업로드 버튼 → 행에 붙은 맵 레코드에서 작업본 디렉터리를 찾아 승격한다.
+  // 행이 이미 대상 맵을 들고 있으므로 areaId 로 다시 조회하지 않는다 — 구역 없는 행(areaId=null)은
+  // areaId 쿼리가 전체 맵을 돌려줘 엉뚱한 맵을 올리게 된다.
+  const handleMapUpload = async (row) => {
+    const dirs = Array.from(new Set((row.maps ?? []).map(resolveMapDir).filter(Boolean)))
+
+    if (!dirs.length) {
+      toast.warn('이 항목에 등록된 맵이 없습니다. 맵 스캔 후 저장해 주세요.', { autoClose: 3000 })
+      return
+    }
+    const working = dirs.filter(isWorkingMapDir)
+    if (!working.length) {
+      toast.info('이미 업로드된 맵입니다.', { autoClose: 3000 })
+      return
+    }
+    // 작업본이 여러 개면 어느 것을 확정할지 판단할 근거가 없다 — 임의로 고르지 않는다.
+    if (working.length > 1) {
+      toast.error(`작업본 맵이 ${working.length}개 있습니다. 불필요한 맵을 먼저 정리해 주세요.`, {
+        autoClose: 5000
+      })
+      return
+    }
+
+    const savePath = working[0]
+    const result = await publishMapDir({ savePath, overwrite: false })
+    if (result === 'conflict') {
+      setConflict({ row, savePath, publishedName: publishedNameOf(savePath) })
+    }
+  }
+
   // 업로드 버튼 → 대상 Area 의 맵 POI 를 editStatus 로 분류해 요약 모달을 연다.
   const handleSemanticUpload = async (row) => {
     setSummaryRow(row)
@@ -128,7 +239,8 @@ const UploadTable = () => {
     setSummaryOpen(true)
     setSummaryLoading(true)
     try {
-      const maps = (await mapApi.list({ areaId: row.areaId }))?.data ?? []
+      // 행이 들고 있는 맵만 대상으로 한다(areaId 재조회 금지 — 위 handleMapUpload 주석 참고).
+      const maps = row.maps ?? []
       const poiLists = await Promise.all(maps.map((m) => poiApi.list({ mapId: m.id })))
       const pois = poiLists.flatMap((r) => r?.data ?? [])
       const created = pois.filter((p) => p.editStatus?.created && !p.editStatus?.softDelete)
@@ -164,10 +276,11 @@ const UploadTable = () => {
     { name: '빌딩', selector: (row) => row.building, sortable: 'true' },
     { name: '층', selector: (row) => row.floor, sortable: 'true' },
     { name: '구역', selector: (row) => row.area, sortable: 'true' },
+    { name: '맵', selector: (row) => mapNames(row), sortable: 'true' },
     {
       name: '맵 업로드',
       cell: (row) => (
-        <Button size="sm" onClick={() => handleMapUpload(row)}>
+        <Button size="sm" onClick={() => handleMapUpload(row)} disabled={publishing}>
           업로드
         </Button>
       )
@@ -195,11 +308,43 @@ const UploadTable = () => {
           columns={columns}
           data={filteredRows}
           loading={isLoading}
-          noData="위치 정보가 없습니다."
+          noData="업로드할 위치·맵 정보가 없습니다."
           pagination
           paginationRowsPerPageOptions={[10, 30, 50, 100]}
         />
       </StyledUploadPageContent>
+
+      <Modal
+        isOpen={!!conflict}
+        title="맵 교체 확인"
+        onClose={() => setConflict(null)}
+        size="sm"
+        renderButtonComponent={
+          <ModalButtons>
+            <Button
+              onClick={() => publishMapDir({ savePath: conflict.savePath, overwrite: true })}
+              disabled={publishing}
+            >
+              교체
+            </Button>
+            <Button variant="outline" onClick={() => setConflict(null)} disabled={publishing}>
+              취소
+            </Button>
+          </ModalButtons>
+        }
+      >
+        <div style={{ padding: '1rem 0' }}>
+          {conflict && (
+            <>
+              <SummaryHeading>
+                {conflict.row.building} / {conflict.row.floor} / {conflict.row.area}
+              </SummaryHeading>
+              <p>&lsquo;{conflict.publishedName}&rsquo; 맵이 이미 업로드되어 있습니다. 이번 작업본으로 교체할까요?</p>
+              <p>기존 맵은 삭제하지 않고 백업(.bak)으로 남습니다.</p>
+            </>
+          )}
+        </div>
+      </Modal>
 
       <Modal
         isOpen={summaryOpen}
@@ -220,7 +365,8 @@ const UploadTable = () => {
         <div style={{ padding: '1rem 0' }}>
           {summaryRow && (
             <SummaryHeading>
-              {summaryRow.site} / {summaryRow.building} / {summaryRow.floor} / {summaryRow.area}
+              {summaryRow.site} / {summaryRow.building} / {summaryRow.floor} / {summaryRow.area} ({mapNames(summaryRow)}
+              )
             </SummaryHeading>
           )}
           {summaryLoading || !summary ? (

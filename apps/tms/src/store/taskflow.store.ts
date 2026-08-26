@@ -142,7 +142,8 @@ export const useTaskFlowStore = create<TaskFlowState>()((set, get) => ({
         flowDefinitionDraft: {},
         robotSkillIds: [],
         robotSkillInfos: [],
-        behaviorTree: ''
+        behaviorTree: '',
+        isPublished:false
       }
 
       const created = await createTaskFlow(data)
@@ -165,19 +166,14 @@ export const useTaskFlowStore = create<TaskFlowState>()((set, get) => ({
   },
 
   copyFlow: async (id, customName) => {
-    // 목록 응답에는 flowDefinition 등이 빠져 있을 수 있으므로 원본을 단건 조회해서 그대로 복사한다.
     const source = await getTaskFlow(id)
-    if (!source) throw new Error('원본 Task Flow 를 불러오지 못했습니다.')
 
-    // id 는 신규 발급(0), 생성/수정 시각은 서버가 채운다. version 은 새 흐름이므로 0 으로 초기화하고,
-    // status 등 나머지는 원본과 동일하게 보낸다.
-    //
-    // 배포 이력은 taskFlowId 기준으로 따로 관리되므로 새 id 를 받은 복사본은 자연히 "미배포" 상태다.
-    // 다만 조회 응답에 배포/스냅샷 정보가 함께 실려 올 수 있어, 복사 payload 에서는 명시적으로 제외한다.
+    if (!source) {
+      throw new Error('원본 Task Flow 를 불러오지 못했습니다.')
+    }
+
     const {
       id: _originId,
-      createdAt,
-      updatedAt,
       deployment: _deployment,
       deployments: _deployments,
       lastDeployment: _lastDeployment,
@@ -186,22 +182,34 @@ export const useTaskFlowStore = create<TaskFlowState>()((set, get) => ({
     } = source as TaskFlow & Record<string, unknown>
 
     const requestedName = String(customName ?? '').trim()
-    const name = requestedName || buildCopyName(
-      source.name,
-      get().flows.map((flow) => flow.name)
-    )
 
-    const created = await createTaskFlow({ ...(rest as TaskFlow), id: 0, name, version: 0 })
+    const name =
+      requestedName ||
+      buildCopyName(
+        source.name,
+        get().flows.map((flow) => flow.name),
+      )
+
+    const created = await createTaskFlow({
+      ...rest,
+      id: 0,
+      name,
+      version: 0,
+      isPublished: false,
+      createdAt: '',
+      updatedAt: '',
+    } as TaskFlow)
 
     if (!created || typeof created.id !== 'number') {
       throw new Error('복사된 Task Flow 응답이 올바르지 않습니다.')
     }
 
-    set((state) => ({ flows: [created, ...state.flows] }))
+    set((state) => ({
+      flows: [created, ...state.flows],
+    }))
 
     return created
   },
-
   updateFlowInfo: async (id, patch) => {
     try {
       const name = patch.name?.trim()
