@@ -7,6 +7,7 @@ import SiteCode from '@/pages/Default/SiteCode'
 import RobotInfo from '@/pages/Default/RobotInfo'
 import Location from '@/pages/Default/Location'
 import Terms from '@/pages/Default/Terms'
+import Download from '@/pages/Download'
 import Upload from '@/pages/Upload'
 import Login from '@/pages/Login'
 import Admin from '@/pages/Admin'
@@ -90,6 +91,14 @@ export const appRoutes = [
     icon: 'policy',
     group: SETUP_GROUP.INITIAL,
     element: <Terms />
+  },
+  {
+    name: 'download',
+    path: '/download',
+    prefix: '',
+    icon: 'publish',
+    group: SETUP_GROUP.MAP,
+    element: <Download />
   },
   {
     name: 'map',

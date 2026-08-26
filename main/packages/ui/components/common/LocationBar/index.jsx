@@ -14,6 +14,7 @@ import { StyledLocationBar } from './styles'
  * @param {object[]} areas 선택된 층의 구역 목록
  * @param {{buildingId: string|number, floorId: string|number, areaId: string|number}} value 현재 선택값
  * @param {Function} onChange 선택 변경 핸들러 — 변경된 전체 선택값 객체를 넘긴다
+ * @param {boolean} [disabled] 세 드롭다운을 모두 잠근다 (선택을 바꾸면 안 되는 상태에서 사용)
  */
 
 // name 은 백엔드에서 다국어 JSONB({ default, 'ko-kr', 'en-us' }) 로 내려온다.
@@ -25,7 +26,7 @@ export const resolveLocationName = (item, language) => {
   return localized || item?.extId || String(item?.id ?? '')
 }
 
-export default function LocationBar({ buildings = [], floors = [], areas = [], value, onChange }) {
+export default function LocationBar({ buildings = [], floors = [], areas = [], value, onChange, disabled = false }) {
   const { t, i18n } = useTranslation('common')
   const language = i18n.language
 
@@ -52,6 +53,7 @@ export default function LocationBar({ buildings = [], floors = [], areas = [], v
         minWidth="200px"
         options={buildingOptions}
         value={buildingId}
+        disabled={disabled}
         onChange={(next) => onChange({ buildingId: next, floorId: '', areaId: '' })}
       />
       <Dropdown
@@ -60,7 +62,7 @@ export default function LocationBar({ buildings = [], floors = [], areas = [], v
         minWidth="200px"
         options={floorOptions}
         value={floorId}
-        disabled={!buildingId}
+        disabled={disabled || !buildingId}
         onChange={(next) => onChange({ buildingId, floorId: next, areaId: '' })}
       />
       <Dropdown
@@ -69,7 +71,7 @@ export default function LocationBar({ buildings = [], floors = [], areas = [], v
         minWidth="200px"
         options={areaOptions}
         value={areaId}
-        disabled={!floorId}
+        disabled={disabled || !floorId}
         onChange={(next) => onChange({ buildingId, floorId, areaId: next })}
       />
     </StyledLocationBar>

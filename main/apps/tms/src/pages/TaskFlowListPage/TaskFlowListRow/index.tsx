@@ -36,21 +36,15 @@ function renderFlowStatusBadge(flow: TaskFlowWithDeployment, t: TFunction) {
   const status = flow?.status as TaskFlowStatus | undefined
   const statusText = getTaskFlowStatusLabel(status, t)
 
-  if (status === TaskFlowStatus.ACTIVE) {
+  if (status !== TaskFlowStatus.ACTIVE) {
     return (
       <FlowActiveBadge>
         <span className="dot" />
         {statusText}
       </FlowActiveBadge>
     )
-  }
-
-  return (
-    <FlowInactiveBadge>
-      <span className="dot" />
-      {statusText}
-    </FlowInactiveBadge>
-  )
+  } 
+  return <></>
 }
 
 function renderDeployStatusBadge(flow: TaskFlowWithDeployment, t: TFunction) {
@@ -154,8 +148,12 @@ export default function TaskFlowListRow({
   const isSelectable = selectMode && flow.id > 0
 
   const handleToggle = () => {
-    if (!isSelectable) return
-    onToggleSelect?.(flow.id)
+    if (!isSelectable) {
+      onClickDetail(flow.id)
+    } else {
+      onToggleSelect?.(flow.id)
+    }
+
   }
 
   return (

@@ -1,10 +1,11 @@
 import { Battery, Navigation, Hand, Bot, Activity, AlertCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useEffect, useState } from 'react'
-import type { DeployStatus, RobotInfo } from '../../../types/RobotInfo'
+import type { DeployStatus, RobotInfo, SkillType } from '../../../types/RobotInfo'
 import { getRunningTaskFlowStatusLabel } from '@/utils/taskflowStatus'
 import { Div } from '@/assets'
 import { Checkbox } from '@repo/ui'
+import SkillIndicator from '../SkillIndicator'
 
 // export type RobotItem =
 //   | { type: 'groupSection'; key: string; label: string; deployable: boolean }
@@ -19,6 +20,7 @@ type RobotItemProps = {
   displaySpec?: boolean
   displayTaskFlow?: boolean
   deployStatus?: DeployStatus
+  necessarySkills?: SkillType[]
   onChangeCheckbox?: (robot: RobotInfo) => void
   onClick?: (robotId: RobotInfo) => void
   onClickControl?: (robotId: string) => void
@@ -31,6 +33,7 @@ const RobotItem = ({
   isDisabled,
   disabledReason,
   displaySpec,
+  necessarySkills,
   displayTaskFlow,
   deployStatus,
   onChangeCheckbox,
@@ -76,6 +79,8 @@ const RobotItem = ({
       onClickControl(robot.id)
     }
   }
+
+  const missingSkills = necessarySkills?.filter((skill) => !robot.skills.includes(skill)) ?? []
 
   return (
     <div
@@ -190,7 +195,7 @@ const RobotItem = ({
                 </span>
               </div>
             </div>
-       
+
             <div
               style={{
                 display: 'flex',
@@ -228,31 +233,21 @@ const RobotItem = ({
                   </span>
                 </div>
 
-                {displaySpec && (
+                {displaySpec && missingSkills.length > 0 && (
                   <>
                     <Div />
                     <div style={{ display: 'flex', flexDirection: 'row', gap: '10px' }}>
-                      <span>{t('deploy.robot.supportedSkills')}:</span>
-                      {robot.skills.map((skill, idx) => (
+                      <span>{t('deploy.robot.unsupportedSkills')}:</span>
+                      {missingSkills.map((skill) => (
                         <span
-                          key={idx}
+                          key={skill}
                           style={{
                             display: 'flex',
                             alignItems: 'center',
                             gap: '4px'
                           }}
                         >
-                          {skill === 'NAVIGATION' ? (
-                            <>
-                              <Navigation size={14} color="#2563eb" />
-                              <span>{t('deploy.skill.navigation')}</span>
-                            </>
-                          ) : (
-                            <>
-                              <Hand size={14} color="#9333ea" />
-                              <span>{t('deploy.skill.manipulation')}</span>
-                            </>
-                          )}
+                          <SkillIndicator skill={skill} />
                         </span>
                       ))}
                     </div>
@@ -327,7 +322,7 @@ const RobotItem = ({
                 <button
                   style={{
                     backgroundColor: 'white',
-                    color: '#383838', 
+                    color: '#383838',
                     border: '1px solid #C0C7D0',
                     padding: '8px 16px',
                     borderRadius: '6px',

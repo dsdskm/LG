@@ -16,8 +16,11 @@ const OPERATION_TYPES = ['IN-USE', 'WORKING']
  *
  * @param {React.ReactNode} [mapSlot] 왼쪽 지도 칸에 넣을 내용.
  *   지도 렌더러는 앱마다 달라서(init-setup 은 foxglove 기반 MapCanvas) 주입받는다.
+ * @param {object|null} [robotPose] 로봇 현재 위치 { x, y, yaw(rad) } — 지도와 같은 프레임.
+ *   POI 상세의 '현재 위치로 설정' 버튼이 쓴다. 텔레메트리는 앱이 들고 있으므로 주입받는다.
+ * @param {string} [noData] POI 가 하나도 없을 때 목록 자리에 보여줄 문구(앱의 i18n 문자열).
  */
-const SemanticPage = ({ poiVersion, poiList, onSave, onCancel, mapSlot }) => {
+const SemanticPage = ({ poiVersion, poiList, onSave, onCancel, mapSlot, robotPose = null, noData = '' }) => {
   const [loading, setLoading] = useState(false)
   const [mode, setMode] = useState('MODE_LIST')
   const [selectedRow, setSeletedRow] = useState(null)
@@ -172,6 +175,7 @@ const SemanticPage = ({ poiVersion, poiList, onSave, onCancel, mapSlot }) => {
                 data={pois}
                 workingData={workingPois}
                 operationMode={operationMode}
+                noData={noData}
                 onCreate={handleCreate} // create
                 onNameClick={handleNameClick} // update
                 onPoiDeleted={handlePoiDeleted} // delete
@@ -182,6 +186,7 @@ const SemanticPage = ({ poiVersion, poiList, onSave, onCancel, mapSlot }) => {
               <SemanticDetail
                 row={selectedRow}
                 readOnly={mode === 'MODE_VIEW'}
+                robotPose={robotPose}
                 onPoiCreated={handleCreated}
                 onPoiEdited={handleEdited}
                 onPoiCancel={handlePoiCancel}

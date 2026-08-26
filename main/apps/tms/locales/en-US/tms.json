@@ -295,7 +295,10 @@
     "unassignedSite": "미지정 사이트",
     "skill": {
       "navigation": "주행",
-      "manipulation": "매니플레이션"
+      "manipulation": "매니플레이션",
+      "display": "페이스",
+      "voice": "보이스",
+      "perception": "인지"
     },
     "robot": {
       "unassigned": "미지정",
@@ -315,7 +318,9 @@
       "deployFailed": "배포요청 실패",
       "undeployFailed": "배포 삭제요청 실패",
       "deployTitleSuffix": "v{{version}}을(를) 배포 합니다.",
-      "undeployTitleSuffix": "을(를) 배포 삭제 합니다."
+      "undeployTitleSuffix": "을(를) 배포 삭제 합니다.",
+      "undeployPartialFailed": "배포 삭제요청 실패 ({{failed}}/{{total}})",
+      "undeployRetryHint": "실패한 TaskFlow는 선택된 상태로 남아 있어 다시 시도할 수 있습니다."
     }
   },
   "robots": {

@@ -10,6 +10,7 @@ import { ColladaLoader } from 'three/examples/jsm/loaders/ColladaLoader.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 
 import { fileApis } from '@/apis'
+import { fetchWithRetry } from '@/utils/fetchWithRetry'
 import { pickNearestJointStateSample, applyJointStateToRobot } from './urdf/jointStateBinding'
 
 /**
@@ -270,7 +271,7 @@ function URDFRobot({ robotRef, controlsRef, robotDescription }) {
         // fetch → (워커 가능 시) 워커 병렬 파싱, 아니면 메인 스레드 폴백
         // credentials: 'include' — CDN이 쿠키(Set-Cookie, download-auth 발급)로 인증하므로 필요.
         const loadFrom = async (url) => {
-          const resp = await fetch(url, { credentials: 'include' })
+          const resp = await fetchWithRetry(url, { credentials: 'include' })
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
           const buf = await resp.arrayBuffer()
           if (getStlWorkerPool().length) {

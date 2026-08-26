@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import { Section, SectionTitle, Button, Input, Dropdown, IconButton, Icon } from '@repo/ui'
+import { generateUuid36 } from '@repo/utils'
 import { ButtonWrapper, DetailWrapper, FieldGrid, MetaText, PropertyRow } from './styles'
 
 const DEG2RAD = Math.PI / 180
+const RAD2DEG = 180 / Math.PI
 const round6 = (n) => Math.round(n * 1e6) / 1e6
 // yaw(도) → Z축 회전 쿼터니언 (REP-103; init-setup tf.js 의 yawOf 와 동일 규약)
 const yawDegToQuaternion = (deg) => {
@@ -10,7 +12,12 @@ const yawDegToQuaternion = (deg) => {
   return { x: 0, y: 0, z: round6(Math.sin(half)), w: round6(Math.cos(half)) }
 }
 
-const SemanticDetail = ({ row, readOnly = false, onPoiCreated, onPoiEdited, onPoiCancel }) => {
+/**
+ * @param {object|null} [robotPose] 로봇 현재 위치 { x, y, yaw(rad), z? } — 지도와 같은 프레임이어야 한다.
+ *   주입한 쪽이 프레임을 확인해서 넘긴다(init-setup 은 map 프레임일 때만 넘긴다).
+ *   있으면 Position 에 '현재 위치로 설정' 버튼이 열린다.
+ */
+const SemanticDetail = ({ row, readOnly = false, robotPose = null, onPoiCreated, onPoiEdited, onPoiCancel }) => {
   const POI_TYPES = ['GENERAL', 'ETC']
 
   const [loading, setLoading] = useState(false)
@@ -60,6 +67,32 @@ const SemanticDetail = ({ row, readOnly = false, onPoiCreated, onPoiEdited, onPo
     }))
   }
 
+  /**
+   * 로봇이 지금 서 있는 자리를 POI 좌표로 그대로 넣는다 — 로봇을 원하는 지점에 세워 두고
+   * 이 버튼을 누르는 것이 좌표를 손으로 입력하는 것보다 정확하다.
+   *
+   * yaw 는 rad 로 들어오므로 도(度)로 바꿔 넣고, orientation 은 다른 입력과 같은 경로로
+   * yaw 에서 파생시킨다. z 는 TF 합성 결과에 없으므로(2D 주행) 값이 있을 때만 덮어쓴다.
+   */
+  const handleUseRobotPose = () => {
+    if (!robotPose) return
+    const yawDeg = round6((Number(robotPose.yaw) || 0) * RAD2DEG)
+    setWorkObj((prev) => ({
+      ...prev,
+      yawDeg,
+      pose: {
+        ...prev.pose,
+        position: {
+          ...prev.pose?.position,
+          x: round6(Number(robotPose.x) || 0),
+          y: round6(Number(robotPose.y) || 0),
+          ...(Number.isFinite(robotPose.z) ? { z: round6(robotPose.z) } : {})
+        },
+        orientation: yawDegToQuaternion(yawDeg)
+      }
+    }))
+  }
+
   const handleYawDegChange = (value) => {
     const floatValue = value === '' ? '' : parseFloat(value)
     setWorkObj((prev) => ({
@@ -105,7 +138,7 @@ const SemanticDetail = ({ row, readOnly = false, onPoiCreated, onPoiEdited, onPo
 
   const handleAddProp = () => {
     if (propEntries.length >= 5) return
-    setPropEntries((prev) => [...prev, { poiId: crypto.randomUUID(), key: '', value: '' }])
+    setPropEntries((prev) => [...prev, { poiId: generateUuid36(), key: '', value: '' }])
   }
 
   const handleRemoveProp = (poiId) => {
@@ -121,14 +154,14 @@ const SemanticDetail = ({ row, readOnly = false, onPoiCreated, onPoiEdited, onPo
       setWorkObj(tempObj)
       setPropEntries(
         Object.entries(tempObj.properties).map(([key, value]) => ({
-          poiId: crypto.randomUUID(),
+          poiId: generateUuid36(),
           key,
           value: String(value)
         }))
       )
     } else {
       const tempObj = {}
-      tempObj.poiId = crypto.randomUUID()
+      tempObj.poiId = generateUuid36()
       tempObj.type = 'GENERAL'
       tempObj.name = {}
       tempObj.name['default'] = ''
@@ -216,9 +249,21 @@ const SemanticDetail = ({ row, readOnly = false, onPoiCreated, onPoiEdited, onPo
           </FieldGrid>
         </Section>
 
-        {/* Position */}
+        {/* Position — 좌표 직접 입력, 또는 로봇이 서 있는 자리를 그대로 가져오기 */}
         <Section gap="1.2rem">
-          <SectionTitle title="Position" />
+          <SectionTitle title="Position">
+            {!readOnly && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleUseRobotPose}
+                disabled={!robotPose}
+                title={robotPose ? undefined : '로봇 현재 위치를 아직 받지 못했습니다'}
+              >
+                현재 위치로 설정
+              </Button>
+            )}
+          </SectionTitle>
           <FieldGrid>
             {['x', 'y', 'z'].map((axis) => (
               <Input

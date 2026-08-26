@@ -28,9 +28,9 @@ export const StyledDataTable = styled.div`
   }
 
   .rdt_TableCol {
-    padding: 0.8rem 1.2rem;
+    padding: 0.9rem 1.2rem;
     font-size: var(--font-size-heading-7);
-    line-height: var(--line-height-heading-7);
+    line-height: 1.4;
     font-weight: 700;
 
     &:not(:last-of-type) {

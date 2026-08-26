@@ -16,6 +16,75 @@
  * 실제 저장 파일과 다른 메타가 DB 에 남는다(BE 컬럼은 nullable).
  */
 
+/** 작업 중인(아직 업로드 전) 맵임을 나타내는 저장 이름 접미사. 승격 시 이 접미사를 뗀다. */
+export const WORKING_SUFFIX = 'working'
+
+/**
+ * 화면에 노출할 맵만 남긴다 — archived 는 업로드로 대체된 이전 맵이라 목록에서 뺀다.
+ *
+ * 레코드를 지우지 않고 남겨 두므로(되돌릴 여지) 걸러내지 않으면 사이트마다 옛 맵이 계속 쌓여
+ * 보인다. GET /maps 는 status 를 단일값으로만 필터하고 "archived 제외" 는 표현할 수 없으므로,
+ * BE 는 전량을 내려주고 화면에서 이 함수로 뺀다.
+ *
+ * @param {object[]} maps GET /maps 응답의 data
+ * @returns {object[]} status 가 archived 가 아닌 맵
+ */
+export const visibleMaps = (maps) => (maps ?? []).filter((map) => map?.status !== 'archived')
+
+/** 맵 산출물 파일 확장자 — 레코드 값이 파일 경로인지 판단하는 기준. */
+const MAP_FILE_EXT = /\.(png|pgm|yaml|yml|pcd|txt|bin)$/i
+
+/**
+ * save_map 이 맵 디렉터리 안에 만드는 산출물 파일 이름(확장자 제외).
+ * 이 이름들이면 파일이 곧 디렉터리 소속이므로 상위 폴더가 맵 디렉터리다.
+ */
+const MAP_ARTIFACT_NAMES = new Set(['grid_map', 'global_map', 'map', 'optimized_trajectory', 'frontend_trajectory'])
+
+/**
+ * 맵 레코드에서 맵 디렉터리(lio_switch_mode 의 map_path)를 얻는다.
+ *
+ * save_map 은 맵 하나를 디렉터리 단위로 저장하고(global_map.pcd + optimized_trajectory.txt +
+ * grid_map.*), loadMap 은 그 디렉터리에 '/global_map.pcd' 를 붙여 찾는다
+ * (gtsam_backend.cpp). 반면 레코드의 imagePath 는 BE 가 검증하지 않아 형태가 세 가지로 들어온다:
+ *
+ *   1) /ws/maps/<맵이름>                    (디렉터리)          → 그대로
+ *   2) /ws/maps/<맵이름>/grid_map.png       (디렉터리 안 산출물) → 상위 폴더
+ *   3) /ws/maps/<맵이름>.pgm                (맵 이름이 곧 파일명) → 확장자만 제거
+ *
+ * 3) 을 2) 처럼 다루면 /ws/maps 까지만 남아 맵 로드가 실패한다 — 마지막 세그먼트가
+ * 산출물 이름(grid_map 등)인지로 2) 와 3) 을 가른다.
+ */
+export const resolveMapDir = (record) => {
+  const raw = record?.imagePath || record?.yamlPath
+  if (!raw) return ''
+  // 후행 슬래시는 제거한다 — loadMap 은 '/'를 붙여 이어붙이므로 있으나 없으나 동작하지만
+  // 마지막 세그먼트 판정이 빈 문자열이 되는 것을 막는다.
+  const normalized = String(raw).replace(/\\/g, '/').replace(/\/+$/, '')
+  if (!normalized) return ''
+
+  const idx = normalized.lastIndexOf('/')
+  const lastSegment = idx >= 0 ? normalized.slice(idx + 1) : normalized
+
+  // 1) 확장자가 없으면 디렉터리로 본다.
+  if (!MAP_FILE_EXT.test(lastSegment)) return normalized
+
+  const baseName = lastSegment.replace(MAP_FILE_EXT, '')
+  // 2) 디렉터리 안의 산출물 파일 → 상위 폴더가 맵 디렉터리.
+  if (MAP_ARTIFACT_NAMES.has(baseName.toLowerCase())) return idx > 0 ? normalized.slice(0, idx) : ''
+  // 3) 파일명이 곧 맵 이름 → 확장자만 떼면 맵 디렉터리.
+  return idx > 0 ? `${normalized.slice(0, idx)}/${baseName}` : baseName
+}
+
+/** 아직 승격되지 않은 작업본 디렉터리인지. */
+export const isWorkingMapDir = (dir) => new RegExp(`_${WORKING_SUFFIX}$`).test(String(dir || ''))
+
+/** 작업본 디렉터리가 승격되면 갖게 되는 맵 이름(마지막 세그먼트에서 접미사 제거). */
+export const publishedNameOf = (dir) =>
+  String(dir || '')
+    .split('/')
+    .pop()
+    .replace(new RegExp(`_${WORKING_SUFFIX}$`), '')
+
 /** 쿼터니언 → yaw(rad). OccupancyGrid origin.orientation 에서 회전만 뽑는다. */
 const yawOfQuaternion = (q) => {
   if (!q) return 0
@@ -47,7 +116,11 @@ export const buildMapRecordBody = ({ savePath, name, siteId, areaId, meta = null
     name: { default: name },
     frame_id: 'map',
     imagePath: `${dir}/${imageFile}`,
-    yamlPath: `${dir}/grid_map.yaml`
+    yamlPath: `${dir}/grid_map.yaml`,
+    // 저장 직후는 아직 작업본(_working)이라 로봇이 쓸 맵이 아니다. 업로드(승격)가 끝나면
+    // BE 가 active 로 올리고 같은 사이트의 이전 맵을 archived 로 내린다
+    // (init-setup-be map.service.activate). BE 기본값이 'active' 라 여기서 명시해야 한다.
+    status: 'inactive'
   }
 
   if (siteId) body.siteId = siteId

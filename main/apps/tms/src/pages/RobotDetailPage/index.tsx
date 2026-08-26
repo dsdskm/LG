@@ -42,15 +42,20 @@ const RobotDetailPage = () => {
   const [oneItemViewClicked, setOneItemViewClicked] = useState(false)
   const [popup, setPopup] = useState(false)
 
-  const {
-    execDeployAction,
-    execUnDeployAction,
-    getDeployActionStatus,
-    deployActionReset,
-    isDeployActionSuccess,
-    isDeployActionPending,
-    makeDeployState
-  } = useDeploy()
+  /**
+   * 선택한 taskflow 를 하나씩 배포 취소하는 동안의 진행/결과.
+   *
+   * useDeploy 의 재생 상태(isPending/isSuccess/isError)는 mutation 인스턴스가 하나뿐이라
+   * 마지막 요청만 반영한다. 여러 건을 돌리면 앞쪽이 실패해도 마지막이 성공하면 성공으로
+   * 보이므로, 모달 상태는 이 집계값으로 판단한다.
+   */
+  const [undeployBatch, setUndeployBatch] = useState<{
+    total: number
+    done: number
+    failedIds: number[]
+  } | null>(null)
+
+  const { execUnDeployAction, deployActionReset, makeDeployState } = useDeploy()
 
   const group = robotData?.provision?.groupId
   const site = robotData?.provision?.siteId
@@ -159,11 +164,14 @@ const RobotDetailPage = () => {
 
   const dismissPopup = () => {
     setPopup(false)
-    if (isDeployActionSuccess) {
-      // active.onSelectAllChanged(false)
-      // active.onSelectedRobotChanged([])
-      setCheckedItems([])
+    if (undeployBatch && undeployBatch.done === undeployBatch.total) {
+      // 실패한 건은 재시도할 수 있게 선택을 남기고, 전부 성공했을 때만 비운다.
+      setCheckedItems(undeployBatch.failedIds)
+      if (undeployBatch.failedIds.length === 0) {
+        setCheckAll(false)
+      }
     }
+    setUndeployBatch(null)
     deployActionReset()
   }
 
@@ -212,10 +220,18 @@ const RobotDetailPage = () => {
 
   console.log('taskFlowData', taskFlowData)
 
-  const title = taskFlowData?.name + ' ' + t('deploy.modal.undeployTitleSuffix')
+  const title = taskFlows[0]?.name + '(' + '외' + taskFlows.length + ')' + t('deploy.modal.undeployTitleSuffix')
+
+  // 여러 건을 순차로 보내므로 공유 mutation 상태(getDeployActionStatus) 대신 집계값으로 판단한다.
+  // 한 건이라도 실패하면 FAILURE 다.
+  const undeployStatus = (): 'READY' | 'WORKING' | 'SUCCESS' | 'FAILURE' => {
+    if (!undeployBatch) return 'READY'
+    if (undeployBatch.done < undeployBatch.total) return 'WORKING'
+    return undeployBatch.failedIds.length > 0 ? 'FAILURE' : 'SUCCESS'
+  }
 
   const mainDesc = () => {
-    switch (getDeployActionStatus()) {
+    switch (undeployStatus()) {
       case 'READY':
         return (
           t('deploy.modal.selectedPrefix') +
@@ -224,19 +240,29 @@ const RobotDetailPage = () => {
         )
 
       case 'WORKING':
-        return t('deploy.modal.undeploying')
+        // 순차 처리라 몇 번째를 보내고 있는지 알려준다.
+        return undeployBatch && undeployBatch.total > 1
+          ? `${t('deploy.modal.undeploying')} (${undeployBatch.done}/${undeployBatch.total})`
+          : t('deploy.modal.undeploying')
 
       case 'SUCCESS':
         return t('deploy.modal.undeployRequested')
 
       case 'FAILURE':
-        return t('deploy.modal.undeployFailed')
+        return t('deploy.modal.undeployPartialFailed', {
+          failed: undeployBatch?.failedIds.length ?? 0,
+          total: undeployBatch?.total ?? 0
+        })
     }
   }
 
   const subDesc = () => {
-    if (getDeployActionStatus() === 'READY') {
+    if (undeployStatus() === 'READY') {
       return t('deploy.modal.irreversible')
+    }
+    // 실패한 건은 선택이 남아 있으므로 다시 시도할 수 있다.
+    if (undeployStatus() === 'FAILURE') {
+      return t('deploy.modal.undeployRetryHint')
     }
   }
 
@@ -248,31 +274,38 @@ const RobotDetailPage = () => {
           desc={mainDesc()}
           subDesc={subDesc()}
           mode={'DELETE_DEPLOY'}
-          status={getDeployActionStatus()}
+          status={undeployStatus()}
           onClose={dismissPopup}
           onDeploy={async () => {
-            if (!group || !site || !robotData?.deviceId || checkedItems.length === 0) return
+            if (!group || !site || !robotData?.deviceId || taskFlows.length === 0) return
+            // 진행 중 재클릭 방지(모달 버튼도 WORKING 이면 비활성이지만 첫 렌더 전 클릭을 막는다).
+            if (undeployBatch) return
 
-            const results = await Promise.allSettled(
-              taskFlows.map((task) => {
-                const params = {
-                  orgInfo: [group, site],
-                  taskFlowId: task.id,
-                  robotList: [{ groupId: group, siteId: site, id: robotData.deviceId }]
-                }
-                return execUnDeployAction(params)
+            const deviceId = robotData.deviceId
+            const targets = taskFlows
+            setUndeployBatch({ total: targets.length, done: 0, failedIds: [] })
+
+            // mutation 인스턴스를 하나 공유하므로 병렬로 쏘면 상태와 콜백이 서로를 덮어쓴다.
+            // 한 건씩 보내고 결과를 모은다.
+            const failedIds: number[] = []
+            for (const task of targets) {
+              const result = await execUnDeployAction({
+                orgInfo: [group, site],
+                taskFlowId: task.id,
+                robotList: [{ groupId: group, siteId: site, id: deviceId }]
               })
-            )
 
-            const failed = results
-              .map((r, i) => ({ ...r, taskFlow: checkedItems[i] }))
-              .filter((r) => r.status === 'rejected')
-
-            if (failed.length > 0) {
-              // failed 목록으로 "N개 실패" 안내 / 재시도 UI 등 처리
-              console.error('배포 취소 실패:', failed)
+              if (!result.ok) failedIds.push(task.id)
+              setUndeployBatch((prev) => (prev ? { ...prev, done: prev.done + 1, failedIds: [...failedIds] } : prev))
             }
-            // 성공/실패 개수에 따라 후처리
+
+            if (failedIds.length > 0) {
+              // 사용자 안내는 모달(desc)이 담당한다. 여기 로그는 원인 추적용.
+              console.error(
+                '배포 취소 실패:',
+                targets.filter((task) => failedIds.includes(task.id))
+              )
+            }
           }}
         ></DeployModal>
       )}

@@ -45,6 +45,8 @@ export function createCanvasRenderer({
   canvasRef,
   pathPointsRef,
   plannedPathPointsRef,
+  fullTrajectoryPointsRef,
+  odomRawPointsRef,
   gridDataRef,
   localCostmapDataRef,
   dwaGoalsRef,
@@ -79,6 +81,9 @@ export function createCanvasRenderer({
 
   const APPLY_BASE_FRAME_TRANSLATION = true
   const APPLY_POSE_YAW_FOR_BASE_FRAME = false
+  // ✅ costmap이 odom 프레임일 때, raw odom(odomRawPointsRef)과 map 프레임 pose(pts)를
+  //   같은 시점(costmap 캡처 시각)에서 비교해 odom→map 보정(SLAM 드리프트 보정)을 적용.
+  const APPLY_ODOM_FRAME_CORRECTION = true
 
   // ※ 윤곽만 보이는 문제를 줄이기 위해 기본은 false
   const ALWAYS_DRAW_OUTLINE = false // 이미지 없으면 **윤곽도** 그리지 않음
@@ -726,6 +731,9 @@ export function createCanvasRenderer({
 
     const pts = Array.isArray(pathPointsRef.current) ? pathPointsRef.current : []
     const planned = Array.isArray(plannedPathPointsRef?.current) ? plannedPathPointsRef.current : []
+    // ✅ 남은 경로(회색)는 윈도우 캐시(pts, "현재까지"만 유지)가 아니라
+    //   파일 전체를 sparse하게 미리 훑어둔 별도 궤적을 사용한다(윈도우 스트리밍과 무관하게 항상 존재).
+    const routePts = Array.isArray(fullTrajectoryPointsRef?.current) ? fullTrajectoryPointsRef.current : []
     const grid = gridDataRef.current
 
     // DWA goal 시리즈 (정렬 보장) - Patch 3: WeakSet로 관리
@@ -863,6 +871,7 @@ export function createCanvasRenderer({
           const fid = fidRaw.replace(/^\/+/, '').toLowerCase()
           const isBase = fid === 'base' || fid === 'base_link' || fid === 'base_footprint'
           const isMap = fid === 'map'
+          const isOdom = fid === 'odom'
 
           const poseNow = getPoseAtTime(pts, curT)
 
@@ -885,6 +894,27 @@ export function createCanvasRenderer({
             }
           } else if (isMap) {
             // no-op
+          } else if (APPLY_ODOM_FRAME_CORRECTION && isOdom) {
+            // ✅ odom→map 보정: costmap이 캡처된 시각(chosenRec.tSec)의 raw odom pose와
+            //   같은 시각의 map 프레임 pose(SLAM 보정됨) 차이를 costmap 원점에 적용한다.
+            //   (map 프레임은 루프클로저로 계속 보정되지만 costmap 원점은 odom 그대로라 시간이
+            //   지날수록 로봇과 어긋나 보이던 문제를 해결)
+            const odomSeries = Array.isArray(odomRawPointsRef?.current) ? odomRawPointsRef.current : []
+            const tRef = chosenRec && Number.isFinite(chosenRec.tSec) ? chosenRec.tSec : curT
+            if (odomSeries.length >= 2 && pts.length >= 2) {
+              const odomAtT = getPoseAtTime(odomSeries, tRef)
+              const mapAtT = getPoseAtTime(pts, tRef)
+              let dyaw = (mapAtT.yaw || 0) - (odomAtT.yaw || 0)
+              while (dyaw > Math.PI) dyaw -= 2 * Math.PI
+              while (dyaw < -Math.PI) dyaw += 2 * Math.PI
+              const c = Math.cos(dyaw),
+                s = Math.sin(dyaw)
+              const relX = cox - odomAtT.x
+              const relY = coy - odomAtT.y
+              tx = mapAtT.x + (c * relX - s * relY)
+              ty = mapAtT.y + (s * relX + c * relY)
+              trot = yaw + dyaw
+            }
           }
 
           const MAX_FRAME_AGE_SEC = 5
@@ -1126,10 +1156,9 @@ export function createCanvasRenderer({
     // ─────────────────────────────────────────────
     let markerPos = null
     let curPose = null
+    const viewRect = getWorldViewRect(cssW, cssH, originX, originY, panX, panY, scale)
 
     if (pts.length >= 2) {
-      const viewRect = getWorldViewRect(cssW, cssH, originX, originY, panX, panY, scale)
-
       // Trajectory = 지나온 경로(초록)
       if (showTrajectory) {
         drawPolylineLOD(ctx, pts, {
@@ -1144,24 +1173,24 @@ export function createCanvasRenderer({
         })
       }
 
-      // Planned Path = 남은 경로(회색) (현재 구현상 future trajectory)
-      if (showPlannedPath) {
-        drawPolylineLOD(ctx, pts, {
-          mode: 'future',
-          color: '#9CA3AF',
-          tSecCutoff,
-          zoom: v.zoom,
-          offX,
-          offY,
-          fastWS,
-          worldViewRect: viewRect
-        })
-      }
-
       const poseNow = getPoseAtTime(pts, tSecCutoff)
       const { sx, sy } = fastWS(poseNow.x + offX, poseNow.y + offY)
       markerPos = { sx, sy }
       curPose = { x: poseNow.x + offX, y: poseNow.y + offY, yaw: poseNow.yaw }
+    }
+
+    // Planned Path = 남은 경로(회색) — 파일 전체 sparse 궤적 미리보기 중 현재 이후 구간
+    if (showPlannedPath && routePts.length >= 2) {
+      drawPolylineLOD(ctx, routePts, {
+        mode: 'future',
+        color: '#9CA3AF',
+        tSecCutoff,
+        zoom: v.zoom,
+        offX,
+        offY,
+        fastWS,
+        worldViewRect: viewRect
+      })
     }
 
     // ─────────────────────────────────────────────

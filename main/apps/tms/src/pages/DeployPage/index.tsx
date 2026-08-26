@@ -19,34 +19,7 @@ import { Content } from '@/types/api/deviceDeployment'
 import { useOrganizationStore } from '@repo/stores'
 import { DeployContent, DeploySearchContainer } from './styles'
 import useDeploy, { DeployMode } from './hooks/useDeploy'
-
-const skillRenderMap = {
-  MANIPULATION: (
-    <>
-      <Hand size={14} color="#9333ea" /> 매니플레이션
-    </>
-  ),
-  NAVIGATION: (
-    <>
-      <Navigation size={14} color="#2563eb" /> 주행
-    </>
-  ),
-  DISPLAY: (
-    <>
-      <Smile size={14} color="#10b981" /> Face
-    </>
-  ), // 예시 추가
-  VOICE: (
-    <>
-      <Mic size={14} color="#f59e0b" /> 음성
-    </>
-  ), // 예시 추가
-  PERCEPTION: (
-    <>
-      <Eye size={14} color="#f59e0b" /> 인지
-    </>
-  ) // 예시 추가
-}
+import SkillIndicator from '../components/SkillIndicator'
 
 const operationStatusOptions = [
   { value: 'all', name: 'all' },
@@ -69,27 +42,6 @@ const deployStatusOptions = [
   { value: 'REMOVED', name: 'removed' },
   { value: 'CANCELED', name: 'canceled' }
 ]
-
-//todo
-function checkDeployability(taskFlow?: TaskFlow | null, robot?: DeviceResponse) {
-  // taskFlow가 필요로 하는 skill과 로봇의 지원 skill이 다를 경우
-  // taskFlow가 필요로 하는 action과 로봇의 지원 action이 다를 경우
-  // 로봇에 이미 배포 TaskFlow 이상의 TaskFlow가 설치 되어 있을 경우
-
-  if (!taskFlow) return { deployable: false, reason: 'taskflow_missing' }
-  if (!robot?.tms) return { deployable: false, reason: 'robot_tms_missing' }
-
-  const capabilities = robot.tms.taskFlowState?.robotSpec?.capabilities ?? []
-  const { robotSkillInfos: necessarySkill } = taskFlow
-  // 임시로- 원복 필요
-  // for (const skill of necessarySkill) {
-  //   if (!capabilities.some((capa) => capa.name === skill.name)) {
-  //     return { deployable: false, reason: `not supported: ${skill.name}` }
-  //   }
-  // }
-
-  return { deployable: true, reason: 'ok' }
-}
 
 function checkUndeployability(taskFlow?: TaskFlow | null, robot?: DeviceResponse) {
   if (!taskFlow || !robot) {
@@ -426,7 +378,7 @@ const DeployPage = () => {
                         gap: '4px'
                       }}
                     >
-                      {skillRenderMap[item.name as keyof typeof skillRenderMap] || item.name}
+                      {<SkillIndicator skill={item.name} />}
                     </span>
                   ))}
                 </p>
@@ -472,6 +424,7 @@ const DeployPage = () => {
           <RobotList
             mode="DEPLOY"
             robotList={robotList}
+            necessarySkills={skills.map((item) => item.name)}
             searchQuery={active.robotSearchQuery}
             selectedRobotIds={active.selectedRobotList}
             onChangeCheckbox={toggleRobotSelection}

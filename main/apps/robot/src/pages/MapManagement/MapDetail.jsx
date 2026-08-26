@@ -191,7 +191,7 @@ const MapDetail = () => {
     { label: t('mapMgmt.location'), value: locationText },
     { label: t('mapMgmt.labelGroup'), value: nm('group', scope.groupId) || '-' },
     { label: t('mapMgmt.labelSite'), value: nm('site', scope.siteId) || '-' },
-    ...(isRobotMap ? [{ label: t('mapMgmt.colRobot'), value: nm('device', scope.deviceId) || scope.deviceId }] : []),
+    ...(isRobotMap ? [{ label: t('mapMgmt.colRobot'), value: names.device?.[scope.deviceId] || '-' }] : []),
     ...(mapObject
       ? [
           { label: t('mapMgmt.createdAt'), value: mapObject.createdAt ? toYmdHmKST(mapObject.createdAt) : '-' },
@@ -261,9 +261,29 @@ const MapDetail = () => {
 
   const notFound = mapId && !loading && !mapObject
 
+  const tagName = isRobotMap ? names.device?.[scope.deviceId] : names.site?.[scope.siteId]
+
   return (
     <StyledPageContent className="column">
-      <Title>{t('mapMgmt.detailTitle')}</Title>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '1rem' }}>
+        <Title>{t('mapMgmt.detailTitle')}</Title>
+        {tagName && (
+          <span
+            style={{
+              padding: '0.4rem 0.8rem',
+              borderRadius: '999px',
+              fontSize: '1.2rem',
+              fontWeight: 600,
+              backgroundColor: 'var(--t-tag-bg)',
+              color: '#fff',
+              whiteSpace: 'nowrap',
+              marginBottom: '0.8rem'
+            }}
+          >
+            {tagName}
+          </span>
+        )}
+      </div>
 
       {loading ? (
         <Section>{emptyBox(t('mapMgmt.loadingMap'))}</Section>

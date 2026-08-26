@@ -227,7 +227,7 @@ const MapManagement = () => {
           buildingName: '-',
           floorName: '-',
           areaName: '-',
-          robotName: deviceNames[it.mapScope.deviceId] ?? it.mapScope.deviceId,
+          robotName: deviceNames[it.mapScope.deviceId] ?? '-',
           mapItem: it
         }))
     return [...areaRows, ...robotRows]

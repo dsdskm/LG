@@ -12,6 +12,8 @@ import { useThreeRobot } from '../logReplayRender.js'
 export default function useLogReplayPlayer2D({
   pathPoints,
   plannedPathPoints,
+  fullTrajectoryPoints,
+  odomRawPoints,
   gridData,
   localCostmapData,
   localCostmapFrames,
@@ -28,6 +30,8 @@ export default function useLogReplayPlayer2D({
   // refs 동기화 (렌더러는 ref를 본다)
   const pathPointsRef = useRef([])
   const plannedPathPointsRef = useRef([])
+  const fullTrajectoryPointsRef = useRef([])
+  const odomRawPointsRef = useRef([])
   const gridDataRef = useRef(null)
   const localCostmapDataRef = useRef(null)
   const lidarScansRef = useRef([])
@@ -231,6 +235,13 @@ export default function useLogReplayPlayer2D({
     // ✅ React 커밋 후 즉시 렌더 (초기 로드 시 로봇 표시 보장)
     renderNow()
   }, [pathPoints, renderNow])
+  useEffect(() => {
+    fullTrajectoryPointsRef.current = Array.isArray(fullTrajectoryPoints) ? fullTrajectoryPoints : []
+    renderNow()
+  }, [fullTrajectoryPoints, renderNow])
+  useEffect(() => {
+    odomRawPointsRef.current = Array.isArray(odomRawPoints) ? odomRawPoints : []
+  }, [odomRawPoints])
   const t0EpochMsRef = useRef(null)
   useEffect(() => {
     t0EpochMsRef.current = t0EpochMs
@@ -250,6 +261,8 @@ export default function useLogReplayPlayer2D({
       canvasRef,
       pathPointsRef,
       plannedPathPointsRef,
+      fullTrajectoryPointsRef,
+      odomRawPointsRef,
       gridDataRef,
       localCostmapDataRef,
       localCostmapFramesRef,

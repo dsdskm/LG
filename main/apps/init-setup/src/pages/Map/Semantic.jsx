@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'react-toastify'
-import { Button, LocationBar, Section, SemanticPage, Title } from '@repo/ui'
+import { Button, Dropdown, Section, SemanticPage, Title } from '@repo/ui'
 import MapCanvas from '@/components/MapCanvas'
 import { useTelemetry } from '@/hooks/useTelemetry'
 import { NAV_STATUS_TOPICS, SPIN_STATUS_TOPICS, STATUS_TOPICS } from '@/constants/topics'
-import { syncLevelSelection } from '@/utils/location'
+import { resolveMapDir, visibleMaps } from '@/utils/mapRecord'
+import { resolveMappingMode } from '@/utils/lioStatus'
 import { SETUP_STEPS, tryAdvanceSetupProgress } from '@/utils/setupProgress'
-import { useLocationStore } from '@/stores/useLocationStore'
 import {
   isNavMoving,
   isSpinning,
@@ -17,6 +17,7 @@ import {
   summarizeSpinStatus
 } from '@/utils/navStatus'
 import { resolveWsUrl } from '@/utils/wsUrl'
+import { MAP_FRAME } from '@/utils/tf'
 import {
   StyledSemanticPageContent,
   BadgeRow,
@@ -30,63 +31,33 @@ import {
 import * as poiApi from '@/apis/mapPoiApis'
 import * as mapApi from '@/apis/mapApis'
 import { navGoto, navSpin, stopNavGoto, stopNavSpin } from '@/apis/navApis'
-import { list as listBuildings } from '@/apis/buildingApis'
-import { list as listFloors } from '@/apis/floorApis'
-import { list as listAreas } from '@/apis/areaApis'
 
-/** 맵 산출물 파일 확장자 — 레코드 값이 파일 경로인지 판단하는 기준. */
-const MAP_FILE_EXT = /\.(png|pgm|yaml|yml|pcd|txt|bin)$/i
-
-/**
- * save_map 이 맵 디렉터리 안에 만드는 산출물 파일 이름(확장자 제외).
- * 이 이름들이면 파일이 곧 디렉터리 소속이므로 상위 폴더가 맵 디렉터리다.
- */
-const MAP_ARTIFACT_NAMES = new Set(['grid_map', 'global_map', 'map', 'optimized_trajectory', 'frontend_trajectory'])
-
-/**
- * 맵 레코드에서 맵 디렉터리(lio_switch_mode 의 map_path)를 얻는다.
- *
- * save_map 은 맵 하나를 디렉터리 단위로 저장하고(global_map.pcd + optimized_trajectory.txt +
- * grid_map.*), loadMap 은 그 디렉터리에 '/global_map.pcd' 를 붙여 찾는다
- * (gtsam_backend.cpp). 반면 레코드의 imagePath 는 BE 가 검증하지 않아 형태가 세 가지로 들어온다:
- *
- *   1) /ws/maps/<맵이름>                    (디렉터리)          → 그대로
- *   2) /ws/maps/<맵이름>/grid_map.png       (디렉터리 안 산출물) → 상위 폴더
- *   3) /ws/maps/<맵이름>.pgm                (맵 이름이 곧 파일명) → 확장자만 제거
- *
- * 3) 을 2) 처럼 다루면 /ws/maps 까지만 남아 맵 로드가 실패한다 — 마지막 세그먼트가
- * 산출물 이름(grid_map 등)인지로 2) 와 3) 을 가른다.
- */
-const resolveMapDir = (record) => {
-  const raw = record?.imagePath || record?.yamlPath
-  if (!raw) return ''
-  // 후행 슬래시는 제거한다 — loadMap 은 '/'를 붙여 이어붙이므로 있으나 없으나 동작하지만
-  // 마지막 세그먼트 판정이 빈 문자열이 되는 것을 막는다.
-  const normalized = String(raw).replace(/\\/g, '/').replace(/\/+$/, '')
-  if (!normalized) return ''
-
-  const idx = normalized.lastIndexOf('/')
-  const lastSegment = idx >= 0 ? normalized.slice(idx + 1) : normalized
-
-  // 1) 확장자가 없으면 디렉터리로 본다.
-  if (!MAP_FILE_EXT.test(lastSegment)) return normalized
-
-  const baseName = lastSegment.replace(MAP_FILE_EXT, '')
-  // 2) 디렉터리 안의 산출물 파일 → 상위 폴더가 맵 디렉터리.
-  if (MAP_ARTIFACT_NAMES.has(baseName.toLowerCase())) return idx > 0 ? normalized.slice(0, idx) : ''
-  // 3) 파일명이 곧 맵 이름 → 확장자만 떼면 맵 디렉터리.
-  return idx > 0 ? `${normalized.slice(0, idx)}/${baseName}` : baseName
+/** 맵 표시 이름 — 레코드의 다국어 이름, 없으면 저장 디렉터리 이름(= 맵 이름). */
+const mapLabel = (map) => {
+  const display = map?.name?.default ?? map?.name?.['ko-KR'] ?? map?.name?.['en-US'] ?? null
+  return display || resolveMapDir(map).split('/').pop() || `#${map?.id}`
 }
+
+/**
+ * 진입 시 선택/자동 로딩할 맵 하나를 고른다.
+ *
+ * inactive 를 먼저 본다 — 맵 저장 시점의 레코드가 inactive 이고(utils/mapRecord.buildMapRecordBody)
+ * 업로드(승격) 후에야 active 가 되므로, inactive 가 있으면 그게 지금 POI 를 얹는 중인 작업본이다.
+ * 없으면 서비스에 쓰이는 active 맵을 고른다. 목록은 createdAt DESC 라 같은 status 안에서는
+ * 가장 최근 맵이다.
+ */
+const pickWorkingMap = (maps) =>
+  maps.find((map) => map?.status === 'inactive') ?? maps.find((map) => map?.status === 'active') ?? maps[0] ?? null
 
 /**
  * Semantic
  *
- * 선택한 위치(Building > Floor > Area)의 맵에 달린 POI 를 편집하는 페이지.
+ * 저장된 맵 하나를 골라 그 맵에 달린 POI 를 편집하는 페이지.
  * 레이아웃은 Map(스캔) 페이지와 같은 구성이다
- * (StyledPageContent > Title / LocationBar / Section):
+ * (StyledPageContent > Title / 맵 선택 줄 / Section):
  * ┌────────────────────────────────────────────┐
  * │ Title (페이지 제목)                          │
- * │ LocationBar (위치 선택)                      │
+ * │ 맵 선택 + 로드/상태 배지                       │
  * │ ┌─ Section ────────────────────────────────┐│
  * │ │ 저장 / 취소                                ││
  * │ └──────────────────────────────────────────┘│
@@ -96,8 +67,9 @@ const resolveMapDir = (record) => {
  * └────────────────────────────────────────────┘
  * (아래 두 줄은 공용 SemanticPage 가 내보내고, 지도 칸만 mapSlot 으로 넘긴다)
  *
- * POI 는 맵(mapId)에 매달리므로 편집 대상 맵이 정해져야 한다 — 선택한 Area 의 맵을
- * /maps?areaId= 로 찾아 그 맵의 POI 만 조회/저장한다.
+ * POI 는 맵(mapId)에 매달리므로 편집 대상 맵이 정해져야 한다 — GET /maps 목록에서 맵을 직접 고르고
+ * 그 맵의 POI 만 조회/저장한다. 위치 계층(Building/Floor/Area)으로 좁히지 않는다: 구역에 매이지 않은
+ * 맵(위치 정보 없이 저장된 Default 등)도 편집 대상이어야 한다.
  */
 const Semantic = () => {
   const { t } = useTranslation('map')
@@ -105,28 +77,25 @@ const Semantic = () => {
   const [pois, setPois] = useState([])
   const [poiVersion, setPoiVersion] = useState(null)
 
-  // 위치 선택은 스토어 공유 — 맵 스캔에서 고른 값을 그대로 이어받고 새로고침에도 유지된다.
-  // zustand v5 는 객체 셀렉터가 매 렌더 새 참조를 내므로 필드 단위로 구독한다.
-  const buildingId = useLocationStore((state) => state.buildingId)
-  const floorId = useLocationStore((state) => state.floorId)
-  const areaId = useLocationStore((state) => state.areaId)
-  const setLocation = useLocationStore((state) => state.setLocation)
-  const pruneMissing = useLocationStore((state) => state.pruneMissing)
-  const setLevelIfEmpty = useLocationStore((state) => state.setLevelIfEmpty)
-  const location = useMemo(() => ({ buildingId, floorId, areaId }), [buildingId, floorId, areaId])
-  const levelActions = useMemo(() => ({ pruneMissing, setLevelIfEmpty }), [pruneMissing, setLevelIfEmpty])
-
-  const [buildings, setBuildings] = useState([])
-  const [floors, setFloors] = useState([])
-  const [areas, setAreas] = useState([])
-  // 선택한 구역의 맵 레코드. POI 소속(mapId)뿐 아니라 측위 전환에 쓸 맵 경로도 여기서 나온다.
-  const [mapRecord, setMapRecord] = useState(null)
+  // 편집 대상은 위치 계층이 아니라 저장된 맵 목록에서 직접 고른다 — POI 는 맵(mapId)에 매달리므로
+  // 맵이 곧 선택 단위다. 위치 계층으로 좁히면 구역이 없는 맵(Default 등)은 고를 수 없다.
+  const [maps, setMaps] = useState([])
+  const [selectedMapId, setSelectedMapId] = useState('')
+  const mapRecord = useMemo(
+    () => maps.find((map) => String(map.id) === String(selectedMapId)) ?? null,
+    [maps, selectedMapId]
+  )
   const mapId = mapRecord?.id ?? null
   const mapDir = useMemo(() => resolveMapDir(mapRecord), [mapRecord])
+  const mapOptions = useMemo(() => maps.map((map) => ({ value: String(map.id), name: mapLabel(map) })), [maps])
 
   // 지도 클릭으로 잡은 이동 목표 — { x, y, canvasX, canvasY }. 있으면 말풍선이 뜬다.
   const [navTarget, setNavTarget] = useState(null)
   const [isLoadingMap, setIsLoadingMap] = useState(false)
+  // 측위가 끝난(ready) 뒤 다른 맵으로 갈아타는 중인지 — 이때만 위치 선택과 맵 로드 버튼을 다시 연다.
+  const [isSwitchingMap, setIsSwitchingMap] = useState(false)
+  // 맵 로드 요청으로 시작된 재정위인지 — 그때만 회전을 자동으로 건다.
+  const autoSpinArmedRef = useRef(false)
   const [isSendingGoto, setIsSendingGoto] = useState(false)
   const [isSendingSpin, setIsSendingSpin] = useState(false)
 
@@ -160,6 +129,11 @@ const Semantic = () => {
     [spinStatusTopic, customTopicsData]
   )
 
+  // POI 좌표로 쓸 로봇 현재 위치 — 지도(map) 프레임의 pose 만 쓴다. resolveRobotPose 는 map TF 가
+  // 아직 없으면 odom 기준 pose 를 대신 돌려주는데(지도 그리기용 폴백), 그 좌표를 POI 로 저장하면
+  // 맵 좌표와 어긋난 위치가 남는다.
+  const poiRobotPose = useMemo(() => (robotPose?.frame === MAP_FRAME ? robotPose : null), [robotPose])
+
   const isMoving = isNavMoving(navStatus)
   const isRotating = isSpinning(spinStatus)
   const gotoState = navStatus?.goto?.state ?? null
@@ -167,6 +141,12 @@ const Semantic = () => {
   const needsGkrSpin = lioStatus === 'relocalizing_gkr'
   // 측위 완료 = 맵이 로드되고 재정위까지 끝난 상태. 이때만 지도/이동이 의미가 있다.
   const isLocalized = lioStatus === 'ready'
+  // 측위가 끝나면 편집 대상 맵이 로봇에 올라간 맵으로 고정된다 — 다른 맵을 고르면 화면의 POI 와
+  // 로봇이 보는 맵이 어긋나므로, '다른 맵 로딩'을 누르기 전까지 맵 선택이 확정된 것으로 본다.
+  const isMapSettled = isLocalized && !isSwitchingMap
+  // 맵 선택과 맵 로드를 잠그는 조건. 재정위(relocalizing_gkr) 중에도 잠근다 — 진행 중인 재정위를
+  // 다른 맵으로 덮어쓰면 로봇이 어느 맵을 기준으로 도는지 알 수 없게 된다.
+  const isMapSelectLocked = isMapSettled || needsGkrSpin
 
   useEffect(() => {
     connect()
@@ -185,83 +165,35 @@ const Semantic = () => {
     // navStatus 는 매 틱 새 객체지만 위 가드로 state 가 바뀔 때만 동작한다.
   }, [gotoState, navStatus, t])
 
-  // 위치 계층 목록 조회. 상위 선택이 바뀌면 하위 목록을 다시 받아온다
-  // (하위 선택 초기화는 LocationBar 의 onChange 가 넘겨주는 값으로 처리된다).
-  //
-  // 맵 스캔 화면과 동일한 규칙(utils/location.js syncLevelSelection): 스토어에 남은 선택을 목록과
-  // 맞춘 뒤 비어 있으면 첫 항목으로 채운다 — POI 는 맵(mapId)에 매달리고 그 맵은 선택한 Area 로
-  // 찾으므로, 진입 직후 편집 대상이 정해져 있어야 한다.
+  // 저장된 맵 목록 조회. 진입 직후 편집 대상이 정해져 있어야 하므로 작업 중인 맵을 골라 둔다
+  // (pickWorkingMap: inactive 우선, 없으면 active).
   useEffect(() => {
-    let alive = true
-    listBuildings()
-      .then((res) => {
-        if (!alive) return
-        const items = res?.data || []
-        setBuildings(items)
-        syncLevelSelection(levelActions, 'buildingId', items)
-      })
-      .catch(() => alive && setBuildings([]))
-    return () => {
-      alive = false
-    }
-  }, [levelActions])
-
-  useEffect(() => {
-    if (!buildingId) {
-      setFloors([])
-      return
-    }
-    let alive = true
-    listFloors({ buildingId })
-      .then((res) => {
-        if (!alive) return
-        const items = res?.data || []
-        setFloors(items)
-        syncLevelSelection(levelActions, 'floorId', items)
-      })
-      .catch(() => alive && setFloors([]))
-    return () => {
-      alive = false
-    }
-  }, [buildingId, levelActions])
-
-  useEffect(() => {
-    if (!floorId) {
-      setAreas([])
-      return
-    }
-    let alive = true
-    listAreas({ floorId })
-      .then((res) => {
-        if (!alive) return
-        const items = res?.data || []
-        setAreas(items)
-        syncLevelSelection(levelActions, 'areaId', items)
-      })
-      .catch(() => alive && setAreas([]))
-    return () => {
-      alive = false
-    }
-  }, [floorId, levelActions])
-
-  // 선택한 구역의 맵(POI 소속). 구역 하나에 맵이 여러 개면 최신 것을 쓴다(BE 가 createdAt DESC 로 내려준다).
-  useEffect(() => {
-    if (!areaId) {
-      setMapRecord(null)
-      return
-    }
     let alive = true
     mapApi
-      .list({ areaId })
+      .list()
       .then((res) => {
-        alive && setMapRecord(res?.data?.[0] ?? null)
-        alive && setPoiVersion(res?.data?.[0]?.poiVersion ?? null)
+        if (!alive) return
+        // archived(업로드로 대체된 이전 맵)는 편집 대상이 아니므로 뺀다.
+        const items = visibleMaps(res?.data)
+        setMaps(items)
+        setSelectedMapId((current) =>
+          items.some((map) => String(map.id) === String(current)) ? current : String(pickWorkingMap(items)?.id ?? '')
+        )
       })
-      .catch(() => alive && setMapRecord(null))
+      .catch(() => {
+        if (!alive) return
+        setMaps([])
+        setSelectedMapId('')
+      })
     return () => {
       alive = false
     }
-  }, [areaId])
+  }, [])
+
+  // POI 버전은 선택한 맵 레코드에서 온다(POI 일괄 적용의 기준 버전).
+  useEffect(() => {
+    setPoiVersion(mapRecord?.poiVersion ?? null)
+  }, [mapRecord])
 
   // 편집 대상 맵이 바뀌면 이전 위치를 가리키던 말풍선은 의미가 없다.
   useEffect(() => {
@@ -269,25 +201,57 @@ const Semantic = () => {
   }, [mapId])
 
   /**
-   * 선택한 위치의 맵을 로봇에 로드한다(측위 모드 전환).
+   * 선택한 맵을 로봇에 로드한다(측위 모드 전환).
    * 응답은 3D 맵 로드까지만 보장하므로 이후 진행은 /lio_node/status 배지로 확인한다.
+   *
+   * @param {{armAutoSpin?: boolean}} [options] armAutoSpin: 이 로드로 시작된 GKR 재정위에서
+   *   제자리 회전을 자동으로 걸지 여부. 버튼 클릭은 true, 진입 시 자동 로드는 false —
+   *   화면에 들어온 것만으로 로봇이 돌기 시작하면 안 된다.
    */
-  const handleLoadMap = async () => {
-    if (!mapDir) {
-      toast.error(t('noMapForArea'), { autoClose: 3000 })
-      return
-    }
-    setIsLoadingMap(true)
-    try {
-      const response = await mapApi.loadMapForLocalization({ mapPath: mapDir })
-      toast.success(response?.data?.message || t('mapLoadRequested'), { autoClose: 2000 })
-    } catch (error) {
-      const message = error?.response?.data?.error?.message || error?.message || 'Request failed'
-      toast.error(message, { autoClose: 3000 })
-    } finally {
-      setIsLoadingMap(false)
-    }
-  }
+  const handleLoadMap = useCallback(
+    async ({ armAutoSpin = true } = {}) => {
+      if (!mapDir) {
+        toast.error(t('noMapSelected'), { autoClose: 3000 })
+        return
+      }
+      setIsLoadingMap(true)
+      try {
+        const response = await mapApi.loadMapForLocalization({ mapPath: mapDir })
+        toast.success(response?.data?.message || t('mapLoadRequested'), { autoClose: 2000 })
+        // 이 요청으로 시작된 재정위에서는 회전을 자동으로 걸어준다(아래 effect).
+        if (armAutoSpin) autoSpinArmedRef.current = true
+        setIsSwitchingMap(false)
+      } catch (error) {
+        const message = error?.response?.data?.error?.message || error?.message || 'Request failed'
+        toast.error(message, { autoClose: 3000 })
+      } finally {
+        setIsLoadingMap(false)
+      }
+    },
+    [mapDir, t]
+  )
+
+  // 진입 시 자동 맵 로딩 — 작업 중인 맵(inactive 우선)이 이미 선택돼 있으므로 그 맵을 그대로 올린다.
+  // POI 편집은 로봇이 그 맵을 물고 있어야(측위) 지도 위 좌표가 맞으므로, 매번 버튼을 누르게 할 이유가 없다.
+  //
+  // 회전은 걸지 않는다(armAutoSpin: false) — 화면에 들어온 것만으로 로봇이 제자리에서 돌기 시작하면
+  // 안 된다. GKR 재정위 단계에서 회전이 필요하면 사용자가 회전 버튼(또는 맵 로드 버튼)으로 시작한다.
+  //
+  // 단 한 번만, 그리고 "로봇이 아직 맵을 물고 있지 않을 때만" 건다:
+  //   - unknown : 상태 토픽을 아직 못 받았다 → 판단 보류(여기서 걸면 이미 측위된 로봇을 다시 돌린다)
+  //   - saving  : /save_map 처리 중 → 끝나고 mapping 으로 돌아오면 그때 건다
+  //   - mapping : 맵을 안 물고 있다 → 자동 로드
+  //   - 그 외(localization/failed) : 이미 로드했거나 진행 중 → 건드리지 않는다.
+  //     다시 로드하면 추정 위치를 잃고 GKR 360° 재정위를 처음부터 다시 하게 된다.
+  const autoLoadedRef = useRef(false)
+  useEffect(() => {
+    if (autoLoadedRef.current || isLoadingMap || !mapDir) return
+    const mode = resolveMappingMode(lioStatus)
+    if (mode === 'unknown' || mode === 'saving') return
+    autoLoadedRef.current = true
+    if (mode !== 'mapping') return
+    handleLoadMap({ armAutoSpin: false })
+  }, [mapDir, lioStatus, isLoadingMap, handleLoadMap])
 
   // 지도 클릭 → 그 지점의 월드 좌표를 말풍선으로 띄운다(아직 이동하지 않는다).
   const handleMapClick = useCallback(({ x, y, canvasX, canvasY }) => {
@@ -320,7 +284,7 @@ const Semantic = () => {
    * 실행은 motor-2wheel 이 /cmd_vel 로 처리하므로 측위 전에도 동작한다.
    * 진행은 /robot_hub/nav_spin_status 배지로 확인한다.
    */
-  const handleSpin = async () => {
+  const handleSpin = useCallback(async () => {
     setIsSendingSpin(true)
     try {
       const response = await navSpin({ degrees: 360 })
@@ -331,10 +295,21 @@ const Semantic = () => {
     } finally {
       setIsSendingSpin(false)
     }
-  }
+  }, [t])
+
+  // 맵 로드 요청이 GKR 재정위 단계로 넘어가면 회전을 자동으로 시작한다 — 이 단계는 로봇이 한 바퀴
+  // 돌아야 진행되므로 사용자가 버튼을 한 번 더 누를 이유가 없다.
+  // 맵 로드로 무장(autoSpinArmedRef)했을 때만 걸어서, 화면에 들어왔을 때 이미 재정위 중이던
+  // 로봇에게 예고 없이 회전을 시키지 않는다.
+  useEffect(() => {
+    if (!needsGkrSpin || !autoSpinArmedRef.current) return
+    if (isRotating || isSendingSpin) return
+    autoSpinArmedRef.current = false
+    handleSpin()
+  }, [needsGkrSpin, isRotating, isSendingSpin, handleSpin])
 
   /** 진행 중인 제자리 회전 정지 — nav_spin_stop. */
-  const handleStopSpin = async () => {
+  const handleStopSpin = useCallback(async () => {
     setIsSendingSpin(true)
     try {
       const response = await stopNavSpin()
@@ -345,7 +320,22 @@ const Semantic = () => {
     } finally {
       setIsSendingSpin(false)
     }
-  }
+  }, [t])
+
+  // 회전은 GKR 재정위를 진행시키기 위한 것이므로, 측위가 끝나면(status ready) 남은 각도를 더 돌 이유가
+  // 없다 — nav_spin_once 는 요청한 각도를 마칠 때까지 돌기 때문에 여기서 대신 정지를 걸어준다.
+  // 상태 토픽이 하트비트로 반복 발행되고 spin_status 가 lio status 보다 늦게 올 수도 있으므로,
+  // ready 인 동안 회전이 보이면 한 번만 정지를 보내고 ready 를 벗어날 때 다시 무장한다.
+  const autoStoppedSpinRef = useRef(false)
+  useEffect(() => {
+    if (!isLocalized) {
+      autoStoppedSpinRef.current = false
+      return
+    }
+    if (!isRotating || autoStoppedSpinRef.current) return
+    autoStoppedSpinRef.current = true
+    handleStopSpin()
+  }, [isLocalized, isRotating, handleStopSpin])
 
   /** 진행 중인 이동 취소 — nav_goto_stop. 주행 중일 때만 노출한다. */
   const handleStopGoto = async () => {
@@ -462,21 +452,49 @@ const Semantic = () => {
       <Title>{t('semanticPageTitle')}</Title>
 
       <LocationRow>
-        {/* 위치 계층 선택 (Building > Floor > Area) */}
-        <LocationBar buildings={buildings} floors={floors} areas={areas} value={location} onChange={setLocation} />
+        {/* 편집할 맵 선택 — 측위 완료(ready) 또는 재정위 중에는 잠긴다(로봇에 올라간 맵으로 고정) */}
+        <Dropdown
+          label={t('mapSelect')}
+          size="md"
+          value={selectedMapId}
+          options={mapOptions}
+          placeholder={t('noMaps')}
+          onChange={setSelectedMapId}
+          disabled={isMapSelectLocked || mapOptions.length === 0}
+        />
 
         <BadgeRow>
-          {/* 선택한 위치의 맵을 로봇에 로드(측위 전환) — 이동 명령의 전제다.
-              측위가 끝나(ready) 지도가 올라온 뒤에는 할 일이 없으므로 버튼을 감춘다.
-              자동으로 걸지 않는다: 로봇을 실제로 재정위시키는 동작이라 사용자가 시점을 골라야 한다. */}
-          {!isLocalized && (
+          {/* 선택한 맵을 로봇에 로드(측위 전환) — 이동 명령의 전제다.
+              측위가 끝나(ready) 지도가 올라온 뒤에는 할 일이 없으므로 버튼을 감추고,
+              '다른 맵 로딩'으로 맵 선택을 다시 열었을 때만 되살린다.
+              재정위(relocalizing_gkr) 중에는 자리를 지키되 비활성으로 둔다 — 진행 중인 재정위가
+              끝나면 다시 누를 수 있다는 것을 보이려면 버튼을 감추지 않는 편이 낫다.
+              진입 시 맵을 안 물고 있으면 자동으로 한 번 걸린다(위 autoLoadedRef effect). 이 버튼은
+              자동 로드를 건너뛴 경우(상태 미수신·로드 실패)와 다른 맵으로 갈아탈 때 쓰고,
+              GKR 재정위 회전을 자동으로 거는 것도 이 버튼을 통한 로드뿐이다(자동 로드는 걸지 않는다). */}
+          {!isMapSettled && (
             <Button
               size="md"
-              onClick={handleLoadMap}
-              disabled={!mapDir || isLoadingMap}
-              title={mapDir || t('noMapForArea')}
+              onClick={() => handleLoadMap()}
+              disabled={!mapDir || isLoadingMap || isMapSelectLocked}
+              title={mapDir || t('noMapSelected')}
             >
               {isLoadingMap ? t('waitingForData') : t('loadMap')}
+            </Button>
+          )}
+
+          {/* 측위가 끝난 뒤 다른 맵으로 갈아타는 입구 — 맵 선택과 맵 로드 버튼을 다시 연다.
+              주행 중(nav 상태 RUNNING)에는 잠근다 — 이동 중에 기준 맵을 바꾸면 진행 중인 목표가
+              어느 맵의 좌표인지 알 수 없게 된다. 먼저 정지 버튼으로 멈춰야 한다. */}
+          {isMapSettled && (
+            <Button
+              size="md"
+              theme="tertiary"
+              onClick={() => setIsSwitchingMap(true)}
+              disabled={isMoving}
+              title={isMoving ? t('navMovingHint') : undefined}
+            >
+              {t('loadAnotherMap')}
             </Button>
           )}
 
@@ -532,6 +550,10 @@ const Semantic = () => {
           poiList={pois}
           onSave={onSave}
           onCancel={onCancel}
+          // POI 상세의 '현재 위치로 설정' 버튼용. 지도(map) 프레임일 때만 넘긴다 — TF 가 아직
+          // 안 모여 odom 기준 pose 가 잡힌 경우 그 좌표는 맵 좌표가 아니라 POI 로 쓸 수 없다.
+          robotPose={poiRobotPose}
+          noData={t('noPoiLoaded')}
           mapSlot={
             <MapClickArea>
               <MapCanvas

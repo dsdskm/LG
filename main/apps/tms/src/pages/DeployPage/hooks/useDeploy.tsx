@@ -5,44 +5,44 @@ import { DeployRequestParam } from '../components/DeployModal'
 import { DeployStatusType } from '@/types/RobotInfo'
 import { Content } from '@/types/api/deviceDeployment'
 import { DeviceResponse } from '@/types/api/device'
-import { useMemo } from 'react'
 
 export type DeployMode = 'DEPLOY' | 'DELETE_DEPLOY'
+
+/**
+ * 배포/배포 취소 한 건의 결과. 호출부가 여러 건을 돌릴 때 성공·실패를 집계할 수 있도록
+ * 예외로 던지지 않고 값으로 돌려준다.
+ */
+export type DeployActionResult = { taskFlowId: number; ok: boolean; error?: unknown }
+
 const useDeploy = () => {
   const {
-    mutate: deployActionMutate,
+    mutateAsync: deployActionMutateAsync,
     reset: deployActionReset,
     isPending: isDeployActionPending,
     isSuccess: isDeployActionSuccess,
     isError: isDeployActionError
   } = useDeployTaskFlowAction()
 
+  /**
+   * mutateAsync 는 실패하면 reject 하므로, 결과를 쓰지 않는 호출부(단건 배포)에서
+   * unhandled rejection 이 되지 않도록 여기서 성공/실패를 값으로 바꿔 돌려준다.
+   */
+  const runDeployAction = async (request: DeployActionRequest, taskFlowId: number): Promise<DeployActionResult> => {
+    try {
+      await deployActionMutateAsync(request)
+      return { taskFlowId, ok: true }
+    } catch (error) {
+      console.error('deploy action 실패', { taskFlowId, action: request.param.action, error })
+      return { taskFlowId, ok: false, error }
+    }
+  }
+
   const execDeployAction = ({ orgInfo, taskFlowId, robotList }: DeployRequestParam) => {
-    deployActionMutate(makeDeployActionRequest(orgInfo, taskFlowId, robotList), {
-      onSuccess: (data) => {
-        console.log('deploy 성공!', data)
-        //dismissPopup()
-      },
-      onError: (error) => {
-        console.error('deploy 실패', error)
-        //dismissPopup()
-      }
-    })
-    console.log('deploy')
+    return runDeployAction(makeDeployActionRequest(orgInfo, taskFlowId, robotList), taskFlowId)
   }
 
   const execUnDeployAction = ({ orgInfo, taskFlowId, robotList }: DeployRequestParam) => {
-    deployActionMutate(makeUndeployActionRequest(orgInfo, taskFlowId, robotList), {
-      onSuccess: (data) => {
-        console.log('un deploy 성공!', data)
-        //dismissPopup()
-      },
-      onError: (error) => {
-        console.error('undeploy 실패', error)
-        //dismissPopup()
-      }
-    })
-    console.log('undeploy')
+    return runDeployAction(makeUndeployActionRequest(orgInfo, taskFlowId, robotList), taskFlowId)
   }
 
   const makeUndeployActionRequest = (
@@ -126,12 +126,12 @@ const useDeploy = () => {
 
     const capabilities = robot.tms.taskFlowState?.robotSpec?.capabilities ?? []
     const { robotSkillInfos: necessarySkill } = taskFlow
-    // 임시로- 원복 필요
-    // for (const skill of necessarySkill) {
-    //   if (!capabilities.some((capa) => capa.name === skill.name)) {
-    //     return { deployable: false, reason: `not supported: ${skill.name}` }
-    //   }
-    // }
+
+    for (const skill of necessarySkill) {
+      if (!capabilities.some((capa) => capa.name === skill.name)) {
+        return { deployable: false, reason: `not support skill` }
+      }
+    }
 
     return { deployable: true, reason: 'ok' }
   }

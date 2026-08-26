@@ -49,6 +49,10 @@ export function useLogReplayLogic({ initialDate, deviceId }) {
   const [localCostmapData, setLocalCostmapData] = useState(null)
   const [localCostmapFrames, setLocalCostmapFrames] = useState([])
   const [plannedPathPoints, setPlannedPathPoints] = useState([])
+  // ✅ 남은 경로(회색) 표시용 — 파일 전체 sparse 궤적 미리보기(윈도우 캐시와 무관하게 1회 로드)
+  const [fullTrajectoryPoints, setFullTrajectoryPoints] = useState([])
+  // ✅ 로컬 코스트맵 odom→map 보정용 raw odom 시계열(재생 위치와 무관하게 전체 캐시를 그대로 보관)
+  const [odomRawPoints, setOdomRawPoints] = useState([])
   const [lidarScans, setLidarScans] = useState([])
   const [dwaGoals, setDwaGoals] = useState([])
   const [t0EpochMs, setT0EpochMs] = useState(null)
@@ -69,6 +73,8 @@ export function useLogReplayLogic({ initialDate, deviceId }) {
   const player = useLogReplayPlayer2D({
     pathPoints,
     plannedPathPoints,
+    fullTrajectoryPoints,
+    odomRawPoints,
     gridData,
     localCostmapData,
     localCostmapFrames,
@@ -156,6 +162,8 @@ export function useLogReplayLogic({ initialDate, deviceId }) {
     setLocalCostmapData,
     setLocalCostmapFrames,
     setPlannedPathPoints,
+    setFullTrajectoryPoints,
+    setOdomRawPoints,
     setLidarScans,
     setDwaGoals,
     setLoadPhase,
@@ -337,6 +345,8 @@ export function useLogReplayLogic({ initialDate, deviceId }) {
     setPlayIndex(0)
     setPlayTimeSec(0)
     setPlannedPathPoints([])
+    setFullTrajectoryPoints([])
+    setOdomRawPoints([])
     setPathPoints([])
     setGridData(null)
     setLocalCostmapData?.(null)
@@ -356,6 +366,8 @@ export function useLogReplayLogic({ initialDate, deviceId }) {
     setPlayIndex,
     setPlayTimeSec,
     setPlannedPathPoints,
+    setFullTrajectoryPoints,
+    setOdomRawPoints,
     setPathPoints,
     setGridData,
     setLocalCostmapData,

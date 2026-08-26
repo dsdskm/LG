@@ -340,6 +340,7 @@ const Dashboard = () => {
     if (
       orgFilter.values[1] !== 'all' &&
       !isDefaultSiteSelected &&
+      buildingsSiteIdRef.current === orgFilter.values[1] &&
       locSel.buildingId &&
       locSel.floorId &&
       locSel.areaId

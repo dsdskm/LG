@@ -1,5 +1,5 @@
 {
-  "pageTitle": "Map Scan Viewer",
+  "pageTitle": "Map Scan",
   "disconnected": "Disconnected",
   "connecting": "Connecting...",
   "connected": "Connected",
@@ -59,7 +59,11 @@
   "selectLocationForSemantic": "Select building, floor and area to save new POIs",
   "noPoiLoaded": "No POI to display",
   "loadMap": "Load Map",
+  "loadAnotherMap": "Load Another Map",
   "noMapForArea": "No saved map for the selected area",
+  "mapSelect": "Map",
+  "noMaps": "No saved maps",
+  "noMapSelected": "Select a map to edit",
   "mapLoadRequested": "Map load requested. Check the localization status.",
   "moveHere": "Move",
   "close": "Close",
@@ -73,6 +77,14 @@
     "gridUnknown": "Could not verify the 2D grid map files (map directory is not accessible).",
     "close": "Close",
     "goSemantic": "Go to Semantic"
+  },
+  "saveLocation": {
+    "title": "Select Map Location",
+    "description": "Select the building / floor / area to save this map under.",
+    "nameLabel": "Save name",
+    "selectAll": "Select building, floor and area",
+    "save": "Save",
+    "cancel": "Cancel"
   },
   "mapRecordSkipped": "Map files were saved but registration was skipped (missing: {{fields}})",
   "mapRecordPartial": "Map registered. Some metadata could not be filled ({{fields}})",

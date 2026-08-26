@@ -1129,7 +1129,7 @@ export async function loadPosesFromMcapUrl(url, options = {}) {
           } else if (ex.kind === 'path') {
             const points = extractNavPathPoints(exObj)
             if (points.length) rec = { tSec, points }
-          } else if (ex.kind === 'goal') {
+          } else if (ex.kind === 'goal' || ex.kind === 'odomRaw') {
             const p = pickPoseAny(exObj)
             if (p) rec = { tSec, x: p.x, y: p.y, z: Number(p.z) || 0, yaw: Number(p.yaw) || 0 }
           }
