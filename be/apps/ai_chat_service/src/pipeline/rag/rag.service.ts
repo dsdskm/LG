@@ -125,7 +125,19 @@ export class RagService {
     documentBodies: string[],
     reqId: string,
   ): Promise<string> {
-    console.warn(`[rag-answer] [reqId=${reqId}] sending all scoped documents count=${documentBodies.length} systemLength=${system.length}`)
+    const documentLength = documentBodies.reduce(
+      (total, body) => total + String(body ?? '').length,
+      0,
+    )
+    const historyLength = history.reduce(
+      (total, turn) => total + String(turn.content ?? '').length,
+      0,
+    )
+    const messageLength = String(message ?? '').length
+    const totalRequestLength = system.length + historyLength + messageLength
+    console.warn(
+      `[rag-answer] [reqId=${reqId}] requestLength=${totalRequestLength} systemLength=${system.length} documentLength=${documentLength} documentCount=${documentBodies.length} historyLength=${historyLength} messageLength=${messageLength}`,
+    )
     const first = await this.client.generateContent({
       messages: [
         { role: 'system', content: system },
@@ -137,7 +149,10 @@ export class RagService {
     const firstText = this.readRagResponseText(first.text)
     if (firstText && !this.copiesDocumentText(firstText, documentBodies)) return firstText
 
-    console.warn(`[rag-answer] [reqId=${reqId}] retrying reason=${firstText ? 'verbatim-document-text' : 'invalid-json-response'}`)
+    const retryInstruction = '이전 응답 형식이 올바르지 않습니다. RAG 프롬프트의 최종 JSON 형식만 사용해 다시 답변하세요.'
+    console.warn(
+      `[rag-answer] [reqId=${reqId}] retrying reason=${firstText ? 'verbatim-document-text' : 'invalid-json-response'} retryRequestLength=${totalRequestLength + String(first.text ?? '').length + retryInstruction.length} previousResponseLength=${String(first.text ?? '').length}`,
+    )
 
     const retry = await this.client.generateContent({
       messages: [
@@ -145,7 +160,7 @@ export class RagService {
         ...history.map((turn) => ({ role: turn.role, content: turn.content })),
         { role: 'user', content: message },
         { role: 'assistant', content: first.text ?? '' },
-        { role: 'user', content: '이전 응답 형식이 올바르지 않습니다. RAG 프롬프트의 최종 JSON 형식만 사용해 다시 답변하세요.' },
+        { role: 'user', content: retryInstruction },
       ],
       maxOutputTokens: this.maxOutputTokens,
     })
