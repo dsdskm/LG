@@ -8,6 +8,7 @@ import { ChatSettingEntity } from './features/chat-settings/db/chat-setting.enti
 import { ChatSettingService } from './features/chat-settings/service/chat-setting.service';
 import { ChatSettingController, ChatGuidanceController, ChatPromptController, ChatRagController, ChatRuleController } from './features/chat-settings';
 import { Prompt } from './features/chat/db/chat-prompt.entity';
+import { PromptType } from './features/chat/db/chat-prompt-type.entity';
 import { Rag } from './features/chat/db/chat-rag-doc.entity';
 import { Screen } from './features/chat/db/chat-screen.entity';
 import { ScreenGuidanceEntity } from './features/chat/db/chat-guidance.entity';
@@ -24,6 +25,7 @@ import { PromptStoreService } from './features/chat/service/prompt-store.service
         ChatLogEntity,
         ChatSettingEntity,
         Prompt,
+        PromptType,
         Rag,
         Screen,
         ScreenGuidanceEntity,
@@ -36,6 +38,7 @@ import { PromptStoreService } from './features/chat/service/prompt-store.service
       ChatLogEntity,
       ChatSettingEntity,
       Prompt,
+      PromptType,
       Rag,
       Screen,
       ScreenGuidanceEntity,

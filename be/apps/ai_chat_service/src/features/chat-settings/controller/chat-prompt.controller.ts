@@ -1,6 +1,9 @@
 import { Body, Controller, Delete, Get, Logger, Param, Post, Put, Query } from '@nestjs/common'
 import { ok, type ChatPromptUpsertRequest } from '@ai-log/shared-contracts'
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger'
+import { InjectRepository } from '@nestjs/typeorm'
+import { Repository } from 'typeorm'
+import { PromptType } from '../../chat/db/chat-prompt-type.entity'
 import { PromptStoreService } from '../../chat/service/prompt-store.service'
 
 @ApiTags('chat-settings')
@@ -8,7 +11,18 @@ import { PromptStoreService } from '../../chat/service/prompt-store.service'
 export class ChatPromptController {
   private readonly logger = new Logger(ChatPromptController.name)
 
-  constructor(private readonly promptStore: PromptStoreService) {}
+  constructor(
+    private readonly promptStore: PromptStoreService,
+    @InjectRepository(PromptType) private readonly promptTypeRepo: Repository<PromptType>,
+  ) {}
+
+  @Get('types')
+  @ApiOperation({ summary: '고정 프롬프트 유형 목록 조회' })
+  @ApiOkResponse({ description: '프롬프트 유형 목록 반환' })
+  async listPromptTypes() {
+    const items = await this.promptTypeRepo.find({ order: { sortOrder: 'ASC' } })
+    return ok({ items })
+  }
 
   @Get()
   @ApiOperation({ summary: '프롬프트 목록 조회' })

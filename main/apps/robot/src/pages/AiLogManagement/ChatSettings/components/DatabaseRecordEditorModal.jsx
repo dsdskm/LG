@@ -58,7 +58,7 @@ const FORM_CONFIG = {
                 required: true,
                 identity: true,
                 type: 'select',
-                options: ['instruction', 'intent-classifier', 'rag'],
+                options: ['instruction', 'intent-classifier', 'rag-info', 'rag-action'],
                 defaultValue: 'instruction',
             },
             { key: 'prompt', label: '프롬프트', type: 'textarea', rows: 14 },
@@ -123,7 +123,7 @@ const assertSuccessful = (response) => {
     return response?.data
 }
 
-export const DatabaseRecordEditorModal = ({ kind, item, screens, onClose, onChanged }) => {
+export const DatabaseRecordEditorModal = ({ kind, item, screens, promptTypes, onClose, onChanged }) => {
     const config = FORM_CONFIG[kind] ?? FORM_CONFIG.guidance
     const editing = Boolean(item?.id)
     const screenOptions = (Array.isArray(screens) ? screens : [])
@@ -330,7 +330,11 @@ export const DatabaseRecordEditorModal = ({ kind, item, screens, onClose, onChan
                                             {editing && field.key === 'intentType' && draft[field.key] === 'both' ? (
                                                 <option value="both">both (기존 데이터)</option>
                                             ) : null}
-                                            {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
+                                            {(kind === 'prompt' && field.key === 'type' ? promptTypes : field.options).map((option) => {
+                                                const value = typeof option === 'string' ? option : option.key
+                                                const label = typeof option === 'string' ? option : option.label
+                                                return <option key={value} value={value}>{label}</option>
+                                            })}
                                         </FormSelect>
                                     ) : field.type === 'textarea' || field.type === 'json' ? (
                                         <FormTextarea

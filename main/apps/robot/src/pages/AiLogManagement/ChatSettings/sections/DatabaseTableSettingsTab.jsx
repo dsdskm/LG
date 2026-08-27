@@ -3,6 +3,7 @@ import styled from 'styled-components'
 
 import { PageDescription, PrimaryButton } from '../styles'
 import { DatabaseRecordEditorModal } from '../components/DatabaseRecordEditorModal'
+import { listChatPromptTypes } from '@repo/apis/ai/chatSettings.js'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50]
 
@@ -121,6 +122,14 @@ export const DatabaseTableSettingsTab = ({ kind, items, screens, onChanged }) =>
     const [pageSize, setPageSize] = useState(20)
     const [selectedItem, setSelectedItem] = useState(null)
     const [editorOpen, setEditorOpen] = useState(false)
+    const [promptTypes, setPromptTypes] = useState([])
+
+    useEffect(() => {
+        if (kind !== 'prompt') return
+        listChatPromptTypes()
+            .then((response) => setPromptTypes(Array.isArray(response?.data?.items) ? response.data.items : []))
+            .catch(() => setPromptTypes([]))
+    }, [kind])
 
     const appOptions = useMemo(() => uniqueOptions(rows, (item) => getValue(item, 'appKey')), [rows])
     const screenOptions = useMemo(
@@ -253,6 +262,7 @@ export const DatabaseTableSettingsTab = ({ kind, items, screens, onChanged }) =>
                     kind={kind}
                     item={selectedItem}
                     screens={screens}
+                    promptTypes={promptTypes}
                     onClose={() => setEditorOpen(false)}
                     onChanged={onChanged}
                 />

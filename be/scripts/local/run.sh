@@ -193,9 +193,11 @@ cleanup_stale_docker_containers() {
   done
 }
 
-# Docker가 이전에 종료된 컨테이너를 정리하지 못한 경우,
-# 같은 이름의 컨테이너가 남아 있어 'container with given ID already exists' 오류가 발생한다.
-cleanup_stale_docker_containers
+# DB 컨테이너는 볼륨 없이 생성되므로 컨테이너를 제거하면 데이터도 함께 삭제된다.
+# 루트의 ./run_be.sh -f 요청에서만 명시적으로 초기화한다.
+if [[ "${RESET_DB_CONTAINERS:-0}" == "1" ]]; then
+  cleanup_stale_docker_containers
+fi
 
 echo "[dev-run] starting DB..."
 ./scripts/db/db.sh

@@ -16,7 +16,7 @@ export class Prompt {
   @Column({ type: 'text', name: 'screen_key' })
   screenKey!: string
 
-  // instruction | intent-classifier | rag | fallback | data-system | action-system | tool-description
+  // instruction | intent-classifier | rag-info | rag-action
   @Column({ type: 'text', name: 'type' })
   type!: string
 

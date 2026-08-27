@@ -7,6 +7,7 @@ import { ChatSettingEntity } from '../db/chat-setting.entity'
 export const CHAT_SETTING_KEYS = {
   llmProvider: 'llmProvider',
   llmProviderSchema: 'llmProviderSchema',
+  finalFallbackText: 'finalFallbackText',
 } as const
 
 export type ChatSettingSchemaItem = {
@@ -95,6 +96,11 @@ export class ChatSettingService implements OnModuleInit {
   async getLlmProvider(): Promise<ChatLlmProvider> {
     const raw = await this.get(CHAT_SETTING_KEYS.llmProvider)
     return this.normalizeProvider(raw)
+  }
+
+  async getFinalFallbackText(): Promise<string> {
+    const raw = await this.get(CHAT_SETTING_KEYS.finalFallbackText)
+    return typeof raw === 'string' ? raw.trim() : ''
   }
 
   async getBoolean(key: string, fallback = false): Promise<boolean> {

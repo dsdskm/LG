@@ -10,15 +10,16 @@
  */
 import type { LlmClient } from '../llm/llm.types'
 import { getPromptStore } from '../features/chat/service/prompt-store.service'
+import { CHAT_PROMPT_TYPE } from '../features/chat/prompt-types'
 import { logLlmPromptMeta, safeJsonParse } from '../utils/utils'
 import type { ChatIntent, ChatTurn, IntentResult } from './pipeline.types'
 
-function buildSystemPrompt(screenName: string, hints?: string): string {
-  const commonInstruction = getPromptStore()?.getPromptContent('common', 'instruction')?.trim() ?? ''
+function buildSystemPrompt(screenName: string, intentClassifierPrompt?: string): string {
+  const commonInstruction = getPromptStore()?.getPromptContent('common', CHAT_PROMPT_TYPE.instruction)?.trim() ?? ''
   const extras = [
     commonInstruction,
     screenName ? `screen=${String(screenName)}` : '',
-    hints ? String(hints) : '',
+    intentClassifierPrompt ? String(intentClassifierPrompt) : '',
   ].filter(Boolean)
 
   return extras.join('\n')
@@ -32,18 +33,26 @@ export class IntentClassifier {
 
   async classify(
     message: string,
-    screenName: string,
-    hints?: string,
+    screenKey: string,
+    intentClassifierPrompt?: string,
     history: ChatTurn[] = [],
+    reqId = '-',
   ): Promise<IntentResult> {
-    const commonInstructionMeta = getPromptStore()?.getPromptMeta('common', 'instruction')
-    const systemPrompt = buildSystemPrompt(screenName, hints)
+    const commonInstructionMeta = getPromptStore()?.getPromptMeta('common', CHAT_PROMPT_TYPE.instruction)
+    const appKey = screenKey?.split('/')?.[0] ?? ''
+    const commonIntentClassifierMeta = getPromptStore()?.getPromptMeta('common', CHAT_PROMPT_TYPE.intentClassifier)
+    const appIntentClassifierMeta = getPromptStore()?.getPromptMeta(appKey, CHAT_PROMPT_TYPE.intentClassifier)
+    const screenIntentClassifierMeta = getPromptStore()?.getPromptMeta(screenKey, CHAT_PROMPT_TYPE.intentClassifier)
+    const systemPrompt = buildSystemPrompt(screenKey, intentClassifierPrompt)
+    console.log(
+      `######## 적용 프롬프트 아이디 ########\n[reqId=${reqId}] [stage=intent-classifier] route=${screenKey || '-'}\n- common/instruction: ${commonInstructionMeta?.id ?? '-'}\n- common/intent-classifier: ${commonIntentClassifierMeta?.id ?? '-'}\n- ${appKey || '-'}/intent-classifier: ${appIntentClassifierMeta?.id ?? '-'}\n- ${screenKey || '-'}/intent-classifier: ${screenIntentClassifierMeta?.id ?? '-'}\n######################################`,
+    )
     logLlmPromptMeta({
       stage: 'intent-classifier',
-      promptType: 'intent-classifier',
-      route: screenName,
-      appKey: screenName?.split('/')?.[0] ?? null,
-      promptId: commonInstructionMeta?.id ?? null,
+      promptType: CHAT_PROMPT_TYPE.intentClassifier,
+      route: screenKey,
+      appKey: appKey || null,
+      promptId: screenIntentClassifierMeta?.id ?? commonInstructionMeta?.id ?? null,
       systemPromptLen: systemPrompt.length,
       messageLen: String(message ?? '').length,
       historyTurns: history.length,

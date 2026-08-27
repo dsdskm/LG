@@ -30,6 +30,7 @@ import { getScreenConfig, type ScreenConfig } from './screen-registry'
 import type { ChatIntent, ChatReply, ChatTurn, RagScoreEntry } from './pipeline.types'
 import type { ChatPipelineConfig } from './pipeline.config'
 import { getPromptStore } from '../features/chat/service/prompt-store.service'
+import { CHAT_PROMPT_TYPE } from '../features/chat/prompt-types'
 import { getChatSettingService } from '../features/chat-settings/service/chat-setting.service'
 import { logLlmPromptMeta } from '../utils/utils'
 import { buildToolContextFromBody } from './tool-context.util'
@@ -473,9 +474,10 @@ export class ChatOrchestrator {
 
     const pipelineIntentResult = ruleFirstIntentResult ?? await this.classifier.classify(
       effectiveMessage,
-      screen.screenName,
+      screen.key,
       screen.intentClassifierPrompt,
       history,
+      reqId,
     )
 
     if (ruleFirstIntentResult) {
@@ -557,7 +559,7 @@ export class ChatOrchestrator {
       this.stageLog(
         '2-6-4단계:액션RAG_미매칭_정보폴백',
         reqId,
-        'status=fallBack reason=action intent지만 action RAG 매칭이 없어 info 경로로 전환',
+        'status=fallBack reason=action 인텐트용 RAG 문서가 없어 info 경로로 전환',
       )
     }
 
@@ -952,18 +954,29 @@ export class ChatOrchestrator {
       ? this.resolveUsedChunkBodyText(ragCollections, usedChunks)
       : ''
     const fallbackText = text || ''
+    const usesRagBodyFallback = this.shouldUseRagBodyFallback(fallbackText, ragBodyFallback)
     const finalText = this.sanitizeInfoFinalText(
-      this.shouldUseRagBodyFallback(fallbackText, ragBodyFallback)
+      usesRagBodyFallback
         ? ragBodyFallback
         : fallbackText,
       usedCollection,
+    )
+    const finalFallbackText = (usedChunks.length === 0 || !finalText)
+      ? await getChatSettingService()?.getFinalFallbackText()
+      : ''
+    const ragInfoMeta = getPromptStore()?.getPromptMeta('common', CHAT_PROMPT_TYPE.ragInfo)
+    this.logger.log(
+      `######## INFO RAG 실행 결과 ########\n[reqId=${reqId}]\n- selectedCollection: ${usedCollection ?? '-'}\n- selectedChunks: ${usedChunks.join(', ') || '-'}\n- common/instruction: ${getPromptStore()?.getPromptMeta('common', CHAT_PROMPT_TYPE.instruction)?.id ?? '-'}\n- common/rag-info: ${ragInfoMeta?.id ?? '-'}\n- ragInfoEnabled: ${ragInfoMeta?.enabled ?? false}\n- llmResponse: ${JSON.stringify(fallbackText)}\n- ragBodyFallbackUsed: ${usesRagBodyFallback}\n- finalResponse: ${JSON.stringify(finalFallbackText || finalText)}\n######################################`,
+    )
+    this.logger.log(
+      `[rag-diagnosis] [reqId=${reqId}] stage=finalize usedCollection=${usedCollection ?? '-'} usedChunks=${JSON.stringify(usedChunks)} rawLlmText=${JSON.stringify(fallbackText)} ragBodyFallback=${JSON.stringify(ragBodyFallback)} usesRagBodyFallback=${usesRagBodyFallback} finalFallbackText=${JSON.stringify(finalFallbackText)} finalText=${JSON.stringify(finalFallbackText || finalText)}`,
     )
 
     return {
       handled: true,
       reply: {
         chat_action: screen.chatActions.info,
-        text: finalText,
+        text: finalFallbackText || finalText,
       },
       meta: {
         screenTask,
@@ -975,6 +988,7 @@ export class ChatOrchestrator {
         usedChunks,
         ragScores,
         defaultLlmFallback: false,
+        finalFallbackTextUsed: Boolean(finalFallbackText),
       },
     }
   }
@@ -1280,31 +1294,30 @@ export class ChatOrchestrator {
       : [collectionNames]
     const normalizedNames = Array.from(new Set((names ?? []).map((name) => String(name ?? '').trim()).filter(Boolean)))
 
-    const ragScores = this.rag.scoreCollections(normalizedNames, query, 'action')
-    const selected = [...ragScores]
-      .sort((a, b) => {
-        if (b.adjustedScore !== a.adjustedScore) return b.adjustedScore - a.adjustedScore
-        if (b.topScore !== a.topScore) return b.topScore - a.topScore
-        return a.collection.localeCompare(b.collection)
-      })[0]
-
+    const store = getPromptStore()
+    const matchedChunks: Array<{ collection: string; id: string; title: string; body: string }> = []
+    const seen = new Set<string>()
     for (const name of normalizedNames) {
-      const hits = this.rag.retrieve(name, query, 'action')
-      if (hits.length === 0) continue
-
-      const context = hits
-        .map((hit, index) => `[액션 문서 ${index + 1}] ${hit.chunk.title}\n${hit.chunk.body}`)
-        .join('\n\n')
-
-      return {
-        context,
-        usedCollection: selected?.collection ?? name,
-        usedChunks: hits.map((hit) => hit.chunk.id),
-        ragScores,
+      const collection = store?.getCollection(name)
+      for (const chunk of collection?.chunks ?? []) {
+        const id = String(chunk.id ?? '').trim()
+        const intentType = String(chunk.intentType ?? 'both').trim().toLowerCase()
+        if (!id || seen.has(id) || (intentType !== 'action' && intentType !== 'both')) continue
+        seen.add(id)
+        matchedChunks.push({ collection: name, id, title: chunk.title, body: chunk.body })
       }
     }
 
-    return { context: '', usedChunks: [], ragScores }
+    if (matchedChunks.length > 0) {
+      return {
+        context: matchedChunks.map((chunk, index) => `[액션 문서 ${index + 1}] ${chunk.title}\n${chunk.body}`).join('\n\n'),
+        usedCollection: matchedChunks[0]?.collection,
+        usedChunks: matchedChunks.map((chunk) => chunk.id),
+        ragScores: [],
+      }
+    }
+
+    return { context: '', usedChunks: [], ragScores: [] }
   }
 
   private resolveExecutionFallbackReason(executed: ExecutedCall[]): 'tool-not-selected' | 'missing-params' | 'permission-denied' | 'tool-execution-failed' {
@@ -1356,7 +1369,7 @@ export class ChatOrchestrator {
     const promptBlocks: string[] = [basePrompt]
 
     if (String(actionRagContext ?? '').trim()) {
-      const commonRagPrompt = getPromptStore()?.getPromptContent('common', 'rag') ?? ''
+      const commonRagPrompt = getPromptStore()?.getPromptContent('common', CHAT_PROMPT_TYPE.ragAction) ?? ''
       promptBlocks.push([
         commonRagPrompt,
         '다음은 action 실행 시 참고해야 하는 액션 RAG 문서다.',

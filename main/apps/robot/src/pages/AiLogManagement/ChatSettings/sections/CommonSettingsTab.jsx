@@ -303,6 +303,10 @@ export const CommonSettingsTab = ({
     isDirty,
     saving,
     onSaveProvider,
+    draftFinalFallbackText,
+    setDraftFinalFallbackText,
+    savingFinalFallbackText,
+    onSaveFinalFallbackText,
 }) => {
     return (
         <ManagementGrid>
@@ -315,7 +319,38 @@ export const CommonSettingsTab = ({
                 saving={saving}
                 onSaveProvider={onSaveProvider}
             />
+            <FinalFallbackTextCard
+                value={draftFinalFallbackText}
+                onChange={setDraftFinalFallbackText}
+                saving={savingFinalFallbackText}
+                onSave={onSaveFinalFallbackText}
+            />
         </ManagementGrid>
+    )
+}
+
+const FinalFallbackTextCard = ({ value, onChange, saving, onSave }) => {
+    return (
+        <SettingCard>
+            <CardHeader>
+                <CardTitle>최종 Fallback 텍스트</CardTitle>
+            </CardHeader>
+
+            <PageDescription>rule 및 RAG 매칭 결과가 없을 때 기본 LLM 대신 표시할 응답입니다. 비워두면 기존 동작을 유지합니다.</PageDescription>
+
+            <PromptTextarea
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                placeholder="매칭되는 정보를 찾지 못했을 때 표시할 문구"
+                style={{ minHeight: '120px' }}
+            />
+
+            <ActionRow>
+                <PrimaryButton type="button" onClick={onSave} disabled={saving}>
+                    {saving ? '저장 중...' : '저장'}
+                </PrimaryButton>
+            </ActionRow>
+        </SettingCard>
     )
 }
 

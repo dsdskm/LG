@@ -131,6 +131,8 @@ const ChatSettings = () => {
   const [schema, setSchema] = useState([])
   const [values, setValues] = useState({})
   const [draftProvider, setDraftProvider] = useState('')
+  const [draftFinalFallbackText, setDraftFinalFallbackText] = useState('')
+  const [savingFinalFallbackText, setSavingFinalFallbackText] = useState(false)
 
   const [management, setManagement] = useState(EMPTY_MANAGEMENT)
   const [settingDrafts, setSettingDrafts] = useState({})
@@ -309,6 +311,7 @@ const ChatSettings = () => {
       setValues(data.values ?? {})
       setSettingDrafts({})
       setDraftProvider(String(data.values?.llmProvider ?? 'azure'))
+      setDraftFinalFallbackText(String(data.values?.finalFallbackText ?? ''))
 
       const nextManagement = data.management ?? EMPTY_MANAGEMENT
 
@@ -600,6 +603,29 @@ const ChatSettings = () => {
       setSaving(false)
     }
   }, [draftProvider, isDirty, saving])
+
+  const handleSaveFinalFallbackText = useCallback(async () => {
+    if (savingFinalFallbackText) return
+
+    setSavingFinalFallbackText(true)
+    setError('')
+
+    try {
+      const res = await updateChatSettings({
+        settings: [{ key: 'finalFallbackText', value: draftFinalFallbackText }],
+      })
+      const next = res?.data?.values ?? {}
+
+      setValues(next)
+      setDraftFinalFallbackText(String(next.finalFallbackText ?? draftFinalFallbackText))
+      setSavedMessage('최종 fallback 텍스트가 적용되었습니다.')
+      setSavedOpen(true)
+    } catch (e) {
+      setError(e?.message || '최종 fallback 텍스트 저장에 실패했습니다.')
+    } finally {
+      setSavingFinalFallbackText(false)
+    }
+  }, [draftFinalFallbackText, savingFinalFallbackText])
 
   const handleCommonPromptChange = useCallback((field, nextValue) => {
     setCommonPromptDraft((prev) => ({
@@ -1196,6 +1222,10 @@ const ChatSettings = () => {
               isDirty={isDirty}
               saving={saving}
               onSaveProvider={handleSaveProvider}
+              draftFinalFallbackText={draftFinalFallbackText}
+              setDraftFinalFallbackText={setDraftFinalFallbackText}
+              savingFinalFallbackText={savingFinalFallbackText}
+              onSaveFinalFallbackText={handleSaveFinalFallbackText}
             />
           ) : null}
 

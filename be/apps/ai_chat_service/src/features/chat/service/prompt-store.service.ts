@@ -7,6 +7,7 @@ import { Screen } from '../db/chat-screen.entity'
 import { Prompt } from '../db/chat-prompt.entity'
 import { ScreenGuidanceEntity } from '../db/chat-guidance.entity'
 import { Rag } from '../db/chat-rag-doc.entity'
+import { CHAT_PROMPT_TYPE } from '../prompt-types'
 
 export type GuidanceData = {
   screenName: string
@@ -142,9 +143,10 @@ export class PromptStoreService implements OnModuleInit {
 
   private async migratePromptTypes() {
     const renames = [
-      ['system', 'instruction'],
-      ['intent-hint', 'intent-classifier'],
-      ['rag-system', 'rag'],
+      ['system', CHAT_PROMPT_TYPE.instruction],
+      ['intent-hint', CHAT_PROMPT_TYPE.intentClassifier],
+      ['rag-system', CHAT_PROMPT_TYPE.ragInfo],
+      ['rag', CHAT_PROMPT_TYPE.ragInfo],
     ] as const
 
     await this.promptRepo.manager.transaction(async (manager) => {
@@ -369,7 +371,7 @@ export class PromptStoreService implements OnModuleInit {
     enabled?: boolean
   }) {
     const screenKey = String(input.screenKey ?? '').trim()
-    const type = String(input.type ?? 'instruction').trim() || 'instruction'
+    const type = String(input.type ?? CHAT_PROMPT_TYPE.instruction).trim() || CHAT_PROMPT_TYPE.instruction
     if (!screenKey) throw new Error('prompt screenKey is required')
 
     const existing = await this.promptRepo.findOne({ where: { screenKey, type } })
@@ -393,13 +395,13 @@ export class PromptStoreService implements OnModuleInit {
   async upsertCommonPrompt(
     patch: { prompt?: string; enabled?: boolean },
   ) {
-    const existing = await this.promptRepo.findOne({ where: { screenKey: 'common', type: 'instruction' } })
+    const existing = await this.promptRepo.findOne({ where: { screenKey: 'common', type: CHAT_PROMPT_TYPE.instruction } })
     const row =
       existing ??
       this.promptRepo.create({
         screenKey: 'common',
         appKey: 'common',
-        type: 'instruction',
+        type: CHAT_PROMPT_TYPE.instruction,
         prompt: '',
         enabled: true,
       })

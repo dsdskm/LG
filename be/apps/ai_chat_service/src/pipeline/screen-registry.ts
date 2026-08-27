@@ -1,5 +1,6 @@
 import type { ToolDefinition } from './tool.type'
 import { getPromptStore } from '../features/chat/service/prompt-store.service'
+import { CHAT_PROMPT_TYPE } from '../features/chat/prompt-types'
 
 export type ScreenConfig = {
   /** currentApp::currentPath. handleXxx 의 routeKey 와 동일. */
@@ -8,17 +9,13 @@ export type ScreenConfig = {
   appKey: string
   /** 화면 표시명(프롬프트/로그용). */
   screenName: string
-  /** 인텐트 분류기에 주는 화면별 추가 힌트. */
-  intentHints?: string
-  /** intent-hint 적용 방식. default | screen | merge */
-  intentHintMode?: 'default' | 'screen' | 'merge'
   /** RAG 컬렉션 키(chat_rag_doc.key). info 인텐트에서 사용. */
   ragCollection: string
   /** data 인텐트 tool 목록. */
   dataTools: ToolDefinition[]
   /** action 인텐트 tool 목록. */
   actionTools: ToolDefinition[]
-  /** data/action agent 의 system 프롬프트. */
+  /** legacy action agent system prompts. */
   dataSystemPrompt: string
   actionSystemPrompt: string
   /** 공통 key(common)에서만 온 action tool 목록. 실패 시 재시도용. */
@@ -27,7 +24,7 @@ export type ScreenConfig = {
   chatActions: { info: string; data: string; action: string }
   /** intent classifier 에 전달할 화면별 프롬프트. */
   intentClassifierPrompt: string
-  /** 근거/데이터가 없을 때 공통 폴백 문구. */
+  /** legacy fallback text. */
   fallbackText: string
   /** 현재 screen_key의 screen_guidance.examples. */
   guidanceExamples: string[]
@@ -96,16 +93,6 @@ function toChatAction(routeKey: string) {
   return normalized || 'default'
 }
 
-function resolveIntentHintMode(routeKey: string): 'default' | 'screen' | 'merge' {
-  const normalizedRouteKey = String(routeKey || '').replace(/^\//, '')
-  const store = getPromptStore()
-  const rawMode = String(store?.getPromptContent(normalizedRouteKey, 'intent-hint-mode') ?? 'merge').trim().toLowerCase()
-  if (rawMode === 'default' || rawMode === 'screen' || rawMode === 'merge') {
-    return rawMode
-  }
-  return 'merge'
-}
-
 export function getScreenConfig(routeKey: string, reqId?: string): ScreenConfig | undefined {
   const normalizedRouteKey = String(routeKey || '').replace(/^\//, '')
   if (!normalizedRouteKey) return undefined
@@ -125,47 +112,22 @@ export function getScreenConfig(routeKey: string, reqId?: string): ScreenConfig 
   }
 
   const effectiveRouteKey = screen.screenKey
-  const commonSystem = store?.getPromptContent('common', 'system') ?? ''
-  const commonIntentHint = store?.getPromptContent('common', 'intent-hint') ?? ''
-  const screenIntentHint = store?.getPromptContent(effectiveRouteKey, 'intent-hint') ?? ''
-  const screenIntentClassifierPrompt = store?.getPromptContent(effectiveRouteKey, 'intent-classifier') ?? ''
-  const screenDataSystem = store?.getPromptContent(effectiveRouteKey, 'data-system') ?? ''
-  const screenActionSystem = store?.getPromptContent(effectiveRouteKey, 'action-system') ?? ''
-  const screenFallback = store?.getPromptContent(effectiveRouteKey, 'fallback') ?? ''
+  const commonInstruction = store?.getPromptContent('common', CHAT_PROMPT_TYPE.instruction) ?? ''
+  const commonIntentClassifierPrompt = store?.getPromptContent('common', CHAT_PROMPT_TYPE.intentClassifier) ?? ''
+  const screenIntentClassifierPrompt = store?.getPromptContent(effectiveRouteKey, CHAT_PROMPT_TYPE.intentClassifier) ?? ''
   const guidanceExamples = normalizeGuidanceExamples(store?.getGuidance(effectiveRouteKey)?.examples)
 
-  const appIntentHint = store?.getPromptContent(appKey, 'intent-hint') ?? ''
-  const appIntentClassifierPrompt = store?.getPromptContent(appKey, 'intent-classifier') ?? ''
-  const appDataSystem = store?.getPromptContent(appKey, 'data-system') ?? ''
-  const appActionSystem = store?.getPromptContent(appKey, 'action-system') ?? ''
-  const appFallback = store?.getPromptContent(appKey, 'fallback') ?? ''
-
-  const resolvedIntentHintMode = resolveIntentHintMode(effectiveRouteKey)
-  const resolvedIntentHint = (() => {
-    if (resolvedIntentHintMode === 'default') {
-      return commonIntentHint || appIntentHint || screenIntentHint
-    }
-    if (resolvedIntentHintMode === 'screen') {
-      return screenIntentHint || commonIntentHint || appIntentHint
-    }
-    return [commonIntentHint, appIntentHint, screenIntentHint].filter(Boolean).join('\n\n')
-  })()
-  const resolvedDataSystem = screenDataSystem || appDataSystem
-  const resolvedActionSystem = screenActionSystem || appActionSystem
-  const resolvedFallback = screenFallback || appFallback
-
-  const mergedDataSystemPrompt = [commonSystem, resolvedDataSystem].filter(Boolean).join('\n\n')
-  const mergedActionSystemPrompt = [commonSystem, resolvedActionSystem].filter(Boolean).join('\n\n')
-  const intentClassifierPrompt = screenIntentClassifierPrompt || appIntentClassifierPrompt || ''
+  const appIntentClassifierPrompt = store?.getPromptContent(appKey, CHAT_PROMPT_TYPE.intentClassifier) ?? ''
+  const intentClassifierPrompt = [commonIntentClassifierPrompt, appIntentClassifierPrompt, screenIntentClassifierPrompt]
+    .filter(Boolean)
+    .join('\n\n')
 
   logPromptMeta(effectiveRouteKey, appKey, {
-    'common:system': { source: 'common', length: commonSystem.length, enabled: Boolean(commonSystem) },
-    'app:intent-hint': { source: appIntentHint ? 'app' : 'missing', length: appIntentHint.length, enabled: Boolean(appIntentHint) },
-    'screen:intent-hint': { source: screenIntentHint ? 'screen' : 'missing', length: screenIntentHint.length, enabled: Boolean(screenIntentHint) },
-    'resolved:intent-hint': { source: resolvedIntentHintMode, length: resolvedIntentHint.length, enabled: Boolean(resolvedIntentHint) },
-    'resolved:data-system': { source: resolvedDataSystem ? 'screen-or-app' : 'missing', length: mergedDataSystemPrompt.length, enabled: Boolean(mergedDataSystemPrompt) },
-    'resolved:action-system': { source: resolvedActionSystem ? 'screen-or-app' : 'missing', length: mergedActionSystemPrompt.length, enabled: Boolean(mergedActionSystemPrompt) },
-    'intentHintMode': { source: resolvedIntentHintMode, length: resolvedIntentHintMode.length, enabled: true },
+    'common:instruction': { source: 'common', length: commonInstruction.length, enabled: Boolean(commonInstruction) },
+    'common:intent-classifier': { source: commonIntentClassifierPrompt ? 'common' : 'missing', length: commonIntentClassifierPrompt.length, enabled: Boolean(commonIntentClassifierPrompt) },
+    'app:intent-classifier': { source: appIntentClassifierPrompt ? 'app' : 'missing', length: appIntentClassifierPrompt.length, enabled: Boolean(appIntentClassifierPrompt) },
+    'screen:intent-classifier': { source: screenIntentClassifierPrompt ? 'screen' : 'missing', length: screenIntentClassifierPrompt.length, enabled: Boolean(screenIntentClassifierPrompt) },
+    'resolved:intent-classifier': { source: 'common+app+screen', length: intentClassifierPrompt.length, enabled: Boolean(intentClassifierPrompt) },
   })
 
   const dataTools: ToolDefinition[] = []
@@ -179,13 +141,11 @@ export function getScreenConfig(routeKey: string, reqId?: string): ScreenConfig 
     key: effectiveRouteKey,
     appKey,
     screenName: screen.screenName,
-    intentHints: resolvedIntentHint,
-    intentHintMode: resolvedIntentHintMode,
     ragCollection: effectiveRouteKey,
     dataTools,
     actionTools,
-    dataSystemPrompt: mergedDataSystemPrompt,
-    actionSystemPrompt: mergedActionSystemPrompt,
+    dataSystemPrompt: '',
+    actionSystemPrompt: '',
     commonActionTools,
     chatActions: {
       info: baseAction,
@@ -193,7 +153,7 @@ export function getScreenConfig(routeKey: string, reqId?: string): ScreenConfig 
       action: `${baseAction}/action`,
     },
     intentClassifierPrompt,
-    fallbackText: resolvedFallback,
+    fallbackText: '',
     guidanceExamples,
   }
 }

@@ -129,6 +129,42 @@ describe('ChatOrchestrator taskflow routing guard', () => {
     expect(result.reply?.text).toBe('정보 응답')
   })
 
+  it('returns the configured final fallback text when no info RAG document matches', async () => {
+    const orchestrator = new ChatOrchestrator(client, 1024, pipeline, { log: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any)
+    const screen = {
+      key: 'robot/ops',
+      appKey: 'robot',
+      screenName: 'Operations',
+      ragCollection: 'robot/ops',
+      chatActions: { info: 'info', data: 'data', action: 'action' },
+    }
+
+    jest.spyOn(require('../features/chat-settings/service/chat-setting.service'), 'getChatSettingService').mockReturnValue({
+      getFinalFallbackText: jest.fn().mockResolvedValue('등록된 안내에서 답변을 찾지 못했습니다.'),
+    })
+    jest.spyOn((orchestrator as any).rag, 'answer').mockResolvedValue({
+      text: '',
+      usedCollection: undefined,
+      primaryChunkKey: undefined,
+      usedChunks: [],
+      ragScores: [],
+    })
+
+    const result = await (orchestrator as any).handleInfo(
+      screen,
+      '없는 정보 질문',
+      {},
+      { intent: 'info' },
+      [],
+      'unknown',
+      ['robot/ops'],
+      'req-final-fallback',
+    )
+
+    expect(result.reply.text).toBe('등록된 안내에서 답변을 찾지 못했습니다.')
+    expect(result.meta.finalFallbackTextUsed).toBe(true)
+  })
+
   it('strips developer-format intent json before sending the message to chat users', async () => {
     const service = buildChatService()
 

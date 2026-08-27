@@ -16,6 +16,7 @@ import type { LlmProvider, LlmRuntime } from '../llm/llm.types'
 import { ChatLogService } from '../features/chat-settings/db/chat-log.service'
 import { ChatSettingService } from '../features/chat-settings/service/chat-setting.service'
 import { getPromptStore, type RagChunkData } from '../features/chat/service/prompt-store.service'
+import { CHAT_PROMPT_TYPE } from '../features/chat/prompt-types'
 import { ChatOrchestrator } from '../pipeline/chat.orchestrator'
 import { loadChatPipelineConfig } from '../pipeline/pipeline.config'
 import { safeJsonParse } from '../utils/utils'
@@ -1398,6 +1399,13 @@ export class ChatService {
     intent: ScreenTask,
   ): Promise<ChatReply | null> {
     this.stageLog('4-4단계:오케스트레이터실행', 'running', `route=${ctx.key} screenTask=${intent} 실행 시작`, ctx.reqId)
+    const promptStore = getPromptStore()
+    const instructionMeta = promptStore?.getPromptMeta('common', CHAT_PROMPT_TYPE.instruction)
+    const ragInfoMeta = promptStore?.getPromptMeta('common', CHAT_PROMPT_TYPE.ragInfo)
+    const ragActionMeta = promptStore?.getPromptMeta('common', CHAT_PROMPT_TYPE.ragAction)
+    this.logger.log(
+      `######## 오케스트레이터 적용 프롬프트 아이디 ########\n[reqId=${ctx.reqId}] [route=${ctx.key}] [screenTask=${intent}]\n- common/instruction: ${instructionMeta?.id ?? '-'} enabled=${instructionMeta?.enabled ?? false}\n- common/rag-info: ${ragInfoMeta?.id ?? '-'} enabled=${ragInfoMeta?.enabled ?? false}\n- common/rag-action: ${ragActionMeta?.id ?? '-'} enabled=${ragActionMeta?.enabled ?? false}\n######################################`,
+    )
     const pipelineBody = {
       ...ctx.body,
       reqId: ctx.reqId,
@@ -1410,6 +1418,9 @@ export class ChatService {
       ctx.key,
       ctx.message,
       pipelineBody,
+    )
+    this.logger.log(
+      `######## 오케스트레이터 실행 결과 ########\n[reqId=${ctx.reqId}]\n- handled: ${out.handled}\n- replyText: ${JSON.stringify(out.reply?.text ?? '')}\n- pipelineIntent: ${String((out.meta as Record<string, unknown> | undefined)?.pipelineIntent ?? '-')}\n- usedCollection: ${String((out.meta as Record<string, unknown> | undefined)?.usedCollection ?? '-')}\n- usedChunks: ${JSON.stringify((out.meta as Record<string, unknown> | undefined)?.usedChunks ?? [])}\n######################################`,
     )
     this.stageLog('4-5단계:오케스트레이터결과', 'completed', `handled=${String(out.handled)} hasReply=${String(Boolean(out.reply))}`, ctx.reqId)
     if (out.handled && out.reply) {
