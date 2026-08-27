@@ -39,6 +39,8 @@ gh codespace start -c fictional-lamp-x99gpvjw7963jv5
 # sql
 ## 접속
 docker exec -it ai-chat-service-pg psql -U root -d ai_chat_service_db 
+docker exec -it event-receiver-pg psql -U root -d event_receiver_db 
+docker exec -it config-manager-pg psql -U root -d config_manager_db 
 
 # DB Restore
 ## 백업 파일 복사

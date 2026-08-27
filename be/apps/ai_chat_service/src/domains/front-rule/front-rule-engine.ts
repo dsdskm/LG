@@ -2,14 +2,34 @@ import type { ChatRuleEntity } from '../../features/chat-settings/db/chat-rule.e
 
 export type FrontRuleMatch = {
   rule: ChatRuleEntity;
+  ruleData?: ChatRuleEntity;
   matched: boolean;
   params: Array<string | number>;
+  ruleKey?: string;
+  ruleType?: string;
+  intent?: 'info' | 'action';
+  reason?: string;
+  confidence?: number | string;
+  toolName?: string;
+  toolArgs?: Record<string, unknown>;
+  chatAction?: string;
+  chatActionParam?: Record<string, unknown>;
+  fallbackText?: string;
+  answerTemplate?: string;
+  chunkKeys?: string[];
+  graphOperation?: string;
+  captures?: string[];
+  direction?: string;
 };
 
 type FrontRuleContext = {
   appKey?: string;
   screenKey: string;
   message: string;
+};
+
+type LegacyChatRuleEntity = ChatRuleEntity & {
+  ruleType?: string;
 };
 
 function toRecord(value: unknown): Record<string, unknown> {
@@ -198,9 +218,79 @@ function buildFrontRuleMatch(
   rule: ChatRuleEntity,
   params: Array<string | number>,
 ): FrontRuleMatch {
+  const legacyRule = rule as LegacyChatRuleEntity;
+  const extraJson = toRecord(rule.extraJson);
+  const graphOperation = String(extraJson.graphOperation ?? '').trim() || undefined;
+  const normalizedRuleType = String(
+    extraJson.ruleType ??
+      legacyRule.ruleType ??
+      (graphOperation ? 'taskflow-graph' : 'taskflow-command'),
+  ).trim() || 'taskflow-command';
+
+  const directReplyText = String(
+    extraJson.replyText ?? extraJson.reply_text ?? rule.replyText ?? '',
+  ).trim();
+
+  const toolArgs: Record<string, unknown> = { ...extraJson };
+  if (directReplyText) {
+    toolArgs.replyText = directReplyText;
+  }
+
+  const chatAction = String(
+    extraJson.chatAction ?? extraJson.chat_action ?? (typeof extraJson.navigation !== 'undefined' ? 'navigation' : ''),
+  ).trim() || undefined;
+
+  const chatActionParam = toRecord(
+    extraJson.chatActionParam ?? extraJson.chat_action_param,
+  );
+  const computedChatActionParam = Object.keys(chatActionParam).length > 0
+    ? chatActionParam
+    : chatAction === 'navigation' && typeof extraJson.navigation === 'string'
+      ? {
+          path: extraJson.navigation,
+          ...(extraJson.app ? { app: extraJson.app } : {}),
+        }
+      : undefined;
+
+  const fallbackText = String(
+    extraJson.fallbackText ?? extraJson.fallback_text ?? extraJson.notFoundText ?? rule.fallbackText ?? '',
+  ).trim() || undefined;
+
+  const answerTemplate = String(
+    extraJson.answerTemplate ?? extraJson.answer_template ?? '',
+  ).trim() || undefined;
+
+  const chunkKeys = Array.isArray(extraJson.chunkKeys)
+    ? extraJson.chunkKeys.map((item) => String(item ?? '').trim()).filter(Boolean)
+    : Array.isArray(extraJson.chunk_keys)
+      ? extraJson.chunk_keys.map((item) => String(item ?? '').trim()).filter(Boolean)
+      : undefined;
+
+  const captures = params.map((item) => String(item ?? '').trim()).filter(Boolean);
+  const direction = String(extraJson.direction ?? '').trim() || undefined;
+  const toolName = String(extraJson.toolName ?? extraJson.tool_name ?? extraJson.type ?? '').trim() || undefined;
+
   return {
-    rule: rule,
+    rule,
+    ruleData: rule,
     matched: true,
     params,
+    ruleKey: rule.ruleKey,
+    ruleType: normalizedRuleType,
+    intent: String(
+      extraJson.intent ?? (answerTemplate || chunkKeys?.length ? 'info' : 'action'),
+    ).trim() as FrontRuleMatch['intent'],
+    reason: String(extraJson.reason ?? rule.description ?? '').trim() || undefined,
+    confidence: Number.isFinite(Number(extraJson.confidence)) ? Number(extraJson.confidence) : undefined,
+    toolName,
+    toolArgs,
+    chatAction,
+    chatActionParam: computedChatActionParam,
+    fallbackText,
+    answerTemplate,
+    chunkKeys,
+    graphOperation,
+    captures,
+    direction,
   };
 }

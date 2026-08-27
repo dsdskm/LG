@@ -174,6 +174,29 @@ if [[ "$MODE" == "prd" ]]; then
 fi
 
 # (2) DB 시작
+cleanup_stale_docker_containers() {
+  local names=(
+    "event-receiver-pg"
+    "config-manager-pg"
+    "event-analyzer-pg"
+    "action-runner-pg"
+    "report-manager-pg"
+    "mcp-tools-pg"
+    "ai-chat-service-pg"
+  )
+
+  for name in "${names[@]}"; do
+    if docker ps -a --format '{{.Names}}' | grep -Fxq "$name"; then
+      echo "[dev-run] removing stale Docker container: $name"
+      docker rm -f "$name" >/dev/null 2>&1 || true
+    fi
+  done
+}
+
+# Docker가 이전에 종료된 컨테이너를 정리하지 못한 경우,
+# 같은 이름의 컨테이너가 남아 있어 'container with given ID already exists' 오류가 발생한다.
+cleanup_stale_docker_containers
+
 echo "[dev-run] starting DB..."
 ./scripts/db/db.sh
 

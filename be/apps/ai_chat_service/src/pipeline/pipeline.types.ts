@@ -46,6 +46,7 @@ export type RagScoreEntry = {
 export type MatchedRuleInfo = {
   source: 'front-rule' | 'orchestrator' | 'guidance'
   ruleKey?: string
+  ruleType?: string
   reason?: string
   confidence?: number
 }

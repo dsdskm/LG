@@ -1218,6 +1218,21 @@ const ChatSettings = () => {
           {activeAppTab === APP_TAB.RULE ? (
             <DatabaseTableSettingsTab kind="rule" items={management.rules} screens={management.screens} onChanged={load} />
           ) : null}
+
+          {activeAppTab === APP_TAB.HISTORY ? (
+            <HistoryTab
+              history={management.history}
+              ragDocs={management.ragDocs}
+              pagination={historyPagination}
+              refreshing={historyLoading}
+              onRefresh={() => loadHistoryPage(historyPagination.page, historyPagination.pageSize)}
+              onChangePage={(page) => setHistoryPagination((prev) => ({ ...prev, page }))}
+              onChangePageSize={(pageSize) => {
+                setHistoryPagination((prev) => ({ ...prev, page: 1, pageSize }))
+                loadHistoryPage(1, pageSize)
+              }}
+            />
+          ) : null}
         </>
       )}
 
