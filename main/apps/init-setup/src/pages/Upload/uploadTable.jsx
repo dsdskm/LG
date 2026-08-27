@@ -65,7 +65,13 @@ const UploadTable = () => {
           mapApi.list()
         ])
         if (!alive) return
-        const sites = indexById(sitesRes?.data)
+        const activeStie = sitesRes?.data?.find((e) => e.isActive)
+        if (!activeStie) {
+          setIsLoading(true)
+          return
+        }
+        const sites = indexById([activeStie])
+
         const buildings = indexById(buildingsRes?.data)
         const floors = indexById(floorsRes?.data)
         const areas = indexById(areasRes?.data)

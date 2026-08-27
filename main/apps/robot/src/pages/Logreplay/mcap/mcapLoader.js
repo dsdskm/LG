@@ -12,6 +12,7 @@ const textDecoder = new TextDecoder()
 
 const MAX_GRID_DIMENSION = 8192
 const MAX_GRID_CELLS = 16 * 1024 * 1024
+const MAX_SCAN_RANGES = 4000
 // ===== [Step1] HTTP Range Readable (real impl) =====
 // - BlobReadable과 동일한 시그니처: read(offset: bigint, size: bigint), size(): Promise<bigint>
 //   [1](https://mcap.dev/docs/typescript/classes/_mcap_browser.BlobReadable)
@@ -465,6 +466,39 @@ function normalizeOccupancyGrid(raw, outFlags) {
     origin: { x: +originPos.x || 0, y: +originPos.y || 0, z: +originPos.z || 0, yaw },
     data: u8
   }
+}
+
+// ---- sensor_msgs/msg/LaserScan → 센서-로컬 좌표(x,y) 사전 계산 ----
+// 스캐너는 로봇 몸체에 고정돼 있으므로(costmap의 base 프레임과 동일 가정), 회전/평행이동은
+// 렌더 시점에 그 순간의 로봇 pose로 적용한다. 여기서는 각도별 cos/sin만 한 번 계산해 둔다.
+function normalizeLaserScan(raw) {
+  const angleMin = Number(raw?.angle_min)
+  const angleInc = Number(raw?.angle_increment)
+  if (!Number.isFinite(angleMin) || !Number.isFinite(angleInc)) return null
+
+  const rangeMin = Number(raw?.range_min) || 0
+  const rangeMax = Number.isFinite(Number(raw?.range_max)) ? Number(raw.range_max) : Infinity
+
+  const src = raw?.ranges
+  let arr = null
+  if (ArrayBuffer.isView(src)) arr = src
+  else if (Array.isArray(src)) arr = src
+  if (!arr || !arr.length) return null
+
+  const n = Math.min(arr.length, MAX_SCAN_RANGES)
+  const localPts = new Float32Array(n * 2)
+  let count = 0
+  for (let i = 0; i < n; i++) {
+    const r = Number(arr[i])
+    if (!Number.isFinite(r) || r < rangeMin || r > rangeMax) continue
+    const ang = angleMin + i * angleInc
+    localPts[count * 2] = r * Math.cos(ang)
+    localPts[count * 2 + 1] = r * Math.sin(ang)
+    count++
+  }
+  if (!count) return null
+
+  return { localPts: count === n ? localPts : localPts.subarray(0, count * 2) }
 }
 
 // ===== [ADD] OccupancyGrid → ImageBitmap 사전 변환 =====
@@ -1132,6 +1166,9 @@ export async function loadPosesFromMcapUrl(url, options = {}) {
           } else if (ex.kind === 'goal' || ex.kind === 'odomRaw') {
             const p = pickPoseAny(exObj)
             if (p) rec = { tSec, x: p.x, y: p.y, z: Number(p.z) || 0, yaw: Number(p.yaw) || 0 }
+          } else if (ex.kind === 'lidar') {
+            const scan = normalizeLaserScan(exObj)
+            if (scan) rec = { tSec, localPts: scan.localPts }
           }
           if (rec) onExtraMessage(ex.kind, rec)
         }

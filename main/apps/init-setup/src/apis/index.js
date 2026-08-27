@@ -33,5 +33,6 @@ const useRelativeApi = !import.meta.env.DEV
 // 고정 base URL 환경변수는 쓰지 않는다 — 폰/PC 가 로봇 AP 로 접속하는 구성에서
 // localhost 나 빌드 시점 IP 가 박히면 API 호출이 깨진다.
 const API_BASE = useRelativeApi ? '' : `${browserProtocol}//${browserHost}:${DEFAULT_API_PORT}`
+const API_DM_BASE = import.meta.env.VITE_PROXY_SERVER_BASE_URL
 
-export default API_BASE
+export { API_BASE, API_DM_BASE }

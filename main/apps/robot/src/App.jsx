@@ -132,7 +132,7 @@ const appRoutes = [
     prefix: 'robot',
     icon: SvgGnbUser,
     element: <UserManagement />,
-    accessLevel: [2, 3]
+    accessLevel: [1, 2, 3]
   },
   {
     name: 'settings',

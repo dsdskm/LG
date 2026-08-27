@@ -4,7 +4,7 @@ export const ruleKey = 'node-reset'
 
 export const metadata = {
   ruleKey,
-  description: '저장된 최종 버전으로 노드 구성 리셋',
+  description: '저장된 운영 버전으로 노드 구성 리셋',
   screenKey: TASKFLOW_CANVAS_RULE_ROUTE_KEY,
   command: '/reset'
 }

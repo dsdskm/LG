@@ -105,6 +105,7 @@
   "roleGroupManager": "グループ管理者",
   "roleSiteManager": "サイト管理者",
   "roleTermManager": "利用規約管理者",
+  "roleInstallManager": "設置管理者",
   "delete": "削除",
   "noData": "情報なし",
   "register": "登録",
@@ -367,6 +368,19 @@
   "inviter": "招待者",
   "invEmailSent": "招待メールを送信しました。",
   "invCanceled": "招待をキャンセルしました。",
+  "installerAssign": {
+    "title": "設置可能サイト管理",
+    "availableSitesTitle": "グループ内サイト一覧",
+    "assignedSitesTitle": "割り当て済みサイト",
+    "colSiteName": "サイト名",
+    "colSiteCode": "サイトコード",
+    "colAddress": "住所",
+    "colAction": "管理",
+    "addButton": "追加",
+    "noSites": "表示するサイトがありません。",
+    "noAssignedSites": "割り当てられたサイトがありません。",
+    "loadFail": "サイト情報の読み込みに失敗しました。"
+  },
   "alarmNotification": {
     "panelTitle": "通知",
     "markAll": "すべて既読にする",
@@ -662,7 +676,8 @@
       "trajectory": "Trajectory",
       "goalAndHeading": "Goal & Heading",
       "costmap": "Costmap",
-      "plannedPath": "Planned Path"
+      "plannedPath": "Planned Path",
+      "lidar": "LiDAR"
     },
     "playback": {
       "progressAriaLabel": "再生進行度",

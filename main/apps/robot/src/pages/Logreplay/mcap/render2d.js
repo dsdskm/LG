@@ -51,6 +51,7 @@ export function createCanvasRenderer({
   localCostmapDataRef,
   dwaGoalsRef,
   localCostmapFramesRef,
+  lidarScansRef,
   playTimeSecRef,
   viewRef,
   smoothRef,
@@ -728,6 +729,7 @@ export function createCanvasRenderer({
     const showPlannedPath = opt.showPlannedPath !== false
     const showCostmap = opt.showCostmap !== false
     const showGoalAndHeading = opt.showGoalAndHeading !== false
+    const showLidar = opt.showLidar !== false
 
     const pts = Array.isArray(pathPointsRef.current) ? pathPointsRef.current : []
     const planned = Array.isArray(plannedPathPointsRef?.current) ? plannedPathPointsRef.current : []
@@ -972,6 +974,40 @@ export function createCanvasRenderer({
         }
       } catch (err) {
         console.warn('[LCM] render error:', err)
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // LiDAR 포인트 (raw scan) — 스캐너는 로봇 몸체에 고정된 프레임이라 costmap의 base
+    // 케이스와 동일하게, 스캔이 캡처된 시각(scan.tSec)의 로봇 pose로 회전/평행이동한다.
+    // ─────────────────────────────────────────────
+    if (showLidar) {
+      const scans = Array.isArray(lidarScansRef?.current) ? lidarScansRef.current : []
+      const scan = scans.length ? scans[scans.length - 1] : null
+      if (scan && scan.localPts && scan.localPts.length >= 2) {
+        const scanT = Number.isFinite(scan.tSec) ? scan.tSec : tSecCutoff
+        const scanPose = getPoseAtTime(pts, scanT)
+        const c = Math.cos(scanPose.yaw),
+          s = Math.sin(scanPose.yaw)
+        const px = scanPose.x
+        const py = scanPose.y
+        const localPts = scan.localPts
+        const n = localPts.length >> 1
+
+        ctx.save()
+        ctx.fillStyle = 'rgba(255,165,0,0.85)'
+        const R_PX = 1.6
+        for (let i = 0; i < n; i++) {
+          const lx = localPts[i * 2]
+          const ly = localPts[i * 2 + 1]
+          const wx = px + (c * lx - s * ly)
+          const wy = py + (s * lx + c * ly)
+          const { sx, sy } = fastWS(wx, wy)
+          ctx.beginPath()
+          ctx.arc(sx, sy, R_PX, 0, Math.PI * 2)
+          ctx.fill()
+        }
+        ctx.restore()
       }
     }
 

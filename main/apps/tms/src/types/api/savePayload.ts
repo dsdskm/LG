@@ -3,9 +3,9 @@ import { TaskFlowStatus, TaskFlow } from '@/types/taskflow'
 /**
  * 저장 대상
  *  - 'saved' : flowDefinitionDraft(저장 버전) 만 갱신
- *  - 'both'  : flowDefinitionDraft + flowDefinition(최종 버전) 동시 갱신
+ *  - 'both'  : flowDefinitionDraft + flowDefinition(운영 버전) 동시 갱신
  *
- * 저장 버전은 어떤 경우에도 항상 갱신된다. (최종 버전만 따로 갱신하는 저장은 없다)
+ * 저장 버전은 어떤 경우에도 항상 갱신된다. (운영 버전만 따로 갱신하는 저장은 없다)
  */
 export type SaveMode = 'saved' | 'both'
 type FlowMode = 'default' | 'tree'
@@ -45,7 +45,7 @@ const DEFAULT_VIEWPORT = {
 // 아직 값이 없는 쪽(flowDefinition / flowDefinitionDraft)에 넣는 값
 const EMPTY_FLOW_DEFINITION = {}
 
-// 최종 버전(flowDefinition)을 갱신하는 저장인지
+// 운영 버전(flowDefinition)을 갱신하는 저장인지
 function writesFinal(mode: SaveMode) {
   return mode === 'both'
 }
@@ -214,7 +214,7 @@ function getBaseFlowMode(baseFlow: any): FlowMode {
   )
 }
 
-// 최종 버전 저장 시, BT XML 뿐 아니라 전체 taskflow snapshot이 실제로 변경된 경우에만 버전을 올린다.
+// 운영 버전 저장 시, BT XML 뿐 아니라 전체 taskflow snapshot이 실제로 변경된 경우에만 버전을 올린다.
 function normalizeComparableSnapshot(value: any) {
   if (value == null) return null
 
@@ -247,7 +247,7 @@ function hasMeaningfulTaskFlowChange(baseFlow: any, snapshot: any) {
 function resolveVersion(mode: SaveMode, baseFlow: any, snapshot: any): number {
   const baseVersion = baseFlow?.version ?? 0
 
-  // 최종 버전을 갱신하지 않는 저장은 버전을 유지한다.
+  // 운영 버전을 갱신하지 않는 저장은 버전을 유지한다.
   if (!writesFinal(mode)) return baseVersion
 
   // 최초 저장 시 이전 snapshot이 없거나 비어 있으면 그대로 유지한다.
@@ -310,7 +310,7 @@ export function buildTaskFlowPersistPayload({
     version: resolvedVersion
   }
 
-  // 갱신하지 않는 쪽(최종 버전)은 기존 값을 그대로 되돌려 보내 보존한다.
+  // 갱신하지 않는 쪽(운영 버전)은 기존 값을 그대로 되돌려 보내 보존한다.
   const isFinal = writesFinal(mode)
   const previousFinal = baseFlow?.flowDefinition ?? EMPTY_FLOW_DEFINITION
 
@@ -328,7 +328,7 @@ export function buildTaskFlowPersistPayload({
     flowDefinitionDraft: persistedSnapshot,
     robotSkillIds: baseFlow?.robotSkillIds ?? [],
     robotSkillInfos: baseFlow?.robotSkillInfos ?? [],
-    // BT 는 최종 버전(배포 대상)과 짝을 이룬다. 최종 버전을 갱신하지 않으면 이전 BT 를 그대로 유지한다.
+    // BT 는 운영 버전(배포 대상)과 짝을 이룬다. 운영 버전을 갱신하지 않으면 이전 BT 를 그대로 유지한다.
     behaviorTree: isFinal ? behaviorTree?.trim() || ' ' : (baseFlow?.behaviorTree ?? ' '),
     tasks,
     contents,

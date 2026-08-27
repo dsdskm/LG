@@ -49,7 +49,8 @@ export default function useLogReplayPlayer2D({
     showTrajectory: true,
     showPlannedPath: false,
     showCostmap: false,
-    showGoalAndHeading: false
+    showGoalAndHeading: false,
+    showLidar: true
   })
 
   // ✅ renderOptions는 부모에서 매 렌더마다 새 객체가 될 수 있으므로,
@@ -58,6 +59,7 @@ export default function useLogReplayPlayer2D({
   const optShowPlannedPath = renderOptions?.showPlannedPath
   const optShowCostmap = renderOptions?.showCostmap
   const optShowGoalAndHeading = renderOptions?.showGoalAndHeading
+  const optShowLidar = renderOptions?.showLidar
 
   // Header 옵션 변경 → ref 동기화 (값 바뀔 때만)
   useEffect(() => {
@@ -66,18 +68,20 @@ export default function useLogReplayPlayer2D({
       showTrajectory: optShowTrajectory !== false,
       showPlannedPath: optShowPlannedPath !== false,
       showCostmap: optShowCostmap !== false,
-      showGoalAndHeading: optShowGoalAndHeading !== false
+      showGoalAndHeading: optShowGoalAndHeading !== false,
+      showLidar: optShowLidar !== false
     }
     // 값 동일하면 ref 갱신 불필요
     if (
       cur.showTrajectory === next.showTrajectory &&
       cur.showPlannedPath === next.showPlannedPath &&
       cur.showCostmap === next.showCostmap &&
-      cur.showGoalAndHeading === next.showGoalAndHeading
+      cur.showGoalAndHeading === next.showGoalAndHeading &&
+      cur.showLidar === next.showLidar
     )
       return
     renderOptionsRef.current = { ...cur, ...next }
-  }, [optShowTrajectory, optShowPlannedPath, optShowCostmap, optShowGoalAndHeading])
+  }, [optShowTrajectory, optShowPlannedPath, optShowCostmap, optShowGoalAndHeading, optShowLidar])
 
   // ⚠️ 렌더러는 playTimeSecRef.current를 참조한다.
   // 상태만 0으로 리셋하면 첫 렌더 프레임에서 ref가 예전 값으로 남아

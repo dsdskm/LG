@@ -24,6 +24,7 @@ import type { FlowMode } from '../utils/node.util'
 import { fetchAvailableContents } from '../utils/fetchAvailableContents'
 import { refreshContentNodes, type ContentChange, type MissingContent } from '../utils/refreshTaskflowContents'
 import { getHelperLines } from '../utils/helperLines'
+import { getConnectDenyReason, type ConnectDenyReason } from '../utils/taskflowConnectRules'
 
 export type NodeData = {
   label?: string
@@ -93,7 +94,7 @@ const DEFAULT_VIEWPORT: RFViewport = { x: 0, y: 0, zoom: 1 }
 const DEFAULT_FLOW_MODE: FlowMode = 'default'
 
 function normalizeFlowMode(value: any): FlowMode {
-  return value === 'tree' ? 'tree' : 'default'
+  return 'default'
 }
 
 function cloneSnapshot(snapshot: FlowSnapshot): FlowSnapshot {
@@ -454,32 +455,7 @@ function applyRootTaskToStartNode(nodes: RFNode[], tasks: TaskApiPayload[]): RFN
   return changed ? next : nodes
 }
 
-// 연결 거부 사유 (null = 연결 허용). 토스트 메시지 i18n 키 매핑에 사용된다.
-export type ConnectDenyReason = 'control-bottom' | 'left-not-control' | 'target-not-left' | 'invalid'
-
-function getConnectDenyReason(nodes: RFNode[], _edges: RFEdge[], c: Connection): ConnectDenyReason | null {
-  if (!c.sourceHandle || !c.targetHandle) return 'invalid'
-
-  const sourceNode = nodes.find((n) => n.id === c.source)
-  if (!sourceNode) return 'invalid'
-
-  // 모든 노드는 입력(target) 핸들('left')로만 진입할 수 있다.
-  // 핸들 id 는 모드와 무관하게 'left' 로 고정이며, 가로모드=좌측 / 세로모드=상단에 위치한다.
-  if (c.targetHandle !== 'left') {
-    console.warn(`[CONNECT] 노드는 입력(left) 핸들로만 진입할 수 있습니다. targetHandle=${String(c.targetHandle)}`)
-    return 'target-not-left'
-  }
-
-  // 출력은 우측(right, 주흐름) / 좌측(left) 만 허용한다. (bottom 출력 제거)
-  // - 컨트롤 노드의 left = 분기(leftBranches)
-  // - 그 외 노드의 left = false(else) 분기
-  if (c.sourceHandle !== 'right' && c.sourceHandle !== 'left') {
-    console.warn(`[CONNECT] 출력은 right/left 핸들만 허용합니다. sourceHandle=${String(c.sourceHandle)}`)
-    return 'invalid'
-  }
-
-  return null
-}
+// 연결 거부 사유는 taskflowConnectRules 에서 중앙 관리한다.
 
 // ──────────────────────────────────────────────────────────────
 // 노드 정렬(행/열 격자 정돈) 헬퍼
@@ -1392,7 +1368,7 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
   },
 
   reconnectEdge: (oldEdge, newConnection) => {
-    const denyReason = getConnectDenyReason(get().nodes, get().edges, newConnection)
+    const denyReason = getConnectDenyReason(get().nodes, get().edges, newConnection, oldEdge.id)
     if (denyReason) return denyReason
 
     const prev = makeSnapshot(get().nodes, get().edges, get().viewport, get().flowMode)
@@ -1682,8 +1658,9 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
   },
 
   setFlowMode: (mode) => {
+    const safeMode: FlowMode = 'default'
     const { flowMode, nodes, edges, viewport, positionsByMode } = get()
-    if (flowMode === mode) return
+    if (flowMode === safeMode) return
 
     const prev = makeSnapshot(nodes, edges, viewport, flowMode)
 
@@ -1694,18 +1671,15 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
     }
     const nextPositionsByMode = { ...positionsByMode, [flowMode]: currentPositions }
 
-    // 2) 모드를 전환할 때마다 대상 방향으로 자동 정렬한다.
-    //    세로(tree)는 가로 레이아웃을 시계방향 90° 회전한 형태로 만든다.
+    // 2) 세로 모드는 비활성화되므로 기본 가로 레이아웃만 유지한다.
     const base = computeLayeredPositions(nodes, edges, 'horizontal')
-    const auto = mode === 'tree' ? rotatePositionsCW(nodes, base) : base
-
     const nextNodes = nodes.map((node) => {
-      const position = auto.get(node.id)
+      const position = base.get(node.id)
       return position ? { ...node, position } : node
     })
 
     set((state) => ({
-      flowMode: mode,
+      flowMode: safeMode,
       nodes: nextNodes,
       positionsByMode: nextPositionsByMode,
       ...pushHistory(state.historyPast, prev)

@@ -20,6 +20,81 @@ const CLICK_SLOP = 4
 // nav2 의 robot_radius 는 corepath 이미지 안 파라미터라 저장소에서 읽을 수 없어 대략치다 —
 // 실제 치수가 확인되면 이 상수만 고치면 된다.
 const FALLBACK_ROBOT_RADIUS_M = 0.3
+// 마커 반경(px) — POI 는 이 크기로 고정하고, 로봇은 실제 크기가 이보다 작게 보일 때의 최소치로 쓴다.
+// POI 는 크기가 있는 물체가 아니라 한 지점이고, 축소했을 때도 눌러 확인할 수 있어야 한다.
+const MARKER_RADIUS_PX = 12
+// 방향 표시 삼각형 — 마커 반경 대비 길이/밑변 절반. 밑변은 본체(원/폴리곤)에 묻히고 꼭지점만
+// 밖으로 나와 부채꼴처럼 보인다(가는 선보다 방향이 한눈에 들어온다).
+const MARKER_ARROW_LENGTH_RATIO = 1.9
+const MARKER_ARROW_HALF_WIDTH_RATIO = 0.72
+// 마커 중심의 흰 점 — 마커가 커지면 본체가 면으로 보여 정확한 좌표가 어디인지 흐려진다.
+const MARKER_CORE_RATIO = 0.3
+
+/**
+ * 방향(yaw)을 가리키는 삼각형. 마커 본체보다 먼저 그려서 밑변이 본체에 묻히게 한다.
+ * 흰 테두리를 먼저 깔아 어두운 벽/점군 위에서도 윤곽이 살아 있게 한다.
+ *
+ * @param {number} yaw ROS 기준 방향(rad). 캔버스 y 축은 아래가 +라서 sin 부호를 뒤집어 쓴다.
+ * @param {number} radius 마커 본체 반경(px) — 삼각형 크기는 여기에 비례한다.
+ */
+const drawHeadingWedge = (ctx, px, py, yaw, radius, fill) => {
+  const dirX = Math.cos(yaw)
+  const dirY = -Math.sin(yaw)
+  const tipLen = radius * MARKER_ARROW_LENGTH_RATIO
+  const halfWidth = radius * MARKER_ARROW_HALF_WIDTH_RATIO
+
+  ctx.beginPath()
+  ctx.moveTo(px + dirX * tipLen, py + dirY * tipLen)
+  // 밑변 두 점 — 진행 방향에 수직으로 벌린다.
+  ctx.lineTo(px - dirY * halfWidth, py + dirX * halfWidth)
+  ctx.lineTo(px + dirY * halfWidth, py - dirX * halfWidth)
+  ctx.closePath()
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)'
+  ctx.lineWidth = 2
+  ctx.lineJoin = 'round'
+  ctx.stroke()
+  ctx.fillStyle = fill
+  ctx.fill()
+}
+
+/** 마커 중심을 찍는 흰 점. 본체를 그린 뒤 위에 얹는다. */
+const drawMarkerCore = (ctx, px, py, radius) => {
+  ctx.beginPath()
+  ctx.arc(px, py, radius * MARKER_CORE_RATIO, 0, Math.PI * 2)
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.95)'
+  ctx.fill()
+}
+
+// POI 타입별 색상 — marker: 점/화살표, label: 이름 글자(흰 테두리 위에 얹히므로 더 진하게).
+// 키는 목록의 poi.type 값이다(@repo/ui SemanticDetail 의 POI_TYPES = GENERAL/ETC, 그리고 BE 가
+// 쓰는 CHARGING). 색 계열은 robot 앱 SiteMap 의 POI 표기(충전 초록 / 그 외 앰버)를 따른다.
+const POI_TYPE_COLORS = {
+  GENERAL: { marker: 'rgba(245, 158, 11, 0.9)', label: '#8a5200' }, // 앰버
+  CHARGING: { marker: 'rgba(22, 163, 74, 0.9)', label: '#0f5132' }, // 초록
+  ETC: { marker: 'rgba(142, 68, 173, 0.9)', label: '#5b2c6f' } // 보라
+}
+// 위 표에 없는 타입(BE 가 새 타입을 추가한 경우) 색을 만들 때 쓰는 해시 승수 —
+// 타입 이름이 같으면 언제나 같은 색이 나오게 한다.
+const POI_UNKNOWN_TYPE_HUE_SEED = 31
+// 삭제 예정 POI 색 — 타입 구분보다 "지워질 POI" 라는 사실이 먼저 보여야 하므로 무채색으로 낮춘다.
+const POI_DELETED_COLORS = { marker: 'rgba(127, 140, 141, 0.6)', label: '#7f8c8d' }
+
+/** 문자열 → 0~359 색상각. 알려지지 않은 POI 타입에 안정적인 색을 배정한다. */
+const hueOfText = (text) => {
+  let hash = 0
+  for (let i = 0; i < text.length; i++) {
+    hash = (hash * POI_UNKNOWN_TYPE_HUE_SEED + text.charCodeAt(i)) % 360
+  }
+  return hash
+}
+
+/** POI 타입에 대응하는 마커/라벨 색. 삭제 예정(작업본의 softDelete)은 타입과 무관하게 무채색이다. */
+const poiColorsOf = (type, isDeleted) => {
+  if (isDeleted) return POI_DELETED_COLORS
+  if (POI_TYPE_COLORS[type]) return POI_TYPE_COLORS[type]
+  const hue = hueOfText(String(type ?? ''))
+  return { marker: `hsla(${hue}, 62%, 42%, 0.9)`, label: `hsl(${hue}, 70%, 26%)` }
+}
 
 /**
  * MapCanvas
@@ -34,8 +109,15 @@ const FALLBACK_ROBOT_RADIUS_M = 0.3
  * 렌더링 레이어 순서 (아래에서 위로):
  *   1. OccupancyGrid 격자 지도  (회색/흰색/검정)
  *   2. LaserScan 포인트          (빨간 점들)
- *   3. 로봇 위치 마커             (파란 외형 + 방향 화살표)
+ *   3. 커스텀 토픽(궤적/랜드마크/TF 등)
+ *   4. POI 마커                   (타입별 색 점 + 방향 삼각형 + 이름)
+ *   5. 로봇 위치 마커             (파란 외형 + 방향 삼각형)
  *      크기는 footprint 토픽(nav2 costmap)이 있으면 실제 폴리곤, 없으면 상수 반경으로 그린다.
+ *      POI 와 겹쳐도 로봇이 보여야 하므로 가장 위에 그린다.
+ *
+ * @param {Array} [pois] 지도 위에 찍을 POI 목록. 각 항목은 시맨틱 화면의 POI 형태를 그대로 쓴다
+ *   — { name: { default }, pose: { position: {x,y}, orientation: {x,y,z,w} }, editStatus }.
+ *   좌표는 지도(map) 프레임 기준이라 보정 없이 찍는다.
  *
  * @param {Function} [onMapClick] 지도 클릭 시 호출 — ({x, y, canvasX, canvasY}).
  *   x/y 는 지도 프레임 월드 좌표(m), canvasX/Y 는 래퍼 기준 픽셀(말풍선 배치용).
@@ -51,6 +133,8 @@ function MapCanvas({
   subscribedTopics = [],
   customTopicsData = {},
   frameCorrections = {},
+  // 지도 위에 찍을 POI 목록(시맨틱 화면의 목록 그대로). 빈 배열이면 아무것도 그리지 않는다.
+  pois = [],
   // 라이다 점군 표시. POI 편집처럼 지도 자체가 관심사인 화면은 false 로 끈다
   // (구독은 유지되므로 다른 화면/패널의 표시는 영향받지 않는다).
   showScan = true,
@@ -375,66 +459,7 @@ function MapCanvas({
       ctx.fill()
     }
 
-    // ── Layer 3: 로봇 위치 마커 렌더링 ──────────────────────────────────
-    // 지도와 같은 프레임(map)인 robotPose 를 우선 사용한다. TF 가 아직 안 모였을 때만
-    // /lio/odom 으로 폴백한다 — 이 값은 lio_odom 프레임이라 보정량이 반영되지 않는다.
-    const markerPose =
-      robotPose ??
-      (subscribedTopicOf(subscribedTopics, 'odom') && odomData
-        ? (() => {
-            const pos = odomData.pose?.pose?.position ?? { x: 0, y: 0 }
-            const quat = odomData.pose?.pose?.orientation ?? { x: 0, y: 0, z: 0, w: 1 }
-            return {
-              x: pos.x,
-              y: pos.y,
-              yaw: Math.atan2(2 * (quat.w * quat.z + quat.x * quat.y), 1 - 2 * (quat.y * quat.y + quat.z * quat.z))
-            }
-          })()
-        : null)
-
-    if (markerPose) {
-      const { yaw } = markerPose
-      const { px, py } = worldToCanvas(markerPose.x, markerPose.y)
-
-      // 크기는 로봇 외형(footprint) 폴리곤이 있으면 그걸 그대로 쓰고, 없으면 상수 반경으로
-      // 폴백한다 — footprint 는 nav2(corepath) 가 떠 있을 때만 발행되므로 매핑 단계에서는 없다.
-      const footprintTopic = FOOTPRINT_TOPICS.find((topic) => subscribedTopics.includes(topic))
-      const footprintData = footprintTopic ? customTopicsData[footprintTopic] : null
-      const footprintPts = footprintData?.polygon?.points ?? []
-      // 폴리곤 점들은 costmap global_frame 기준이라 map 으로 보정해서 찍는다
-      // (global_costmap 은 이미 map 이라 보정량이 null 이 되고 좌표가 그대로 쓰인다).
-      const footprintCorrection = correctionFor(footprintData)
-
-      // 방향 표시선 길이 — footprint 유무와 무관하게 실제 크기에 비례하게 잡는다.
-      const radiusPx = Math.max(6, (FALLBACK_ROBOT_RADIUS_M / resolution) * CELL_SIZE)
-
-      ctx.beginPath()
-      if (footprintPts.length >= 3) {
-        footprintPts.forEach((pt, i) => {
-          const world = transformPoint(footprintCorrection, pt)
-          const corner = worldToCanvas(world.x, world.y)
-          if (i === 0) ctx.moveTo(corner.px, corner.py)
-          else ctx.lineTo(corner.px, corner.py)
-        })
-        ctx.closePath()
-      } else {
-        ctx.arc(px, py, radiusPx, 0, Math.PI * 2)
-      }
-      ctx.fillStyle = 'rgba(41, 128, 185, 0.85)'
-      ctx.fill()
-      ctx.strokeStyle = '#fff'
-      ctx.lineWidth = 2
-      ctx.stroke()
-
-      ctx.beginPath()
-      ctx.moveTo(px, py)
-      ctx.lineTo(px + radiusPx * 1.5 * Math.cos(yaw), py - radiusPx * 1.5 * Math.sin(yaw))
-      ctx.strokeStyle = '#fff'
-      ctx.lineWidth = 2
-      ctx.stroke()
-    }
-
-    // ── Layer 4: 커스텀 시각적 토픽 렌더링 ──────────────────────────────
+    // ── Layer 3: 커스텀 시각적 토픽 렌더링 ──────────────────────────────
     // 1) /scan_matched_points2 (매치된 라이다 점군)
     if (showScan && subscribedTopics.includes('/scan_matched_points2')) {
       const ptsData = customTopicsData['/scan_matched_points2']
@@ -618,7 +643,140 @@ function MapCanvas({
     if (subscribedTopics.includes('/tf_static')) {
       drawTF(customTopicsData['/tf_static'])
     }
-  }, [mapData, scanData, odomData, robotPose, subscribedTopics, customTopicsData, frameCorrections, showScan, applyFit])
+
+    // ── Layer 4: POI 마커 ────────────────────────────────────────────────
+    // 지도(map) 프레임 좌표를 그대로 찍는다 — POI 는 저장된 맵 기준 좌표라 보정 대상이 아니다.
+    // 마지막 레이어로 두어 지도/점군 위에 얹는다.
+    if (pois.length > 0) {
+      ctx.font = '600 12px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'bottom'
+
+      pois.forEach((poi) => {
+        const position = poi?.pose?.position
+        if (typeof position?.x !== 'number' || typeof position?.y !== 'number') return
+
+        const { px, py } = worldToCanvas(position.x, position.y)
+        // 색은 타입(poi.type)으로 구분한다. 삭제 예정(작업본의 softDelete)은 목록에도 남아 있으므로
+        // 지우지 않고 무채색으로 낮춰 구분만 한다.
+        const isDeleted = !!poi?.editStatus?.softDelete
+        const { marker: fill, label: labelColor } = poiColorsOf(poi?.type, isDeleted)
+
+        // 방향(orientation) 이 있으면 삼각형으로 함께 보여준다 — POI 는 도착 지점의 방향도 뜻한다.
+        const quat = poi?.pose?.orientation
+        if (quat && (quat.z !== 0 || quat.w !== 1)) {
+          const yaw = Math.atan2(
+            2 * (quat.w * quat.z + quat.x * quat.y),
+            1 - 2 * (quat.y * quat.y + quat.z * quat.z)
+          )
+          drawHeadingWedge(ctx, px, py, yaw, MARKER_RADIUS_PX, fill)
+        }
+
+        ctx.beginPath()
+        ctx.arc(px, py, MARKER_RADIUS_PX, 0, Math.PI * 2)
+        ctx.fillStyle = fill
+        ctx.fill()
+        ctx.strokeStyle = '#fff'
+        ctx.lineWidth = 2
+        ctx.stroke()
+        drawMarkerCore(ctx, px, py, MARKER_RADIUS_PX)
+
+        // 이름 — 지도(흰 바탕/검은 벽) 어디에서나 읽히도록 흰 테두리를 두른 글자로 찍는다.
+        const label = poi?.name?.default ?? poi?.name?.['ko-KR'] ?? poi?.name?.['en-US'] ?? ''
+        if (label) {
+          const ty = py - MARKER_RADIUS_PX - 5
+          ctx.lineWidth = 3
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)'
+          ctx.strokeText(label, px, ty)
+          ctx.fillStyle = labelColor
+          ctx.fillText(label, px, ty)
+        }
+      })
+    }
+
+    // ── Layer 5: 로봇 위치 마커 렌더링 ──────────────────────────────────
+    // 가장 마지막(최상위) 레이어다 — POI 와 겹쳐도 로봇이 어디에 있는지가 먼저 보여야 한다.
+    // 지도와 같은 프레임(map)인 robotPose 를 우선 사용한다. TF 가 아직 안 모였을 때만
+    // /lio/odom 으로 폴백한다 — 이 값은 lio_odom 프레임이라 보정량이 반영되지 않는다.
+    const markerPose =
+      robotPose ??
+      (subscribedTopicOf(subscribedTopics, 'odom') && odomData
+        ? (() => {
+            const pos = odomData.pose?.pose?.position ?? { x: 0, y: 0 }
+            const quat = odomData.pose?.pose?.orientation ?? { x: 0, y: 0, z: 0, w: 1 }
+            return {
+              x: pos.x,
+              y: pos.y,
+              yaw: Math.atan2(2 * (quat.w * quat.z + quat.x * quat.y), 1 - 2 * (quat.y * quat.y + quat.z * quat.z))
+            }
+          })()
+        : null)
+
+    if (markerPose) {
+      const { yaw } = markerPose
+      const { px, py } = worldToCanvas(markerPose.x, markerPose.y)
+
+      // 크기는 로봇 외형(footprint) 폴리곤이 있으면 그걸 그대로 쓰고, 없으면 상수 반경으로
+      // 폴백한다 — footprint 는 nav2(corepath) 가 떠 있을 때만 발행되므로 매핑 단계에서는 없다.
+      const footprintTopic = FOOTPRINT_TOPICS.find((topic) => subscribedTopics.includes(topic))
+      const footprintData = footprintTopic ? customTopicsData[footprintTopic] : null
+      const footprintPts = footprintData?.polygon?.points ?? []
+      // 폴리곤 점들은 costmap global_frame 기준이라 map 으로 보정해서 찍는다
+      // (global_costmap 은 이미 map 이라 보정량이 null 이 되고 좌표가 그대로 쓰인다).
+      const footprintCorrection = correctionFor(footprintData)
+
+      // 본체 크기를 픽셀로 먼저 잡는다 — 방향 삼각형이 본체 밖으로 나와야 하므로 폴리곤이 있으면
+      // 그 최대 반경을 쓴다(그러지 않으면 큰 로봇에서 삼각형이 본체에 완전히 묻힌다).
+      const footprintCanvasPts =
+        footprintPts.length >= 3
+          ? footprintPts.map((pt) => {
+              const world = transformPoint(footprintCorrection, pt)
+              return worldToCanvas(world.x, world.y)
+            })
+          : []
+      const footprintRadiusPx = footprintCanvasPts.reduce(
+        (max, corner) => Math.max(max, Math.hypot(corner.px - px, corner.py - py)),
+        0
+      )
+      // 실제 크기에 비례하되, 축소했을 때 POI 보다 작아지지 않도록 MARKER_RADIUS_PX 를 하한으로 둔다.
+      const radiusPx = Math.max(
+        MARKER_RADIUS_PX,
+        footprintRadiusPx || (FALLBACK_ROBOT_RADIUS_M / resolution) * CELL_SIZE
+      )
+      const robotFill = 'rgba(41, 128, 185, 0.9)'
+
+      // 방향 삼각형을 본체보다 먼저 그려 밑변을 본체 안에 묻는다(POI 마커와 같은 규약).
+      drawHeadingWedge(ctx, px, py, yaw, radiusPx, robotFill)
+
+      ctx.beginPath()
+      if (footprintCanvasPts.length >= 3) {
+        footprintCanvasPts.forEach((corner, i) => {
+          if (i === 0) ctx.moveTo(corner.px, corner.py)
+          else ctx.lineTo(corner.px, corner.py)
+        })
+        ctx.closePath()
+      } else {
+        ctx.arc(px, py, radiusPx, 0, Math.PI * 2)
+      }
+      ctx.fillStyle = robotFill
+      ctx.fill()
+      ctx.strokeStyle = '#fff'
+      ctx.lineWidth = 2
+      ctx.stroke()
+      drawMarkerCore(ctx, px, py, radiusPx)
+    }
+  }, [
+    mapData,
+    scanData,
+    odomData,
+    robotPose,
+    subscribedTopics,
+    customTopicsData,
+    frameCorrections,
+    pois,
+    showScan,
+    applyFit
+  ])
 
   // 데이터 변경 시 리렌더링
   useEffect(() => {
@@ -818,6 +976,8 @@ const MemoizedMapCanvas = React.memo(MapCanvas, (prevProps, nextProps) => {
   // 보정량이 갱신되면(루프 클로저 등) 궤적을 다시 그려야 한다.
   if (prevProps.frameCorrections !== nextProps.frameCorrections) return false
   if (prevProps.showScan !== nextProps.showScan) return false
+  // POI 목록은 편집(생성/수정/삭제 예정)마다 새 배열이 오므로 레퍼런스 비교로 충분하다.
+  if (prevProps.pois !== nextProps.pois) return false
   if (prevProps.subscribedTopics !== nextProps.subscribedTopics) return false
   // 콜백은 ref 로 최신값을 쓰지만, 부모가 새 함수를 넘기면 리스너 재등록이 필요할 수 있어 함께 본다.
   if (prevProps.onMapClick !== nextProps.onMapClick) return false

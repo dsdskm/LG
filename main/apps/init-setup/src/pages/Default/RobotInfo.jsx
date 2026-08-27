@@ -19,6 +19,7 @@ import {
   ErrorText
 } from './styles'
 import { saveRobotInfo } from '@/apis/defaultSetup'
+import { advanceSetupProgress, SETUP_STEPS } from '@/utils/setupProgress'
 
 const RobotInfo = () => {
   const navigate = useNavigate()
@@ -35,6 +36,7 @@ const RobotInfo = () => {
     try {
       const response = await saveRobotInfo({ robot_name: robotName })
       if (response?.registered === false) throw new Error('registration_failed')
+      await advanceSetupProgress(SETUP_STEPS.TERMS)
       navigate('/terms')
     } catch (e) {
       setErr(`관제 등록 실패: ${e.message}`)

@@ -397,7 +397,19 @@ function InnerCanvas() {
             ? 'canvas.edge.connect.denyLeftNotControl'
             : denyReason === 'target-not-left'
               ? 'canvas.edge.connect.denyTargetNotLeft'
-              : 'canvas.edge.connect.denyDefault'
+              : denyReason === 'action-right-out-only'
+                ? 'canvas.edge.connect.denyActionRightOutOnly'
+                : denyReason === 'action-single-in'
+                  ? 'canvas.edge.connect.denyActionSingleIn'
+                  : denyReason === 'action-single-out'
+                    ? 'canvas.edge.connect.denyActionSingleOut'
+                    : denyReason === 'control-single-right-out'
+                      ? 'canvas.edge.connect.denyControlSingleRightOut'
+                      : denyReason === 'control-single-left-in'
+                        ? 'canvas.edge.connect.denyControlSingleLeftIn'
+                        : denyReason === 'parallel-duplicate-content-type'
+                          ? 'canvas.edge.connect.denyParallelDuplicateContentType'
+                          : 'canvas.edge.connect.denyDefault'
 
       toast.warning(t(messageKey))
     },
@@ -634,27 +646,6 @@ function InnerCanvas() {
             {t('canvas.align.button')}
           </Button>
 
-          <Button
-            type="button"
-            theme="light"
-            size="sm"
-            data-active={flowMode === 'default'}
-            onClick={() => setFlowMode('default')}
-            title={t('canvas.mode.switchToDefault')}
-          >
-            {t('canvas.mode.default')}
-          </Button>
-
-          <Button
-            type="button"
-            theme="light"
-            size="sm"
-            data-active={flowMode === 'tree'}
-            onClick={() => setFlowMode('tree')}
-            title={t('canvas.mode.switchToTree')}
-          >
-            {t('canvas.mode.tree')}
-          </Button>
         </AlignOverlay>
 
         <AlignHintText>빈 곳을 더블 클릭하여 메모를 생성할 수 있습니다.</AlignHintText>

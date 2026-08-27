@@ -4,7 +4,7 @@ export const ruleKey = 'node-save-final'
 
 export const metadata = {
   ruleKey,
-  description: 'TaskFlow 최종 버전 저장',
+  description: 'TaskFlow 운영 버전 저장',
   screenKey: TASKFLOW_CANVAS_RULE_ROUTE_KEY,
   command: '/save'
 }

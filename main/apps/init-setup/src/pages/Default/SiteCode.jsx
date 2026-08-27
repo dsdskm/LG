@@ -19,6 +19,7 @@ import {
   ErrorText
 } from './styles'
 import { saveSiteCode } from '@/apis/defaultSetup'
+import { advanceSetupProgress, SETUP_STEPS } from '@/utils/setupProgress'
 
 const DEFAULT_SITE_CODE = 'GRPBCCCC'
 const SITE_CODE_RE = /^[A-Z0-9]{8}$/
@@ -41,6 +42,7 @@ const SiteCode = () => {
     setErr('')
     try {
       await saveSiteCode({ method, code: value })
+      await advanceSetupProgress(SETUP_STEPS.LOCATION)
       navigate('/location')
     } catch (e) {
       setErr(`지점 정보 조회 실패: ${e.message}`)

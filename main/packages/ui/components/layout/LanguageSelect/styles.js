@@ -4,6 +4,11 @@ import { mobileHeaderButtonStyle } from '@repo/ui/styles'
 export const StyledLanguageSelect = styled.div`
   position: relative;
 
+  & .icon svg {
+    width: 32px;
+    height: 32px;
+  }
+
   & .languageOption {
     position: absolute;
     min-width: 18rem;

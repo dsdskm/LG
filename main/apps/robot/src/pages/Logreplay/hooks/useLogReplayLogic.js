@@ -65,7 +65,8 @@ export function useLogReplayLogic({ initialDate, deviceId }) {
     showTrajectory: true, // 실제 주행 궤적
     showPlannedPath: true, // 계획 경로
     showCostmap: true, // local costmap / obstacles
-    showGoalAndHeading: true // DWA goal + 로봇 방향
+    showGoalAndHeading: true, // DWA goal + 로봇 방향
+    showLidar: true // 라이다 포인트
   })
   const settings = useMemo(() => ({ value: settingsValue, set: setSettings }), [settingsValue])
 
@@ -527,8 +528,11 @@ export function useLogReplayLogic({ initialDate, deviceId }) {
 
     gridData,
     pathPoints, // 3D용 (coveragePathPoints와 동일 소스, 이름 명시)
+    plannedPathPoints,
+    fullTrajectoryPoints, // 3D 남은 경로(회색)용 — 2D routePts와 동일 소스
     lidarScans,
     localCostmapFrames,
+    odomRawPoints, // 3D costmap odom→map 보정용
     dwaGoals,
     t0EpochMs,
 

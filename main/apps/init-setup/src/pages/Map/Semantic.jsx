@@ -554,7 +554,9 @@ const Semantic = () => {
           // 안 모여 odom 기준 pose 가 잡힌 경우 그 좌표는 맵 좌표가 아니라 POI 로 쓸 수 없다.
           robotPose={poiRobotPose}
           noData={t('noPoiLoaded')}
-          mapSlot={
+          // 지도에는 목록에 보이는 POI 를 그린다 — SemanticPage 가 표시 중인 목록(IN-USE/WORKING)을
+          // 넘겨주므로 아직 저장하지 않은 작업본 POI 도 지도에서 확인할 수 있다.
+          mapSlot={({ pois: visiblePois }) => (
             <MapClickArea>
               <MapCanvas
                 mapData={mapData}
@@ -564,6 +566,7 @@ const Semantic = () => {
                 subscribedTopics={subscribedTopics}
                 customTopicsData={customTopicsData}
                 frameCorrections={frameCorrections}
+                pois={visiblePois}
                 // POI 편집 화면이라 실시간 라이다 점군은 지도를 가리기만 한다
                 showScan={false}
                 onMapClick={handleMapClick}
@@ -594,7 +597,7 @@ const Semantic = () => {
                 </NavBubble>
               )}
             </MapClickArea>
-          }
+          )}
         />
       ) : (
         <Section>

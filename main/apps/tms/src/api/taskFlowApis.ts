@@ -117,6 +117,7 @@ export function useDeleteTaskFlow() {
 // 배포 + 활성화 , 배포 + 비활성화
 
 async function deployTaskFlowAction(params: DeployActionRequest) {
+  console.log(`params`,params)
   const response = await axiosClient.post(path + '/' + params.taskFlowId + '/actions', params.param)
   return response
 }

@@ -75,6 +75,20 @@ export const FlowTitleRow = styled.div`
   gap: 10px;
 `
 
+export const FlowIdBadge = styled.span`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: #f1f3f7;
+  color: #586174;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+`
+
 export const FlowVersionBadge = styled.span`
   display: inline-flex;
   align-items: center;

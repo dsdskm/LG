@@ -117,6 +117,13 @@ const MAP_EXTRA_TOPICS = [
     kind: 'odomRaw',
     downsampleMs: 50,
     candidates: ['/odom']
+  },
+  {
+    // ✅ 라이다 포인트 오버레이. 스캐너는 로봇 몸체에 고정된 프레임이라 costmap의 base 케이스처럼
+    //   렌더 시점의 로봇 pose로 회전/평행이동한다(render2d.js).
+    kind: 'lidar',
+    downsampleMs: 80,
+    candidates: ['/aslam/lidar/scan', '/scan', '/lidar_service/data', '/lidar/scan', '/laser/scan']
   }
 ]
 
@@ -263,7 +270,8 @@ export default function useLogReplayData({
     path: { seq: 0, cache: [], active: { s: null, e: null }, lastIdx: -1, inflight: false },
     goalPose: { seq: 0, cache: [], active: { s: null, e: null }, lastIdx: -1, inflight: false },
     // ✅ odom→map 보정용 raw odom 시계열(재생 위치 선택 없이 전체 구간을 그대로 씀)
-    odomRaw: { seq: 0, cache: [], active: { s: null, e: null }, lastIdx: -1, inflight: false }
+    odomRaw: { seq: 0, cache: [], active: { s: null, e: null }, lastIdx: -1, inflight: false },
+    lidar: { seq: 0, cache: [], active: { s: null, e: null }, lastIdx: -1, inflight: false }
   })
   const requestChartOverviewRef = useRef(null)
 
@@ -436,8 +444,19 @@ export default function useLogReplayData({
           renderNow?.()
         }
       }
+
+      // ── lidar: 가장 가까운 시각의 스캔 1개만 표시(costmap과 동일한 nearest 정책) ──
+      const ld = ov.lidar
+      if (ld.cache.length > 0) {
+        const idx = bsearchClosest(ld.cache, t)
+        if (idx !== ld.lastIdx) {
+          ld.lastIdx = idx
+          setLidarScans?.([ld.cache[idx]])
+          renderNow?.()
+        }
+      }
     },
-    [setLocalCostmapData, setLocalCostmapFrames, setPlannedPathPoints, setDwaGoals, renderNow]
+    [setLocalCostmapData, setLocalCostmapFrames, setPlannedPathPoints, setDwaGoals, setLidarScans, renderNow]
   )
   useEffect(() => {
     if (typeof getPlayTimeSec !== 'function') return
@@ -1170,7 +1189,7 @@ export default function useLogReplayData({
 
       try {
         // 편승으로 같이 받아온 overlay를 임시로 모았다가, 최신 요청일 때만 캐시에 반영
-        const extraTmp = { costmap: [], path: [], goal: [], odomRaw: [] }
+        const extraTmp = { costmap: [], path: [], goal: [], odomRaw: [], lidar: [] }
         const raw = await loadPosesFromMcapUrl(url, {
           startSec,
           endSec,
@@ -1255,6 +1274,8 @@ export default function useLogReplayData({
           // ✅ odom→map 보정용 raw odom 시계열. 재생 위치 선택 없이 전체 caches를 그대로 넘긴다(render2d가 직접 탐색).
           mergeOverlay(ov.odomRaw, extraTmp.odomRaw, 4000)
           if (extraTmp.odomRaw.length) setOdomRawPoints?.(ov.odomRaw.cache)
+          // 스캔은 costmap처럼 "현재 1개"만 표시하므로 히스토리 상한은 낮게 유지.
+          mergeOverlay(ov.lidar, extraTmp.lidar, 400)
 
           // ✅ seek 직후 첫 리로드: 새 위치에 데이터가 없는 overlay만 표시를 비운다(잔상 방지).
           //    데이터가 있으면 applyOverlayByPlayhead가 다음 프레임에 자연스럽게 교체 → 깜박임 없음.
@@ -1268,6 +1289,7 @@ export default function useLogReplayData({
             if (ov.path.cache.length === 0) setPlannedPathPoints?.([])
             if (ov.goalPose.cache.length === 0) setDwaGoals?.([])
             if (ov.odomRaw.cache.length === 0) setOdomRawPoints?.([])
+            if (ov.lidar.cache.length === 0) setLidarScans?.([])
           }
         }
 

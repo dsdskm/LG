@@ -283,6 +283,47 @@ export const MainNodeBadge = styled.span`
   z-index: 3;
 `
 
+const BRANCH_ROLE_BADGE_STYLE: Record<'CONDITION' | 'SUCCESS' | 'FAILURE', { border: string; bg: string; color: string }> = {
+  CONDITION: {
+    border: '#c4b5fd',
+    bg: '#f5f3ff',
+    color: '#6d28d9'
+  },
+  SUCCESS: {
+    border: '#86efac',
+    bg: '#ecfdf5',
+    color: '#166534'
+  },
+  FAILURE: {
+    border: '#fda4af',
+    bg: '#fff1f2',
+    color: '#be123c'
+  }
+}
+
+export const BranchRoleBadge = styled.span<{ $role: 'CONDITION' | 'SUCCESS' | 'FAILURE' }>`
+  position: absolute;
+  bottom: -5px;
+  left: 0px;
+
+  display: inline-flex;
+  align-items: center;
+
+  border-radius: 9999px;
+  border: 1px solid ${({ $role }) => BRANCH_ROLE_BADGE_STYLE[$role].border};
+  background: ${({ $role }) => BRANCH_ROLE_BADGE_STYLE[$role].bg};
+  color: ${({ $role }) => BRANCH_ROLE_BADGE_STYLE[$role].color};
+
+  padding: 0 3px;
+  line-height: 1;
+
+  font-size: 6px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+
+  z-index: 3;
+`
+
 export const PillText = styled.span`
   display: block;
   min-width: 0;

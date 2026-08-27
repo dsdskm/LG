@@ -32,7 +32,7 @@ export const SETUP_GROUP = {
 
 export const HEADER_GNB = [
   { name: SETUP_GROUP.INITIAL, path: '/language', prefix: '', group: SETUP_GROUP.INITIAL },
-  { name: SETUP_GROUP.MAP, path: '/map/scan', prefix: '', group: SETUP_GROUP.MAP },
+  { name: SETUP_GROUP.MAP, path: '/download', prefix: '', group: SETUP_GROUP.MAP },
   // admin 탭은 SYSTEM_MANAGER 이상만 본다 (라우트 접근 제한은 AdminGuard 가 담당).
   {
     name: SETUP_GROUP.ADMIN,
@@ -96,7 +96,7 @@ export const appRoutes = [
     name: 'download',
     path: '/download',
     prefix: '',
-    icon: 'publish',
+    icon: 'download',
     group: SETUP_GROUP.MAP,
     element: <Download />
   },

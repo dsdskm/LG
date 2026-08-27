@@ -49,6 +49,7 @@ import {
 } from './styles'
 import { Section } from '@repo/ui'
 import { scanWifi, connectWifi, disconnectWifi, rescanWifiOffline, getWifiStatus, getWifiModeStatus, switchWifiMode } from '@/apis/wifi'
+import { SETUP_STEPS, tryAdvanceSetupProgress } from '@/utils/setupProgress'
 
 const UI_PORT = '18080'
 const FIXED_ACCESS_URLS = {
@@ -441,6 +442,13 @@ const Network = () => {
     }
   }
 
+  // 네트워크 단계 완료 기록. 실패해도 화면 이동은 막지 않는다(토스트로만 알림) —
+  // 이 페이지는 Wi‑Fi 전환 중 요청이 끊기는 것이 정상인 화면이라 진행 기록 실패로 다음을 막을 수 없다.
+  const handleNext = async () => {
+    await tryAdvanceSetupProgress(SETUP_STEPS.SITE_CODE)
+    navigate('/site-code')
+  }
+
   const handleSwitchWifiMode = async (mode) => {
     if (connecting || modeChanging) return
 
@@ -782,7 +790,7 @@ const Network = () => {
           <SecondaryActionButton type="button" onClick={() => navigate('/language')} disabled={connecting || modeChanging}>
             이전
           </SecondaryActionButton>
-          <ActionButton type="button" onClick={() => navigate('/site-code')} disabled={connecting || modeChanging}>
+          <ActionButton type="button" onClick={handleNext} disabled={connecting || modeChanging}>
             다음
           </ActionButton>
         </WizardButtonWrap>

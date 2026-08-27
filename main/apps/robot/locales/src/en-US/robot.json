@@ -105,6 +105,7 @@
   "roleGroupManager": "Group Manager",
   "roleSiteManager": "Site Manager",
   "roleTermManager": "Term Manager",
+  "roleInstallManager": "Install Manager",
   "delete": "Delete",
   "noData": "No Data",
   "register": "Registered",
@@ -367,6 +368,19 @@
   "inviter": "Inviter",
   "invEmailSent": "The invitation email has been sent.",
   "invCanceled": "The invitation has been canceled.",
+  "installerAssign": {
+    "title": "Manage Installable Sites",
+    "availableSitesTitle": "Sites in Group",
+    "assignedSitesTitle": "Assigned Sites",
+    "colSiteName": "Site Name",
+    "colSiteCode": "Site Code",
+    "colAddress": "Address",
+    "colAction": "Action",
+    "addButton": "Add",
+    "noSites": "There are no sites to display.",
+    "noAssignedSites": "No sites have been assigned.",
+    "loadFail": "Failed to load site information."
+  },
   "alarmNotification": {
     "panelTitle": "Notifications",
     "markAll": "Mark all as read",
@@ -662,7 +676,8 @@
       "trajectory": "Trajectory",
       "goalAndHeading": "Goal & Heading",
       "costmap": "Costmap",
-      "plannedPath": "Planned Path"
+      "plannedPath": "Planned Path",
+      "lidar": "LiDAR"
     },
     "playback": {
       "progressAriaLabel": "Playback progress",

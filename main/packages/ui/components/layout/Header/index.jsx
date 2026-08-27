@@ -19,10 +19,11 @@ import { logout as requestLogout } from '@repo/apis'
 import ServiceMenuIcon from '../ServiceMenuIcon'
 import LearningNotification from './LearningNotification'
 import { getAppPrefix } from '@repo/utils'
+import { COMMON_GNB } from '@repo/constants/routes'
 import { useTranslation } from 'react-i18next'
 import useToggle from '@repo/hooks/useToggle'
 import useClickOutSide from '@repo/hooks/useClickOutSide'
-import { useRef } from 'react'
+import { useRef, useMemo } from 'react'
 import Icon from '../../common/Icon'
 
 const Header = ({ notificationSlot }) => {
@@ -40,6 +41,15 @@ const Header = ({ notificationSlot }) => {
   const { state: isProfileOpen, toggle: toggleProfile, off: closeProfile } = useToggle()
   const profileRef = useRef(null)
   useClickOutSide(profileRef, closeProfile)
+
+  // FEATURE_LEARNING_ENABLED에 따라 "학습" 앱 필터링
+  const headerRoutes = useMemo(() => {
+    if (import.meta.env.VITE_FEATURE_LEARNING_ENABLED === 'true') {
+      return COMMON_GNB
+    }
+    // "학습" 앱 제외
+    return COMMON_GNB.filter((item) => item.name !== 'learning')
+  }, [])
 
   const handleLogout = async () => {
     const refreshToken = useUserStore.getState().session?.refreshToken
@@ -87,7 +97,7 @@ const Header = ({ notificationSlot }) => {
             <Logo />
           </div>
 
-          {currentAppPrefix !== '/ebme' && <ServiceMenuIcon t={t} />}
+          {currentAppPrefix !== '/ebme' && <ServiceMenuIcon t={t} headerRoutes={headerRoutes} />}
         </div>
 
         <div className="content right">
@@ -97,7 +107,7 @@ const Header = ({ notificationSlot }) => {
 
           <LanguageSelect />
 
-          <LearningNotification />
+          {import.meta.env.VITE_FEATURE_LEARNING_ENABLED === 'true' && <LearningNotification />}
 
           {notificationSlot ?? (
             <StyledHeaderButton type="button" className="notification" aria-label="View Notifications">

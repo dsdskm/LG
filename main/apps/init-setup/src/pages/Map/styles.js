@@ -49,6 +49,14 @@ export const MappingStatusBadge = styled.div`
 // gap 이 없어 카드가 붙어 보이므로, Section 사이 간격을 페이지에서 준다.
 export const StyledSemanticPageContent = styled(StyledMapPageContent)`
   gap: 1.6rem;
+
+  /* 높이를 100% 로 묶지 않는다(StyledMapPageContent 상속값을 되돌린다) — POI 상세가 지도·목록
+     아래에 열리면 내용이 화면보다 길어지는데, 높이가 고정이면 지도 칸이 짜부라지려 하고
+     MapCanvas 는 최소 높이(400px)가 있어 줄지 못해 Section 밖으로 삐져나와 상세와 겹친다.
+     min-height 로 두면 상세가 닫힌 동안에는 지도가 화면을 꽉 채우고(workspace 가 flex-grow),
+     열리면 페이지가 늘어나 #mainContent(overflow-y: auto)가 스크롤한다. */
+  height: auto;
+  min-height: 100%;
 `
 
 // 편집 대상이 정해지기 전(위치 미선택 / 해당 위치에 맵 없음) Section 안에 띄우는 안내 문구.

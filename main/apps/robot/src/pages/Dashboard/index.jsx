@@ -492,23 +492,25 @@ const Dashboard = () => {
                   <Stop className="w-[14px] h-[14px]" /> {t('stop')}
                 </StopButton>
               ))}
-            <PlayButton
-              onClick={() => {
-                let groupId = orgFilter.values[0]
-                if (groupId === 'all' && orgFilter.values[1] !== 'all') {
-                  const matched = orgFilter.actualOrgs?.find((org) => String(org.code) === String(orgFilter.values[1]))
-                  groupId = matched?.parentCode ?? groupId
-                }
+            {import.meta.env.VITE_FEATURE_LEARNING_ENABLED === 'true' && (
+              <PlayButton
+                onClick={() => {
+                  let groupId = orgFilter.values[0]
+                  if (groupId === 'all' && orgFilter.values[1] !== 'all') {
+                    const matched = orgFilter.actualOrgs?.find((org) => String(org.code) === String(orgFilter.values[1]))
+                    groupId = matched?.parentCode ?? groupId
+                  }
 
-                const params = new URLSearchParams({
-                  group: groupId,
-                  site: orgFilter.values[1] ?? 'all'
-                })
-                window.open(`/robot/tv?${params}`, '_blank')
-              }}
-            >
-              ⬛ {t('tvView')}
-            </PlayButton>
+                  const params = new URLSearchParams({
+                    group: groupId,
+                    site: orgFilter.values[1] ?? 'all'
+                  })
+                  window.open(`/robot/tv?${params}`, '_blank')
+                }}
+              >
+                ⬛ {t('tvView')}
+              </PlayButton>
+            )}
           </DashboardButtonGroup>
         </DashboardControlsContainer>
 
@@ -618,17 +620,19 @@ const Dashboard = () => {
         <DivMarginTop />
 
         {/* 데이터 수집 현황 (collapsible, 기본 접힘) — TV Gradient GUI 색상과 동일하게 표시 */}
-        <DataCollectionSection
-          collapsible
-          line="#b91c4c"
-          areaColor="#9aa0a8"
-          targetColor="#c5c6c9"
-          monFill="url(#monGray)"
-          qEmphFill="url(#qCrimson)"
-          qBaseFill="#cbc8c2"
-          segFill="linear-gradient(335deg, #cd7b94 11.32%, #bf2d59 44.35%, #b91c4c 77.37%)"
-          segEmpty="#cbc8c2"
-        />
+        {import.meta.env.VITE_FEATURE_LEARNING_ENABLED === 'true' && (
+          <DataCollectionSection
+            collapsible
+            line="#b91c4c"
+            areaColor="#9aa0a8"
+            targetColor="#c5c6c9"
+            monFill="url(#monGray)"
+            qEmphFill="url(#qCrimson)"
+            qBaseFill="#cbc8c2"
+            segFill="linear-gradient(335deg, #cd7b94 11.32%, #bf2d59 44.35%, #b91c4c 77.37%)"
+            segEmpty="#cbc8c2"
+          />
+        )}
       </DashboardWrapper>
     </>
   )

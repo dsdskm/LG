@@ -12,6 +12,7 @@ import {
   TaskRunningCountBadge,
   CircleBadge,
   MainNodeBadge,
+  BranchRoleBadge,
   BreakpointDot,
   ForcedResultMark,
   TickCountBadge,
@@ -48,26 +49,55 @@ export default function TaskNode({ id, data, selected }: Props) {
   const flowMode = useFlowEditorStore((s) => s.flowMode)
   const pos = getHandlePositions(flowMode)
 
-  // 부모 Parallel 노드의 main_nodes 에 포함된(=main) 노드인지 여부.
-  // main_nodes 가 명시적으로 선택되지 않았으면 좌측 자식 전체를 main 으로 간주한다(패널과 동일).
-  const isMainNode = useFlowEditorStore((s) =>
-    s.edges.some((e) => {
-      if (String(e.target) !== String(id) || (e.sourceHandle ?? '') !== 'left') return false
-      const parent = s.nodes.find((n) => String(n.id) === String(e.source))
-      if (!parent) return false
-      const pData: any = parent.data ?? {}
-      const isParallel =
-        String(pData.taskType ?? '').toUpperCase() === 'CONTROL' &&
-        String(pData.taskName ?? pData.label ?? pData.name ?? '')
-          .trim()
-          .toLowerCase() === 'parallel'
-      if (!isParallel) return false
-      const main = pData?.properties?.main_nodes
-      // 배열로 저장되어 있으면 명시 선택(빈 배열=0개), 미설정이면 전체 main 으로 간주
-      const isExplicit = Array.isArray(main)
-      return !isExplicit || main.map((v: any) => String(v)).includes(String(id))
-    })
-  )
+  // Parallel 노드의 MAIN 표시는 명시적으로 선택된 경우에만 한다.
+  // 자식 노드를 붙이는 순간 자동으로 MAIN으로 바꾸지 않도록 한다.
+  const isMainNode = useFlowEditorStore((s) => {
+    const parentEdge = s.edges.find(
+      (e) => String(e.target) === String(id) && (e.sourceHandle ?? '') === 'left'
+    )
+    if (!parentEdge) return false
+
+    const parent = s.nodes.find((n) => String(n.id) === String(parentEdge.source))
+    if (!parent) return false
+
+    const pData: any = parent.data ?? {}
+    const isParallel =
+      String(pData.taskType ?? '').toUpperCase() === 'CONTROL' &&
+      String(pData.taskName ?? pData.label ?? pData.name ?? '')
+        .trim()
+        .toLowerCase() === 'parallel'
+    if (!isParallel) return false
+
+    const main = pData?.properties?.main_nodes
+    return Array.isArray(main) && main.map((v: any) => String(v)).includes(String(id))
+  })
+
+  const branchRole = useFlowEditorStore((s) => {
+    const parentEdge = s.edges.find(
+      (e) => String(e.target) === String(id) && (e.sourceHandle ?? '') === 'left'
+    )
+    if (!parentEdge) return null
+
+    const parent = s.nodes.find((n) => String(n.id) === String(parentEdge.source))
+    if (!parent) return null
+
+    const parentData: any = parent.data ?? {}
+    const parentName = String(parentData.taskName ?? parentData.label ?? parentData.name ?? '')
+      .trim()
+      .toLowerCase()
+    const parentType = String(parentData.taskType ?? '').toUpperCase()
+    if (parentType !== 'CONTROL' || !['ifthenelse', 'if then else', 'if_then_else'].includes(parentName)) {
+      return null
+    }
+
+    const raw = parentData?.properties?.ifthenelse_branch_roles ?? {}
+    const role = String(raw[String(id)] ?? '').trim().toLowerCase()
+    if (role === 'condition' || role === 'success' || role === 'failure') {
+      return role.toUpperCase() as 'CONDITION' | 'SUCCESS' | 'FAILURE'
+    }
+
+    return null
+  })
 
   return (
     <TaskNodeRoot
@@ -98,6 +128,7 @@ export default function TaskNode({ id, data, selected }: Props) {
       </TaskTitle>
 
       {isMainNode && <MainNodeBadge>MAIN</MainNodeBadge>}
+      {branchRole && <BranchRoleBadge $role={branchRole}>{branchRole}</BranchRoleBadge>}
 
       {data?.breakpoint && <BreakpointDot />}
       {data?.forcedResult && <ForcedResultMark $result={data.forcedResult} />}

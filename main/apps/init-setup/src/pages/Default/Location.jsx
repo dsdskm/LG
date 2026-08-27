@@ -19,6 +19,7 @@ import {
   ErrorText
 } from './styles'
 import { getOperationLocation, saveOperationLocation } from '@/apis/defaultSetup'
+import { advanceSetupProgress, SETUP_STEPS } from '@/utils/setupProgress'
 
 const itemId = (item) => String(item?.id ?? item?.buildingId ?? item?.floorId ?? item?.areaId ?? '')
 const itemName = (item) => item?.name ?? item?.buildingName ?? item?.floorName ?? item?.areaName ?? itemId(item)
@@ -69,6 +70,7 @@ const Location = () => {
     setErr('')
     try {
       await saveOperationLocation({ building, floor, area })
+      await advanceSetupProgress(SETUP_STEPS.ROBOT_INFO)
       navigate('/robot-info')
     } catch (e) {
       setErr(`운영 장소 저장 실패: ${e.message}`)
