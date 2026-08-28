@@ -22,7 +22,6 @@ import {
   ConnectionLineType,
   MarkerType,
   SelectionMode,
-  useStoreApi
 } from '@xyflow/react'
 
 import TaskEdge from './Edge/TaskEdge'
@@ -217,8 +216,6 @@ function InnerCanvas() {
   const rfRef = useRef<ReactFlowInstance<any, any> | null>(null)
   const didRestoreViewportRef = useRef(false)
 
-  const rfStore = useStoreApi()
-
   // AI 노드 추가 후 해당 노드들이 보이도록 fitView를 호출하는 전역 핸들러
   useEffect(() => {
     ;(window as any).__AI_TASKFLOW_FIT_NODES__ = (nodeIds: string[]) => {
@@ -241,8 +238,6 @@ function InnerCanvas() {
   const [showAlignGuideModal, setShowAlignGuideModal] = useState(false)
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
   const [showNoteDeleteConfirm, setShowNoteDeleteConfirm] = useState(false)
-  // Ctrl(⌘) 을 누르고 있는지 여부. 누르고 있는 동안에는 그룹 선택 사각형이 클릭을 통과시킨다.
-  const [multiSelectKeyDown, setMultiSelectKeyDown] = useState(false)
 
   const nodes = useFlowEditorStore((s) => s.nodes)
   const edges = useFlowEditorStore((s) => s.edges)
@@ -259,9 +254,6 @@ function InnerCanvas() {
 
   const selectNode = useFlowEditorStore((s) => s.selectNode)
   const selectEdge = useFlowEditorStore((s) => s.selectEdge)
-
-  const removeNodeFromSelection = useFlowEditorStore((s) => s.removeNodeFromSelection)
-  const removeEdgeFromSelection = useFlowEditorStore((s) => s.removeEdgeFromSelection)
 
   const applyNodesChange = useFlowEditorStore((s) => s.applyNodesChange)
   const applyEdgesChange = useFlowEditorStore((s) => s.applyEdgesChange)
@@ -325,69 +317,6 @@ function InnerCanvas() {
     if (flowMode !== 'tree') return
     useFlowEditorStore.getState().nodes.forEach((n) => updateNodeInternals(n.id))
   }, [edges, flowMode, updateNodeInternals])
-
-  // 그룹 선택이 확정되면 그룹 전체를 덮는 사각형(.react-flow__nodesselection-rect)이 생겨
-  // 그룹 안의 노드/엣지를 클릭해도 이벤트가 닿지 않는다.
-  // Ctrl(⌘) 을 누르고 있는 동안만 그 사각형을 클릭 통과 상태로 만들어 개별 선택 해제가 되게 한다.
-  useEffect(() => {
-    const syncFromEvent = (e: KeyboardEvent) => setMultiSelectKeyDown(e.ctrlKey || e.metaKey)
-    const clear = () => setMultiSelectKeyDown(false)
-
-    window.addEventListener('keydown', syncFromEvent)
-    window.addEventListener('keyup', syncFromEvent)
-    window.addEventListener('blur', clear)
-
-    return () => {
-      window.removeEventListener('keydown', syncFromEvent)
-      window.removeEventListener('keyup', syncFromEvent)
-      window.removeEventListener('blur', clear)
-    }
-  }, [])
-
-  /**
-   * 수정키(Ctrl/⌘) 상태를 마우스 이벤트로 보정한다.
-   *
-   * React Flow 는 ⌘ keydown 을 받으면 useKeyPress → React state → useEffect 를 거쳐
-   * store 의 multiSelectionActive 를 켠다. 이 경로가 passive effect 라 렌더가 밀리면 같이
-   * 밀리는데, 이 캔버스는 노드/속성 패널 렌더 부하가 커서 50ms 이상 지연되는 것을 확인했다.
-   * 그 사이에 클릭하면 handleNodeClick 이 아직 false 인 값을 읽어
-   * "추가 선택" 대신 "선택 갈아치우기" 로 동작한다.
-   *  (그 외에 blur·contextmenu 리셋, 이미 눌린 채 창이 포커스를 받는 경우도 같은 결과를 만든다)
-   *
-   * 마우스 이벤트는 항상 정확한 ctrlKey/metaKey 를 들고 오므로 이것을 정답으로 삼아
-   * 동기적으로 맞춰 준다. capture 로 걸어 React Flow 의 노드 핸들러(mousedown/click)보다
-   * 먼저 실행되게 하는 것이 핵심이다.
-   */
-  useEffect(() => {
-    // pointermove 는 초당 수십 번 오므로 React state 는 값이 바뀐 순간에만 건드린다.
-    let lastPressed: boolean | null = null
-
-    const reconcile = (event: PointerEvent) => {
-      const pressed = event.ctrlKey || event.metaKey
-
-      // React Flow 내부 상태. handleNodeClick 이 이 값으로 추가/갈아치우기를 판단한다.
-      // 키를 누르고 있는 중에도 React Flow 가 blur·contextmenu 로 이 값을 false 로 되돌릴 수
-      // 있으므로, 우리 캐시(lastPressed)가 아니라 매번 store 의 실제 값과 비교해야 한다.
-      if (rfStore.getState().multiSelectionActive !== pressed) {
-        rfStore.setState({ multiSelectionActive: pressed })
-      }
-
-      // 그룹 사각형 클릭 통과용 상태
-      if (pressed !== lastPressed) {
-        lastPressed = pressed
-        setMultiSelectKeyDown(pressed)
-      }
-    }
-
-    // pointermove 도 함께 본다: 클릭 전에 보정되어야 그룹 사각형이 통과 상태가 된다.
-    window.addEventListener('pointermove', reconcile, true)
-    window.addEventListener('pointerdown', reconcile, true)
-
-    return () => {
-      window.removeEventListener('pointermove', reconcile, true)
-      window.removeEventListener('pointerdown', reconcile, true)
-    }
-  }, [rfStore])
 
   const onInit: OnInit<any, any> = useCallback(
     (instance) => {
@@ -550,23 +479,26 @@ function InnerCanvas() {
     }
   }, [onRefreshContentsClick])
 
-  const onAlignClick = useCallback(() => {
-    if (!canAlign) {
-      setShowAlignGuideModal(true)
-      return
-    }
+  const onAlignClick = useCallback(
+    (direction: 'horizontal' | 'vertical') => {
+      if (!canAlign) {
+        setShowAlignGuideModal(true)
+        return
+      }
 
-    alignSelectedNodesAuto()
-
-    requestAnimationFrame(() => {
-      rfRef.current?.fitView({ padding: 0.15, duration: 250 })
+      alignSelectedNodesAuto(direction)
 
       requestAnimationFrame(() => {
-        const vp = rfRef.current?.getViewport()
-        if (vp) setViewport(vp)
+        rfRef.current?.fitView({ padding: 0.15, duration: 250 })
+
+        requestAnimationFrame(() => {
+          const vp = rfRef.current?.getViewport()
+          if (vp) setViewport(vp)
+        })
       })
-    })
-  }, [alignSelectedNodesAuto, canAlign, setViewport])
+    },
+    [alignSelectedNodesAuto, canAlign, setViewport]
+  )
 
   const requestDeleteSelectedNote = useCallback(
     (noteId?: string) => {
@@ -646,7 +578,6 @@ function InnerCanvas() {
     <>
       <CanvasWrapper
         ref={wrapperRef}
-        data-multiselect={multiSelectKeyDown}
         onDragOver={onDragOver}
         onDrop={onDrop}
         onDragOverCapture={(e) => e.preventDefault()}
@@ -694,11 +625,21 @@ function InnerCanvas() {
             type="button"
             theme="light"
             size="sm"
-            onClick={onAlignClick}
+            onClick={() => onAlignClick('horizontal')}
             aria-disabled={!canAlign}
-            title={!canAlign ? t('canvas.align.selectAtLeastTwo') : t('canvas.align.alignSelected')}
+            title={!canAlign ? t('canvas.align.selectAtLeastTwo') : '선택 노드를 가로로 정렬'}
           >
-            {t('canvas.align.button')}
+            가로 정렬
+          </Button>
+          <Button
+            type="button"
+            theme="light"
+            size="sm"
+            onClick={() => onAlignClick('vertical')}
+            aria-disabled={!canAlign}
+            title={!canAlign ? t('canvas.align.selectAtLeastTwo') : '선택 노드를 세로로 정렬'}
+          >
+            세로 정렬
           </Button>
         </AlignOverlay>
 
@@ -787,38 +728,19 @@ function InnerCanvas() {
               evt.stopPropagation()
               setSelectedNoteId(null)
 
-              // Ctrl(⌘) + 클릭 = 그룹 선택 토글. node.selected 토글은 React Flow 가 이미 처리했으므로
-              // 여기서는 "그룹에서 빠진" 경우만 잔여 단일 선택/연결 엣지를 정리한다.
-              if (evt.ctrlKey || evt.metaKey) {
-                const stillSelected = useFlowEditorStore
-                  .getState()
-                  .nodes.some((n) => String(n.id) === String(node.id) && n.selected)
-
-                if (!stillSelected) {
-                  removeNodeFromSelection(node.id)
-                  return
-                }
+              const isThisNodeCurrentlySelected = Boolean(node.selected) || selectedNodeId === node.id
+              if (!isThisNodeCurrentlySelected) {
+                selectNode(node.id)
               }
-
-              selectNode(node.id)
             }}
             onEdgeClick={(evt, edge) => {
               evt.stopPropagation()
               setSelectedNoteId(null)
 
-              // 노드와 동일하게 Ctrl(⌘) + 클릭으로 그룹에서 엣지 하나만 빼낼 수 있다.
-              if (evt.ctrlKey || evt.metaKey) {
-                const stillSelected = useFlowEditorStore
-                  .getState()
-                  .edges.some((e) => String(e.id) === String(edge.id) && e.selected)
-
-                if (!stillSelected) {
-                  removeEdgeFromSelection(edge.id)
-                  return
-                }
+              const isThisEdgeCurrentlySelected = Boolean(edge.selected) || selectedEdgeId === edge.id
+              if (!isThisEdgeCurrentlySelected) {
+                selectEdge(edge.id)
               }
-
-              selectEdge(edge.id)
             }}
             onPaneClick={() => {
               selectNode(null)

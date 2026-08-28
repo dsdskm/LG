@@ -2508,7 +2508,8 @@ export default function TaskFlowCanvasPage() {
       }
 
       if (type === 'align') {
-        alignSelectedNodesAuto()
+        const direction = String(command?.direction ?? '').trim().toLowerCase()
+        alignSelectedNodesAuto(direction === 'vertical' || direction === '세로' ? 'vertical' : 'horizontal')
         dispatchResult(true)
         return
       }

@@ -207,6 +207,88 @@ function makeSnapshot(nodes: RFNode[], edges: RFEdge[], viewport: RFViewport, fl
   return cloneSnapshot({ nodes, edges, viewport, flowMode })
 }
 
+function normalizeTaskName(value?: string | null): string {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, ' ')
+    .replace(/\s+/g, ' ')
+}
+
+function isIfThenElseTaskNode(node: RFNode | undefined | null): boolean {
+  if (!node) return false
+
+  const taskType = String(node.data?.taskType ?? '').toUpperCase()
+  const taskName = normalizeTaskName(
+    (node.data as Record<string, any> | undefined)?.taskName ??
+      (node.data as Record<string, any> | undefined)?.label ??
+      (node.data as Record<string, any> | undefined)?.name
+  )
+  return taskType === 'CONTROL' && (taskName === 'ifthenelse' || taskName === 'if then else' || taskName === 'if_then_else')
+}
+
+function syncIfThenElseBranchRoles(
+  parentNodeId: string,
+  nodes: RFNode[],
+  edges: RFEdge[],
+  flowMode: FlowMode
+): Record<string, string> | null {
+  const parentNode = nodes.find((node) => String(node.id) === String(parentNodeId))
+  if (!parentNode || !isIfThenElseTaskNode(parentNode)) return null
+
+  const branchRoleOrder = ['condition', 'success', 'failure'] as const
+  const validRoleSet = new Set(branchRoleOrder)
+
+  const currentRoles = (() => {
+    const raw = (parentNode.data?.properties as Record<string, any> | undefined)?.ifthenelse_branch_roles
+    if (!raw || typeof raw !== 'object') return {}
+
+    const next: Record<string, string> = {}
+    for (const [targetId, role] of Object.entries(raw)) {
+      const normalized = typeof role === 'string' ? role.trim().toLowerCase() : ''
+      if (normalized && validRoleSet.has(normalized as (typeof branchRoleOrder)[number])) {
+        next[String(targetId)] = normalized
+      }
+    }
+    return next
+  })()
+
+  const sortedLeftChildren = Array.from(
+    new Set(
+      edges
+        .filter(
+          (edge) => String(edge.source) === String(parentNodeId) && String(edge.sourceHandle ?? '') === 'left'
+        )
+        .map((edge) => String(edge.target))
+    )
+  )
+    .map((targetId) => nodes.find((node) => String(node.id) === targetId))
+    .filter((node): node is RFNode => Boolean(node))
+    .sort((a, b) => {
+      const aPos = { x: Number(a.position?.x ?? 0), y: Number(a.position?.y ?? 0) }
+      const bPos = { x: Number(b.position?.x ?? 0), y: Number(b.position?.y ?? 0) }
+
+      if (flowMode === 'tree') {
+        return aPos.x - bPos.x || aPos.y - bPos.y
+      }
+
+      return aPos.y - bPos.y || aPos.x - bPos.x
+    })
+    .map((node) => String(node.id))
+
+  const nextRoles: Record<string, string> = { ...currentRoles }
+  const usedRoles = new Set(Object.values(nextRoles))
+  const missingRoles = branchRoleOrder.filter((role) => !usedRoles.has(role))
+
+  for (const targetId of sortedLeftChildren) {
+    if (nextRoles[targetId]) continue
+    const nextRole = missingRoles.shift()
+    if (nextRole) nextRoles[targetId] = nextRole
+  }
+
+  return Object.keys(nextRoles).length > 0 ? nextRoles : null
+}
+
 function pushHistory(historyPast: FlowSnapshot[], prev: FlowSnapshot) {
   const nextPast = [...historyPast, prev].slice(-HISTORY_LIMIT)
 
@@ -706,55 +788,47 @@ function clusterNodesByCenter(
   return indexById
 }
 
-// 선택 노드를 행/열 구조를 유지한 채 균등 간격 격자로 재배치할 위치를 계산한다.
-// (반대축 좌표를 평균값으로 통일하면 노드들이 한 줄로 뭉치므로, 행·열 군집을 유지한다)
-function computeAlignedGridPositions(selectedNodes: RFNode[]): Map<string, XYPosition> {
-  const centerX = (n: RFNode) => Number(n.position?.x ?? 0) + getNodeWidth(n) / 2
-  const centerY = (n: RFNode) => Number(n.position?.y ?? 0) + getNodeHeight(n) / 2
+// 기준 노드 기준으로 한 축만 맞추는 정렬.
+// - 가로 정렬: 가장 왼쪽 노드를 기준으로 Y 좌표만 맞춘다. (상하 이동만)
+// - 세로 정렬: 가장 위쪽 노드를 기준으로 X 좌표만 맞춘다. (좌우 이동만)
+// 기준 노드는 그대로 고정하고 나머지 노드만 기준선에 맞춰 이동한다.
+function computeAlignedGridPositions(
+  selectedNodes: RFNode[],
+  direction: 'horizontal' | 'vertical' = 'horizontal'
+): Map<string, XYPosition> {
+  if (selectedNodes.length === 0) return new Map()
 
-  // 행/열 군집 임계값: 노드 크기 기준 (이 거리 안의 노드는 같은 행/열로 본다)
-  const avgWidth = selectedNodes.reduce((s, n) => s + getNodeWidth(n), 0) / selectedNodes.length
-  const avgHeight = selectedNodes.reduce((s, n) => s + getNodeHeight(n), 0) / selectedNodes.length
-  const rowThreshold = Math.max(30, avgHeight * 0.6)
-  const colThreshold = Math.max(40, avgWidth * 0.6)
+  const anchor = [...selectedNodes].sort((a, b) => {
+    if (direction === 'horizontal') {
+      return Number(a.position?.x ?? 0) - Number(b.position?.x ?? 0)
+    }
+    return Number(a.position?.y ?? 0) - Number(b.position?.y ?? 0)
+  })[0]
 
-  const rowIndexById = clusterNodesByCenter(selectedNodes, centerY, rowThreshold)
-  const colIndexById = clusterNodesByCenter(selectedNodes, centerX, colThreshold)
-
-  const numRows = Math.max(...selectedNodes.map((n) => rowIndexById.get(n.id) ?? 0)) + 1
-  const numCols = Math.max(...selectedNodes.map((n) => colIndexById.get(n.id) ?? 0)) + 1
-
-  // 각 열 폭 = 그 열 노드들의 최대 폭, 각 행 높이 = 그 행 노드들의 최대 높이
-  const colWidth = new Array<number>(numCols).fill(0)
-  const rowHeight = new Array<number>(numRows).fill(0)
-  for (const node of selectedNodes) {
-    const ci = colIndexById.get(node.id) ?? 0
-    const ri = rowIndexById.get(node.id) ?? 0
-    colWidth[ci] = Math.max(colWidth[ci], getNodeWidth(node))
-    rowHeight[ri] = Math.max(rowHeight[ri], getNodeHeight(node))
-  }
-
-  // 격자 시작점은 현재 선택 영역의 좌상단
-  const startX = Math.min(...selectedNodes.map((n) => Number(n.position?.x ?? 0)))
-  const startY = Math.min(...selectedNodes.map((n) => Number(n.position?.y ?? 0)))
-
-  const colX = new Array<number>(numCols).fill(0)
-  for (let j = 0; j < numCols; j++) {
-    colX[j] = j === 0 ? startX : colX[j - 1] + colWidth[j - 1] + ALIGN_GAP_X
-  }
-  const rowY = new Array<number>(numRows).fill(0)
-  for (let i = 0; i < numRows; i++) {
-    rowY[i] = i === 0 ? startY : rowY[i - 1] + rowHeight[i - 1] + ALIGN_GAP_Y
-  }
+  const anchorX = Number(anchor.position?.x ?? 0)
+  const anchorY = Number(anchor.position?.y ?? 0)
 
   const positionById = new Map<string, XYPosition>()
+  positionById.set(anchor.id, { x: anchorX, y: anchorY })
+
   for (const node of selectedNodes) {
-    const ci = colIndexById.get(node.id) ?? 0
-    const ri = rowIndexById.get(node.id) ?? 0
-    // 셀 안에서 가운데 정렬
-    const x = Math.round(colX[ci] + (colWidth[ci] - getNodeWidth(node)) / 2)
-    const y = Math.round(rowY[ri] + (rowHeight[ri] - getNodeHeight(node)) / 2)
-    positionById.set(node.id, { x, y })
+    if (node.id === anchor.id) continue
+
+    const currentX = Number(node.position?.x ?? 0)
+    const currentY = Number(node.position?.y ?? 0)
+
+    if (direction === 'horizontal') {
+      positionById.set(node.id, {
+        x: currentX,
+        y: anchorY
+      })
+      continue
+    }
+
+    positionById.set(node.id, {
+      x: anchorX,
+      y: currentY
+    })
   }
 
   return positionById
@@ -823,7 +897,9 @@ type FlowEditorState = {
   selectEdge: (id: string | null) => void
   selectPalette: (item: PaletteItem | null) => void
 
-  // Ctrl(⌘) + 클릭으로 그룹 선택에서 노드/엣지 하나만 빼낸다.
+  // Ctrl(⌘) + 클릭으로 그룹 선택에서 노드/엣지 추가·제외한다.
+  addNodeToSelection: (id: string) => void
+  addEdgeToSelection: (id: string) => void
   removeNodeFromSelection: (id: string) => void
   removeEdgeFromSelection: (id: string) => void
 
@@ -881,7 +957,7 @@ type FlowEditorState = {
   closeDeleteEdgeConfirm: () => void
   confirmDeleteSelectedEdge: () => void
 
-  alignSelectedNodesAuto: () => void
+  alignSelectedNodesAuto: (direction?: 'horizontal' | 'vertical') => void
 
   // 표시 방향 모드 전환 (전환 시 자동 레이아웃 적용)
   setFlowMode: (mode: FlowMode) => void
@@ -1107,6 +1183,32 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
       selectedEdgeId: null,
       selectedPalette: item ? buildNodeDataFromPaletteItem(item) : null
     }),
+
+  // 그룹 선택에 노드 하나를 추가한다.
+  addNodeToSelection: (id) => {
+    const targetId = String(id)
+
+    set((state) => ({
+      nodes: state.nodes.map((node) =>
+        String(node.id) === targetId ? { ...node, selected: true } : node
+      ),
+      selectedNodeId: state.selectedNodeId === targetId ? state.selectedNodeId : null,
+      selectedEdgeId: null
+    }))
+  },
+
+  // 그룹 선택에 엣지 하나를 추가한다.
+  addEdgeToSelection: (id) => {
+    const targetId = String(id)
+
+    set((state) => ({
+      edges: state.edges.map((edge) =>
+        String(edge.id) === targetId ? { ...edge, selected: true } : edge
+      ),
+      selectedEdgeId: state.selectedEdgeId === targetId ? state.selectedEdgeId : null,
+      selectedNodeId: null
+    }))
+  },
 
   // 그룹 선택에서 노드 하나만 제외한다. (나머지 그룹은 그대로 유지)
   // - 그룹 상태(node.selected) 해제는 React Flow 기본 동작이 이미 처리하지만,
@@ -1386,8 +1488,9 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
   },
 
   connectEdge: (connection) => {
+    const nodes = get().nodes
     const edges = get().edges
-    const denyReason = getConnectDenyReason(get().nodes, edges, connection)
+    const denyReason = getConnectDenyReason(nodes, edges, connection)
     if (denyReason) return denyReason
 
     const edgeWithArrow: RFEdge = {
@@ -1416,12 +1519,38 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
     }
 
     const next = addEdge(edgeWithArrow, edges)
-    const prev = makeSnapshot(get().nodes, get().edges, get().viewport, get().flowMode)
+    const prev = makeSnapshot(nodes, edges, get().viewport, get().flowMode)
 
-    set((state) => ({
-      edges: next,
-      ...pushHistory(state.historyPast, prev)
-    }))
+    const nextBranchRoles =
+      connection.source && connection.sourceHandle === 'left'
+        ? syncIfThenElseBranchRoles(connection.source, nodes, next, get().flowMode)
+        : null
+
+    set((state) => {
+      const nextNodes = nextBranchRoles
+        ? state.nodes.map((node) => {
+            if (String(node.id) !== String(connection.source)) return node
+
+            const previousProperties = (node.data?.properties ?? {}) as Record<string, unknown>
+            return {
+              ...node,
+              data: {
+                ...node.data,
+                properties: {
+                  ...previousProperties,
+                  ifthenelse_branch_roles: nextBranchRoles
+                }
+              }
+            }
+          })
+        : state.nodes
+
+      return {
+        nodes: nextNodes,
+        edges: next,
+        ...pushHistory(state.historyPast, prev)
+      }
+    })
 
     return null
   },
@@ -1707,14 +1836,14 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
     get().deleteSelectedEdge()
   },
 
-  alignSelectedNodesAuto: () => {
+  alignSelectedNodesAuto: (direction = 'horizontal') => {
     const { nodes, edges, viewport } = get()
 
     const selectedNodes = nodes.filter((node) => node.selected)
     if (selectedNodes.length < 2) return
 
     const prev = makeSnapshot(nodes, edges, viewport, get().flowMode)
-    const positionById = computeAlignedGridPositions(selectedNodes)
+    const positionById = computeAlignedGridPositions(selectedNodes, direction)
 
     const nextNodes = nodes.map((node) => {
       const position = positionById.get(node.id)
