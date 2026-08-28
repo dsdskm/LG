@@ -847,9 +847,6 @@ importers:
       '@react-three/fiber':
         specifier: ^9.5.0
         version: 9.5.0(@types/react@19.2.15)(immer@11.1.4)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(three@0.182.0)
-      '@repo/ai':
-        specifier: workspace:*
-        version: link:../../packages/ai
       '@repo/apis':
         specifier: workspace:*
         version: link:../../packages/apis

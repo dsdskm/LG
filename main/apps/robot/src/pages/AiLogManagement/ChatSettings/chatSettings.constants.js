@@ -14,6 +14,7 @@ export const APP_TAB = {
     PROMPT: 'prompt',
     RAG: 'rag',
     RULE: 'rule',
+    HISTORY: 'history',
 }
 
 export const APP_TABS = [
@@ -40,6 +41,10 @@ export const APP_TABS = [
     {
         key: APP_TAB.RULE,
         label: 'Rule 설정',
+    },
+    {
+        key: APP_TAB.HISTORY,
+        label: '채팅 내역',
     },
 ]
 

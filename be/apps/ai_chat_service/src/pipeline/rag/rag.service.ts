@@ -8,7 +8,8 @@ import type { LlmClient } from '../../llm/llm.types'
 import type { RagChunk } from './rag.docs'
 import type { ChatTurn, RagScoreEntry } from '../pipeline.types'
 import { getPromptStore } from '../../features/chat/service/prompt-store.service'
-import { logLlmPromptMeta } from '../../utils/utils'
+import { CHAT_PROMPT_TYPE } from '../../features/chat/prompt-types'
+import { logLlmPromptMeta, safeJsonParse } from '../../utils/utils'
 
 /** 한글/영문/숫자 토큰 추출(2글자 이상). */
 function tokenize(text: string): string[] {
@@ -95,6 +96,80 @@ export class RagService {
     private readonly selection: RagSelectionConfig,
     private readonly logger: RagLogger,
   ) { }
+
+  private getRagPrompt(intentType?: RagIntentType) {
+    const promptType = intentType === 'action' ? CHAT_PROMPT_TYPE.ragAction : CHAT_PROMPT_TYPE.ragInfo
+    const meta = getPromptStore()?.getPromptMeta('common', promptType)
+    return { promptType, meta, prompt: meta?.enabled === false ? '' : meta?.prompt ?? '' }
+  }
+
+  private readRagResponseText(value: string | undefined): string {
+    const parsed = safeJsonParse(String(value ?? '').trim()) as Record<string, unknown> | null
+    return typeof parsed?.text === 'string' ? parsed.text.trim() : ''
+  }
+
+  private copiesDocumentText(answer: string, documentBodies: string[]): boolean {
+    const answerComparable = String(answer ?? '').replace(/\s+/g, '').trim()
+    if (!answerComparable) return false
+
+    return documentBodies.some((body) => {
+      const bodyComparable = String(body ?? '').replace(/\s+/g, '').trim()
+      return bodyComparable.length > 0 && answerComparable === bodyComparable
+    })
+  }
+
+  private async generateRagResponse(
+    system: string,
+    message: string,
+    history: ChatTurn[],
+    documentBodies: string[],
+    reqId: string,
+  ): Promise<string> {
+    const documentLength = documentBodies.reduce(
+      (total, body) => total + String(body ?? '').length,
+      0,
+    )
+    const historyLength = history.reduce(
+      (total, turn) => total + String(turn.content ?? '').length,
+      0,
+    )
+    const messageLength = String(message ?? '').length
+    const totalRequestLength = system.length + historyLength + messageLength
+    console.warn(
+      `[rag-answer] [reqId=${reqId}] requestLength=${totalRequestLength} systemLength=${system.length} documentLength=${documentLength} documentCount=${documentBodies.length} historyLength=${historyLength} messageLength=${messageLength}`,
+    )
+    const first = await this.client.generateContent({
+      messages: [
+        { role: 'system', content: system },
+        ...history.map((turn) => ({ role: turn.role, content: turn.content })),
+        { role: 'user', content: message },
+      ],
+      maxOutputTokens: this.maxOutputTokens,
+    })
+    const firstText = this.readRagResponseText(first.text)
+    if (firstText && !this.copiesDocumentText(firstText, documentBodies)) return firstText
+
+    const retryInstruction = '이전 응답 형식이 올바르지 않습니다. RAG 프롬프트의 최종 JSON 형식만 사용해 다시 답변하세요.'
+    console.warn(
+      `[rag-answer] [reqId=${reqId}] retrying reason=${firstText ? 'verbatim-document-text' : 'invalid-json-response'} retryRequestLength=${totalRequestLength + String(first.text ?? '').length + retryInstruction.length} previousResponseLength=${String(first.text ?? '').length}`,
+    )
+
+    const retry = await this.client.generateContent({
+      messages: [
+        { role: 'system', content: system },
+        ...history.map((turn) => ({ role: turn.role, content: turn.content })),
+        { role: 'user', content: message },
+        { role: 'assistant', content: first.text ?? '' },
+        { role: 'user', content: retryInstruction },
+      ],
+      maxOutputTokens: this.maxOutputTokens,
+    })
+    const retryText = this.readRagResponseText(retry.text)
+    if (retryText && !this.copiesDocumentText(retryText, documentBodies)) return retryText
+
+    console.warn(`[rag-answer] [reqId=${reqId}] rejected reason=${retryText ? 'verbatim-document-text' : 'invalid-json-response'}`)
+    return ''
+  }
 
   private stageLog(stage: string, status: string, reason: string, reqId = '-') {
     void stage
@@ -263,6 +338,28 @@ export class RagService {
     return results
   }
 
+  private collectIntentChunks(
+    collectionNames: string[],
+    intentType?: RagIntentType,
+  ): Array<{ collection: string; chunk: RagChunk }> {
+    const results: Array<{ collection: string; chunk: RagChunk }> = []
+    const seenChunkIds = new Set<string>()
+
+    for (const collectionName of collectionNames) {
+      const collection = this.resolveCollection(collectionName)
+      if (!collection) continue
+
+      for (const chunk of collection.chunks) {
+        const chunkId = String(chunk.id ?? '').trim()
+        if (!chunkId || seenChunkIds.has(chunkId) || !this.supportsIntent(chunk, intentType)) continue
+        seenChunkIds.add(chunkId)
+        results.push({ collection: collectionName, chunk })
+      }
+    }
+
+    return results
+  }
+
   async answerFromChunkKeys(
     collectionNames: string | string[],
     chunkKeys: string[],
@@ -293,19 +390,21 @@ export class RagService {
       .join('\n\n')
 
     const promptStore = getPromptStore()
-    const commonInstructionMeta = promptStore?.getPromptMeta('common', 'instruction')
-    const commonRagMeta = promptStore?.getPromptMeta('common', 'rag')
+    const commonInstructionMeta = promptStore?.getPromptMeta('common', CHAT_PROMPT_TYPE.instruction)
+    const { promptType, meta: commonRagMeta, prompt: commonRag } = this.getRagPrompt(options?.intentType)
     const commonInstruction = commonInstructionMeta?.prompt ?? ''
-    const commonRag = commonRagMeta?.prompt ?? ''
     const system = [commonInstruction, commonRag, context].filter(Boolean).join('\n\n')
 
     this.logger.log?.(
       `================= [3-3-2단계:RAG_청크강제폴백] [reqId=${reqId}] chunkKeys=${JSON.stringify(targetChunkKeys)} matchedChunks=${JSON.stringify(usedChunkIds)} collections=${JSON.stringify(uniqueCollections)}`,
     )
+    this.logger.log(
+      `######## 적용 프롬프트 아이디 ########\n[reqId=${reqId}] [stage=rag-answer-from-chunk-keys]\n- common/instruction: ${commonInstructionMeta?.id ?? '-'}\n- common/${promptType}: ${commonRagMeta?.id ?? '-'}\n######################################`,
+    )
 
     logLlmPromptMeta({
       stage: 'rag-answer-from-chunk-keys',
-      promptType: 'rag-answer',
+      promptType,
       route: usedCollection ?? null,
       appKey: String(usedCollection ?? '').split('/').filter(Boolean)[0] || null,
       promptId: commonRagMeta?.id ?? commonInstructionMeta?.id ?? null,
@@ -317,16 +416,13 @@ export class RagService {
       reqId,
     })
 
-    const res = await this.client.generateContent({
-      messages: [
-        { role: 'system', content: system },
-        ...history.map((t) => ({ role: t.role, content: t.content })),
-        { role: 'user', content: message },
-      ],
-      maxOutputTokens: this.maxOutputTokens,
-    })
-
-    const text = (res.text ?? '').trim()
+    const text = await this.generateRagResponse(
+      system,
+      message,
+      history,
+      matchedChunks.map((row) => row.chunk.body),
+      reqId,
+    )
     return {
       text,
       usedCollection,
@@ -338,8 +434,7 @@ export class RagService {
 
   /**
    * 문서 근거로 답변.
-   * collectionNames 를 순서대로 검색해(탭 → 공통) 처음으로 청크가 잡히는 컬렉션을 쓴다.
-   * 어디서도 못 찾으면 빈 텍스트를 반환하고 상위 계층에서 LLM 기본 응답으로 처리한다.
+  * 현재 화면/앱 및 공통 범위의 해당 인텐트 문서를 모두 LLM에 전달한다.
    */
   async answer(
     collectionNames: string | string[],
@@ -355,93 +450,28 @@ export class RagService {
     this.logger.log?.(
       `================= [3-1단계:RAG_컬렉션후보_추적] [reqId=${reqId}] names=${JSON.stringify(names)} messageLen=${String(message ?? '').length} historyTurns=${history.length}`,
     )
-    const evaluated = names
-      .map((name) => this.evaluateCollection(name, message, options?.intentType))
-      .filter((item): item is RagCollectionEval => Boolean(item))
-
-    const ragScores: RagScoreEntry[] = evaluated.map((item) => ({
-      collection: item.collection,
-      topScore: item.topScore,
-      adjustedScore: item.adjustedScore,
-      hitCount: item.hitCount,
-      topChunks: item.topChunks,
-      topChunkIds: item.topChunkIds,
-      relaxed: item.relaxed,
-    }))
-
-    if (this.logger?.log) {
-      const ranking = ragScores
-        .sort((a, b) => Number(b.adjustedScore ?? 0) - Number(a.adjustedScore ?? 0))
-        .map((item) => `${String(item.collection ?? '-')}(${Number(item.topScore ?? 0).toFixed(2)}/${Number(item.adjustedScore ?? 0).toFixed(2)})`)
-        .join(' -> ')
-      this.logger.log(
-        `[ragService][debug] request=${String(message ?? '').slice(0, 120)} intent=${intentLabel ?? 'all'} candidates=${ragScores.length} ranking=${ranking || 'none'}`,
-      )
+    const matchedChunks = this.collectIntentChunks(names, options?.intentType)
+    if (matchedChunks.length === 0) {
+      this.stageLog('3-3단계:RAG_탐색결과', 'empty', '해당 인텐트의 활성 RAG 문서 없음', reqId)
+      return { text: '', usedChunks: [], ragScores: [] }
     }
 
-    for (const item of evaluated) {
-      const resolvedCollection = this.resolveCollection(item.collection)
-      this.stageLog(
-        '3-1-1단계:RAG_컬렉션상태',
-        resolvedCollection ? 'ready' : 'missing',
-        `collection=${item.collection} 존재 여부 확인`,
-        reqId,
-      )
-      this.stageLog(
-        '3-2단계:RAG_컬렉션탐색',
-        item.hitCount > 0 ? 'matched' : 'miss',
-        `collection=${item.collection} 탐색 완료(hitCount=${item.hitCount})`,
-        reqId,
-      )
-      this.logger.log?.(
-        `================= [3-2단계:RAG_컬렉션탐색_추적] [reqId=${reqId}] collection=${item.collection} intent=${options?.intentType ?? 'any'} topScore=${item.topScore} adjustedScore=${item.adjustedScore} hits=${JSON.stringify(item.hits.map((row) => ({ id: row.chunk.id, score: row.score })))}`,
-      )
-      if (item.relaxed) {
-        this.stageLog(
-          '3-2-1단계:RAG_의도완화재탐색',
-          'matched',
-          `collection=${item.collection} intent=${options?.intentType} 조건 미일치로 무의도 재탐색(hitCount=${item.hitCount})`,
-          reqId,
-        )
-      }
-    }
-
-    const eligible = evaluated.filter((item) => item.topScore >= this.selection.minScore)
-    const ranked = (eligible.length > 0 ? eligible : []).sort((a, b) => {
-      if (b.adjustedScore !== a.adjustedScore) return b.adjustedScore - a.adjustedScore
-      if (b.topScore !== a.topScore) return b.topScore - a.topScore
-      return a.collection.localeCompare(b.collection)
-    })
-
-    const selected = ranked[0]
-    if (!selected) {
-      this.stageLog('3-3단계:RAG_탐색결과', 'empty', `모든 컬렉션이 임계 스코어(${this.selection.minScore}) 미만`, reqId)
-      return { text: '', usedChunks: [], ragScores }
-    }
-
-    const hits = selected.hits
-    const usedCollection = selected.collection
-    const primaryChunkKey = hits[0]?.chunk?.id
-
-    const referencedChunks = hits.map((h) => `${h.chunk.id}:${h.chunk.title}`).join(', ')
-    const detailedReferencedChunks = hits
-      .map((h) => `${h.chunk.id}(${h.chunk.title}, raw=${Number(h.score ?? 0).toFixed(2)})`)
-      .join(' | ')
+    const usedCollection = matchedChunks[0]?.collection
+    const primaryChunkKey = matchedChunks[0]?.chunk.id
+    const usedChunkIds = matchedChunks.map((row) => row.chunk.id)
+    const referencedChunks = matchedChunks.map((row) => `${row.chunk.id}:${row.chunk.title}`).join(', ')
     this.logger.log(
-      `================= [3-3-1단계:RAG_참조청크] [reqId=${reqId}] status=selected reason=collection=${usedCollection ?? '-'} referencedChunks=[${referencedChunks}] detailed=[${detailedReferencedChunks || 'none'}]`,
+      `================= [3-3-1단계:RAG_참조청크] [reqId=${reqId}] status=selected reason=all-documents intent=${intentLabel} collections=${JSON.stringify(names)} referencedChunks=[${referencedChunks}]`,
     )
 
-    const collection = usedCollection ? this.resolveCollection(usedCollection) : undefined
-
-    const context = hits
-      .map((h, i) => `[문서 ${i + 1}] ${h.chunk.title}\n${h.chunk.body}`)
+    const context = matchedChunks
+      .map((row, index) => `[문서 ${index + 1}] ${row.chunk.title}\n${row.chunk.body}`)
       .join('\n\n')
 
     const promptStore = getPromptStore()
-    const commonInstructionMeta = promptStore?.getPromptMeta('common', 'instruction')
-    const commonRagMeta = promptStore?.getPromptMeta('common', 'rag')
+    const commonInstructionMeta = promptStore?.getPromptMeta('common', CHAT_PROMPT_TYPE.instruction)
+    const { promptType, meta: commonRagMeta, prompt: commonRag } = this.getRagPrompt(options?.intentType)
     const commonInstruction = commonInstructionMeta?.prompt ?? ''
-    const commonRag = commonRagMeta?.prompt ?? ''
 
     const ragSystem = context
 
@@ -450,18 +480,24 @@ export class RagService {
     this.stageLog(
       '3-4단계:RAG_프롬프트생성',
       'ready',
-      `collection=${usedCollection ?? '-'} 근거 ${hits.length}개로 프롬프트 구성`,
+      `전체 범위 문서 ${matchedChunks.length}개로 프롬프트 구성`,
       reqId,
     )
     this.logger.log?.(
       `================= [3-4단계:RAG_프롬프트생성_추적] [reqId=${reqId}] commonInstructionApplied=${Boolean(commonInstruction)} systemLen=${system.length}`,
+    )
+    this.logger.log(
+      `######## 적용 프롬프트 아이디 ########\n[reqId=${reqId}] [stage=rag-answer]\n- common/instruction: ${commonInstructionMeta?.id ?? '-'}\n- common/${promptType}: ${commonRagMeta?.id ?? '-'}\n######################################`,
+    )
+    this.logger.log(
+      `[rag-diagnosis] [reqId=${reqId}] stage=prompt commonInstructionPromptId=${commonInstructionMeta?.id ?? '-'} ${promptType}PromptId=${commonRagMeta?.id ?? '-'} message=${JSON.stringify(message)} selectedChunks=${JSON.stringify(matchedChunks.map((row) => ({ collection: row.collection, id: row.chunk.id, title: row.chunk.title, body: row.chunk.body })))} commonInstruction=${JSON.stringify(commonInstruction)} ragPrompt=${JSON.stringify(commonRag)} system=${JSON.stringify(system)}`,
     )
 
     // this.logger.log(`[ragService] system ${system}`)
 
     logLlmPromptMeta({
       stage: 'rag-answer',
-      promptType: 'rag-answer',
+      promptType,
       route: usedCollection ?? null,
       appKey: String(usedCollection ?? '').split('/').filter(Boolean)[0] || null,
       promptId: commonRagMeta?.id ?? commonInstructionMeta?.id ?? null,
@@ -473,16 +509,13 @@ export class RagService {
       reqId,
     })
 
-    const res = await this.client.generateContent({
-      messages: [
-        { role: 'system', content: system },
-        ...history.map((t) => ({ role: t.role, content: t.content })),
-        { role: 'user', content: message },
-      ],
-      maxOutputTokens: this.maxOutputTokens,
-    })
-
-    const text = (res.text ?? '').trim()
+    const text = await this.generateRagResponse(
+      system,
+      message,
+      history,
+      matchedChunks.map((row) => row.chunk.body),
+      reqId,
+    )
     this.stageLog(
       '3-6단계:RAG_응답생성완료',
       text ? 'completed' : 'empty',
@@ -490,17 +523,20 @@ export class RagService {
       reqId,
     )
     this.logger.log(
-      `================= [3-6-1단계:RAG_참조청크_최종] [reqId=${reqId}] status=used reason=collection=${usedCollection ?? '-'} usedChunkIds=[${hits.map((h) => h.chunk.id).join(', ')}]`,
+      `================= [3-6-1단계:RAG_참조청크_최종] [reqId=${reqId}] status=used reason=all-documents usedChunkIds=[${usedChunkIds.join(', ')}]`,
     )
     this.logger.log?.(
-      `================= [3-6단계:RAG_응답생성완료_추적] [reqId=${reqId}] textLength=${text.length} usedChunks=${JSON.stringify(hits.map((h) => h.chunk.id))}`,
+      `================= [3-6단계:RAG_응답생성완료_추적] [reqId=${reqId}] textLength=${text.length} usedChunks=${JSON.stringify(usedChunkIds)}`,
+    )
+    this.logger.log(
+      `[rag-diagnosis] [reqId=${reqId}] stage=llm-response text=${JSON.stringify(text)}`,
     )
     return {
       text,
       usedCollection,
       primaryChunkKey,
-      usedChunks: hits.map((h) => h.chunk.id),
-      ragScores,
+      usedChunks: usedChunkIds,
+      ragScores: [],
     }
   }
 }

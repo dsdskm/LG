@@ -174,6 +174,31 @@ if [[ "$MODE" == "prd" ]]; then
 fi
 
 # (2) DB 시작
+cleanup_stale_docker_containers() {
+  local names=(
+    "event-receiver-pg"
+    "config-manager-pg"
+    "event-analyzer-pg"
+    "action-runner-pg"
+    "report-manager-pg"
+    "mcp-tools-pg"
+    "ai-chat-service-pg"
+  )
+
+  for name in "${names[@]}"; do
+    if docker ps -a --format '{{.Names}}' | grep -Fxq "$name"; then
+      echo "[dev-run] removing stale Docker container: $name"
+      docker rm -f "$name" >/dev/null 2>&1 || true
+    fi
+  done
+}
+
+# DB 컨테이너는 볼륨 없이 생성되므로 컨테이너를 제거하면 데이터도 함께 삭제된다.
+# 루트의 ./run_be.sh -f 요청에서만 명시적으로 초기화한다.
+if [[ "${RESET_DB_CONTAINERS:-0}" == "1" ]]; then
+  cleanup_stale_docker_containers
+fi
+
 echo "[dev-run] starting DB..."
 ./scripts/db/db.sh
 
