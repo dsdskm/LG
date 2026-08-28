@@ -5,7 +5,7 @@ export const Container = styled.div`
   flex-direction: column;
   gap: 12px;
   padding: 12px;
-  background: #f7f8fb;
+  background: transparent;
   min-height: 100%;
 `
 
@@ -13,7 +13,8 @@ export const Header = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
+  margin-bottom: 8px;
 `
 
 export const HeaderLeft = styled.div`
@@ -108,12 +109,14 @@ export const SummaryCardTitle = styled.div`
   font-size: 14px;
   font-weight: 600;
   color: #374151;
+  line-height: 1.5;
 `
 
 export const SummaryCardHeaderRight = styled.div`
   color: #4b5563;
   font-size: 14px;
   font-weight: 700;
+  line-height: 1.5;
 `
 
 export const SummaryValueStrong = styled.span`
@@ -125,6 +128,7 @@ export const SummaryTable = styled.table`
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
+  background: #ffffff;
 
   tr {
     height: 28px; /* 44px → ~28px (py-1.5 + text-xs) */
@@ -135,7 +139,7 @@ export const SummaryTable = styled.table`
     padding: 0 16px; /* 6px → 0 (수직 패딩 제거) */
     border-bottom: 1px solid #f9fafb; /* #edf1f5 → gray-50 */
     font-size: 14px;
-    line-height: 1.4;
+    line-height: 1.5;
     vertical-align: middle;
   }
 

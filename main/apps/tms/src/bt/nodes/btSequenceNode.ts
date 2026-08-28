@@ -11,5 +11,6 @@ export const sequenceNodeName = 'sequence' as const
 export type BtSequenceNode = {
   kind: typeof sequenceNodeType
   name: string
+  attrs?: Record<string, string>
   children: BtAstNode[]
 }

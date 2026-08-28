@@ -314,30 +314,33 @@ const RobotDetailPage = () => {
         <div
           style={{
             textAlign: 'start',
-            border: '2px solid #ebedf0',
+            border: '1px solid #ebedf0',
             borderRadius: '8px',
-            backgroundColor: 'white',
+            backgroundColor: '#ffffff',
             marginBottom: '24px',
-            padding: '24px',
-            display: 'flex', // 추가
-            flexDirection: 'column', // 추가
-            gap: '8px' // 추가 — 줄 간격
+            padding: '20px 24px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            fontSize: '14px',
+            lineHeight: '1.5',
+            color: '#374151'
           }}
         >
-          <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', lineHeight: '1.5' }}>
             <span>상태 : </span>
             <Activity size={14} color={isStandby ? '#16a34a' : '#9ca3af'} />
             <span style={{ color: isStandby ? '#16a34a' : '#9ca3af' }}>{robotData?.deviceState}</span>
           </span>
 
           {charge != null && (
-            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', lineHeight: '1.5' }}>
               <span>배터리 레벨 : </span>
               <Battery size={14} color={batteryColor} />
               <span style={{ color: batteryColor }}>{charge}%</span>
             </span>
           )}
-          <div style={{ display: 'flex', gap: '2px' }}>
+          <div style={{ display: 'flex', gap: '4px', fontSize: '14px', lineHeight: '1.5' }}>
             <span>{t('robots.installedCount')}:</span>
             <span style={{ color: '#9ca3af' }}>{robotData?.tms?.taskFlowState?.taskFlows?.length ?? 0}</span>
           </div>

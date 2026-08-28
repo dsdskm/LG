@@ -5,5 +5,192 @@
     "step": "Setup step: {{step}}",
     "confirm": "Go to {{step}}",
     "cancel": "Cancel"
+  },
+  "common": {
+    "previous": "Previous",
+    "next": "Next",
+    "complete": "Complete",
+    "saving": "Saving...",
+    "applying": "Applying..."
+  },
+  "language": {
+    "title": "Language",
+    "description": "Select the language to use during initial setup.",
+    "intro": "Select a language.",
+    "loading": "Loading languages...",
+    "loadFailed": "Failed to load languages: {{message}}",
+    "saveFailed": "Failed to save language: {{message}}",
+    "korean": "Korean",
+    "english": "English"
+  },
+  "siteCode": {
+    "title": "Site Code",
+    "description": "Enter a site code registered with the control system or select the default site.",
+    "intro": "Enter a site code or select the default site.",
+    "manual": "Enter manually",
+    "label": "Site Code",
+    "placeholder": "8 uppercase letters or numbers",
+    "or": "OR",
+    "default": "Default site",
+    "validation": "Enter an 8-character site code using uppercase letters or numbers.",
+    "lookupFailed": "Failed to retrieve site information: {{message}}",
+    "lookingUp": "Looking up..."
+  },
+  "location": {
+    "title": "Operating Location",
+    "description": "Select the building, floor, and area retrieved from the site code.",
+    "intro": "Select where the robot will operate.",
+    "building": "Building",
+    "selectBuilding": "Select a building",
+    "floor": "Floor",
+    "selectFloor": "Select a floor",
+    "area": "Area",
+    "selectArea": "Select an area",
+    "defaultSiteHint": "The default site can continue without selecting a building or floor.",
+    "siteCodeHint": "Apply a Site Code from the Site Code menu first.",
+    "loadFailed": "Failed to load operating location: {{message}}",
+    "saveFailed": "Failed to save operating location: {{message}}"
+  },
+  "robotInfo": {
+    "title": "Robot Info",
+    "description": "Set the robot name to register with the control system.",
+    "intro": "Enter the robot information to register.",
+    "name": "Robot Name",
+    "placeholder": "Up to 20 characters",
+    "registerFailed": "Control-system registration failed: {{message}}",
+    "registering": "Registering..."
+  },
+  "network": {
+    "title": "Initial Network Setup",
+    "description": "Select the Wi‑Fi network for the robot and switch from the setup AP to the regular network.",
+    "gate": {
+      "title": "Network connection is required before sign-in",
+      "description": "Sign-in talks to an external server, so the robot must be connected to an external Wi‑Fi network first. After connecting, if you are browsing over the robot AP (ROBOT_SETUP), join the same Wi‑Fi network and reopen the WIFI address shown in 'Access addresses' above.",
+      "badge": "Before sign-in",
+      "next": "Go to sign-in",
+      "skip": "Skip network setup and sign in"
+    },
+    "signal": {
+      "excellent": "Excellent",
+      "good": "Good",
+      "fair": "Fair",
+      "weak": "Weak"
+    },
+    "hiddenNetwork": "(Hidden network)",
+    "notScanned": "Not scanned yet.",
+    "loadingNetworks": "Loading nearby Wi‑Fi networks...",
+    "cachedSuffix": " · cached list",
+    "scanResult": "{{count}} Wi‑Fi network(s) found ({{method}} / {{iface}}){{cache}}{{warning}}",
+    "scanFailed": "Could not load the Wi‑Fi list.",
+    "scanError": "An error occurred while requesting a Wi‑Fi scan. {{message}}",
+    "access": {
+      "wired": "Wired - {{address}}",
+      "ap": "AP - {{address}}",
+      "wifi": "Wi‑Fi - {{address}}",
+      "wifiDisconnected": "Wi‑Fi - not currently connected (AP mode)",
+      "title": "Connection Addresses",
+      "hint": "The Wi‑Fi address may change depending on DHCP. The currently detected address is shown."
+    },
+    "badges": {
+      "apConnected": "AP mode connected",
+      "wifiConnected": "Regular Wi‑Fi connected",
+      "cached": "Using cached list",
+      "realtime": "Live scan",
+      "current": "Connected",
+      "selected": "Selected",
+      "selectedNetwork": "Selected network"
+    },
+    "summary": {
+      "status": "Current Connection",
+      "ap": "Connected to ROBOT_SETUP AP",
+      "wifi": "Regular Wi‑Fi connection",
+      "apHint": "Connected to a temporary network for initial setup.",
+      "wifiHint": "The robot is connected to a regular Wi‑Fi network.",
+      "disconnect": "Disconnect Wi‑Fi",
+      "processing": "Processing..."
+    },
+    "scan": {
+      "title": "Nearby Wi‑Fi Networks",
+      "scanning": "Scanning...",
+      "rescan": "Scan Again",
+      "offlineRescan": "Temporarily stop AP and rescan",
+      "empty": "No Wi‑Fi networks found",
+      "emptyAp": "Live scanning may be limited in AP mode. Enter an SSID manually or temporarily stop the AP and scan again.",
+      "emptyWifi": "No results were found in regular Wi‑Fi mode. Scan again or enter an SSID manually.",
+      "security": "Security: {{value}}",
+      "signalValue": "Signal: {{value}}%",
+      "offlineMessage": "The AP will be paused and Wi‑Fi rescanned. If ROBOT_SETUP disconnects, reconnect after about 15 seconds and check the list."
+    },
+    "connect": {
+      "title": "Connect to Selected Network",
+      "descriptionOpen": "Connect to {{ssid}}. This is an open network, so no password is required.",
+      "descriptionSecure": "Connect to {{ssid}}. Enter the password, then start the connection.",
+      "passwordPlaceholder": "Enter the Wi‑Fi password",
+      "showPassword": "Show password",
+      "hidePassword": "Hide password",
+      "start": "Connect Wi‑Fi",
+      "requesting": "Requesting Wi‑Fi connection to \"{{ssid}}\".",
+      "requestingWait": "Requesting Wi‑Fi connection to \"{{ssid}}\". Please wait.",
+      "requestSent": "Wi‑Fi connection requested for \"{{ssid}}\". Checking connection status.",
+      "verifying": "Wi‑Fi connection requested for \"{{ssid}}\". Checking status. ({{attempt}}/{{total}})",
+      "confirmed": "Wi‑Fi connection to \"{{ssid}}\" confirmed.",
+      "confirmedHint": "Wi‑Fi connection to \"{{ssid}}\" confirmed. Check the connected indicator in the list.",
+      "pending": "The request completed, but the connection to \"{{ssid}}\" has not been confirmed yet. Scan again and check the connected indicator.",
+      "pendingPassword": "The request completed, but the connection to \"{{ssid}}\" has not been confirmed yet. Check the password or scan again.",
+      "failed": "Wi‑Fi connection request failed",
+      "error": "An error occurred while requesting Wi‑Fi connection. {{message}}",
+      "switchStart": "Starting Wi‑Fi connection. ROBOT_SETUP may disconnect shortly. Use one of the wired/AP/Wi‑Fi addresses below to reconnect.",
+      "switchStarted": "Wi‑Fi network switching started. ROBOT_SETUP will disconnect shortly. Use one of the wired/AP/Wi‑Fi addresses below to reconnect.",
+      "switchInterrupted": "The request connection may have dropped while the robot is switching Wi‑Fi. Use one of the wired/AP/Wi‑Fi addresses below to reconnect."
+    },
+    "disconnect": {
+      "confirm": "Disconnect the current Wi‑Fi? If you are connected through it, the connection may drop and the robot may switch to the ROBOT_SETUP AP.",
+      "requested": "Wi‑Fi disconnect requested.",
+      "requestedHint": "Wi‑Fi disconnect requested. The current connection may drop and switch to the ROBOT_SETUP AP shortly.",
+      "reconnectHint": "Wi‑Fi disconnect requested. Use the wired/AP connection addresses to reconnect.",
+      "interrupted": "The connection may have dropped while requesting disconnect. Use the wired/AP addresses to reconnect."
+    },
+    "mode": {
+      "title": "Wi‑Fi Interface Mode",
+      "current": "Current mode:",
+      "checking": "Checking",
+      "description": "Concurrent AP+Wi‑Fi mode uses wlan0 for external Wi‑Fi and wlan1 for the ROBOT_SETUP AP.",
+      "concurrentButton": "wlan0 Wi‑Fi + wlan1 AP mode",
+      "singleButton": "Return to wlan0 single mode",
+      "refresh": "Refresh mode status",
+      "confirmConcurrent": "Switch to concurrent mode: wlan0 for external Wi‑Fi and wlan1 for AP. The AP may restart briefly. Continue?",
+      "confirmSingle": "Switch to wlan0 single mode. If wlan0 is already connected to Wi‑Fi, the connection is kept; otherwise it returns to AP mode. Continue?",
+      "changingConcurrent": "Switching to concurrent AP+Wi‑Fi mode.",
+      "changingSingle": "Switching to wlan0 single mode.",
+      "concurrentLabel": "Concurrent AP+Wi‑Fi mode",
+      "singleLabel": "wlan0 single mode",
+      "changed": "{{label}} switch request completed. If the AP restarted, reconnect after 10–20 seconds.",
+      "failed": "Mode switch failed: {{message}}"
+    },
+    "manual": {
+      "title": "Manual Network Entry",
+      "description": "If the scan list is empty or the SSID is hidden, enter the network name manually.",
+      "selected": "Manual entry selected",
+      "ssidPlaceholder": "Enter the Wi‑Fi name",
+      "password": "Password",
+      "passwordPlaceholder": "Leave blank for an open network",
+      "hidden": "Connect as hidden SSID",
+      "connect": "Connect to Entered Wi‑Fi"
+    },
+    "status": {
+      "title": "Wi‑Fi Connection Status",
+      "connected": "Connected",
+      "failed": "Connection Failed",
+      "check": "Check Required",
+      "connecting": "Connecting to Wi‑Fi",
+      "progress": "Progress",
+      "sending": "Sending connection request",
+      "verifying": "Checking current connection status",
+      "locked": "Input/selection locked · automatic rescan after completion",
+      "switching": "Switching Network",
+      "reconnect": "Reconnect Address",
+      "remaining": "{{seconds}} seconds remaining"
+    },
+    "note": "With a single Wi‑Fi interface, it is normal for the connection to drop when switching from the AP to regular Wi‑Fi."
   }
 }

@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useUserStore } from '@repo/stores'
 import { getUserInfo } from '@repo/apis'
+import useNetworkGate, { NETWORK_SETUP_PATH } from '@/hooks/useNetworkGate'
+import { LOG_TAG } from '@/utils/networkStatus'
 
 // 세션 검증 후 착지할 경로. App 이 robotSetup.currentStep 으로 계산해 내려준다
 // (초기 설정이 끝난 로봇은 '초기 설정' 메뉴가 없어 맵 설정 첫 화면이 된다).
@@ -50,6 +52,9 @@ const RootGuard = ({ landingPath }) => {
   const resolvedLandingPath = landingPath || FALLBACK_LANDING_PATH
   const [searchParams] = useSearchParams()
   const [isValidating, setIsValidating] = useState(true)
+  // 로봇이 외부 네트워크에 붙기 전에는 로그인(브라우저 → 클라우드)이 불가능하다.
+  // 세션 검증보다 이 판정이 먼저다 — 로그인 여부와 무관하게 /network 로 보낸다.
+  const { loading: networkLoading, blocked: networkBlocked } = useNetworkGate()
 
   useEffect(() => {
     const validateSession = async () => {
@@ -111,8 +116,20 @@ const RootGuard = ({ landingPath }) => {
       }
     }
 
+    // 판정이 끝나기 전에 세션 검증을 시작하면 offline 인데 /login 으로 먼저 튀어버린다.
+    if (networkLoading) return
+
+    // 로그인 콜백(?accessToken=…)으로 돌아온 경우는 게이트로 끊지 않는다 — 토큰을 버리면 세션이
+    // 사라진다. 검증은 그대로 하고, 착지 경로는 App 이 이미 /network 로 내려준다(offline 이면).
+    if (networkBlocked && !searchParams.get('accessToken')) {
+      console.info(`${LOG_TAG} RootGuard → ${NETWORK_SETUP_PATH} (robot offline, session check skipped)`)
+      navigate(NETWORK_SETUP_PATH, { replace: true })
+      setIsValidating(false)
+      return
+    }
+
     validateSession()
-  }, [searchParams, navigate, resolvedLandingPath])
+  }, [searchParams, navigate, resolvedLandingPath, networkLoading, networkBlocked])
 
   if (isValidating) {
     return (

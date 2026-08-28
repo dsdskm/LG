@@ -21,7 +21,7 @@ import {
   ConnectionMode,
   ConnectionLineType,
   MarkerType,
-  SelectionMode
+  SelectionMode,
 } from '@xyflow/react'
 
 import TaskEdge from './Edge/TaskEdge'
@@ -218,26 +218,26 @@ function InnerCanvas() {
 
   // AI 노드 추가 후 해당 노드들이 보이도록 fitView를 호출하는 전역 핸들러
   useEffect(() => {
-    (window as any).__AI_TASKFLOW_FIT_NODES__ = (nodeIds: string[]) => {
+    ;(window as any).__AI_TASKFLOW_FIT_NODES__ = (nodeIds: string[]) => {
       if (!rfRef.current || nodeIds.length === 0) return
       requestAnimationFrame(() => {
         rfRef.current?.fitView({
           nodes: nodeIds.map((id) => ({ id })),
           padding: 0.25,
           duration: 350,
-          maxZoom: 1.2,
+          maxZoom: 1.2
         })
       })
     }
-    return () => { delete (window as any).__AI_TASKFLOW_FIT_NODES__ }
+    return () => {
+      delete (window as any).__AI_TASKFLOW_FIT_NODES__
+    }
   }, [])
 
   const [selectedNodeCount, setSelectedNodeCount] = useState(0)
   const [showAlignGuideModal, setShowAlignGuideModal] = useState(false)
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
   const [showNoteDeleteConfirm, setShowNoteDeleteConfirm] = useState(false)
-  // Ctrl(⌘) 을 누르고 있는지 여부. 누르고 있는 동안에는 그룹 선택 사각형이 클릭을 통과시킨다.
-  const [multiSelectKeyDown, setMultiSelectKeyDown] = useState(false)
 
   const nodes = useFlowEditorStore((s) => s.nodes)
   const edges = useFlowEditorStore((s) => s.edges)
@@ -254,9 +254,6 @@ function InnerCanvas() {
 
   const selectNode = useFlowEditorStore((s) => s.selectNode)
   const selectEdge = useFlowEditorStore((s) => s.selectEdge)
-
-  const removeNodeFromSelection = useFlowEditorStore((s) => s.removeNodeFromSelection)
-  const removeEdgeFromSelection = useFlowEditorStore((s) => s.removeEdgeFromSelection)
 
   const applyNodesChange = useFlowEditorStore((s) => s.applyNodesChange)
   const applyEdgesChange = useFlowEditorStore((s) => s.applyEdgesChange)
@@ -320,24 +317,6 @@ function InnerCanvas() {
     if (flowMode !== 'tree') return
     useFlowEditorStore.getState().nodes.forEach((n) => updateNodeInternals(n.id))
   }, [edges, flowMode, updateNodeInternals])
-
-  // 그룹 선택이 확정되면 그룹 전체를 덮는 사각형(.react-flow__nodesselection-rect)이 생겨
-  // 그룹 안의 노드/엣지를 클릭해도 이벤트가 닿지 않는다.
-  // Ctrl(⌘) 을 누르고 있는 동안만 그 사각형을 클릭 통과 상태로 만들어 개별 선택 해제가 되게 한다.
-  useEffect(() => {
-    const syncFromEvent = (e: KeyboardEvent) => setMultiSelectKeyDown(e.ctrlKey || e.metaKey)
-    const clear = () => setMultiSelectKeyDown(false)
-
-    window.addEventListener('keydown', syncFromEvent)
-    window.addEventListener('keyup', syncFromEvent)
-    window.addEventListener('blur', clear)
-
-    return () => {
-      window.removeEventListener('keydown', syncFromEvent)
-      window.removeEventListener('keyup', syncFromEvent)
-      window.removeEventListener('blur', clear)
-    }
-  }, [])
 
   const onInit: OnInit<any, any> = useCallback(
     (instance) => {
@@ -482,10 +461,12 @@ function InnerCanvas() {
 
   useEffect(() => {
     const onRefreshContentsCommand = (event: Event) => {
-      const detail = (event as CustomEvent<{
-        handled?: boolean
-        complete?: (result: { success: boolean; message?: string }) => void
-      }>).detail
+      const detail = (
+        event as CustomEvent<{
+          handled?: boolean
+          complete?: (result: { success: boolean; message?: string }) => void
+        }>
+      ).detail
       if (!detail || typeof detail.complete !== 'function') return
 
       detail.handled = true
@@ -498,30 +479,36 @@ function InnerCanvas() {
     }
   }, [onRefreshContentsClick])
 
-  const onAlignClick = useCallback(() => {
-    if (!canAlign) {
-      setShowAlignGuideModal(true)
-      return
-    }
+  const onAlignClick = useCallback(
+    (direction: 'horizontal' | 'vertical') => {
+      if (!canAlign) {
+        setShowAlignGuideModal(true)
+        return
+      }
 
-    alignSelectedNodesAuto()
-
-    requestAnimationFrame(() => {
-      rfRef.current?.fitView({ padding: 0.15, duration: 250 })
+      alignSelectedNodesAuto(direction)
 
       requestAnimationFrame(() => {
-        const vp = rfRef.current?.getViewport()
-        if (vp) setViewport(vp)
-      })
-    })
-  }, [alignSelectedNodesAuto, canAlign, setViewport])
+        rfRef.current?.fitView({ padding: 0.15, duration: 250 })
 
-  const requestDeleteSelectedNote = useCallback((noteId?: string) => {
-    const id = noteId ?? selectedNoteId
-    if (!id) return
-    setSelectedNoteId(id)
-    setShowNoteDeleteConfirm(true)
-  }, [selectedNoteId])
+        requestAnimationFrame(() => {
+          const vp = rfRef.current?.getViewport()
+          if (vp) setViewport(vp)
+        })
+      })
+    },
+    [alignSelectedNodesAuto, canAlign, setViewport]
+  )
+
+  const requestDeleteSelectedNote = useCallback(
+    (noteId?: string) => {
+      const id = noteId ?? selectedNoteId
+      if (!id) return
+      setSelectedNoteId(id)
+      setShowNoteDeleteConfirm(true)
+    },
+    [selectedNoteId]
+  )
 
   const confirmDeleteSelectedNote = useCallback(() => {
     if (!selectedNoteId) return
@@ -591,7 +578,6 @@ function InnerCanvas() {
     <>
       <CanvasWrapper
         ref={wrapperRef}
-        data-multiselect={multiSelectKeyDown}
         onDragOver={onDragOver}
         onDrop={onDrop}
         onDragOverCapture={(e) => e.preventDefault()}
@@ -639,13 +625,22 @@ function InnerCanvas() {
             type="button"
             theme="light"
             size="sm"
-            onClick={onAlignClick}
+            onClick={() => onAlignClick('horizontal')}
             aria-disabled={!canAlign}
-            title={!canAlign ? t('canvas.align.selectAtLeastTwo') : t('canvas.align.alignSelected')}
+            title={!canAlign ? t('canvas.align.selectAtLeastTwo') : '선택 노드를 가로로 정렬'}
           >
-            {t('canvas.align.button')}
+            가로 정렬
           </Button>
-
+          <Button
+            type="button"
+            theme="light"
+            size="sm"
+            onClick={() => onAlignClick('vertical')}
+            aria-disabled={!canAlign}
+            title={!canAlign ? t('canvas.align.selectAtLeastTwo') : '선택 노드를 세로로 정렬'}
+          >
+            세로 정렬
+          </Button>
         </AlignOverlay>
 
         <AlignHintText>빈 곳을 더블 클릭하여 메모를 생성할 수 있습니다.</AlignHintText>
@@ -695,16 +690,15 @@ function InnerCanvas() {
         <FlowFill>
           <ReactFlow
             selectionMode={SelectionMode.Full}
-            selectionOnDrag
-            // Ctrl(윈도우) / ⌘(맥) 둘 다 그룹 선택 추가·제외 키로 쓴다 (기본값은 OS 별로 하나만 잡힌다)
+            // 좌클릭 드래그 = 배경 이동, Shift 누른 상태에서만 박스 선택
+            selectionOnDrag={false}
+            selectionKeyCode="Shift" // 기본값이지만 의도를 명시
+            panOnDrag={[0, 1]} // 0=좌클릭, 1=휠(가운데) 버튼
+            // Ctrl / ⌘ 는 선택 추가·제외 키
             multiSelectionKeyCode={['Control', 'Meta']}
-            // 드래그: 좌클릭 드래그는 박스 선택(그루핑), 휠(가운데) 버튼 드래그는 배경 이동(패닝)
-            // ※ Ctrl+드래그 패닝은 React Flow(d3-zoom)가 ctrlKey 를 줌 전용으로 예약해 불가능
-            panOnDrag={[1]}
             // 스크롤: 기본은 배경 이동, Ctrl 누르고 스크롤하면 확대/축소
             panOnScroll
             zoomOnScroll={false}
-            zoomActivationKeyCode="Control"
             zoomOnDoubleClick={false}
             style={{ width: '100%', height: '100%' }}
             nodes={nodes}
@@ -734,38 +728,19 @@ function InnerCanvas() {
               evt.stopPropagation()
               setSelectedNoteId(null)
 
-              // Ctrl(⌘) + 클릭 = 그룹 선택 토글. node.selected 토글은 React Flow 가 이미 처리했으므로
-              // 여기서는 "그룹에서 빠진" 경우만 잔여 단일 선택/연결 엣지를 정리한다.
-              if (evt.ctrlKey || evt.metaKey) {
-                const stillSelected = useFlowEditorStore
-                  .getState()
-                  .nodes.some((n) => String(n.id) === String(node.id) && n.selected)
-
-                if (!stillSelected) {
-                  removeNodeFromSelection(node.id)
-                  return
-                }
+              const isThisNodeCurrentlySelected = Boolean(node.selected) || selectedNodeId === node.id
+              if (!isThisNodeCurrentlySelected) {
+                selectNode(node.id)
               }
-
-              selectNode(node.id)
             }}
             onEdgeClick={(evt, edge) => {
               evt.stopPropagation()
               setSelectedNoteId(null)
 
-              // 노드와 동일하게 Ctrl(⌘) + 클릭으로 그룹에서 엣지 하나만 빼낼 수 있다.
-              if (evt.ctrlKey || evt.metaKey) {
-                const stillSelected = useFlowEditorStore
-                  .getState()
-                  .edges.some((e) => String(e.id) === String(edge.id) && e.selected)
-
-                if (!stillSelected) {
-                  removeEdgeFromSelection(edge.id)
-                  return
-                }
+              const isThisEdgeCurrentlySelected = Boolean(edge.selected) || selectedEdgeId === edge.id
+              if (!isThisEdgeCurrentlySelected) {
+                selectEdge(edge.id)
               }
-
-              selectEdge(edge.id)
             }}
             onPaneClick={() => {
               selectNode(null)
@@ -776,7 +751,8 @@ function InnerCanvas() {
             onDoubleClick={(event) => {
               const target = event.target as HTMLElement | null
               if (!target?.closest('.react-flow__pane')) return
-              if (target.closest('.react-flow__node, .react-flow__edge, .react-flow__handle, button, textarea, input')) return
+              if (target.closest('.react-flow__node, .react-flow__edge, .react-flow__handle, button, textarea, input'))
+                return
 
               const instance = rfRef.current
               if (!instance) return

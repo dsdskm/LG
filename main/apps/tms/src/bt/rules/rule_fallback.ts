@@ -4,20 +4,20 @@
  */
 
 import type { BtAstNode } from '../types'
+import { fallbackNodeName, fallbackNodeType, type BtFallbackNode } from '../nodes/btFallbackNode'
 import {
+  isFallbackRuleMatch,
   sortOutgoingEdgeRefsByCanvasPosition,
   wrapAstListAsSequenceIfNeeded,
-  getRuleNodeName,
-  isReactiveAndRuleMatch
+  getRuleNodeName
 } from '../bt.util'
 import type { BtRule } from './types'
-import { BtReactiveAndNode, reactiveAndNodeName, reactiveAndNodeType } from '../nodes/btReactiveAndNode'
 
-export const rule_reactiveAnd: BtRule<typeof reactiveAndNodeName> = {
-  name: reactiveAndNodeName,
+export const rule_fallback: BtRule<typeof fallbackNodeName> = {
+  name: fallbackNodeName,
 
   match: ({ node, outgoing }) => {
-    return isReactiveAndRuleMatch(node, outgoing)
+    return isFallbackRuleMatch(node, outgoing)
   },
 
   apply: ({ node, outgoing, nodeById, buildAstList }) => {
@@ -29,12 +29,12 @@ export const rule_reactiveAnd: BtRule<typeof reactiveAndNodeName> = {
     const branchChildren: BtAstNode[] = orderedBranchRefs.map((ref, idx) => {
       const astList = buildAstList(ref.targetId)
 
-      return wrapAstListAsSequenceIfNeeded(astList, `reactive_and_branch_${idx + 1}`)
+      return wrapAstListAsSequenceIfNeeded(astList, `fallback_branch_${idx + 1}`)
     })
 
-    const reactiveAndNode: BtReactiveAndNode = {
-      kind: reactiveAndNodeType,
-      name: getRuleNodeName(node, 'reactive_and'),
+    const fallbackNode: BtFallbackNode = {
+      kind: fallbackNodeType,
+      name: getRuleNodeName(node, 'fallback'),
       attrs: {
         node_id: String(node.id)
       },
@@ -42,9 +42,9 @@ export const rule_reactiveAnd: BtRule<typeof reactiveAndNodeName> = {
     }
 
     if (!thenTargetRef) {
-      return [reactiveAndNode]
+      return [fallbackNode]
     }
 
-    return [reactiveAndNode, ...buildAstList(thenTargetRef.targetId)]
+    return [fallbackNode, ...buildAstList(thenTargetRef.targetId)]
   }
 }

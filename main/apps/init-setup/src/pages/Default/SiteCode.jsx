@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { Section } from '@repo/ui'
 import {
   StyledPageContent,
@@ -26,6 +27,7 @@ const SITE_CODE_RE = /^[A-Z0-9]{8}$/
 
 const SiteCode = () => {
   const navigate = useNavigate()
+  const { t } = useTranslation('setup')
   const [method, setMethod] = useState('manual')
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
@@ -34,7 +36,7 @@ const SiteCode = () => {
   const handleNext = async () => {
     const value = method === 'default' ? DEFAULT_SITE_CODE : code
     if (!SITE_CODE_RE.test(value)) {
-      setErr('지점 코드는 영문 대문자 또는 숫자 8자리로 입력하세요.')
+      setErr(t('siteCode.validation'))
       return
     }
 
@@ -45,7 +47,7 @@ const SiteCode = () => {
       await advanceSetupProgress(SETUP_STEPS.LOCATION)
       navigate('/location')
     } catch (e) {
-      setErr(`지점 정보 조회 실패: ${e.message}`)
+      setErr(t('siteCode.lookupFailed', { message: e.message }))
     } finally {
       setBusy(false)
     }
@@ -56,13 +58,13 @@ const SiteCode = () => {
       <Section>
         <PageHero>
           <HeroText>
-            <HeroTitle>지점 코드</HeroTitle>
-            <HeroDescription>관제에 등록된 지점 코드를 입력하거나 기본 지점을 선택합니다.</HeroDescription>
+            <HeroTitle>{t('siteCode.title')}</HeroTitle>
+            <HeroDescription>{t('siteCode.description')}</HeroDescription>
           </HeroText>
         </PageHero>
 
         <SetupFormCard>
-          <SetupCardIntro>지점 코드를 입력하거나 기본 지점을 선택하세요.</SetupCardIntro>
+          <SetupCardIntro>{t('siteCode.intro')}</SetupCardIntro>
 
           <RadioLine>
             <input
@@ -70,23 +72,23 @@ const SiteCode = () => {
               checked={method === 'manual'}
               onChange={() => setMethod('manual')}
             />
-            직접 입력
+            {t('siteCode.manual')}
           </RadioLine>
 
           <FormRow>
-            <FormLabel>지점 코드</FormLabel>
+            <FormLabel>{t('siteCode.label')}</FormLabel>
             <FormInput
               value={code}
               maxLength={8}
               disabled={method !== 'manual'}
               onFocus={() => setMethod('manual')}
               onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
-              placeholder="영문 대문자 또는 숫자 8자리"
+              placeholder={t('siteCode.placeholder')}
             />
           </FormRow>
 
           <div style={{ margin: '2.4rem 0', borderTop: '1px solid var(--color-neutral-20)', position: 'relative' }}>
-            <span style={{ position: 'absolute', left: '50%', top: 0, transform: 'translate(-50%, -50%)', padding: '0 .9rem', background: 'var(--color-neutral-10)', color: 'var(--color-neutral-50)', fontSize: '1.2rem', fontWeight: 700 }}>또는</span>
+            <span style={{ position: 'absolute', left: '50%', top: 0, transform: 'translate(-50%, -50%)', padding: '0 .9rem', background: 'var(--color-neutral-10)', color: 'var(--color-neutral-50)', fontSize: '1.2rem', fontWeight: 700 }}>{t('siteCode.or')}</span>
           </div>
 
           <RadioLine>
@@ -95,21 +97,21 @@ const SiteCode = () => {
               checked={method === 'default'}
               onChange={() => setMethod('default')}
             />
-            기본 지점
+            {t('siteCode.default')}
           </RadioLine>
 
           {err && <ErrorText>{err}</ErrorText>}
 
           <WizardButtonWrap>
             <SecondaryActionButton type="button" onClick={() => navigate('/network')} disabled={busy}>
-              이전
+              {t('common.previous')}
             </SecondaryActionButton>
             <ActionButton
               type="button"
               onClick={handleNext}
               disabled={busy || (method === 'manual' && !SITE_CODE_RE.test(code))}
             >
-              {busy ? '조회 중...' : '다음'}
+              {busy ? t('siteCode.lookingUp') : t('common.next')}
             </ActionButton>
           </WizardButtonWrap>
         </SetupFormCard>

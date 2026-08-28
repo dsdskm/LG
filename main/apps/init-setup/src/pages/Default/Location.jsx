@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { Section } from '@repo/ui'
 import {
   StyledPageContent,
@@ -26,6 +27,7 @@ const itemName = (item) => item?.name ?? item?.buildingName ?? item?.floorName ?
 
 const Location = () => {
   const navigate = useNavigate()
+  const { t } = useTranslation('setup')
   const [buildings, setBuildings] = useState([])
   const [defaultSite, setDefaultSite] = useState(false)
   const [building, setBuilding] = useState('')
@@ -42,7 +44,7 @@ const Location = () => {
       setBuildings(data?.options?.buildings ?? [])
       setDefaultSite(data?.site_code_method === 'default' && !!data?.site_id)
     } catch (e) {
-      setErr(`운영 장소 조회 실패: ${e.message}`)
+      setErr(t('location.loadFailed', { message: e.message }))
     }
   }
 
@@ -73,7 +75,7 @@ const Location = () => {
       await advanceSetupProgress(SETUP_STEPS.ROBOT_INFO)
       navigate('/robot-info')
     } catch (e) {
-      setErr(`운영 장소 저장 실패: ${e.message}`)
+      setErr(t('location.saveFailed', { message: e.message }))
     } finally {
       setBusy(false)
     }
@@ -84,16 +86,16 @@ const Location = () => {
       <Section>
         <PageHero>
           <HeroText>
-            <HeroTitle>운영 장소</HeroTitle>
-            <HeroDescription>지점 코드에서 조회된 건물, 층, 영역을 선택합니다.</HeroDescription>
+            <HeroTitle>{t('location.title')}</HeroTitle>
+            <HeroDescription>{t('location.description')}</HeroDescription>
           </HeroText>
         </PageHero>
 
         <SetupFormCard>
-          <SetupCardIntro>로봇이 운영될 장소를 선택하세요.</SetupCardIntro>
+          <SetupCardIntro>{t('location.intro')}</SetupCardIntro>
 
           <FormRow>
-            <FormLabel>건물</FormLabel>
+            <FormLabel>{t('location.building')}</FormLabel>
             <FormSelect
               value={building}
               onChange={(e) => {
@@ -102,7 +104,7 @@ const Location = () => {
                 setArea('')
               }}
             >
-              <option value="">건물을 선택하세요</option>
+              <option value="">{t('location.selectBuilding')}</option>
               {buildings.map((item) => (
                 <option key={itemId(item)} value={itemId(item)}>{itemName(item)}</option>
               ))}
@@ -110,7 +112,7 @@ const Location = () => {
           </FormRow>
 
           <FormRow>
-            <FormLabel>층</FormLabel>
+            <FormLabel>{t('location.floor')}</FormLabel>
             <FormSelect
               value={floor}
               disabled={!building}
@@ -119,7 +121,7 @@ const Location = () => {
                 setArea('')
               }}
             >
-              <option value="">층을 선택하세요</option>
+              <option value="">{t('location.selectFloor')}</option>
               {floors.map((item) => (
                 <option key={itemId(item)} value={itemId(item)}>{itemName(item)}</option>
               ))}
@@ -128,9 +130,9 @@ const Location = () => {
 
           {areas.length > 0 && (
             <FormRow>
-              <FormLabel>영역</FormLabel>
+              <FormLabel>{t('location.area')}</FormLabel>
               <FormSelect value={area} disabled={!floor} onChange={(e) => setArea(e.target.value)}>
-                <option value="">영역을 선택하세요</option>
+                <option value="">{t('location.selectArea')}</option>
                 {areas.map((item) => (
                   <option key={itemId(item)} value={itemId(item)}>{itemName(item)}</option>
                 ))}
@@ -139,16 +141,16 @@ const Location = () => {
           )}
 
           {!err && buildings.length === 0 && (
-            <InfoText>{defaultSite ? '기본 지점은 건물/층 선택 없이 다음 단계로 진행합니다.' : '먼저 지점 코드 메뉴에서 Site Code를 적용해 주세요.'}</InfoText>
+            <InfoText>{defaultSite ? t('location.defaultSiteHint') : t('location.siteCodeHint')}</InfoText>
           )}
           {err && <ErrorText>{err}</ErrorText>}
 
           <WizardButtonWrap>
             <SecondaryActionButton type="button" onClick={() => navigate('/site-code')} disabled={busy}>
-              이전
+              {t('common.previous')}
             </SecondaryActionButton>
             <ActionButton type="button" onClick={handleNext} disabled={busy || !canContinue}>
-              {busy ? '적용 중...' : '다음'}
+              {busy ? t('common.applying') : t('common.next')}
             </ActionButton>
           </WizardButtonWrap>
         </SetupFormCard>

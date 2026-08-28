@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { PreviewProps } from './types.preview'
-import { AudioControlButton, AudioControlGroup, MediaFallbackText, MediaStage, PreviewCard } from './styles.preview'
+import {
+  AudioControlButton,
+  AudioControlGroup,
+  MediaFallbackText,
+  MediaStage,
+  MediaStatusText,
+  PreviewCard
+} from './styles.preview'
 import ComparedProgress from './ComparedProgress'
 import PreviewProgressBar from './PreviewProgressBar'
 import PreviewHeader from './PreviewHeader'
@@ -16,7 +23,7 @@ export default function SoundPreview({ node, nodeId, standaloneProgress }: Previ
 
   const { t } = useTranslation('tms')
 
-  const { url: mediaUrl, isSuccess, contentId } = usePreviewContentUrl(node)
+  const { url: mediaUrl, contentId, status: contentStatus } = usePreviewContentUrl(node)
 
   // standaloneProgress = 속성 패널/팔레트 렌더. 그때는 store 를 거치지 않고 로컬 진행값만 쓴다.
   // 점검 모드 렌더에서는 store 로 보고해야 실행기가 완료 판정을 할 수 있다.
@@ -41,14 +48,29 @@ export default function SoundPreview({ node, nodeId, standaloneProgress }: Previ
 
   const data = node.data
 
-  const isButtonDisabled = !isSuccess || !mediaUrl
+  // 재생할 수 없는 상태는 콘솔이 아니라 화면에 알린다.
+  // (mutation 의 isSuccess 대신 status 를 쓴다 — mutation 상태는 대상이 바뀌어도 리셋되지 않는다)
+  const statusMessage =
+    contentStatus === 'empty'
+      ? t('canvas.preview.noContent')
+      : contentStatus === 'error'
+        ? t('canvas.preview.contentNotFound')
+        : contentStatus === 'loading'
+          ? t('canvas.preview.loading')
+          : null
+
+  const isButtonDisabled = contentStatus !== 'ready' || !mediaUrl
 
   return (
     <>
       <PreviewHeader label={data.label} open={contentOpen} onToggle={() => setContentOpen((prev) => !prev)} />
       <PreviewCard $hidden={!contentOpen}>
         <MediaStage>
-          <MediaFallbackText>{data.contentName}</MediaFallbackText>
+          {statusMessage ? (
+            <MediaStatusText $tone={contentStatus === 'error' ? 'error' : 'muted'}>{statusMessage}</MediaStatusText>
+          ) : (
+            <MediaFallbackText>{data.contentName}</MediaFallbackText>
+          )}
         </MediaStage>
 
         <AudioControlGroup>

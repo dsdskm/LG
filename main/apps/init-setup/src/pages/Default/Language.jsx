@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { Section } from '@repo/ui'
 import i18n from '@/i18n'
 import {
@@ -54,6 +55,7 @@ const pickInitialCode = (options) => {
 
 const Language = () => {
   const navigate = useNavigate()
+  const { t, i18n: reactI18n } = useTranslation('setup')
   const [options, setOptions] = useState([])
   const [selected, setSelected] = useState('')
   const [loading, setLoading] = useState(true)
@@ -65,21 +67,27 @@ const Language = () => {
     setErr('')
     try {
       const res = await listLanguages()
-      const next = (res?.data ?? []).map(toOption)
+      const next = (res?.data ?? []).filter((lang) => ['ko-KR', 'en-US'].includes(lang.code)).map(toOption)
       setOptions(next)
       // 이미 사용 가능(enabled)으로 저장된 언어가 있으면 그것을 우선 선택한다.
       const savedCode = (res?.data ?? []).find((lang) => lang.enabled)?.code
       setSelected(savedCode ?? pickInitialCode(next))
     } catch (e) {
-      setErr(`언어 목록 조회 실패: ${e.message}`)
+      setErr(t('language.loadFailed', { message: e.message }))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     load()
   }, [load])
+
+  // 우측 상단 지구본에서 언어를 바꾸면 이 화면의 선택 상태도 즉시 따라간다.
+  useEffect(() => {
+    const currentCode = pickInitialCode(options)
+    if (currentCode) setSelected(currentCode)
+  }, [options, reactI18n.resolvedLanguage, reactI18n.language])
 
   const handleNext = async () => {
     setBusy(true)
@@ -96,7 +104,7 @@ const Language = () => {
       await advanceSetupProgress(SETUP_STEPS.NETWORK)
       navigate('/network')
     } catch (e) {
-      setErr(`언어 설정 저장 실패: ${e.message}`)
+      setErr(t('language.saveFailed', { message: e.message }))
     } finally {
       setBusy(false)
     }
@@ -107,13 +115,13 @@ const Language = () => {
       <Section>
         <PageHero>
           <HeroText>
-            <HeroTitle>언어 설정</HeroTitle>
-            <HeroDescription>초기 설정에서 사용할 언어를 선택하세요.</HeroDescription>
+            <HeroTitle>{t('language.title')}</HeroTitle>
+            <HeroDescription>{t('language.description')}</HeroDescription>
           </HeroText>
         </PageHero>
 
         <SetupFormCard>
-          <SetupCardIntro>{loading ? '언어 목록을 불러오는 중...' : '언어를 선택하세요.'}</SetupCardIntro>
+          <SetupCardIntro>{loading ? t('language.loading') : t('language.intro')}</SetupCardIntro>
 
           <LanguageList>
             {options.map((language) => {
@@ -123,14 +131,18 @@ const Language = () => {
                   key={language.id}
                   type="button"
                   $active={active}
-                  onClick={() => setSelected(language.code)}
+                  onClick={async () => {
+                    setSelected(language.code)
+                    await reactI18n.changeLanguage(language.code)
+                    window.localStorage.setItem('i18nextLng', language.code)
+                  }}
                   aria-pressed={active}
                 >
                   <LanguageRadio $active={active} aria-hidden="true" />
                   <LanguageBadge $active={active}>{language.badge}</LanguageBadge>
                   <LanguageText>
-                    <LanguageName>{language.name}</LanguageName>
-                    <LanguageSubName>{language.subName}</LanguageSubName>
+                    <LanguageName>{language.code === 'ko-KR' ? '한국어' : 'English'}</LanguageName>
+                    <LanguageSubName>{language.code === 'ko-KR' ? t('language.korean') : t('language.english')}</LanguageSubName>
                   </LanguageText>
                 </LanguageOption>
               )
@@ -141,7 +153,7 @@ const Language = () => {
 
           <WizardButtonWrapSingle>
             <ActionButton type="button" onClick={handleNext} disabled={busy || loading || !selected}>
-              {busy ? '저장 중...' : '다음'}
+              {busy ? t('common.saving') : t('common.next')}
             </ActionButton>
           </WizardButtonWrapSingle>
         </SetupFormCard>

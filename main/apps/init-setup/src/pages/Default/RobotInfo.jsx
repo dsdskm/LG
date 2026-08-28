@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { Section } from '@repo/ui'
 import {
   StyledPageContent,
@@ -23,6 +24,7 @@ import { advanceSetupProgress, SETUP_STEPS } from '@/utils/setupProgress'
 
 const RobotInfo = () => {
   const navigate = useNavigate()
+  const { t } = useTranslation('setup')
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -36,10 +38,11 @@ const RobotInfo = () => {
     try {
       const response = await saveRobotInfo({ robot_name: robotName })
       if (response?.registered === false) throw new Error('registration_failed')
-      await advanceSetupProgress(SETUP_STEPS.TERMS)
-      navigate('/terms')
+      await advanceSetupProgress(SETUP_STEPS.MAP_SCAN)
+      navigate('/map/scan', { replace: true })
+      window.location.reload()
     } catch (e) {
-      setErr(`관제 등록 실패: ${e.message}`)
+      setErr(t('robotInfo.registerFailed', { message: e.message }))
     } finally {
       setBusy(false)
     }
@@ -50,21 +53,21 @@ const RobotInfo = () => {
       <Section>
         <PageHero>
           <HeroText>
-            <HeroTitle>로봇 정보</HeroTitle>
-            <HeroDescription>관제에 등록할 로봇명을 설정합니다.</HeroDescription>
+            <HeroTitle>{t('robotInfo.title')}</HeroTitle>
+            <HeroDescription>{t('robotInfo.description')}</HeroDescription>
           </HeroText>
         </PageHero>
 
         <SetupFormCard>
-          <SetupCardIntro>관제에 등록할 로봇 정보를 입력하세요.</SetupCardIntro>
+          <SetupCardIntro>{t('robotInfo.intro')}</SetupCardIntro>
 
           <FormRow>
-            <FormLabel>로봇명</FormLabel>
+            <FormLabel>{t('robotInfo.name')}</FormLabel>
             <FormInput
               value={name}
               maxLength={20}
               onChange={(e) => setName(e.target.value)}
-              placeholder="최대 20자 입력 가능"
+              placeholder={t('robotInfo.placeholder')}
             />
             <InfoText>{name.length}/20</InfoText>
           </FormRow>
@@ -73,10 +76,10 @@ const RobotInfo = () => {
 
           <WizardButtonWrap>
             <SecondaryActionButton type="button" onClick={() => navigate('/location')} disabled={busy}>
-              이전
+              {t('common.previous')}
             </SecondaryActionButton>
             <ActionButton type="button" onClick={handleComplete} disabled={busy || !name.trim()}>
-              {busy ? '등록 중...' : '완료'}
+              {busy ? t('robotInfo.registering') : t('common.complete')}
             </ActionButton>
           </WizardButtonWrap>
         </SetupFormCard>

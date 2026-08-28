@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import {
   PanelRoot,
@@ -19,7 +20,8 @@ import {
   ContentGrid,
   Chevron,
   NodeCard,
-  CardLabel
+  CardLabel,
+  MoveToGrouping
 } from './styles'
 import { PaletteItem } from '@/types/palette'
 import { useFlowEditorStore } from '@/store/taskflow.canvas.store'
@@ -28,11 +30,8 @@ import { DND_FALLBACK_TEXT, DND_MIME, TASK_PANEL, TASK_TYPE_CONTROL } from '@/co
 import { getSiteById } from '@/api/siteApi'
 import { TaskType } from '@/types/task'
 
-const PALETTE_COMPACT_RATIO = 0.5
-
-const getMaxVisibleGridItems = (compact: boolean) => {
-  return compact ? 4 : 6
-}
+const PALETTE_COMPACT_RATIO = 0.6
+const PALETTE_NARROW_RATIO = 0.4
 
 function makePaletteLabel(kind: PaletteItem['kind'], task: TaskApiPayload, content?: ContentApiPayload) {
   if (kind === 'controlTaskNode') return task.name
@@ -50,6 +49,59 @@ function parseContentValue(raw: string): unknown {
   }
 }
 
+function getContentLabels(content: ContentApiPayload): Array<{ displayName: string; isDefault?: boolean; isUnique?: boolean }> {
+  const rawValue = content?.contentValue
+  if (rawValue == null) return []
+
+  const parsed = typeof rawValue === 'string' ? parseContentValue(rawValue) : rawValue
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return []
+
+  const labelsValue = (parsed as Record<string, unknown>).labels
+  if (!Array.isArray(labelsValue)) return []
+
+  return labelsValue
+    .map((label) => {
+      if (typeof label === 'string') {
+        const value = label.trim()
+        return value ? { displayName: value } : null
+      }
+
+      if (label && typeof label === 'object') {
+        const record = label as Record<string, unknown>
+        const displayName = String(record.displayName ?? record.name ?? '').trim()
+        if (!displayName) return null
+
+        return {
+          displayName,
+          isDefault: Boolean(record.isDefault),
+          isUnique: Boolean(record.isUnique)
+        }
+      }
+
+      return null
+    })
+    .filter(Boolean) as Array<{ displayName: string; isDefault?: boolean; isUnique?: boolean }>
+}
+
+function buildLabelGroupTitleFromContent(content: ContentApiPayload, noLabelTitle: string): string | null {
+  const labels = getContentLabels(content)
+
+  if (labels.length === 0) {
+    return noLabelTitle
+  }
+
+  const visibleLabels = labels
+    .filter((label) => !label.isDefault && label.isUnique !== true)
+    .sort((a, b) => a.displayName.localeCompare(b.displayName, 'ko'))
+
+  if (visibleLabels.length > 0) {
+    return `[${visibleLabels.map((label) => label.displayName).join('][')}]`
+  }
+
+  return noLabelTitle
+}
+
 function pickLocationValue(...candidates: Array<unknown>): string | null {
   for (const value of candidates) {
     if (value == null) continue
@@ -59,7 +111,7 @@ function pickLocationValue(...candidates: Array<unknown>): string | null {
   return null
 }
 
-async function resolveMoveToGroupTitle(content: ContentApiPayload): Promise<string> {
+async function resolveMoveToGroupTitle(content: ContentApiPayload, noLabelTitle: string): Promise<string> {
   const rawValue = parseContentValue(content.contentValue ?? '')
   const source =
     typeof rawValue === 'object' && rawValue !== null && !Array.isArray(rawValue)
@@ -82,7 +134,7 @@ async function resolveMoveToGroupTitle(content: ContentApiPayload): Promise<stri
   )
 
   if (!content.siteId || (!buildingId && !floorId)) {
-    return '[기타]'
+    return noLabelTitle
   }
 
   try {
@@ -113,7 +165,7 @@ async function resolveMoveToGroupTitle(content: ContentApiPayload): Promise<stri
 
     return `[${buildingName}][${floorName}]`
   } catch {
-    return '[기타]'
+    return noLabelTitle
   }
 }
 
@@ -124,6 +176,8 @@ function sortByNameAsc<T extends { name?: string | null }>(items: T[]): T[] {
 
 export default function PalettePanel({ groupId, siteId }: { groupId: string | null; siteId: string | null }) {
   const panelRef = useRef<HTMLDivElement | null>(null)
+  const { t } = useTranslation('tms')
+  const noLabelTitle = t('palette.noLabel')
 
   const [paletteMeasure, setPaletteMeasure] = useState({
     width: 0,
@@ -140,10 +194,12 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
   const addControlNodeFromTask = useFlowEditorStore((s) => s.addControlNodeFromTask)
   const nodes = useFlowEditorStore((s) => s.nodes)
 
+  const paletteGridNarrow =
+    paletteMeasure.maxWidth > 0 && paletteMeasure.width <= paletteMeasure.maxWidth * PALETTE_NARROW_RATIO
   const paletteGridCompact =
-    paletteMeasure.maxWidth > 0 && paletteMeasure.width <= paletteMeasure.maxWidth * PALETTE_COMPACT_RATIO
-
-  const maxVisibleGridItems = getMaxVisibleGridItems(paletteGridCompact)
+    paletteMeasure.maxWidth > 0 &&
+    paletteMeasure.width <= paletteMeasure.maxWidth * PALETTE_COMPACT_RATIO &&
+    !paletteGridNarrow
 
   const getNextCanvasPosition = () => {
     const index = nodes.length
@@ -157,6 +213,11 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
   }
 
   useEffect(() => {
+    if (!groupId || !siteId) {
+      setMoveToGroupsByTask({})
+      return
+    }
+
     loadTasks(groupId, siteId)
   }, [loadTasks, groupId, siteId])
 
@@ -216,40 +277,118 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
 
   const [openMap, setOpenMap] = useState<Record<number, boolean>>({})
   const [defaultOpen, setDefaultOpen] = useState(false)
-  const [moveToGroupsByTask, setMoveToGroupsByTask] = useState<Record<number, Array<{ key: string; title: string; contents: ContentApiPayload[] }>>>({})
+  const [moveToGroupsByTask, setMoveToGroupsByTask] = useState<
+    Record<number, Array<{ key: string; title: string; contents: ContentApiPayload[]; isNoLabel: boolean }>>
+  >({})
 
   useEffect(() => {
     let cancelled = false
 
     const loadMoveToGroups = async () => {
-      const groupedEntries: Record<number, Array<{ key: string; title: string; contents: ContentApiPayload[] }>> = {}
+      const groupedEntries: Record<number, Array<{ key: string; title: string; contents: ContentApiPayload[]; isNoLabel: boolean }>> = {}
 
       for (const task of expandableTasks) {
         const normalizedName = String(task.name ?? '').toLowerCase()
-        if (normalizedName !== 'moveto') {
-          groupedEntries[task.id] = [{ key: `${task.id}-default`, title: task.name, contents: task.contents ?? [] }]
-          continue
-        }
+        const contents = task.contents ?? []
+        const moveToContents = normalizedName === 'moveto' ? contents : []
 
         const resolvedGroups = await Promise.all(
-          (task.contents ?? []).map(async (content) => {
-            const title = await resolveMoveToGroupTitle(content)
-            return { content, title }
+          contents.map(async (content) => {
+            if (normalizedName === 'moveto') {
+              const title = await resolveMoveToGroupTitle(content, noLabelTitle)
+              const resolvedTitle = title === noLabelTitle ? String(task.name ?? 'MoveTo') : title
+              return { content, title: resolvedTitle, isNoLabel: false }
+            }
+
+            const labels = getContentLabels(content)
+            const normalizedLabels = labels.filter((label) => !label.isDefault && label.isUnique !== true)
+            const labelTitle = buildLabelGroupTitleFromContent(content, noLabelTitle)
+
+            if (labelTitle && normalizedLabels.length > 0) {
+              return { content, title: labelTitle, isNoLabel: labelTitle === noLabelTitle }
+            }
+
+            return null
           })
         )
 
-        const map = new Map<string, ContentApiPayload[]>()
-        for (const entry of resolvedGroups) {
-          const list = map.get(entry.title) ?? []
-          list.push(entry.content)
-          map.set(entry.title, list)
+        const validResolvedGroups = resolvedGroups.filter(
+          (entry): entry is { content: ContentApiPayload; title: string; isNoLabel: boolean } => entry !== null
+        )
+
+        const map = new Map<string, { title: string; contents: ContentApiPayload[]; isNoLabel: boolean }>()
+        for (const entry of validResolvedGroups) {
+          const existing = map.get(entry.title)
+          if (existing) {
+            existing.contents.push(entry.content)
+            continue
+          }
+
+          map.set(entry.title, {
+            title: entry.title,
+            contents: [entry.content],
+            isNoLabel: entry.isNoLabel
+          })
         }
 
-        groupedEntries[task.id] = Array.from(map.entries()).map(([title, contents]) => ({
-          key: `${task.id}-${title}`,
-          title,
-          contents: sortByNameAsc(contents)
-        }))
+        const grouped = Array.from(map.values())
+          .map(({ title, contents, isNoLabel }) => ({
+            key: `${task.id}-${title}`,
+            title,
+            contents: sortByNameAsc(contents),
+            isNoLabel
+          }))
+          .sort((a, b) => {
+            if (a.isNoLabel) return -1
+            if (b.isNoLabel) return 1
+            return a.title.localeCompare(b.title, 'ko')
+          })
+
+        if (normalizedName === 'moveto') {
+          console.log('[PALETTE][MOVETO_GROUP]', {
+            taskId: task.id,
+            taskName: task.name,
+            groups: grouped.map((group) => ({
+              title: group.title,
+              count: group.contents.length,
+              contents: group.contents.map((content) => ({
+                id: (content as any).id,
+                name: (content as any).name,
+                siteId: (content as any).siteId,
+                contentValue: (content as any).contentValue
+              }))
+            })),
+            moveToContents: moveToContents.map((content) => ({
+              id: (content as any).id,
+              name: (content as any).name,
+              siteId: (content as any).siteId,
+              contentValue: (content as any).contentValue
+            }))
+          })
+        }
+
+        const unlabeledContents = contents.filter((content) => {
+          const labels = getContentLabels(content)
+          const isMoveToContent = String(task.name ?? '').toLowerCase() === 'moveto'
+          if (isMoveToContent) return false
+          return labels.length === 0 || labels.every((label) => label.isDefault || label.isUnique === true)
+        })
+
+        if (unlabeledContents.length > 0 && !grouped.some((group) => group.isNoLabel)) {
+          grouped.push({
+            key: `${task.id}-no-labels`,
+            title: noLabelTitle,
+            contents: sortByNameAsc(unlabeledContents),
+            isNoLabel: true
+          })
+          grouped.sort((a, b) => {
+            if (a.isNoLabel) return -1
+            if (b.isNoLabel) return 1
+            return a.title.localeCompare(b.title, 'ko')
+          })
+        }
+
+        groupedEntries[task.id] = grouped
       }
 
       if (!cancelled) {
@@ -262,71 +401,7 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
     return () => {
       cancelled = true
     }
-  }, [expandableTasks])
-
-  useEffect(() => {
-    console.log('[TASK_PANEL][VISIBLE_LIST]', {
-      loading,
-      totalTasks: tasks.length,
-      controlTaskCount: controlTasks.length,
-      actionTaskCount: otherTasks.length,
-      directActionTaskCount: directActionTasks.length,
-      expandableTaskCount: expandableTasks.length,
-      paletteWidth: paletteMeasure.width,
-      paletteMaxWidth: paletteMeasure.maxWidth,
-      paletteGridCompact,
-      maxVisibleGridItems,
-      visibleGrid: {
-        controlTasks: controlTasks.map((task) => ({
-          id: task.id,
-          name: task.name,
-          taskType: task.taskType
-        })),
-        directActionTasks: directActionTasks.map((task) => ({
-          id: task.id,
-          name: task.name,
-          taskType: task.taskType
-        })),
-        expandableTasks: expandableTasks.map((task) => ({
-          id: task.id,
-          name: task.name,
-          taskType: task.taskType,
-          contents: (task.contents ?? []).map((content) => ({
-            id: content.id,
-            name: content.name,
-            type: content.contentTypeName
-          }))
-        }))
-      }
-    })
-  }, [
-    loading,
-    tasks,
-    controlTasks,
-    directActionTasks,
-    expandableTasks,
-    paletteMeasure.width,
-    paletteMeasure.maxWidth,
-    paletteGridCompact,
-    maxVisibleGridItems
-  ])
-
-  useEffect(() => {
-    if (expandableTasks.length === 0) return
-
-    console.log('[TASK_PANEL][EXPANDABLE_SUBLIST]', {
-      sublist: expandableTasks.map((task) => ({
-        taskId: task.id,
-        taskName: task.name,
-        contentCount: Array.isArray(task.contents) ? task.contents.length : 0,
-        contents: (task.contents ?? []).map((content) => ({
-          id: content.id,
-          name: content.name,
-          type: content.contentTypeName
-        }))
-      }))
-    })
-  }, [expandableTasks])
+  }, [expandableTasks, noLabelTitle])
 
   return (
     <PanelRoot ref={panelRef}>
@@ -344,7 +419,7 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
           </SectionHeader>
 
           <SectionBodyPadded>
-            <ControlGrid $compact={paletteGridCompact}>
+            <ControlGrid $compact={paletteGridCompact} $narrow={paletteGridNarrow}>
               {controlTasks.map((task) => (
                 <ControlTaskNodeCard
                   key={task.id}
@@ -374,7 +449,7 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
 
                   {defaultOpen ? (
                     <ContentBlock>
-                      <ContentGrid $compact={paletteGridCompact}>
+                      <ContentGrid $compact={paletteGridCompact} $narrow={paletteGridNarrow}>
                         {directActionTasks.map((task) => (
                           <ControlTaskNodeCard
                             key={task.id}
@@ -393,8 +468,16 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
               {expandableTasks.map((task) => {
                 const contents = sortByNameAsc(task.contents ?? [])
                 const open = openMap[task.id] ?? false
-                const taskGroups = moveToGroupsByTask[task.id] ?? [{ key: `${task.id}-default`, title: task.name, contents }]
-
+                const taskGroups =
+                  moveToGroupsByTask[task.id] ??
+                  [
+                    {
+                      key: `${task.id}-default`,
+                      title: String(task.name ?? 'MoveTo'),
+                      contents,
+                      isNoLabel: false
+                    }
+                  ]
                 return (
                   <div key={task.id}>
                     <TaskToggleButton
@@ -408,20 +491,24 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
 
                     {open ? (
                       <ContentBlock>
+
                         {taskGroups.map((group) => (
                           <div key={group.key}>
-                            <TaskToggleButton type="button" title={group.title} style={{ marginTop:10 }}>
-                              <TaskName>{group.title}</TaskName>
-                            </TaskToggleButton>
+                            {group.isNoLabel ? (
+                              <MoveToGrouping>{noLabelTitle}</MoveToGrouping>
+                            ) : group.title && group.title !== task.name ? (
+                              <MoveToGrouping>{group.title}</MoveToGrouping>
+                            ) : null}
 
-                            <ContentGrid $compact={paletteGridCompact}>
+                            <ContentGrid $compact={paletteGridCompact} $narrow={paletteGridNarrow}>
                               {group.contents.map((content) => (
                                 <ContentNodeCard
                                   key={content.id}
                                   task={task}
                                   content={content}
                                   selected={
-                                    selectedPalette?.taskId === task.id && selectedPalette?.contentId === content.id
+                                    selectedPalette?.taskId === task.id &&
+                                    selectedPalette?.contentId === content.id
                                   }
                                   onSelect={selectPalette}
                                   onDoubleAdd={() =>

@@ -9,12 +9,11 @@ import { fallbackOnFailureNodeType } from '../nodes/btFallbackOnFailureNode'
 import { forceFailureNodeType } from '../nodes/btForceFailureNode'
 import { forceSuccessNodeType } from '../nodes/btForceSuccessNode'
 import { ifThenElseNodeType } from '../nodes/btIfThenElseNode'
-import { andNodeType } from '../nodes/btAndNode'
-import { orNodeType } from '../nodes/btOrNode'
+import { fallbackNodeType } from '../nodes/btFallbackNode'
 import { parallelNodeType } from '../nodes/btParallelNode'
 import { btPreconditionNodeType } from '../nodes/btPreconditionNode'
-import { reactiveAndNodeType } from '../nodes/btReactiveAndNode'
-import { reactiveOrNodeType } from '../nodes/btReactiveOrNode'
+import { reactiveSequenceNodeType } from '../nodes/btReactiveSequenceNode'
+import { reactiveFallbackNodeType } from '../nodes/btReactiveFallbackNode'
 import { repeatNodeType } from '../nodes/btRepeatNode'
 import { retryUntilSuccessfulNodeType } from '../nodes/btRetryUntilSuccessfulNode'
 import { sequenceNodeType } from '../nodes/btSequenceNode'
@@ -24,12 +23,11 @@ import type { BtAstNode } from '../types'
 
 export function getBtChildren(node: BtAstNode): BtAstNode[] {
   switch (node.kind) {
-    case sequenceNodeType:
     case ifThenElseNodeType:
-    case orNodeType:
-    case andNodeType:
-    case reactiveOrNodeType:
-    case reactiveAndNodeType:
+    case fallbackNodeType:
+    case sequenceNodeType:
+    case reactiveFallbackNodeType:
+    case reactiveSequenceNodeType:
     case fallbackOnFailureNodeType:
     case parallelNodeType:
       return node.children ?? []

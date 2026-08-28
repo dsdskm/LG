@@ -14,6 +14,7 @@ import Admin from '@/pages/Admin'
 import Version from '@/pages/Version'
 import RootGuard from '@/components/RootGuard'
 import AdminGuard from '@/components/AdminGuard'
+import NetworkGuard from '@/components/NetworkGuard'
 import { USER_ROLE_LEVEL } from '@repo/constants'
 
 // 사이드바 메뉴는 세 그룹으로 나뉘고, 헤더 탭이 그룹을 전환한다.
@@ -90,6 +91,8 @@ export const appRoutes = [
     prefix: '',
     icon: 'policy',
     group: SETUP_GROUP.INITIAL,
+    // TODO: 약관 적용 시 다시 노출. 현재는 기능/라우트는 유지하고 메뉴에서만 숨긴다.
+    hide: true,
     element: <Terms />
   },
   {
@@ -127,7 +130,14 @@ export const appRoutes = [
     icon: 'publish',
     hide: true,
     hideLayout: true,
-    element: <Login />
+    // 로그인은 브라우저 → 클라우드 직통이라 로봇이 외부 네트워크에 붙기 전에는 성공할 수 없다.
+    // URL 직접 진입 · 401 인터셉터(window.location.href = '/login')로 들어오는 경우까지
+    // NetworkGuard 가 /network 로 되돌린다.
+    element: (
+      <NetworkGuard>
+        <Login />
+      </NetworkGuard>
+    )
   },
   {
     name: 'upload',
