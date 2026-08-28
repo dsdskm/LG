@@ -65,7 +65,7 @@ import {
   StyledAiStopButton
 } from './styles'
 import { postSiteAssistantChat } from '@repo/apis/ai/chat.js'
-import { ruleCheck } from '@repo/ai/rules/tms/chat-rule-matcher.js'
+import { ruleCheck } from '@repo/ai/rules/chat-rule-matcher.js'
 
 const ENABLE_QUICK_COMMANDS = true
 const ENABLE_MESSAGE_SUGGESTED_ACTIONS = false
@@ -1064,9 +1064,7 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
     try {
       setSendingStage(SENDING_STAGE.SCREEN_CHECK)
 
-      // local rule check
-
-      // rule check
+         // rule check
       const rule = await ruleCheck(routeAppKey, routeScreenKey, content, navigate, {
         groupId: selectedOrgs?.[0],
         siteId: selectedOrgs?.[1],
@@ -1076,12 +1074,13 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
         signal: controller.signal
       })
       if (activeRequestIdRef.current !== requestId || controller.signal.aborted) return
-      console.log(`rule`, rule)
+
       if (rule?.ok && rule.replyText) {
         setSendingStage(SENDING_STAGE.COMPLETED)
         await sleep(180)
         if (activeRequestIdRef.current !== requestId || controller.signal.aborted) return
         showAssistantReply(rule.replyText, context)
+        // TODO:session.email 그대로 사용하면 안됨
         void saveLocalChatHistory({
           author: session?.email || undefined,
           conversationId,

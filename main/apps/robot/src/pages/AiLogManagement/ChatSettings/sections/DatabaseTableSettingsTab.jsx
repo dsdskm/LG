@@ -146,7 +146,11 @@ export const DatabaseTableSettingsTab = ({
         return rows.reduce((acc, item) => {
             const appKey = String(getValue(item, 'appKey') ?? '').trim()
             if (!appKey) return acc
-            acc[appKey] = (acc[appKey] ?? 0) + 1
+            const intentType = String(getValue(item, 'intentType') ?? '').trim().toLowerCase()
+            const entry = acc[appKey] ?? { info: 0, action: 0 }
+            if (intentType === 'info' || intentType === 'both') entry.info += 1
+            if (intentType === 'action' || intentType === 'both') entry.action += 1
+            acc[appKey] = entry
             return acc
         }, {})
     }, [kind, rows])

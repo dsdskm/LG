@@ -27,7 +27,7 @@ import {
     SecondaryTextButton,
 } from '../styles'
 
-const APP_OPTIONS = ['cms', 'ota', 'robot', 'tms', 'learning']
+const APP_OPTIONS = ['common', 'cms', 'ota', 'robot', 'tms', 'learning']
 
 const FORM_CONFIG = {
     screen: {
@@ -178,7 +178,7 @@ export const DatabaseRecordEditorModal = ({
         setDraft((current) => ({
             ...current,
             appKey,
-            screenKey: kind === 'screen' ? current.screenKey : '',
+            screenKey: kind === 'screen' ? current.screenKey : (kind === 'prompt' && appKey === 'common' ? 'common' : ''),
         }))
     }
 
@@ -240,10 +240,15 @@ export const DatabaseRecordEditorModal = ({
 
             if (!editing) {
                 const targetAppKey = String(payload.appKey ?? '').trim()
-                const currentCount = targetAppKey ? Number(appRagCountMap[targetAppKey] ?? 0) : 0
+                const targetIntentType = String(payload.intentType ?? 'info').trim().toLowerCase()
+                const appCounts = targetAppKey ? appRagCountMap[targetAppKey] ?? { info: 0, action: 0 } : { info: 0, action: 0 }
                 const limit = Math.max(1, Number(maxChunksPerApp ?? 3))
-                if (targetAppKey && currentCount >= limit) {
-                    throw new Error(`앱당 RAG 청크는 최대 ${limit}개까지 등록할 수 있습니다.`)
+
+                const exceedsInfo = (targetIntentType === 'info' || targetIntentType === 'both') && appCounts.info >= limit
+                const exceedsAction = (targetIntentType === 'action' || targetIntentType === 'both') && appCounts.action >= limit
+                if (targetAppKey && (exceedsInfo || exceedsAction)) {
+                    const intentLabel = targetIntentType === 'action' ? '액션 인텐트' : targetIntentType === 'both' ? '정보/액션 인텐트' : '정보 인텐트'
+                    throw new Error(`앱당 ${intentLabel} RAG 청크는 최대 ${limit}개까지 등록할 수 있습니다.`)
                 }
             }
         }
@@ -345,7 +350,7 @@ export const DatabaseRecordEditorModal = ({
                                         <FormSelect
                                             id={`${kind}-${field.key}`}
                                             value={String(draft.screenKey ?? '')}
-                                            disabled={!selectedAppKey}
+                                            disabled={!selectedAppKey || selectedAppKey === 'common'}
                                             onChange={(event) => selectScreen(event.target.value)}
                                         >
                                             <option value="">{selectedAppKey ? '화면을 선택하세요' : '앱을 먼저 선택하세요'}</option>
@@ -374,7 +379,10 @@ export const DatabaseRecordEditorModal = ({
                                             {editing && field.key === 'intentType' && draft[field.key] === 'both' ? (
                                                 <option value="both">both (기존 데이터)</option>
                                             ) : null}
-                                            {(kind === 'prompt' && field.key === 'type' ? promptTypes : field.options).map((option) => {
+                                            {(kind === 'prompt' && field.key === 'type'
+                                                ? (Array.isArray(promptTypes) && promptTypes.length > 0 ? promptTypes : field.options)
+                                                : field.options
+                                            ).map((option) => {
                                                 const value = typeof option === 'string' ? option : option.key
                                                 const label = typeof option === 'string' ? option : option.label
                                                 return <option key={value} value={value}>{label}</option>

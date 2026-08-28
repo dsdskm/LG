@@ -10,6 +10,13 @@ export const AI_TASKFLOW_CANVAS_COMMAND_EVENT = 'ai-assistant:taskflow-canvas-co
 export const AI_TASKFLOW_CANVAS_RESULT_EVENT = 'ai-assistant:taskflow-canvas-result'
 export const AI_TASKFLOW_REFRESH_CONTENTS_EVENT = 'ai-assistant:taskflow-refresh-contents'
 
+// node-*.js 액션의 command.type은 RULE_KEY.NODE_* 값을 그대로 재사용한다.
+export const TASKFLOW_CANVAS_COMMAND_TYPE = {
+  SAVE: 'save',
+  SET_FLOW_MODE: 'set-flow-mode',
+  ALIGN: 'align'
+}
+
 export const RULE_KEY = {
   TMS_HELP: 'tms-help',
   TASKFLOW_LIST: 'taskflow-list',

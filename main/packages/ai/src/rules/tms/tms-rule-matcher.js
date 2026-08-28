@@ -75,6 +75,7 @@ export const ruleCheck = async (appKey, screenKey, message, navigate, context = 
   }
 
   if (rule) {
+    console.log(`rule`,rule)
     const ruleKey = rule.ruleKey
     let replyText = rule.replyText
     switch (ruleKey) {
