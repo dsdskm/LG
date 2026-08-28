@@ -16,7 +16,7 @@ import {
   updateChatRagDoc,
   updateChatSettings,
   upsertCommonChatPrompt,
-} from '@repo/apis/ai/chatSettings.js'
+} from '@repo/apis/ai/chatSettings'
 
 import {
   PageRoot,
@@ -132,7 +132,10 @@ const ChatSettings = () => {
   const [values, setValues] = useState({})
   const [draftProvider, setDraftProvider] = useState('')
   const [draftFinalFallbackText, setDraftFinalFallbackText] = useState('')
+  const [draftRagContextTopK, setDraftRagContextTopK] = useState('3')
+  const [draftRagContextMaxCharsPerChunk, setDraftRagContextMaxCharsPerChunk] = useState('700')
   const [savingFinalFallbackText, setSavingFinalFallbackText] = useState(false)
+  const [savingRagContextLimits, setSavingRagContextLimits] = useState(false)
 
   const [management, setManagement] = useState(EMPTY_MANAGEMENT)
   const [settingDrafts, setSettingDrafts] = useState({})
@@ -312,6 +315,8 @@ const ChatSettings = () => {
       setSettingDrafts({})
       setDraftProvider(String(data.values?.llmProvider ?? 'azure'))
       setDraftFinalFallbackText(String(data.values?.finalFallbackText ?? ''))
+      setDraftRagContextTopK(String(data.values?.ragContextTopK ?? 3))
+      setDraftRagContextMaxCharsPerChunk(String(data.values?.ragContextMaxCharsPerChunk ?? 700))
 
       const nextManagement = data.management ?? EMPTY_MANAGEMENT
 
@@ -626,6 +631,41 @@ const ChatSettings = () => {
       setSavingFinalFallbackText(false)
     }
   }, [draftFinalFallbackText, savingFinalFallbackText])
+
+  const handleSaveRagContextLimits = useCallback(async () => {
+    if (savingRagContextLimits) return
+
+    const topK = Number(draftRagContextTopK)
+    const maxCharsPerChunk = Number(draftRagContextMaxCharsPerChunk)
+
+    if (!Number.isFinite(topK) || topK < 1 || !Number.isFinite(maxCharsPerChunk) || maxCharsPerChunk < 100) {
+      setError('RAG 청크 수는 1 이상, 각 청크 길이는 100자 이상이어야 합니다.')
+      return
+    }
+
+    setSavingRagContextLimits(true)
+    setError('')
+
+    try {
+      const res = await updateChatSettings({
+        settings: [
+          { key: 'ragContextTopK', value: Math.floor(topK) },
+          { key: 'ragContextMaxCharsPerChunk', value: Math.floor(maxCharsPerChunk) },
+        ],
+      })
+      const next = res?.data?.values ?? {}
+
+      setValues(next)
+      setDraftRagContextTopK(String(next.ragContextTopK ?? topK))
+      setDraftRagContextMaxCharsPerChunk(String(next.ragContextMaxCharsPerChunk ?? maxCharsPerChunk))
+      setSavedMessage('RAG 본문 제한 설정이 저장되었습니다.')
+      setSavedOpen(true)
+    } catch (e) {
+      setError(e?.message || 'RAG 본문 제한 저장에 실패했습니다.')
+    } finally {
+      setSavingRagContextLimits(false)
+    }
+  }, [draftRagContextMaxCharsPerChunk, draftRagContextTopK, savingRagContextLimits])
 
   const handleCommonPromptChange = useCallback((field, nextValue) => {
     setCommonPromptDraft((prev) => ({
@@ -1006,8 +1046,21 @@ const ChatSettings = () => {
     }))
   }, [])
 
+  const getDbRagLimitValue = useCallback((key, fallback) => {
+    const rawValue = Number(values?.[key] ?? fallback)
+    if (!Number.isFinite(rawValue) || rawValue <= 0) return fallback
+    return Math.floor(rawValue)
+  }, [values])
+
   const handleCreateCommonInfoRag = useCallback(async () => {
     const keywords = normalizeKeywordArray(newCommonInfoRagDraft.keywords)
+    const maxCharsPerChunk = getDbRagLimitValue('ragContextMaxCharsPerChunk', 700)
+    const bodyLength = String(newCommonInfoRagDraft.body ?? '').length
+
+    if (bodyLength > maxCharsPerChunk) {
+      setError(`공통 info RAG 본문은 ${maxCharsPerChunk}자를 넘길 수 없습니다. 현재 ${bodyLength}자입니다.`)
+      return
+    }
 
     setSavingCreateCommonInfoRag(true)
     setError('')
@@ -1044,6 +1097,13 @@ const ChatSettings = () => {
 
   const handleCreateCommonActionRag = useCallback(async () => {
     const keywords = normalizeKeywordArray(newCommonActionRagDraft.keywords)
+    const maxCharsPerChunk = getDbRagLimitValue('ragContextMaxCharsPerChunk', 700)
+    const bodyLength = String(newCommonActionRagDraft.body ?? '').length
+
+    if (bodyLength > maxCharsPerChunk) {
+      setError(`공통 action RAG 본문은 ${maxCharsPerChunk}자를 넘길 수 없습니다. 현재 ${bodyLength}자입니다.`)
+      return
+    }
 
     setSavingCreateCommonActionRag(true)
     setError('')
@@ -1124,6 +1184,13 @@ const ChatSettings = () => {
         ? draft?.keywords
         : parseKeywordsFallback(draft?.keywordsText),
     )
+    const maxCharsPerChunk = getDbRagLimitValue('ragContextMaxCharsPerChunk', 700)
+    const bodyLength = String(draft?.body ?? '').length
+
+    if (bodyLength > maxCharsPerChunk) {
+      setError(`본문은 ${maxCharsPerChunk}자를 넘길 수 없습니다. 현재 ${bodyLength}자입니다.`)
+      return false
+    }
 
     setSavingCreateScreenRag(true)
     setError('')
@@ -1164,6 +1231,13 @@ const ChatSettings = () => {
           ? draft.keywords
           : parseKeywordsFallback(draft.keywordsText),
       )
+      const maxCharsPerChunk = getDbRagLimitValue('ragContextMaxCharsPerChunk', 700)
+      const bodyLength = String(draft.body ?? '').length
+
+      if (bodyLength > maxCharsPerChunk) {
+        setError(`본문은 ${maxCharsPerChunk}자를 넘길 수 없습니다. 현재 ${bodyLength}자입니다.`)
+        return false
+      }
 
       setSavingRagKey(draftKey)
       setError('')
@@ -1188,7 +1262,7 @@ const ChatSettings = () => {
         setSavingRagKey('')
       }
     },
-    [load, ragDrafts]
+    [getDbRagLimitValue, load, ragDrafts]
   )
 
   const handleChangeAppTab = useCallback((nextApp) => {
@@ -1226,6 +1300,12 @@ const ChatSettings = () => {
               setDraftFinalFallbackText={setDraftFinalFallbackText}
               savingFinalFallbackText={savingFinalFallbackText}
               onSaveFinalFallbackText={handleSaveFinalFallbackText}
+              draftRagContextTopK={draftRagContextTopK}
+              setDraftRagContextTopK={setDraftRagContextTopK}
+              draftRagContextMaxCharsPerChunk={draftRagContextMaxCharsPerChunk}
+              setDraftRagContextMaxCharsPerChunk={setDraftRagContextMaxCharsPerChunk}
+              savingRagContextLimits={savingRagContextLimits}
+              onSaveRagContextLimits={handleSaveRagContextLimits}
             />
           ) : null}
 
@@ -1242,7 +1322,14 @@ const ChatSettings = () => {
           ) : null}
 
           {activeAppTab === APP_TAB.RAG ? (
-            <DatabaseTableSettingsTab kind="rag" items={management.ragDocs} screens={management.screens} onChanged={load} />
+            <DatabaseTableSettingsTab
+              kind="rag"
+              items={management.ragDocs}
+              screens={management.screens}
+              onChanged={load}
+              maxCharsPerChunk={Number(values?.ragContextMaxCharsPerChunk ?? 700)}
+              maxChunksPerApp={Number(values?.ragContextTopK ?? 3)}
+            />
           ) : null}
 
           {activeAppTab === APP_TAB.RULE ? (

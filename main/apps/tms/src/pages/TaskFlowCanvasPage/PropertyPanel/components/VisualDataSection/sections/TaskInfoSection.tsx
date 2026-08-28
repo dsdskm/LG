@@ -282,7 +282,7 @@ export default function TaskInfoSection({
                   }
                   value={
                     row.value === null ||
-                    row.value === undefined
+                      row.value === undefined
                       ? ''
                       : String(row.value)
                   }
@@ -316,6 +316,7 @@ export default function TaskInfoSection({
 
                 {row.key === 'success_count' ? (
                   <ParallelCountGuide
+                    readOnly={readOnly}
                     selectedData={selectedData}
                     propertyKey="success_count"
                   />
@@ -323,6 +324,7 @@ export default function TaskInfoSection({
 
                 {row.key === 'failure_count' ? (
                   <ParallelCountGuide
+                    readOnly={readOnly}
                     selectedData={selectedData}
                     propertyKey="failure_count"
                   />

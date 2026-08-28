@@ -110,7 +110,14 @@ const uniqueOptions = (items, getter) =>
         a.localeCompare(b)
     )
 
-export const DatabaseTableSettingsTab = ({ kind, items, screens, onChanged }) => {
+export const DatabaseTableSettingsTab = ({
+    kind,
+    items,
+    screens,
+    onChanged,
+    maxCharsPerChunk = 700,
+    maxChunksPerApp = 3,
+}) => {
     const config = TABLE_CONFIG[kind] ?? TABLE_CONFIG.guidance
     const rows = Array.isArray(items) ? items : []
     const [search, setSearch] = useState('')
@@ -132,6 +139,15 @@ export const DatabaseTableSettingsTab = ({ kind, items, screens, onChanged }) =>
     }, [kind])
 
     const appOptions = useMemo(() => uniqueOptions(rows, (item) => getValue(item, 'appKey')), [rows])
+    const appRagCounts = useMemo(() => {
+        if (kind !== 'rag') return {}
+        return rows.reduce((acc, item) => {
+            const appKey = String(getValue(item, 'appKey') ?? '').trim()
+            if (!appKey) return acc
+            acc[appKey] = (acc[appKey] ?? 0) + 1
+            return acc
+        }, {})
+    }, [kind, rows])
     const screenOptions = useMemo(
         () =>
             uniqueOptions(
@@ -265,6 +281,9 @@ export const DatabaseTableSettingsTab = ({ kind, items, screens, onChanged }) =>
                     promptTypes={promptTypes}
                     onClose={() => setEditorOpen(false)}
                     onChanged={onChanged}
+                    maxCharsPerChunk={maxCharsPerChunk}
+                    maxChunksPerApp={maxChunksPerApp}
+                    appRagCountMap={appRagCounts}
                 />
             ) : null}
         </TableSection>

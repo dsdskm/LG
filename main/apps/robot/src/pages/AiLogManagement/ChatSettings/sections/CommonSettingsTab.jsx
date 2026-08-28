@@ -70,6 +70,22 @@ const normalizeImageAttachMode = (value) => {
     return 'auto'
 }
 
+const BodyLengthMeter = ({ value, maxChars = 700 }) => {
+    const text = typeof value === 'string' ? value : ''
+    const length = text.length
+    const limit = Number(maxChars ?? 700)
+    const isOverLimit = length > limit
+
+    return (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
+            <span style={{ fontSize: '12px', color: '#64748b' }}>본문 길이</span>
+            <strong style={{ fontSize: '12px', color: isOverLimit ? '#dc2626' : '#334155' }}>
+                현재 {length} / 제한 {limit}자
+            </strong>
+        </div>
+    )
+}
+
 const IMAGE_ATTACH_MODE_OPTIONS = [
     { key: 'auto', label: '자동' },
     { key: 'always', label: '항상 표시' },
@@ -307,6 +323,12 @@ export const CommonSettingsTab = ({
     setDraftFinalFallbackText,
     savingFinalFallbackText,
     onSaveFinalFallbackText,
+    draftRagContextTopK,
+    setDraftRagContextTopK,
+    draftRagContextMaxCharsPerChunk,
+    setDraftRagContextMaxCharsPerChunk,
+    savingRagContextLimits,
+    onSaveRagContextLimits,
 }) => {
     return (
         <ManagementGrid>
@@ -325,7 +347,62 @@ export const CommonSettingsTab = ({
                 saving={savingFinalFallbackText}
                 onSave={onSaveFinalFallbackText}
             />
+            <RagContextLimitCard
+                topK={draftRagContextTopK}
+                setTopK={setDraftRagContextTopK}
+                maxCharsPerChunk={draftRagContextMaxCharsPerChunk}
+                setMaxCharsPerChunk={setDraftRagContextMaxCharsPerChunk}
+                saving={savingRagContextLimits}
+                onSave={onSaveRagContextLimits}
+            />
         </ManagementGrid>
+    )
+}
+
+const RagContextLimitCard = ({ topK, setTopK, maxCharsPerChunk, setMaxCharsPerChunk, saving, onSave }) => {
+    return (
+        <SettingCard>
+            <CardHeader>
+                <CardTitle>RAG 본문 제한</CardTitle>
+            </CardHeader>
+
+            <PageDescription>
+                LLM에 넣는 RAG 문맥을 너무 길게 가지 않도록 청크 수와 각 청크 본문 길이를 제한합니다. 본문 전체를 길게 넣기보다 필요한 근거만 보냅니다.
+            </PageDescription>
+
+            <div style={{ display: 'grid', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div>
+                        <FieldLabel>LLM 전달 청크 수</FieldLabel>
+                        <PromptTextarea
+                            value={topK}
+                            onChange={(e) => setTopK(e.target.value)}
+                            placeholder="3"
+                            style={{ minHeight: '42px', resize: 'vertical' }}
+                            type="number"
+                            min={1}
+                        />
+                    </div>
+                    <div>
+                        <FieldLabel>청크별 최대 본문 길이(자)</FieldLabel>
+                        <PromptTextarea
+                            value={maxCharsPerChunk}
+                            onChange={(e) => setMaxCharsPerChunk(e.target.value)}
+                            placeholder="700"
+                            style={{ minHeight: '42px', resize: 'vertical' }}
+                            type="number"
+                            min={100}
+                        />
+                    </div>
+                </div>
+            </div>
+
+            <ActionRow>
+                <PrimaryButton type="button" onClick={onSave} disabled={saving}>
+                    {saving ? '저장 중...' : '저장'}
+                </PrimaryButton>
+            </ActionRow>
+        </SettingCard>
     )
 }
 
@@ -1019,7 +1096,14 @@ const CommonRagManagementCard = ({
                                 value={activeRagDraft.body}
                                 onChange={(e) => onRagChange(activeRagKey, 'body', e.target.value)}
                             />
-                            <FieldHint>한 청크는 한 주제만 다루는 것이 좋습니다(목차/단락 단위).</FieldHint>
+                            <BodyLengthMeter value={activeRagDraft.body} maxChars={Number(values?.ragContextMaxCharsPerChunk ?? 700)} />
+                            {String(activeRagDraft.body ?? '').length > Number(values?.ragContextMaxCharsPerChunk ?? 700) ? (
+                                <FieldHint style={{ color: '#dc2626' }}>
+                                    본문이 설정된 최대 {Number(values?.ragContextMaxCharsPerChunk ?? 700)}자를 초과했습니다. 저장할 수 없습니다.
+                                </FieldHint>
+                            ) : (
+                                <FieldHint>한 청크는 한 주제만 다루는 것이 좋습니다(목차/단락 단위).</FieldHint>
+                            )}
 
                             <FieldLabel>imageUrl</FieldLabel>
                             <input
@@ -1057,7 +1141,7 @@ const CommonRagManagementCard = ({
                                 <PrimaryButton
                                     type="button"
                                     onClick={() => onSaveRag(activeRagDoc)}
-                                    disabled={savingRagKey === activeRagKey}
+                                    disabled={savingRagKey === activeRagKey || String(activeRagDraft.body ?? '').length > Number(values?.ragContextMaxCharsPerChunk ?? 700)}
                                 >
                                     {savingRagKey === activeRagKey ? '저장 중...' : '저장'}
                                 </PrimaryButton>
@@ -1111,6 +1195,12 @@ const CommonRagManagementCard = ({
                                 value={newCommonRagDraft.body}
                                 onChange={(e) => onNewCommonRagChange('body', e.target.value)}
                             />
+                            <BodyLengthMeter value={newCommonRagDraft.body} maxChars={Number(values?.ragContextMaxCharsPerChunk ?? 700)} />
+                            {String(newCommonRagDraft.body ?? '').length > Number(values?.ragContextMaxCharsPerChunk ?? 700) ? (
+                                <FieldHint style={{ color: '#dc2626' }}>
+                                    본문이 설정된 최대 {Number(values?.ragContextMaxCharsPerChunk ?? 700)}자를 초과했습니다. 추가할 수 없습니다.
+                                </FieldHint>
+                            ) : null}
 
                             <FieldLabel>imageUrl</FieldLabel>
                             <input
@@ -1137,7 +1227,11 @@ const CommonRagManagementCard = ({
                                 닫기
                             </SecondaryTextButton>
 
-                            <PrimaryButton type="button" onClick={handleCreateCommonRagSubmit} disabled={savingCreateCommonRag}>
+                            <PrimaryButton
+                                type="button"
+                                onClick={handleCreateCommonRagSubmit}
+                                disabled={savingCreateCommonRag || String(newCommonRagDraft.body ?? '').length > Number(values?.ragContextMaxCharsPerChunk ?? 700)}
+                            >
                                 {savingCreateCommonRag ? '등록 중...' : '청크 등록'}
                             </PrimaryButton>
                         </ModalActions>

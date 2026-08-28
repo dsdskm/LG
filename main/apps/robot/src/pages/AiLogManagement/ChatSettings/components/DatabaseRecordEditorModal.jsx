@@ -16,7 +16,7 @@ import {
     updateChatPrompt,
     updateChatRagDoc,
     upsertChatRule,
-} from '@repo/apis/ai/chatSettings.js'
+} from '@repo/apis/ai/chatSettings'
 
 import {
     ModalActions,
@@ -108,6 +108,22 @@ const createDraft = (fields, record) => Object.fromEntries(fields.map((field) =>
     return [field.key, field.type === 'json' ? JSON.stringify(value, null, 2) : value]
 }))
 
+const BodyLengthMeter = ({ value, maxChars = 700 }) => {
+    const text = typeof value === 'string' ? value : ''
+    const length = text.length
+    const limit = Number(maxChars ?? 700)
+    const isOverLimit = length > limit
+
+    return (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
+            <span style={{ fontSize: '12px', color: '#64748b' }}>본문 길이</span>
+            <strong style={{ fontSize: '12px', color: isOverLimit ? '#dc2626' : '#334155' }}>
+                현재 {length} / 제한 {limit}자
+            </strong>
+        </div>
+    )
+}
+
 const parseJsonField = (value, label) => {
     try {
         return JSON.parse(String(value || 'null'))
@@ -123,7 +139,17 @@ const assertSuccessful = (response) => {
     return response?.data
 }
 
-export const DatabaseRecordEditorModal = ({ kind, item, screens, promptTypes, onClose, onChanged }) => {
+export const DatabaseRecordEditorModal = ({
+    kind,
+    item,
+    screens,
+    promptTypes,
+    onClose,
+    onChanged,
+    maxCharsPerChunk = 700,
+    maxChunksPerApp = 3,
+    appRagCountMap = {},
+}) => {
     const config = FORM_CONFIG[kind] ?? FORM_CONFIG.guidance
     const editing = Boolean(item?.id)
     const screenOptions = (Array.isArray(screens) ? screens : [])
@@ -205,6 +231,23 @@ export const DatabaseRecordEditorModal = ({ kind, item, screens, promptTypes, on
             else if (field.type === 'checkbox') payload[field.key] = Boolean(value)
             else payload[field.key] = String(value ?? '')
         }
+
+        if (kind === 'rag') {
+            const bodyLimit = Number(maxCharsPerChunk ?? 700)
+            if (String(payload.body ?? '').length > bodyLimit) {
+                throw new Error(`RAG 본문은 ${bodyLimit}자를 넘길 수 없습니다.`)
+            }
+
+            if (!editing) {
+                const targetAppKey = String(payload.appKey ?? '').trim()
+                const currentCount = targetAppKey ? Number(appRagCountMap[targetAppKey] ?? 0) : 0
+                const limit = Math.max(1, Number(maxChunksPerApp ?? 3))
+                if (targetAppKey && currentCount >= limit) {
+                    throw new Error(`앱당 RAG 청크는 최대 ${limit}개까지 등록할 수 있습니다.`)
+                }
+            }
+        }
+
         return payload
     }
 
@@ -337,12 +380,17 @@ export const DatabaseRecordEditorModal = ({ kind, item, screens, promptTypes, on
                                             })}
                                         </FormSelect>
                                     ) : field.type === 'textarea' || field.type === 'json' ? (
-                                        <FormTextarea
-                                            id={`${kind}-${field.key}`}
-                                            rows={field.rows}
-                                            value={String(draft[field.key] ?? '')}
-                                            onChange={(event) => setField(field.key, event.target.value)}
-                                        />
+                                        <>
+                                            <FormTextarea
+                                                id={`${kind}-${field.key}`}
+                                                rows={field.rows}
+                                                value={String(draft[field.key] ?? '')}
+                                                onChange={(event) => setField(field.key, event.target.value)}
+                                            />
+                                            {kind === 'rag' && field.key === 'body' ? (
+                                                <BodyLengthMeter value={draft.body} maxChars={maxCharsPerChunk} />
+                                            ) : null}
+                                        </>
                                     ) : (
                                         <FormInput
                                             id={`${kind}-${field.key}`}
