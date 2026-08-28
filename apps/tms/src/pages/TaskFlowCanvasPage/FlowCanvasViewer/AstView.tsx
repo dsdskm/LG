@@ -10,15 +10,14 @@ import { PropertyPanelWrap, PropertyPanelHeader } from './styles'
 import { parallelNodeType } from '@/bt/nodes/btParallelNode'
 import { forceFailureNodeType } from '@/bt/nodes/btForceFailureNode'
 import { forceSuccessNodeType } from '@/bt/nodes/btForceSuccessNode'
-import { orNodeType } from '@/bt/nodes/btOrNode'
-import { andNodeType } from '@/bt/nodes/btAndNode'
+import { fallbackNodeType } from '@/bt/nodes/btFallbackNode'
 import { fallbackOnFailureNodeType } from '@/bt/nodes/btFallbackOnFailureNode'
 import { ifThenElseNodeType } from '@/bt/nodes/btIfThenElseNode'
 import { repeatNodeType } from '@/bt/nodes/btRepeatNode'
 import { sequenceNodeType } from '@/bt/nodes/btSequenceNode'
 import { actionNodeType } from '@/bt/nodes/btActionNode'
-import { reactiveOrNodeType } from '@/bt/nodes/btReactiveOrNode'
-import { reactiveAndNodeType } from '@/bt/nodes/btReactiveAndNode'
+import { reactiveFallbackNodeType } from '@/bt/nodes/btReactiveFallbackNode'
+import { reactiveSequenceNodeType } from '@/bt/nodes/btReactiveSequenceNode'
 import { retryUntilSuccessfulNodeType } from '@/bt/nodes/btRetryUntilSuccessfulNode'
 import { btPreconditionNodeType } from '@/bt/nodes/btPreconditionNode'
 import { btDelayNodeType } from '@/bt/nodes/btDelayNode'
@@ -49,12 +48,11 @@ function getNodeId(node: any): string | null {
 
 function childrenOf(node: BtAstNode): BtAstNode[] {
   switch (node.kind) {
-    case sequenceNodeType:
     case ifThenElseNodeType:
-    case orNodeType:
-    case andNodeType:
-    case reactiveOrNodeType:
-    case reactiveAndNodeType:
+    case fallbackNodeType:
+    case sequenceNodeType:
+    case reactiveFallbackNodeType:
+    case reactiveSequenceNodeType:
     case fallbackOnFailureNodeType:
     case parallelNodeType:
       return node.children ?? []
@@ -79,16 +77,14 @@ function labelOf(node: BtAstNode): string {
       return `Sequence${node.name ? ` (${node.name})` : ''}`
     case ifThenElseNodeType:
       return 'IfThenElse'
-    case orNodeType:
-      return 'Or'
-    case andNodeType:
-      return 'And'
-    case reactiveOrNodeType:
-      return 'ReactiveOr'
-    case reactiveAndNodeType:
-      return 'ReactiveAnd'
-    case fallbackOnFailureNodeType:
+    case fallbackNodeType:
       return 'Fallback'
+    case reactiveFallbackNodeType:
+      return 'ReactiveFallback'
+    case reactiveSequenceNodeType:
+      return 'ReactiveSequence'
+    case fallbackOnFailureNodeType:
+      return 'FallbackOnFailure'
     case parallelNodeType:
       return `Parallel (success≥${node.successCount})`
     case repeatNodeType:

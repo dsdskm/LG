@@ -1,15 +1,14 @@
-import { BtReactiveOrNode } from './nodes/btReactiveOrNode'
+import { BtReactiveFallbackNode } from './nodes/btReactiveFallbackNode'
 import { BtParallelNode } from './nodes/btParallelNode'
 import { BtForceSuccessNode } from './nodes/btForceSuccessNode'
 import { BtForceFailureNode } from './nodes/btForceFailureNode'
-import { BtOrNode } from './nodes/btOrNode'
-import { BtAndNode } from './nodes/btAndNode'
+import { BtFallbackNode } from './nodes/btFallbackNode'
 import { BtSequenceNode } from './nodes/btSequenceNode'
 import { BtIfThenElseNode } from './nodes/btIfThenElseNode'
 import { BtFallbackOnFailureNode } from './nodes/btFallbackOnFailureNode'
 import { BtRepeatNode } from './nodes/btRepeatNode'
 import { BtActionNode } from './nodes/btActionNode'
-import { BtReactiveAndNode } from './nodes/btReactiveAndNode'
+import { BtReactiveSequenceNode } from './nodes/btReactiveSequenceNode'
 import { BtRetryUntilSuccessfulNode } from './nodes/btRetryUntilSuccessfulNode'
 import { BtPreconditionNode } from './nodes/btPreconditionNode'
 import { BtDelayNode } from './nodes/btDelayNode'
@@ -20,10 +19,9 @@ export type BtAstNode =
   | BtSequenceNode
   | BtIfThenElseNode
   | BtFallbackOnFailureNode
-  | BtOrNode
-  | BtAndNode
-  | BtReactiveOrNode
-  | BtReactiveAndNode
+  | BtFallbackNode
+  | BtReactiveFallbackNode
+  | BtReactiveSequenceNode
   | BtParallelNode
   | BtRepeatNode
   | BtForceSuccessNode

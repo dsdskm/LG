@@ -10,7 +10,7 @@
 //    새로 만든다. trace 는 leaf 방문 순서의 평평한 배열이고, cursor 는 그 위를 걷는 단일 포인터다.
 //  - cursor 이동 규칙(advanceCursor):
 //      · 일반          : 한 칸 전진
-//      · reactiveOr    : RUNNING 이면 그 구간 시작으로 되돌림(매 tick 첫 자식부터 재평가)
+//      · reactiveFallback    : RUNNING 이면 그 구간 시작으로 되돌림(매 tick 첫 자식부터 재평가)
 //      · parallel      : RUNNING 구간에 "park" — 한 step = 그 parallel 의 1 tick(자식을 개별 순회하지 않음),
 //                        resolve 되면 구간 뒤로 진행
 //  - frozen : 이미 지나간(실행된) 노드 결과 보존. resolve 가 나중에 바뀌어도 과거 결과는 안 변한다.
@@ -22,7 +22,7 @@ import { buildSimTrace, type ControlSpan, type ResolveFn, type Visit } from './s
 import type { ExecSnapshot, ExecStatus, FlowExecutor } from './executor'
 import { EMPTY_SNAPSHOT } from './executor'
 
-// cursor 를 포함하는 reactiveOr 구간 중 가장 바깥(start 가 가장 작은) 것의 시작 인덱스를 반환.
+// cursor 를 포함하는 reactiveFallback 구간 중 가장 바깥(start 가 가장 작은) 것의 시작 인덱스를 반환.
 // 없으면 null. 중첩 시 바깥 ReactiveFallback 이 매 tick 첫 자식부터 재평가하므로 outermost 기준.
 function findReactiveSpanStart(spans: ControlSpan[], cursor: number): number | null {
   let best: number | null = null
@@ -138,7 +138,7 @@ export class SimulationExecutor implements FlowExecutor {
     } else {
       const cur = trace[this.cursor]
       if (cur && cur.status === 'RUNNING') {
-        // reactiveOr 안이면 그 구간 첫 자식부터 재평가, 일반 Or/Fallback 이면 그 자리에 머문다(래치).
+        // reactiveFallback 안이면 그 구간 첫 자식부터 재평가, 일반 Fallback 이면 그 자리에 머문다(래치).
         const reactiveStart = findReactiveSpanStart(spans, this.cursor)
         this.cursor = reactiveStart !== null ? reactiveStart : this.cursor
       } else {

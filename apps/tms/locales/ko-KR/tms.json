@@ -2,6 +2,9 @@
   "actions": {
     "delete": "삭제"
   },
+  "palette": {
+    "noLabel": "[라벨 없음]"
+  },
   "canvas": {
     "header": {
       "undo": "실행 취소",
@@ -187,6 +190,12 @@
       "description": "현재 캔버스 구성을 저장합니다.",
       "saveFinal": "운영 버전 저장",
       "saveFinalHint": "체크하면 저장 버전과 함께 운영 버전(배포에 쓰이는 버전)도 갱신합니다.\n(Behavior Tree 생성이 가능한 구성이어야 합니다)"
+    },
+    "preview": {
+      "noContent": "연결된 콘텐츠가 없습니다.",
+      "contentNotFound": "콘텐츠를 찾을 수 없습니다.",
+      "contentInvalid": "콘텐츠를 재생할 수 없습니다.",
+      "loading": "불러오는 중..."
     }
   },
   "infoDialog": {

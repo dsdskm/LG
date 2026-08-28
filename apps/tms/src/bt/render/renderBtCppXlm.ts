@@ -1,8 +1,8 @@
 import { forceFailureNodeType } from '../nodes/btForceFailureNode'
 import { forceSuccessNodeType } from '../nodes/btForceSuccessNode'
 import { btPreconditionNodeType } from '../nodes/btPreconditionNode'
-import { orNodeType } from '../nodes/btOrNode'
-import { andNodeType } from '../nodes/btAndNode'
+import { fallbackNodeType } from '../nodes/btFallbackNode'
+import { sequenceNodeType } from '../nodes/btSequenceNode'
 import { parallelFailureCountProp, parallelNodeType, parallelSuccessCountProp } from '../nodes/btParallelNode'
 import type { BtAstNode } from '../types'
 import type { BtSequenceNode } from '../nodes/btSequenceNode'
@@ -11,11 +11,11 @@ import { fallbackOnFailureNodeType } from '../nodes/btFallbackOnFailureNode'
 import { ifThenElseNodeType } from '../nodes/btIfThenElseNode'
 import { repeatNodeType, repeatNumCyclesProp } from '../nodes/btRepeatNode'
 import { actionNodeType } from '../nodes/btActionNode'
-import { reactiveAndNodeType } from '../nodes/btReactiveAndNode'
+import { reactiveSequenceNodeType } from '../nodes/btReactiveSequenceNode'
 import { retryUntilSuccessfulNodeType, retryUntilSuccessfulNumAttemptsProp } from '../nodes/btRetryUntilSuccessfulNode'
 import { btDelayNodeType } from '../nodes/btDelayNode'
 import { btTimeoutNodeType } from '../nodes/btTimeoutNode'
-import { reactiveOrNodeType } from '../nodes/btReactiveOrNode'
+import { reactiveFallbackNodeType } from '../nodes/btReactiveFallbackNode'
 
 // 제어 노드(Sequence/Parallel/Repeat 등)는 node_id 를 XML 로 내보내지 않는다.
 // node_id 는 시뮬레이터/검증이 attrs 로 내부 참조하므로 AST 에는 남기고, 렌더링 시에만 제외한다.
@@ -48,7 +48,7 @@ function renderAstNode(node: BtAstNode, depth: number): string {
     return `${pad}<Action${attrsToString({ ID: node.tag, name: node.name, ...node.attrs })}/>`
   }
 
-  if (node.kind === orNodeType) {
+  if (node.kind === fallbackNodeType) {
     const childrenXml = node.children.map((c) => renderAstNode(c, depth + 1)).join('\n')
     const attrs = attrsToString({
       name: node.name,
@@ -60,7 +60,7 @@ function renderAstNode(node: BtAstNode, depth: number): string {
   }
 
   // And 는 BT.CPP 에 대응 태그가 없어 Sequence 로 내보낸다(자식을 순서대로 실행, 하나라도 실패면 실패).
-  if (node.kind === andNodeType) {
+  if (node.kind === sequenceNodeType) {
     const childrenXml = node.children.map((c) => renderAstNode(c, depth + 1)).join('\n')
     const attrs = attrsToString({
       name: node.name,
@@ -71,7 +71,7 @@ function renderAstNode(node: BtAstNode, depth: number): string {
     return `${pad}<Sequence${attrs}>\n${childrenXml}\n${pad}</Sequence>`
   }
 
-  if (node.kind === reactiveAndNodeType) {
+  if (node.kind === reactiveSequenceNodeType) {
     const childrenXml = node.children.map((c) => renderAstNode(c, depth + 1)).join('\n')
     const attrs = attrsToString({
       name: node.name,
@@ -82,11 +82,11 @@ function renderAstNode(node: BtAstNode, depth: number): string {
     return `${pad}<ReactiveSequence${attrs}>\n${childrenXml}\n${pad}</ReactiveSequence>`
   }
 
-  if (node.kind === reactiveOrNodeType) {
+  if (node.kind === reactiveFallbackNodeType) {
     const childrenXml = node.children.map((c) => renderAstNode(c, depth + 1)).join('\n')
     const attrs = attrsToString({
       name: node.name,
-      ...(node.attrs ?? {})
+      ...omitNodeId(node.attrs)
     })
 
     if (!childrenXml) return `${pad}<ReactiveFallback${attrs}/>`

@@ -20,17 +20,16 @@
 import { buildBehaviorTreeFromFlowDefinition } from '../build'
 import { forceFailureNodeType } from '../nodes/btForceFailureNode'
 import { forceSuccessNodeType } from '../nodes/btForceSuccessNode'
-import { orNodeType } from '../nodes/btOrNode'
+import { fallbackNodeType } from '../nodes/btFallbackNode'
 import { parallelNodeType } from '../nodes/btParallelNode'
 import type { BtAstNode } from '../types'
-import { sequenceNodeType, type BtSequenceNode } from '../nodes/btSequenceNode'
 import { fallbackOnFailureNodeType } from '../nodes/btFallbackOnFailureNode'
 import { ifThenElseNodeType } from '../nodes/btIfThenElseNode'
 import { repeatNodeType } from '../nodes/btRepeatNode'
-import { reactiveOrNodeType } from '../nodes/btReactiveOrNode'
+import { reactiveFallbackNodeType } from '../nodes/btReactiveFallbackNode'
 import { actionNodeType } from '../nodes/btActionNode'
-import { reactiveAndNodeType } from '../nodes/btReactiveAndNode'
-import { andNodeType } from '../nodes/btAndNode'
+import { reactiveSequenceNodeType } from '../nodes/btReactiveSequenceNode'
+import { sequenceNodeType, type BtSequenceNode } from '../nodes/btSequenceNode'
 import { retryUntilSuccessfulNodeType } from '../nodes/btRetryUntilSuccessfulNode'
 import { btPreconditionNodeType } from '../nodes/btPreconditionNode'
 import { btDelayNodeType } from '../nodes/btDelayNode'
@@ -48,7 +47,7 @@ export type ControlSpan = {
   start: number
   end: number
   status: SimStatus
-  // ReactiveFallback(reactiveOr) 구간 여부. true 면 RUNNING 시 매 tick 첫 자식부터 재평가한다.
+  // ReactiveFallback 구간 여부. true 면 RUNNING 시 매 tick 첫 자식부터 재평가한다.
   reactive?: boolean
   // Parallel 구간 여부. true 면 자식이 RUNNING 이어도 멈추지 않고 다음 자식으로 진행하고,
   // 전체가 RUNNING 인 동안 매 tick 모든 자식을 재평가한다(BT.CPP ParallelNode).
@@ -74,18 +73,16 @@ export function buildSimTrace(
         return status
       }
 
-      case sequenceNodeType:
-        return runSequence(node.children)
       case ifThenElseNodeType:
         return wrapControl(node, () => runIfThenElse(node.children))
-      case orNodeType:
+      case fallbackNodeType:
       case fallbackOnFailureNodeType:
         return wrapControl(node, () => runFallback(node.children))
-      case reactiveOrNodeType:
+      case reactiveFallbackNodeType:
         return wrapControl(node, () => runFallback(node.children), true)
-      case andNodeType:
+      case sequenceNodeType:
         return wrapControl(node, () => runSequence(node.children))
-      case reactiveAndNodeType:
+      case reactiveSequenceNodeType:
         return wrapControl(node, () => runSequence(node.children), true)
       case parallelNodeType:
         return wrapControl(node, () => runParallel(node.children, node.successCount, node.failureCount), false, true)
@@ -154,7 +151,7 @@ export function buildSimTrace(
     return elseNode ? exec(elseNode) : 'FAILURE'
   }
 
-  // Or / FallbackOnFailure: 자식을 순서대로 시도, 하나라도 SUCCESS 면 SUCCESS, 모두 FAILURE 면 FAILURE.
+  // Fallback / FallbackOnFailure: 자식을 순서대로 시도, 하나라도 SUCCESS 면 SUCCESS, 모두 FAILURE 면 FAILURE.
   function runFallback(children: BtAstNode[]): SimStatus {
     for (const child of children) {
       const r = exec(child)

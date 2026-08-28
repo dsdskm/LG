@@ -39,26 +39,26 @@ export function isControlNode(node: Node): boolean {
   return getNodeTaskType(node) === 'CONTROL'
 }
 
-export function isOrControlNode(node: Node): boolean {
-  return isControlNode(node) && getNodeTaskName(node) === 'or'
+export function isFallbackControlNode(node: Node): boolean {
+  return isControlNode(node) && getNodeTaskName(node) === 'fallback'
 }
 
-export function isAndControlNode(node: Node): boolean {
-  return isControlNode(node) && getNodeTaskName(node) === 'and'
+export function isSequenceControlNode(node: Node): boolean {
+  return isControlNode(node) && getNodeTaskName(node) === 'sequence'
 }
 
-export function isReactiveOrControlNode(node: Node): boolean {
+export function isReactiveFallbackControlNode(node: Node): boolean {
   if (!isControlNode(node)) return false
 
   const name = getNodeTaskName(node)
-  return name === 'reactiveor'
+  return name === 'reactivefallback'
 }
 
-export function isReactiveAndControlNode(node: Node): boolean {
+export function isReactiveSequenceControlNode(node: Node): boolean {
   if (!isControlNode(node)) return false
 
   const name = getNodeTaskName(node)
-  return name === 'reactiveand'
+  return name === 'reactivesequence'
 }
 
 export function isParallelControlNode(node: Node): boolean {
@@ -106,10 +106,10 @@ export function isAlwaysSuccessNode(node: Node): boolean {
 
 export function canUseLeftBranches(node: Node): boolean {
   return (
-    isOrControlNode(node) ||
-    isAndControlNode(node) ||
-    isReactiveOrControlNode(node) ||
-    isReactiveAndControlNode(node) ||
+    isFallbackControlNode(node) ||
+    isSequenceControlNode(node) ||
+    isReactiveFallbackControlNode(node) ||
+    isReactiveSequenceControlNode(node) ||
     isParallelControlNode(node) ||
     isRepeatControlNode(node) ||
     isIfThenElseControlNode(node) ||
@@ -142,22 +142,22 @@ export function hasOnlyLeftBranches(outgoing?: OutgoingInfo): boolean {
   return hasLeftBranches(outgoing) && !hasBottomOutgoing(outgoing) && !hasRightOutgoing(outgoing)
 }
 
-export function isIfElseRuleMatch(node: Node, outgoing?: OutgoingInfo): boolean {
-  return isOrControlNode(node) && hasLeftBranches(outgoing)
+export function isFallbackRuleMatch(node: Node, outgoing?: OutgoingInfo): boolean {
+  return isFallbackControlNode(node) && hasLeftBranches(outgoing)
 }
 
-// And 는 컨트롤 노드이므로 leftBranch 유무와 무관하게 항상 And 규칙이 매칭돼야 한다.
-// (leftBranch 조건을 걸면 자식 없이 right 만 연결된 And 가 ifThen 규칙으로 넘어가 Action 으로 생성됨)
-export function isAndRuleMatch(node: Node, outgoing?: OutgoingInfo): boolean {
-  return isAndControlNode(node)
+// Sequence 는 컨트롤 노드이므로 leftBranch 유무와 무관하게 항상 Sequence 규칙이 매칭돼야 한다.
+// (leftBranch 조건을 걸면 자식 없이 right 만 연결된 Sequence 가 ifThen 규칙으로 넘어가 Action 으로 생성됨)
+export function isSequenceRuleMatch(node: Node, outgoing?: OutgoingInfo): boolean {
+  return isSequenceControlNode(node)
 }
 
-export function isReactiveOrRuleMatch(node: Node, outgoing?: OutgoingInfo): boolean {
-  return isReactiveOrControlNode(node) && hasLeftBranches(outgoing)
+export function isReactiveFallbackRuleMatch(node: Node, outgoing?: OutgoingInfo): boolean {
+  return isReactiveFallbackControlNode(node) && hasLeftBranches(outgoing)
 }
 
-export function isReactiveAndRuleMatch(node: Node, outgoing?: OutgoingInfo): boolean {
-  return isReactiveAndControlNode(node) && hasLeftBranches(outgoing)
+export function isReactiveSequenceRuleMatch(node: Node, outgoing?: OutgoingInfo): boolean {
+  return isReactiveSequenceControlNode(node) && hasLeftBranches(outgoing)
 }
 
 export function isParallelRuleMatch(node: Node, outgoing?: OutgoingInfo): boolean {
@@ -274,5 +274,3 @@ export function getNodeNumberPropertyValue(node: any, fallback: number, key: str
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : fallback
 }
-
-;

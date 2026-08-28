@@ -447,7 +447,7 @@ const ModalEditSite = ({ isOpen, t, onClose, onConfirm, groupId, siteId, siteInf
                   areaName: a.areaName ?? '',
                   isDeleted: false
                 }))
-              : [{ _id: mkId('a'), areaId: null, areaName: AUTO_AREA_NAMES[0], isDeleted: false }]
+              : [{ _id: mkId('a'), areaId: null, areaName: '-', isDeleted: false }]
         }))
       }))
       setBuildings(bArr)
@@ -485,7 +485,7 @@ const ModalEditSite = ({ isOpen, t, onClose, onConfirm, groupId, siteId, siteInf
       isNameEdited: false,
       isDeleted: false,
       // 층은 반드시 최소 1개의 영역을 가진다 (영역 없는 층은 허용하지 않음)
-      areas: [{ _id: mkId('a'), areaId: null, areaName: AUTO_AREA_NAMES[0], isDeleted: false }]
+      areas: [{ _id: mkId('a'), areaId: null, areaName: '-', isDeleted: false }]
     }
     setBuildings((p) => p.map((b) => (b._id === bid ? { ...b, floors: [...b.floors, nf] } : b)))
   }

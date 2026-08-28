@@ -36,7 +36,7 @@
             "id": 52,
             "siteId": null,
             "taskType": "CONTROL",
-            "name": "And",
+            "name": "Sequence",
             "propertySchema": {},
             "minExecVer": "1.0.0",
             "version": "1.0.0",
@@ -143,9 +143,9 @@
             "data": {
                 "groupId": null,
                 "siteId": null,
-                "label": "And",
+                "label": "Sequence",
                 "taskId": 52,
-                "taskName": "And",
+                "taskName": "Sequence",
                 "taskType": "CONTROL",
                 "propertySchema": {},
                 "properties": {}

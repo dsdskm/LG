@@ -5,11 +5,11 @@
 
 import { BtAstNode } from '../types'
 
-export const sequenceNodeType = 'sequence' as const
-export const sequenceNodeName = 'sequence' as const
+export const reactiveSequenceNodeType = 'reactiveSequence' as const
+export const reactiveSequenceNodeName = 'reactiveSequence' as const
 
-export type BtSequenceNode = {
-  kind: typeof sequenceNodeType
+export type BtReactiveSequenceNode = {
+  kind: typeof reactiveSequenceNodeType
   name: string
   attrs?: Record<string, string>
   children: BtAstNode[]

@@ -5,11 +5,11 @@
 
 import { BtAstNode } from '../types'
 
-export const sequenceNodeType = 'sequence' as const
-export const sequenceNodeName = 'sequence' as const
+export const fallbackNodeType = 'fallback' as const
+export const fallbackNodeName = 'fallback' as const
 
-export type BtSequenceNode = {
-  kind: typeof sequenceNodeType
+export type BtFallbackNode = {
+  kind: typeof fallbackNodeType
   name: string
   attrs?: Record<string, string>
   children: BtAstNode[]

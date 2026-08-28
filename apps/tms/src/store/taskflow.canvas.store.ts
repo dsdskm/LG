@@ -220,6 +220,55 @@ function pushHistory(historyPast: FlowSnapshot[], prev: FlowSnapshot) {
   }
 }
 
+function adjustParallelCountsForRemovedChildren(nodes: RFNode[], removedEdges: RFEdge[]): RFNode[] {
+  if (removedEdges.length === 0) return nodes
+
+  const removedCountByParallel = new Map<string, number>()
+
+  for (const edge of removedEdges) {
+    if (String(edge.sourceHandle ?? '') !== 'left') continue
+
+    const sourceId = String(edge.source)
+    const targetId = String(edge.target)
+    if (!sourceId || !targetId) continue
+
+    const current = removedCountByParallel.get(sourceId) ?? 0
+    removedCountByParallel.set(sourceId, current + 1)
+  }
+
+  if (removedCountByParallel.size === 0) return nodes
+
+  return nodes.map((node) => {
+    const parallelId = String(node.id)
+    const removedCount = removedCountByParallel.get(parallelId)
+    if (!removedCount) return node
+
+    const properties = { ...(node.data?.properties ?? {}) }
+    let changed = false
+
+    for (const key of ['success_count', 'failure_count'] as const) {
+      const currentValue = properties[key]
+      if (currentValue === -1 || currentValue === '-1') continue
+
+      const numericValue = Number(currentValue)
+      if (!Number.isFinite(numericValue)) continue
+
+      properties[key] = Math.max(0, numericValue - removedCount)
+      changed = true
+    }
+
+    if (!changed) return node
+
+    return {
+      ...node,
+      data: {
+        ...(node.data ?? {}),
+        properties
+      }
+    }
+  })
+}
+
 // 노드/엣지 id 는 타임스탬프 문자열을 쓴다.
 // 같은 밀리초에 여러 개를 만들면(복제 등) 값이 겹치므로 마지막 발급값을 기억해 항상 증가시킨다.
 let lastIssuedId = 0
@@ -1310,18 +1359,28 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
   applyEdgesChange: (changes) => {
     if (changes.length === 0) return
 
+    const removedEdgeIds = new Set(
+      changes
+        .filter((c) => c.type === 'remove' && 'id' in c)
+        .map((c) => String((c as any).id))
+    )
+
     const hasMeaningfulChange = changes.some((c) => c.type !== 'select')
-    const next = applyEdgeChanges(changes, get().edges)
+    const nextEdges = applyEdgeChanges(changes, get().edges)
+
+    const removedEdges = removedEdgeIds.size > 0 ? get().edges.filter((edge) => removedEdgeIds.has(String(edge.id))) : []
+    const nextNodes = removedEdges.length > 0 ? adjustParallelCountsForRemovedChildren(get().nodes, removedEdges) : get().nodes
 
     if (!hasMeaningfulChange) {
-      set({ edges: next })
+      set({ nodes: nextNodes, edges: nextEdges })
       return
     }
 
     const prev = makeSnapshot(get().nodes, get().edges, get().viewport, get().flowMode)
 
     set((state) => ({
-      edges: next,
+      nodes: nextNodes,
+      edges: nextEdges,
       ...pushHistory(state.historyPast, prev)
     }))
   },
@@ -1429,7 +1488,15 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
     const targets = new Set(targetIds)
     const prev = makeSnapshot(nodes, edges, viewport, get().flowMode)
 
-    const nextNodes = nodes.filter((node) => !targets.has(String(node.id)))
+    const removedChildEdges = edges.filter(
+      (edge) => String(edge.sourceHandle ?? '') === 'left' && !targets.has(String(edge.source)) && targets.has(String(edge.target))
+    )
+
+    const nextNodes = adjustParallelCountsForRemovedChildren(
+      nodes.filter((node) => !targets.has(String(node.id))),
+      removedChildEdges
+    )
+
     // 삭제된 노드에 붙어 있던 엣지도 함께 정리한다.
     const nextEdges = edges.filter((edge) => !targets.has(String(edge.source)) && !targets.has(String(edge.target)))
 
@@ -1526,12 +1593,15 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
   },
 
   deleteSelectedEdge: () => {
-    const { selectedEdgeId, edges, viewport } = get()
+    const { selectedEdgeId, nodes, edges, viewport } = get()
     if (!selectedEdgeId) return
 
-    const prev = makeSnapshot(get().nodes, edges, viewport, get().flowMode)
+    const removedEdge = edges.find((edge) => edge.id === selectedEdgeId)
+    const prev = makeSnapshot(nodes, edges, viewport, get().flowMode)
+    const nextNodes = removedEdge ? adjustParallelCountsForRemovedChildren(nodes, [removedEdge]) : nodes
 
     set((state) => ({
+      nodes: nextNodes,
       edges: edges.filter((edge) => edge.id !== selectedEdgeId),
       selectedEdgeId: null,
       ...pushHistory(state.historyPast, prev)

@@ -63,6 +63,13 @@
   "network": {
     "title": "Initial Network Setup",
     "description": "Select the Wi‑Fi network for the robot and switch from the setup AP to the regular network.",
+    "gate": {
+      "title": "Network connection is required before sign-in",
+      "description": "Sign-in talks to an external server, so the robot must be connected to an external Wi‑Fi network first. After connecting, if you are browsing over the robot AP (ROBOT_SETUP), join the same Wi‑Fi network and reopen the WIFI address shown in 'Access addresses' above.",
+      "badge": "Before sign-in",
+      "next": "Go to sign-in",
+      "skip": "Skip network setup and sign in"
+    },
     "signal": {
       "excellent": "Excellent",
       "good": "Good",

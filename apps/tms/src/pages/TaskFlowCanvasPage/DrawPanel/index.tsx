@@ -21,7 +21,8 @@ import {
   ConnectionMode,
   ConnectionLineType,
   MarkerType,
-  SelectionMode
+  SelectionMode,
+  useStoreApi
 } from '@xyflow/react'
 
 import TaskEdge from './Edge/TaskEdge'
@@ -216,20 +217,24 @@ function InnerCanvas() {
   const rfRef = useRef<ReactFlowInstance<any, any> | null>(null)
   const didRestoreViewportRef = useRef(false)
 
+  const rfStore = useStoreApi()
+
   // AI 노드 추가 후 해당 노드들이 보이도록 fitView를 호출하는 전역 핸들러
   useEffect(() => {
-    (window as any).__AI_TASKFLOW_FIT_NODES__ = (nodeIds: string[]) => {
+    ;(window as any).__AI_TASKFLOW_FIT_NODES__ = (nodeIds: string[]) => {
       if (!rfRef.current || nodeIds.length === 0) return
       requestAnimationFrame(() => {
         rfRef.current?.fitView({
           nodes: nodeIds.map((id) => ({ id })),
           padding: 0.25,
           duration: 350,
-          maxZoom: 1.2,
+          maxZoom: 1.2
         })
       })
     }
-    return () => { delete (window as any).__AI_TASKFLOW_FIT_NODES__ }
+    return () => {
+      delete (window as any).__AI_TASKFLOW_FIT_NODES__
+    }
   }, [])
 
   const [selectedNodeCount, setSelectedNodeCount] = useState(0)
@@ -338,6 +343,51 @@ function InnerCanvas() {
       window.removeEventListener('blur', clear)
     }
   }, [])
+
+  /**
+   * 수정키(Ctrl/⌘) 상태를 마우스 이벤트로 보정한다.
+   *
+   * React Flow 는 ⌘ keydown 을 받으면 useKeyPress → React state → useEffect 를 거쳐
+   * store 의 multiSelectionActive 를 켠다. 이 경로가 passive effect 라 렌더가 밀리면 같이
+   * 밀리는데, 이 캔버스는 노드/속성 패널 렌더 부하가 커서 50ms 이상 지연되는 것을 확인했다.
+   * 그 사이에 클릭하면 handleNodeClick 이 아직 false 인 값을 읽어
+   * "추가 선택" 대신 "선택 갈아치우기" 로 동작한다.
+   *  (그 외에 blur·contextmenu 리셋, 이미 눌린 채 창이 포커스를 받는 경우도 같은 결과를 만든다)
+   *
+   * 마우스 이벤트는 항상 정확한 ctrlKey/metaKey 를 들고 오므로 이것을 정답으로 삼아
+   * 동기적으로 맞춰 준다. capture 로 걸어 React Flow 의 노드 핸들러(mousedown/click)보다
+   * 먼저 실행되게 하는 것이 핵심이다.
+   */
+  useEffect(() => {
+    // pointermove 는 초당 수십 번 오므로 React state 는 값이 바뀐 순간에만 건드린다.
+    let lastPressed: boolean | null = null
+
+    const reconcile = (event: PointerEvent) => {
+      const pressed = event.ctrlKey || event.metaKey
+
+      // React Flow 내부 상태. handleNodeClick 이 이 값으로 추가/갈아치우기를 판단한다.
+      // 키를 누르고 있는 중에도 React Flow 가 blur·contextmenu 로 이 값을 false 로 되돌릴 수
+      // 있으므로, 우리 캐시(lastPressed)가 아니라 매번 store 의 실제 값과 비교해야 한다.
+      if (rfStore.getState().multiSelectionActive !== pressed) {
+        rfStore.setState({ multiSelectionActive: pressed })
+      }
+
+      // 그룹 사각형 클릭 통과용 상태
+      if (pressed !== lastPressed) {
+        lastPressed = pressed
+        setMultiSelectKeyDown(pressed)
+      }
+    }
+
+    // pointermove 도 함께 본다: 클릭 전에 보정되어야 그룹 사각형이 통과 상태가 된다.
+    window.addEventListener('pointermove', reconcile, true)
+    window.addEventListener('pointerdown', reconcile, true)
+
+    return () => {
+      window.removeEventListener('pointermove', reconcile, true)
+      window.removeEventListener('pointerdown', reconcile, true)
+    }
+  }, [rfStore])
 
   const onInit: OnInit<any, any> = useCallback(
     (instance) => {
@@ -482,10 +532,12 @@ function InnerCanvas() {
 
   useEffect(() => {
     const onRefreshContentsCommand = (event: Event) => {
-      const detail = (event as CustomEvent<{
-        handled?: boolean
-        complete?: (result: { success: boolean; message?: string }) => void
-      }>).detail
+      const detail = (
+        event as CustomEvent<{
+          handled?: boolean
+          complete?: (result: { success: boolean; message?: string }) => void
+        }>
+      ).detail
       if (!detail || typeof detail.complete !== 'function') return
 
       detail.handled = true
@@ -516,12 +568,15 @@ function InnerCanvas() {
     })
   }, [alignSelectedNodesAuto, canAlign, setViewport])
 
-  const requestDeleteSelectedNote = useCallback((noteId?: string) => {
-    const id = noteId ?? selectedNoteId
-    if (!id) return
-    setSelectedNoteId(id)
-    setShowNoteDeleteConfirm(true)
-  }, [selectedNoteId])
+  const requestDeleteSelectedNote = useCallback(
+    (noteId?: string) => {
+      const id = noteId ?? selectedNoteId
+      if (!id) return
+      setSelectedNoteId(id)
+      setShowNoteDeleteConfirm(true)
+    },
+    [selectedNoteId]
+  )
 
   const confirmDeleteSelectedNote = useCallback(() => {
     if (!selectedNoteId) return
@@ -645,7 +700,6 @@ function InnerCanvas() {
           >
             {t('canvas.align.button')}
           </Button>
-
         </AlignOverlay>
 
         <AlignHintText>빈 곳을 더블 클릭하여 메모를 생성할 수 있습니다.</AlignHintText>
@@ -695,16 +749,15 @@ function InnerCanvas() {
         <FlowFill>
           <ReactFlow
             selectionMode={SelectionMode.Full}
-            selectionOnDrag
-            // Ctrl(윈도우) / ⌘(맥) 둘 다 그룹 선택 추가·제외 키로 쓴다 (기본값은 OS 별로 하나만 잡힌다)
+            // 좌클릭 드래그 = 배경 이동, Shift 누른 상태에서만 박스 선택
+            selectionOnDrag={false}
+            selectionKeyCode="Shift" // 기본값이지만 의도를 명시
+            panOnDrag={[0, 1]} // 0=좌클릭, 1=휠(가운데) 버튼
+            // Ctrl / ⌘ 는 선택 추가·제외 키
             multiSelectionKeyCode={['Control', 'Meta']}
-            // 드래그: 좌클릭 드래그는 박스 선택(그루핑), 휠(가운데) 버튼 드래그는 배경 이동(패닝)
-            // ※ Ctrl+드래그 패닝은 React Flow(d3-zoom)가 ctrlKey 를 줌 전용으로 예약해 불가능
-            panOnDrag={[1]}
             // 스크롤: 기본은 배경 이동, Ctrl 누르고 스크롤하면 확대/축소
             panOnScroll
             zoomOnScroll={false}
-            zoomActivationKeyCode="Control"
             zoomOnDoubleClick={false}
             style={{ width: '100%', height: '100%' }}
             nodes={nodes}
@@ -776,7 +829,8 @@ function InnerCanvas() {
             onDoubleClick={(event) => {
               const target = event.target as HTMLElement | null
               if (!target?.closest('.react-flow__pane')) return
-              if (target.closest('.react-flow__node, .react-flow__edge, .react-flow__handle, button, textarea, input')) return
+              if (target.closest('.react-flow__node, .react-flow__edge, .react-flow__handle, button, textarea, input'))
+                return
 
               const instance = rfRef.current
               if (!instance) return

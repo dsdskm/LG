@@ -1,8 +1,9 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Canvas, useFrame, useLoader } from '@react-three/fiber'
 import { Center, OrbitControls } from '@react-three/drei'
 import URDFLoader, { URDFRobot } from 'urdf-loader'
-import { PreviewCard } from './styles.preview'
+import { PreviewCard, PreviewStatusOverlay } from './styles.preview'
 import { PreviewProps } from './types.preview'
 import { parseMotionYaml } from '@/utils/motionParser'
 import { MotionData } from '@/types/motion'
@@ -114,12 +115,15 @@ function getDuration(data: MotionData) {
   }
 }
 export default function MotionPreview({ node, nodeId, standaloneProgress }: PreviewProps) {
+  const { t } = useTranslation('tms')
   const [contentOpen, setContentOpen] = useState(true)
   const [motion, setMotion] = useState<MotionData>()
+  // 파일은 받았지만 모션으로 해석하지 못한 경우(형식 오류, 다른 종류의 파일 등)
+  const [motionInvalid, setMotionInvalid] = useState(false)
   // 재생 시작 시각(performance.now(), 0 이면 시작 전). 진행 시간은 모두 이 값에서 파생한다.
   const startedAtRef = useRef(0)
 
-  const { url: contentUrl, contentId } = usePreviewContentUrl(node)
+  const { url: contentUrl, contentId, status: contentStatus } = usePreviewContentUrl(node)
 
   // standaloneProgress = 속성 패널/팔레트 렌더. 그때는 store 를 거치지 않고 로컬 진행값만 쓴다.
   // 점검 모드 렌더에서는 store 로 보고해야 실행기가 완료 판정을 할 수 있다.
@@ -131,6 +135,11 @@ export default function MotionPreview({ node, nodeId, standaloneProgress }: Prev
 
   // 다운로드 링크에서 trajectory 파일 텍스트를 받아 파싱한다.
   useEffect(() => {
+    // 대상이 바뀌면(usePreviewContentUrl 이 URL 을 비운 시점) 이전 모션을 먼저 버린다.
+    // 남겨두면 새 파일이 도착하기 전에 아래 재생 시계가 progressKey 변경으로 다시 돌아
+    // 이전 노드의 모션이 한 번 더 재생된다. 파싱 실패(잘못된 파일)일 때도 이전 모션이 남지 않는다.
+    setMotion(undefined)
+    setMotionInvalid(false)
     if (!contentUrl) return
     let cancelled = false
 
@@ -142,9 +151,16 @@ export default function MotionPreview({ node, nodeId, standaloneProgress }: Prev
         if (parsed) {
           // duration 등록은 아래 재생 시계 이펙트가 담당한다(nodeId 가 바뀔 때도 다시 등록되도록).
           setMotion(parsed)
+        } else {
+          // 모션 파일이 아니거나 형식이 다른 경우. 화면에 오류로 알린다.
+          setMotionInvalid(true)
         }
       })
-      .catch((err) => console.error('모션 파일 다운로드/파싱 실패', err))
+      .catch((err) => {
+        if (cancelled) return
+        console.error('모션 파일 다운로드/파싱 실패', err)
+        setMotionInvalid(true)
+      })
 
     return () => {
       cancelled = true
@@ -211,10 +227,27 @@ export default function MotionPreview({ node, nodeId, standaloneProgress }: Prev
 
   const data = node.data
 
+  // 재생할 수 없는 상태를 화면에 알린다(콘솔만 보고는 원인을 알 수 없으므로).
+  // 캔버스는 계속 마운트해 두고 문구만 덮는다.
+  const statusMessage = (() => {
+    if (contentStatus === 'empty') return t('canvas.preview.noContent')
+    if (contentStatus === 'error') return t('canvas.preview.contentNotFound')
+    if (motionInvalid) return t('canvas.preview.contentInvalid')
+    if (!motion) return t('canvas.preview.loading')
+    return null
+  })()
+
+  const isErrorStatus = contentStatus === 'error' || motionInvalid
+
   return (
     <>
       <PreviewHeader label={data.label} open={contentOpen} onToggle={() => setContentOpen((prev) => !prev)} />
-      <PreviewCard $hidden={!contentOpen}>{canvas}</PreviewCard>
+      <PreviewCard $hidden={!contentOpen}>
+        {canvas}
+        {statusMessage && (
+          <PreviewStatusOverlay $tone={isErrorStatus ? 'error' : 'muted'}>{statusMessage}</PreviewStatusOverlay>
+        )}
+      </PreviewCard>
       {standaloneProgress ? (
         // 단독 표시: store 를 거치지 않고 로컬 진행값으로 그린다.
         <PreviewProgressBar current={progress.current} duration={progress.duration} />

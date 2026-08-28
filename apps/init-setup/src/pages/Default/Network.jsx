@@ -49,8 +49,11 @@ import {
   WizardButtonWrap,
 } from './styles'
 import { Section } from '@repo/ui'
+import { useUserStore } from '@repo/stores'
 import { scanWifi, connectWifi, disconnectWifi, rescanWifiOffline, getWifiStatus, getWifiModeStatus, switchWifiMode } from '@/apis/wifi'
 import { SETUP_STEPS, tryAdvanceSetupProgress } from '@/utils/setupProgress'
+import { deriveRobotOnline, bypassNetworkGate } from '@/utils/networkStatus'
+import { publishRobotOnline } from '@/hooks/useRobotOnline'
 
 const UI_PORT = '18080'
 const FIXED_ACCESS_URLS = {
@@ -106,6 +109,9 @@ const findConnectedNetwork = (networks = [], ssid = '') => {
 const Network = () => {
   const navigate = useNavigate()
   const { t } = useTranslation('setup')
+  // 로그인 전(네트워크 게이트로 넘어온 진입)에는 다음 단계로 진행할 수 없다 —
+  // 뒤 단계는 클라우드 로그인이 전제이므로 Wi-Fi 를 붙인 뒤 로그인으로 되돌려 보낸다.
+  const hasSession = useUserStore((state) => Boolean(state.session?.accessToken))
   const [networks, setNetworks] = useState([])
   const [loading, setLoading] = useState(false)
   const [scanMessage, setScanMessage] = useState(() => t('network.notScanned'))
@@ -151,6 +157,9 @@ const Network = () => {
   const refreshAccessInfo = async () => {
     try {
       const status = await getWifiStatus()
+      // 네트워크 게이트(hooks/useNetworkGate)가 보는 판정도 같은 응답에서 나온다 — 여기서 갱신해
+      // Wi-Fi 를 붙인 순간 게이트가 함께 풀리도록 한다(재조회 없이 값만 알린다).
+      publishRobotOnline(deriveRobotOnline(status))
       const wifiUrl = status?.wifi_url || buildWifiUrl(status?.wifi_ip || status?.ipv4)
       setAccessUrls({
         lan: status?.lan_url || FIXED_ACCESS_URLS.lan,
@@ -347,6 +356,8 @@ const Network = () => {
         setConnectionState('connected')
         setConnectMessage(t('network.connect.confirmed', { ssid: connected.ssid || ssidToConnect }))
         setConnectionNotice(t('network.connect.confirmedHint', { ssid: connected.ssid || ssidToConnect }))
+        // 접속 주소와 함께 네트워크 게이트 판정도 갱신한다(로그인 전 진입이면 이때 게이트가 풀린다).
+        await refreshAccessInfo()
       } else {
         setConnectionState('pending')
         setConnectMessage(
@@ -444,8 +455,23 @@ const Network = () => {
   // 네트워크 단계 완료 기록. 실패해도 화면 이동은 막지 않는다(토스트로만 알림) —
   // 이 페이지는 Wi‑Fi 전환 중 요청이 끊기는 것이 정상인 화면이라 진행 기록 실패로 다음을 막을 수 없다.
   const handleNext = async () => {
+    // 로그인 전 진입: 다음 단계(지점 코드 …)는 클라우드 세션이 있어야 하는 화면이라 진행할 수 없고,
+    // 단계 기록도 남기지 않는다 — 언어 설정(1단계)을 건너뛴 채 3단계로 기록되는 것을 막는다.
+    // '/' 로 보내면 RootGuard 가 네트워크 · 세션을 다시 판정해 /login 또는 진행 중인 단계로 보낸다.
+    if (!hasSession) {
+      navigate('/')
+      return
+    }
+
     await tryAdvanceSetupProgress(SETUP_STEPS.SITE_CODE)
     navigate('/site-code')
+  }
+
+  // 로그인 전 게이트로 들어온 사용자를 위한 탈출구. 로봇이 유선으로 인터넷에 연결된 경우처럼
+  // Wi-Fi 상태만으로는 미연결로 보이지만 실제로는 로그인이 되는 구성이 있다.
+  const handleSkipToLogin = () => {
+    bypassNetworkGate()
+    navigate('/login')
   }
 
   const handleSwitchWifiMode = async (mode) => {
@@ -496,6 +522,26 @@ const Network = () => {
             </StatusBadge>
           </BadgeGroup>
         </PageHero>
+
+        {/* 로그인 전 진입 안내. 로그인은 브라우저 → 클라우드 직통이라 로봇이 외부 Wi-Fi 에 붙어야
+            하고, 노트북이 로봇 AP 에 붙어 있는 상태에서는 붙인 뒤 같은 Wi-Fi 로 옮겨 재접속해야
+            로그인이 된다 — 접속 주소는 위 '접속 주소 안내' 카드에 표시된다. */}
+        {!hasSession && (
+          <ConnectPanel>
+            <ConnectPanelTop>
+              <div>
+                <h3>{t('network.gate.title')}</h3>
+                <p>{t('network.gate.description')}</p>
+              </div>
+              <StatusBadge tone="orange">{t('network.gate.badge')}</StatusBadge>
+            </ConnectPanelTop>
+            <ButtonWrap className="alignRight">
+              <SecondaryActionButton type="button" onClick={handleSkipToLogin} disabled={connecting || modeChanging}>
+                {t('network.gate.skip')}
+              </SecondaryActionButton>
+            </ButtonWrap>
+          </ConnectPanel>
+        )}
 
         <SummaryGrid>
           <SummaryCard>
@@ -789,7 +835,7 @@ const Network = () => {
             {t('common.previous')}
           </SecondaryActionButton>
           <ActionButton type="button" onClick={handleNext} disabled={connecting || modeChanging}>
-            {t('common.next')}
+            {hasSession ? t('common.next') : t('network.gate.next')}
           </ActionButton>
         </WizardButtonWrap>
 

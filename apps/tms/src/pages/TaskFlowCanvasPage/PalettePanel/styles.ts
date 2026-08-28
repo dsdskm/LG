@@ -57,23 +57,29 @@ export const SectionBodyPadded = styled(SectionBody)`
   padding: 12px; /* p-3 */
 `
 
-export const ContentGrid = styled.div<{ $compact: boolean }>`
+export const ContentGrid = styled.div<{ $compact: boolean; $narrow: boolean }>`
   display: grid;
   gap: 8px;
 
-  grid-template-columns: ${({ $compact }) =>
-    $compact ? 'repeat(2, minmax(0, 1fr))' : 'repeat(3, minmax(0, 1fr))'};
+  grid-template-columns: ${({ $narrow, $compact }) => {
+    if ($narrow) return '1fr'
+    if ($compact) return 'repeat(2, minmax(0, 1fr))'
+    return 'repeat(3, minmax(0, 1fr))'
+  }};
 
   border-radius: 8px;
   background: #f8fafc; /* slate-50 */
 `
 
-export const ControlGrid = styled.div<{ $compact: boolean }>`
+export const ControlGrid = styled.div<{ $compact: boolean; $narrow: boolean }>`
   display: grid;
   gap: 8px;
 
-  grid-template-columns: ${({ $compact }) =>
-    $compact ? 'repeat(2, minmax(0, 1fr))' : 'repeat(3, minmax(0, 1fr))'};
+  grid-template-columns: ${({ $narrow, $compact }) => {
+    if ($narrow) return '1fr'
+    if ($compact) return 'repeat(2, minmax(0, 1fr))'
+    return 'repeat(3, minmax(0, 1fr))'
+  }};
 `
 
 export const DividerList = styled.div`
@@ -112,6 +118,18 @@ export const TaskName = styled.div`
   font-weight: 800;
   color: #0f172a;
   line-height: 1.5;
+`
+
+export const MoveToGrouping = styled.div`
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.4;
+  margin-top:10px;
+  margin-bottom:5px;
+
 `
 
 export const Chevron = styled.span<{ $open: boolean }>`
@@ -175,11 +193,12 @@ export const NodeCard = styled.div<{ $selected: boolean }>`
 export const CardLabel = styled.div`
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
 
   overflow: hidden;
+  text-overflow: ellipsis;
 
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.4;
 `
 
