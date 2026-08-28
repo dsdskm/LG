@@ -496,6 +496,7 @@ export class PromptStoreService implements OnModuleInit {
   async updateRagChunk(
     id: number,
     patch: {
+      chunkKey?: string
       title?: string
       keywords?: string[]
       body?: string | Record<string, unknown> | unknown[] | null
@@ -506,6 +507,21 @@ export class PromptStoreService implements OnModuleInit {
   ) {
     const row = await this.ragRepo.findOne({ where: { id } })
     if (!row) throw new Error('rag chunk not found')
+
+    if (patch.chunkKey !== undefined) {
+      const nextChunkKey = String(patch.chunkKey ?? '').trim()
+      if (!nextChunkKey) throw new Error('chunkKey is required')
+
+      const existing = await this.ragRepo.findOne({
+        where: { screenKey: row.screenKey, chunkKey: nextChunkKey },
+      })
+
+      if (existing && existing.id !== row.id) {
+        throw new Error('같은 화면에 이미 같은 chunkKey가 존재합니다.')
+      }
+
+      row.chunkKey = nextChunkKey
+    }
 
     if (patch.title !== undefined) row.title = patch.title
     if (patch.keywords !== undefined) row.keywords = patch.keywords

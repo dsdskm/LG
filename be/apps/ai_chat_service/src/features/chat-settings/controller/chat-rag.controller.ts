@@ -112,6 +112,7 @@ export class ChatRagController {
     if (!Number.isFinite(parsedId)) throw new Error('invalid rag id')
 
     const updated = await this.promptStore.updateRagChunk(parsedId, {
+      chunkKey: body?.chunkKey ?? undefined,
       title: body?.title ?? undefined,
       keywords: Array.isArray(body?.keywords) ? body.keywords : undefined,
       body: body?.body ?? undefined,

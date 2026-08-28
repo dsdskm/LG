@@ -69,7 +69,7 @@ const FORM_CONFIG = {
         label: 'RAG 문서',
         fields: [
             { key: 'appKey', label: '앱', identity: true },
-            { key: 'chunkKey', label: 'Chunk Key', required: true, identity: true },
+            { key: 'chunkKey', label: 'Chunk Key', required: true },
             { key: 'title', label: '제목' },
             { key: 'keywords', label: '키워드 JSON', type: 'json', rows: 5, defaultValue: [] },
             { key: 'body', label: '본문', type: 'textarea', rows: 12 },
@@ -278,6 +278,7 @@ export const DatabaseRecordEditorModal = ({
                 else assertSuccessful(await createChatPrompt(payload))
             } else if (kind === 'rag') {
                 const writable = {
+                    chunkKey: payload.chunkKey,
                     title: payload.title,
                     keywords: payload.keywords,
                     body: payload.body,

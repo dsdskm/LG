@@ -3,7 +3,7 @@ import styled from 'styled-components'
 
 import { PageDescription, PrimaryButton } from '../styles'
 import { DatabaseRecordEditorModal } from '../components/DatabaseRecordEditorModal'
-import { listChatPromptTypes } from '@repo/apis/ai/chatSettings.js'
+import { listChatPromptTypes } from '@repo/apis/ai/chatSettings'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50]
 
@@ -57,6 +57,7 @@ const TABLE_CONFIG = {
         columns: [
             { key: 'id', label: 'ID', width: '72px' },
             { key: 'appKey', label: '앱', width: '110px' },
+            { key: 'chunkKey', label: 'Chunk Key', width: '180px' },
             { key: 'title', label: '제목', width: '180px' },
             { key: 'body', label: '본문', width: 'minmax(320px, 1fr)' },
             { key: 'intentType', label: '인텐트', width: '110px' },
@@ -82,6 +83,7 @@ const TABLE_CONFIG = {
 const getValue = (item, key) => {
     if (key === 'appKey') return item?.appKey ?? item?.app_key ?? ''
     if (key === 'screenKey') return item?.screenKey ?? item?.screen_key ?? item?.key ?? ''
+    if (key === 'chunkKey') return item?.chunkKey ?? item?.chunk_key ?? ''
     if (key === 'ruleKey') return item?.ruleKey ?? item?.rule_key ?? ''
     if (key === 'patternRegex') return item?.patternRegex ?? item?.pattern_regex ?? ''
     if (key === 'intentType') return item?.intentType ?? item?.intent_type ?? ''
