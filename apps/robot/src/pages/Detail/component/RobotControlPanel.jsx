@@ -68,6 +68,25 @@ const RowWrap = styled.div`
   align-items: center;
 `
 
+// GKR 버튼 옆 위치 인식(positionInitialized) 상태 배지
+const PositionStatusBadge = styled.span`
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: ${({ $variant }) => ($variant === 'ok' ? '#16a34a' : $variant === 'error' ? '#dc2626' : '#6b7280')};
+  background-color: ${({ $variant }) => ($variant === 'ok' ? '#dcfce7' : $variant === 'error' ? '#fee2e2' : '#f1f5f9')};
+`
+
+// positionInitialized: true(인식됨) / false(인식 안됨) / undefined(필드 없음, 구버전 로봇)
+const getPositionStatus = (positionInitialized) => {
+  if (positionInitialized === true) return { variant: 'ok', labelKey: 'positionInitOk' }
+  if (positionInitialized === false) return { variant: 'error', labelKey: 'positionInitFail' }
+  return { variant: 'unknown', labelKey: 'positionInitUnknown' }
+}
+
 // 모션 목록: 한 줄에 [번호. 라벨] + [옵션 버튼들]
 const MotionGrid = styled.div`
   display: grid;
@@ -293,6 +312,7 @@ const MOTIONS = [
  * @param {Function} props.onManualMove - 수동 이동 명령 전송 (direction: 'forward'|'backward', distance: number(m))
  * @param {Function} props.onMotion - 모션 명령 전송 ({ actionType, blockingType, actionParameters }, 표시명)
  * @param {Function} props.onMoveLocation - 장소 이동 모달 오픈
+ * @param {boolean|undefined} props.positionInitialized - state.position.positionInitialized (없으면 undefined)
  */
 const RobotControlPanel = ({
   t,
@@ -306,10 +326,12 @@ const RobotControlPanel = ({
   onRotate,
   onManualMove,
   onMotion,
-  onMoveLocation
+  onMoveLocation,
+  positionInitialized
 }) => {
   const [rotateDir, setRotateDir] = useState('ccw') // cw: 시계, ccw: 반시계 (기본: 반시계방향)
   const [moveDir, setMoveDir] = useState('forward') // forward: 전진, backward: 후진 (기본: 전진)
+  const positionStatus = getPositionStatus(positionInitialized)
 
   // 모션 버튼 클릭 → params(object)를 actionParameters(key/value 배열)로 변환해 전송
   const handleMotionClick = (m, o) => {
@@ -350,6 +372,7 @@ const RobotControlPanel = ({
             <ControlBtn onClick={() => onAction('gkr')} disabled={!isOnline}>
               <Gkr className="w-[14px] h-[14px]" />
               {t('gkr')}
+              <PositionStatusBadge $variant={positionStatus.variant}>{t(positionStatus.labelKey)}</PositionStatusBadge>
             </ControlBtn>
           </ControlDiv>
         </ExpandableSection>

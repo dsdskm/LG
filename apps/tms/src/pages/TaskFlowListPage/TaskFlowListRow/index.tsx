@@ -8,6 +8,7 @@ import {
   CardRight,
   FlowMain,
   FlowTitleRow,
+  FlowIdBadge,
   FlowVersionBadge,
   FlowActiveBadge,
   FlowInactiveBadge,
@@ -50,7 +51,7 @@ function renderFlowStatusBadge(flow: TaskFlowWithDeployment, t: TFunction) {
 function renderDeployStatusBadge(flow: TaskFlowWithDeployment, t: TFunction) {
   const deployment = flow?.deployment
 
-  // 배포 이력이 없으면 deployment 자체가 없음
+  // 배포 이력이 없으면 배지 표시를 하지 않는다.
   if (!deployment) {
     return <></>
   }
@@ -168,11 +169,10 @@ export default function TaskFlowListRow({
         <FlowMain>
           <FlowTitleRow>
             <span style={{ lineHeight: 1.4 }}>{flow.name || <EmptyValue />}</span>
-
+            <FlowIdBadge>#{flow.id || <EmptyValue />}</FlowIdBadge>
             <FlowVersionBadge>{getVersionText(flow)}</FlowVersionBadge>
             {renderFlowStatusBadge(flow, t)}
           </FlowTitleRow>
-          <FlowDesc>{flow.id || <EmptyValue />}</FlowDesc>
           {flow.description && <FlowDesc>{flow.description}</FlowDesc>}
         </FlowMain>
       </CardLeft>

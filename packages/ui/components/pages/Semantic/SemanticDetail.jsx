@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Section, SectionTitle, Button, Input, Dropdown, IconButton, Icon } from '@repo/ui'
 import { generateUuid36 } from '@repo/utils'
-import { ButtonWrapper, DetailWrapper, FieldGrid, MetaText, PropertyRow } from './styles'
+import { DetailHeader, DetailWrapper, FieldGrid, MetaText, PropertyRow } from './styles'
 
 const DEG2RAD = Math.PI / 180
 const RAD2DEG = 180 / Math.PI
@@ -185,32 +185,33 @@ const SemanticDetail = ({ row, readOnly = false, robotPose = null, onPoiCreated,
   return (
     loading && (
       <DetailWrapper key={workObj.id}>
-        {/* 상단: 상태 + 액션 버튼 */}
-        <Section>
-          <SectionTitle title={readOnly ? 'POI 상세 (읽기 전용)' : 'POI 상세'}></SectionTitle>
-          <ButtonWrapper>
-            {readOnly ? (
-              <Button size="md" variant="outline" onClick={onPoiCancel}>
-                닫기
-              </Button>
-            ) : (
-              <>
-                {row ? (
-                  <Button size="md" onClick={handlePoiEdit}>
-                    수정
-                  </Button>
-                ) : (
-                  <Button size="md" onClick={handlePoiCreate}>
-                    생성
-                  </Button>
-                )}
+        {/* 상단: 제목 + 액션 버튼. SectionTitle 의 children 자리(오른쪽)에 버튼을 넣어 한 줄로 둔다 */}
+        <DetailHeader>
+          <Section>
+            <SectionTitle title={readOnly ? 'POI 상세 (읽기 전용)' : 'POI 상세'}>
+              {readOnly ? (
                 <Button size="md" variant="outline" onClick={onPoiCancel}>
-                  취소
+                  닫기
                 </Button>
-              </>
-            )}
-          </ButtonWrapper>
-        </Section>
+              ) : (
+                <>
+                  {row ? (
+                    <Button size="md" onClick={handlePoiEdit}>
+                      수정
+                    </Button>
+                  ) : (
+                    <Button size="md" onClick={handlePoiCreate}>
+                      생성
+                    </Button>
+                  )}
+                  <Button size="md" variant="outline" onClick={onPoiCancel}>
+                    취소
+                  </Button>
+                </>
+              )}
+            </SectionTitle>
+          </Section>
+        </DetailHeader>
 
         {/* 기본 정보 */}
         <Section gap="1.2rem">

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import {
   StyledPageContent,
   PageHero,
@@ -49,6 +50,7 @@ import {
 } from './styles'
 import { Section } from '@repo/ui'
 import { scanWifi, connectWifi, disconnectWifi, rescanWifiOffline, getWifiStatus, getWifiModeStatus, switchWifiMode } from '@/apis/wifi'
+import { SETUP_STEPS, tryAdvanceSetupProgress } from '@/utils/setupProgress'
 
 const UI_PORT = '18080'
 const FIXED_ACCESS_URLS = {
@@ -70,11 +72,11 @@ const getDefaultReconnectUrl = () => {
   return `${protocol}//${host}`
 }
 
-const getSignalLabel = (signal = 0) => {
-  if (signal >= 80) return '매우 좋음'
-  if (signal >= 60) return '좋음'
-  if (signal >= 40) return '보통'
-  return '약함'
+const getSignalLabel = (signal = 0, t) => {
+  if (signal >= 80) return t('network.signal.excellent')
+  if (signal >= 60) return t('network.signal.good')
+  if (signal >= 40) return t('network.signal.fair')
+  return t('network.signal.weak')
 }
 
 const getSignalBars = (signal = 0) => {
@@ -103,9 +105,10 @@ const findConnectedNetwork = (networks = [], ssid = '') => {
 
 const Network = () => {
   const navigate = useNavigate()
+  const { t } = useTranslation('setup')
   const [networks, setNetworks] = useState([])
   const [loading, setLoading] = useState(false)
-  const [scanMessage, setScanMessage] = useState('아직 스캔하지 않았습니다.')
+  const [scanMessage, setScanMessage] = useState(() => t('network.notScanned'))
 
   const [selected, setSelected] = useState(null)
   const [password, setPassword] = useState('')
@@ -134,7 +137,7 @@ const Network = () => {
   const [modeMessage, setModeMessage] = useState('')
 
   const targetSsid = manualMode ? manualSsid.trim() : (selected?.ssid || '')
-  const selectedName = targetSsid || '(숨김 네트워크)'
+  const selectedName = targetSsid || t('network.hiddenNetwork')
   const selectedIsOpen = useMemo(() => manualMode ? false : isOpenNetwork(selected), [manualMode, selected])
   const canOfflineRescan = wifiMode.apMode
   const displayedNetworks = useMemo(() => {
@@ -186,12 +189,12 @@ const Network = () => {
   }, [wifiModeStatus, accessUrls])
 
   const accessText = useMemo(() => ([
-    `유선 연결시 - ${accessUrls.lan.replace(/^https?:\/\//, '')}`,
-    `AP 연결시 - ${accessUrls.ap.replace(/^https?:\/\//, '')}`,
+    t('network.access.wired', { address: accessUrls.lan.replace(/^https?:\/\//, '') }),
+    t('network.access.ap', { address: accessUrls.ap.replace(/^https?:\/\//, '') }),
     wifiConnected
-      ? `WIFI 연결시 - ${accessUrls.wifi.replace(/^https?:\/\//, '')}`
-      : 'WIFI 연결시 - 현재 Wi‑Fi 미연결 (AP 모드)',
-  ]), [accessUrls, wifiConnected])
+      ? t('network.access.wifi', { address: accessUrls.wifi.replace(/^https?:\/\//, '') })
+      : t('network.access.wifiDisconnected'),
+  ]), [accessUrls, wifiConnected, t])
 
   const handleScan = async (options = {}) => {
     const {
@@ -200,7 +203,7 @@ const Network = () => {
     } = options
 
     setLoading(true)
-    setScanMessage('주변 Wi‑Fi 네트워크를 불러오는 중입니다.')
+    setScanMessage(t('network.loadingNetworks'))
 
     try {
       const res = await scanWifi()
@@ -232,18 +235,18 @@ const Network = () => {
 
         const method = res.method || 'unknown'
         const iface = res.iface || '-'
-        const cacheText = res.cached ? ' · 저장된 목록 사용' : ''
+        const cacheText = res.cached ? t('network.cachedSuffix') : ''
         const warning = res.warning ? ` · ${res.warning}` : ''
-        setScanMessage(`${list.length}개 Wi‑Fi 검색됨 (${method} / ${iface})${cacheText}${warning}`)
+        setScanMessage(t('network.scanResult', { count: list.length, method, iface, cache: cacheText, warning }))
         refreshAccessInfo()
         return res
       }
 
-      const message = res.error || 'Wi‑Fi 목록을 불러오지 못했습니다.'
+      const message = res.error || t('network.scanFailed')
       setScanMessage(message)
       return res
     } catch (e) {
-      const message = `Wi‑Fi 스캔 요청 중 오류가 발생했습니다. ${e?.message || e}`
+      const message = t('network.scanError', { message: e?.message || e })
       setScanMessage(message)
       return { success: false, error: message, networks: [] }
     } finally {
@@ -261,10 +264,10 @@ const Network = () => {
     for (let attempt = 1; attempt <= CONNECTION_VERIFY_ATTEMPTS; attempt += 1) {
       setConnectionState('verifying')
       setConnectMessage(
-        `"${ssidToConnect}" Wi‑Fi 연결 요청을 보냈습니다. 연결 상태를 확인 중입니다. (${attempt}/${CONNECTION_VERIFY_ATTEMPTS})`
+        t('network.connect.verifying', { ssid: ssidToConnect, attempt, total: CONNECTION_VERIFY_ATTEMPTS })
       )
       setConnectionNotice(
-        `"${ssidToConnect}" Wi‑Fi 연결 요청을 보냈습니다. 연결 상태를 확인 중입니다. (${attempt}/${CONNECTION_VERIFY_ATTEMPTS})`
+        t('network.connect.verifying', { ssid: ssidToConnect, attempt, total: CONNECTION_VERIFY_ATTEMPTS })
       )
 
       await sleep(CONNECTION_VERIFY_DELAY_MS)
@@ -300,8 +303,7 @@ const Network = () => {
     if (isApToStaSwitch) {
       setCountdown(10)
       setConnectMessage(
-        `Wi‑Fi 연결을 시작합니다. 잠시 후 ROBOT_SETUP 연결이 끊길 수 있습니다. ` +
-        `아래 접속 주소 안내를 참고해 유선/AP/Wi‑Fi 중 가능한 주소로 다시 접속하세요.`
+        t('network.connect.switchStart')
       )
 
       let c = 10
@@ -311,48 +313,47 @@ const Network = () => {
         if (c <= 0) clearInterval(timer)
       }, 1000)
     } else {
-      setConnectMessage(`"${selectedName}" Wi‑Fi 연결을 요청 중입니다.`)
-      setConnectionNotice(`"${selectedName}" Wi‑Fi 연결을 요청 중입니다. 잠시만 기다려 주세요.`)
+      setConnectMessage(t('network.connect.requesting', { ssid: selectedName }))
+      setConnectionNotice(t('network.connect.requestingWait', { ssid: selectedName }))
     }
 
     try {
       const res = await connectWifi(ssidToConnect, password, manualMode && manualHidden)
 
       if (!res?.success) {
-        throw new Error(res?.error || 'Wi‑Fi 연결 요청 실패')
+        throw new Error(res?.error || t('network.connect.failed'))
       }
 
       if (isApToStaSwitch) {
         const next = res.next_url || reconnectUrl
         setNextUrl(next)
         setConnectMessage(
-          `Wi‑Fi 연결 전환을 시작했습니다. 잠시 후 ROBOT_SETUP 연결이 끊깁니다. ` +
-          `아래 접속 주소 안내를 참고해 유선/AP/Wi‑Fi 중 가능한 주소로 다시 접속하세요.`
+          t('network.connect.switchStarted')
         )
         return
       }
 
       setConnectionState('verifying')
       setConnectMessage(
-        res?.message || `"${selectedName}" Wi‑Fi 연결 요청을 보냈습니다. 현재 연결 상태를 확인 중입니다.`
+        t('network.connect.requestSent', { ssid: selectedName })
       )
       setConnectionNotice(
-        res?.message || `"${selectedName}" Wi‑Fi 연결 요청을 보냈습니다. 현재 연결 상태를 확인 중입니다.`
+        t('network.connect.requestSent', { ssid: selectedName })
       )
 
       const connected = await verifyNormalWifiConnection(ssidToConnect)
 
       if (connected) {
         setConnectionState('connected')
-        setConnectMessage(`"${connected.ssid || ssidToConnect}" Wi‑Fi 연결이 확인되었습니다.`)
-        setConnectionNotice(`"${connected.ssid || ssidToConnect}" Wi‑Fi 연결이 확인되었습니다. 목록에서 현재 연결 표시를 확인하세요.`)
+        setConnectMessage(t('network.connect.confirmed', { ssid: connected.ssid || ssidToConnect }))
+        setConnectionNotice(t('network.connect.confirmedHint', { ssid: connected.ssid || ssidToConnect }))
       } else {
         setConnectionState('pending')
         setConnectMessage(
-          `연결 요청은 완료되었지만 "${selectedName}" 연결 상태를 아직 확인하지 못했습니다. 다시 스캔해서 현재 연결 표시를 확인하세요.`
+          t('network.connect.pending', { ssid: selectedName })
         )
         setConnectionNotice(
-          `연결 요청은 완료되었지만 "${selectedName}" 연결 상태를 아직 확인하지 못했습니다. 비밀번호가 맞는지 확인하거나 다시 스캔해 주세요.`
+          t('network.connect.pendingPassword', { ssid: selectedName })
         )
       }
     } catch (e) {
@@ -360,15 +361,14 @@ const Network = () => {
 
       if (isApToStaSwitch) {
         setConnectMessage(
-          `요청 중 연결이 끊겼을 수 있습니다. 로봇이 Wi‑Fi 전환 중일 수 있으니, ` +
-          `아래 접속 주소 안내를 참고해 유선/AP/Wi‑Fi 중 가능한 주소로 다시 접속하세요.`
+          t('network.connect.switchInterrupted')
         )
         return
       }
 
       setConnectionState('failed')
-      setConnectMessage(`Wi‑Fi 연결 요청 중 오류가 발생했습니다. ${e?.message || e}`)
-      setConnectionNotice(`Wi‑Fi 연결 요청 중 오류가 발생했습니다. ${e?.message || e}`)
+      setConnectMessage(t('network.connect.error', { message: e?.message || e }))
+      setConnectionNotice(t('network.connect.error', { message: e?.message || e }))
     } finally {
       if (timer && !isApToStaSwitch) clearInterval(timer)
       if (!isApToStaSwitch) {
@@ -385,7 +385,7 @@ const Network = () => {
     setShowSwitchingGuide(true)
     setCountdown(15)
     setConnectMessage(
-      'AP를 잠시 중지하고 Wi‑Fi 재스캔을 시작합니다. ROBOT_SETUP 연결이 끊기면 15초 정도 후 다시 접속해서 목록을 확인하세요.'
+      t('network.scan.offlineMessage')
     )
 
     let c = 15
@@ -413,25 +413,25 @@ const Network = () => {
     if (connecting) return
 
     const ok = window.confirm(
-      '현재 연결된 Wi‑Fi를 해제합니다. 이 Wi‑Fi로 접속 중이라면 연결이 끊기고 ROBOT_SETUP AP로 전환될 수 있습니다. 진행할까요?'
+      t('network.disconnect.confirm')
     )
     if (!ok) return
 
     setConnecting(true)
     setConnectionState('idle')
-    setConnectMessage('Wi‑Fi 연결 해제를 요청했습니다.')
-    setConnectionNotice('Wi‑Fi 연결 해제를 요청했습니다. 잠시 후 현재 Wi‑Fi 연결이 끊기고 ROBOT_SETUP AP로 전환될 수 있습니다.')
+    setConnectMessage(t('network.disconnect.requested'))
+    setConnectionNotice(t('network.disconnect.requestedHint'))
 
     try {
       const res = await disconnectWifi()
-      setConnectMessage(res?.message || 'Wi‑Fi 연결 해제를 요청했습니다.')
+      setConnectMessage(t('network.disconnect.requested'))
       setConnectionNotice(
-        res?.message || 'Wi‑Fi 연결 해제를 요청했습니다. 접속 주소 안내를 참고해 유선/AP로 다시 접속하세요.'
+        t('network.disconnect.reconnectHint')
       )
     } catch (e) {
       // 해제 순간 현재 요청 연결이 끊기는 것은 정상일 수 있다.
       console.warn('Wi‑Fi 연결 해제 요청 중 연결이 끊겼을 수 있습니다:', e)
-      setConnectMessage('연결 해제 요청 중 연결이 끊겼을 수 있습니다. 접속 주소 안내를 참고해 유선/AP로 다시 접속하세요.')
+      setConnectMessage(t('network.disconnect.interrupted'))
     } finally {
       window.setTimeout(() => {
         setConnecting(false)
@@ -441,28 +441,35 @@ const Network = () => {
     }
   }
 
+  // 네트워크 단계 완료 기록. 실패해도 화면 이동은 막지 않는다(토스트로만 알림) —
+  // 이 페이지는 Wi‑Fi 전환 중 요청이 끊기는 것이 정상인 화면이라 진행 기록 실패로 다음을 막을 수 없다.
+  const handleNext = async () => {
+    await tryAdvanceSetupProgress(SETUP_STEPS.SITE_CODE)
+    navigate('/site-code')
+  }
+
   const handleSwitchWifiMode = async (mode) => {
     if (connecting || modeChanging) return
 
     const isConcurrent = mode === 'concurrent'
     const ok = window.confirm(
       isConcurrent
-        ? 'wlan0=외부 Wi‑Fi, wlan1=AP 동시 모드로 전환합니다. AP가 잠시 재시작될 수 있습니다. 진행할까요?'
-        : 'wlan0 단일 모드로 전환합니다. wlan0가 이미 Wi‑Fi에 연결되어 있으면 연결은 유지하고, 연결되어 있지 않으면 AP 모드로 복귀합니다. 진행할까요?'
+        ? t('network.mode.confirmConcurrent')
+        : t('network.mode.confirmSingle')
     )
     if (!ok) return
 
     setModeChanging(true)
-    setModeMessage(isConcurrent ? '동시 AP+Wi‑Fi 모드로 전환 중입니다.' : 'wlan0 단일 모드로 전환 중입니다.')
+    setModeMessage(isConcurrent ? t('network.mode.changingConcurrent') : t('network.mode.changingSingle'))
 
     try {
       const res = await switchWifiMode(mode)
-      const label = res?.status?.label || (isConcurrent ? '동시 AP+Wi‑Fi 모드' : 'wlan0 단일 모드')
-      setModeMessage(`${label} 전환 요청이 완료되었습니다. AP가 재시작되었다면 10~20초 후 다시 접속하세요.`)
+      const label = res?.status?.label || (isConcurrent ? t('network.mode.concurrentLabel') : t('network.mode.singleLabel'))
+      setModeMessage(t('network.mode.changed', { label }))
       await refreshAccessInfo()
       await handleScan({ preserveSelection: true, preserveConnectionNotice: true })
     } catch (e) {
-      setModeMessage(`모드 전환 실패: ${e?.message || e}`)
+      setModeMessage(t('network.mode.failed', { message: e?.message || e }))
     } finally {
       setModeChanging(false)
     }
@@ -473,33 +480,33 @@ const Network = () => {
       <Section>
         <PageHero>
           <HeroText>
-            <HeroTitle>초기 네트워크 설정</HeroTitle>
+            <HeroTitle>{t('network.title')}</HeroTitle>
             <HeroDescription>
-              로봇이 사용할 Wi‑Fi를 선택하고 설정 AP에서 일반 네트워크로 전환합니다.
+              {t('network.description')}
             </HeroDescription>
           </HeroText>
 
           <BadgeGroup>
             <StatusBadge tone={wifiMode.apMode ? 'blue' : 'green'}>
-              {wifiMode.apMode ? 'AP 모드 연결됨' : '일반 Wi-Fi 연결됨'}
+              {wifiMode.apMode ? t('network.badges.apConnected') : t('network.badges.wifiConnected')}
             </StatusBadge>
 
             <StatusBadge tone={wifiMode.cached ? 'orange' : 'green'}>
-              {wifiMode.cached ? '저장된 목록 사용' : '실시간 스캔'}
+              {wifiMode.cached ? t('network.badges.cached') : t('network.badges.realtime')}
             </StatusBadge>
           </BadgeGroup>
         </PageHero>
 
         <SummaryGrid>
           <SummaryCard>
-            <SummaryLabel>현재 연결 상태</SummaryLabel>
+            <SummaryLabel>{t('network.summary.status')}</SummaryLabel>
             <SummaryValue>
-              {wifiMode.apMode ? 'ROBOT_SETUP AP 연결 중' : '일반 Wi-Fi 연결 상태'}
+              {wifiMode.apMode ? t('network.summary.ap') : t('network.summary.wifi')}
             </SummaryValue>
             <SummaryHint>
               {wifiMode.apMode
-                ? '초기 설정을 위해 임시 네트워크에 접속되어 있습니다.'
-                : '로봇이 일반 Wi-Fi 네트워크에 연결되어 있습니다.'}
+                ? t('network.summary.apHint')
+                : t('network.summary.wifiHint')}
             </SummaryHint>
             {wifiConnected && (
               <ActionButton
@@ -507,34 +514,34 @@ const Network = () => {
                 disabled={connecting}
                 style={{ marginTop: '1.2rem', alignSelf: 'flex-start' }}
               >
-                {connecting ? '처리 중...' : 'Wi‑Fi 연결 해제'}
+                {connecting ? t('network.summary.processing') : t('network.summary.disconnect')}
               </ActionButton>
             )}
           </SummaryCard>
 
           <SummaryCard>
-            <SummaryLabel>접속 주소 안내</SummaryLabel>
+            <SummaryLabel>{t('network.access.title')}</SummaryLabel>
             <SummaryValue accent as="div" style={{ lineHeight: 1.65 }}>
               {accessText.map((line) => <div key={line}>{line}</div>)}
             </SummaryValue>
-            <SummaryHint>Wi‑Fi 주소는 공유기 DHCP에 따라 바뀔 수 있습니다. 현재 확인된 주소를 표시합니다.</SummaryHint>
+            <SummaryHint>{t('network.access.hint')}</SummaryHint>
           </SummaryCard>
         </SummaryGrid>
 
         <SectionCard>
           <SectionHeader>
             <div>
-              <SectionTitle>주변 Wi‑Fi 네트워크</SectionTitle>
+              <SectionTitle>{t('network.scan.title')}</SectionTitle>
               <SectionDescription>{scanMessage}</SectionDescription>
             </div>
 
             <div style={{ display: 'flex', gap: '0.8rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               <ActionButton onClick={handleScan} disabled={loading || connecting}>
-                {loading ? '스캔 중...' : '다시 스캔'}
+                {loading ? t('network.scan.scanning') : t('network.scan.rescan')}
               </ActionButton>
               {canOfflineRescan && (
                 <ActionButton onClick={handleOfflineRescan} disabled={connecting}>
-                  AP 잠시 끄고 새로 검색
+                  {t('network.scan.offlineRescan')}
                 </ActionButton>
               )}
             </div>
@@ -543,11 +550,11 @@ const Network = () => {
           {networks.length === 0 && !loading && (
             <EmptyState>
               <EmptyIcon>📶</EmptyIcon>
-              <h4>검색된 Wi‑Fi가 없습니다</h4>
+              <h4>{t('network.scan.empty')}</h4>
               <p>
                 {wifiMode.apMode
-                  ? 'AP 모드에서는 실시간 스캔이 제한될 수 있습니다. SSID를 직접 입력하거나 AP를 잠시 끄고 새로 검색하세요.'
-                  : '일반 Wi‑Fi 모드에서 검색 결과가 없습니다. 다시 스캔하거나 SSID를 직접 입력해 연결할 수 있습니다.'}
+                  ? t('network.scan.emptyAp')
+                  : t('network.scan.emptyWifi')}
               </p>
             </EmptyState>
           )}
@@ -566,15 +573,15 @@ const Network = () => {
                   >
                     <WifiMain>
                       <WifiNameRow>
-                        <WifiName>{network.ssid || '(숨김 네트워크)'}</WifiName>
-                        {network.in_use && <WifiChip tone="green">현재 연결</WifiChip>}
-                        {active && <WifiChip tone="blue">선택됨</WifiChip>}
+                        <WifiName>{network.ssid || t('network.hiddenNetwork')}</WifiName>
+                        {network.in_use && <WifiChip tone="green">{t('network.badges.current')}</WifiChip>}
+                        {active && <WifiChip tone="blue">{t('network.badges.selected')}</WifiChip>}
                       </WifiNameRow>
 
                       <WifiMeta>
-                        <WifiChip>보안: {network.security || 'OPEN'}</WifiChip>
-                        <WifiChip>신호: {network.signal ?? 0}%</WifiChip>
-                        <WifiChip>{getSignalLabel(network.signal)}</WifiChip>
+                        <WifiChip>{t('network.scan.security', { value: network.security || 'OPEN' })}</WifiChip>
+                        <WifiChip>{t('network.scan.signalValue', { value: network.signal ?? 0 })}</WifiChip>
+                        <WifiChip>{getSignalLabel(network.signal, t)}</WifiChip>
                       </WifiMeta>
                     </WifiMain>
 
@@ -594,13 +601,12 @@ const Network = () => {
           <ConnectPanel>
             <ConnectPanelTop>
               <div>
-                <h3>선택한 네트워크에 연결</h3>
+                <h3>{t('network.connect.title')}</h3>
                 <p>
-                  <b>{selectedName}</b> 네트워크에 연결합니다.
-                  {selectedIsOpen ? ' 개방형 네트워크라 비밀번호 입력 없이 진행할 수 있습니다.' : ' 비밀번호를 입력한 뒤 연결을 시작하세요.'}
+                  {selectedIsOpen ? t('network.connect.descriptionOpen', { ssid: selectedName }) : t('network.connect.descriptionSecure', { ssid: selectedName })}
                 </p>
               </div>
-              <StatusBadge tone="blue">선택된 네트워크</StatusBadge>
+              <StatusBadge tone="blue">{t('network.badges.selectedNetwork')}</StatusBadge>
             </ConnectPanelTop>
 
             {!selectedIsOpen && (
@@ -609,14 +615,14 @@ const Network = () => {
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Wi‑Fi 비밀번호를 입력하세요"
+                  placeholder={t('network.connect.passwordPlaceholder')}
                   autoComplete="current-password"
                 />
                 <TogglePasswordButton
                   type="button"
                   onClick={() => setShowPassword((value) => !value)}
-                  aria-label={showPassword ? '비밀번호 숨기기' : '비밀번호 보기'}
-                  title={showPassword ? '비밀번호 숨기기' : '비밀번호 보기'}
+                  aria-label={showPassword ? t('network.connect.hidePassword') : t('network.connect.showPassword')}
+                  title={showPassword ? t('network.connect.hidePassword') : t('network.connect.showPassword')}
                 >
                   {showPassword ? '🙈' : '👁️'}
                 </TogglePasswordButton>
@@ -628,7 +634,7 @@ const Network = () => {
                 onClick={handleConnect}
                 disabled={!selectedIsOpen && !password}
               >
-                Wi‑Fi 연결 시작
+                {t('network.connect.start')}
               </ActionButton>
             </ButtonWrap>
           </ConnectPanel>
@@ -637,9 +643,9 @@ const Network = () => {
         <ConnectPanel>
           <ConnectPanelTop>
             <div>
-              <h3>Wi‑Fi 인터페이스 모드</h3>
-              <p>현재 모드: <b>{wifiModeStatus?.label || wifiModeStatus?.mode || '확인 중'}</b> · STA: {wifiModeStatus?.sta_iface || 'wlan0'} · AP: {wifiModeStatus?.ap_iface || 'wlan1'}</p>
-              <p>동시 AP+Wi‑Fi 모드는 wlan0을 외부 Wi‑Fi 연결용, wlan1을 ROBOT_SETUP AP용으로 사용합니다.</p>
+              <h3>{t('network.mode.title')}</h3>
+              <p>{t('network.mode.current')} <b>{wifiModeStatus?.label || wifiModeStatus?.mode || t('network.mode.checking')}</b> · STA: {wifiModeStatus?.sta_iface || 'wlan0'} · AP: {wifiModeStatus?.ap_iface || 'wlan1'}</p>
+              <p>{t('network.mode.description')}</p>
             </div>
             <StatusBadge tone={wifiModeStatus?.mode === 'concurrent' ? 'green' : wifiModeStatus?.mode === 'single_ap' ? 'blue' : 'gray'}>
               {wifiModeStatus?.mode || 'mode'}
@@ -647,13 +653,13 @@ const Network = () => {
           </ConnectPanelTop>
           <ButtonWrap>
             <ActionButton onClick={() => handleSwitchWifiMode('concurrent')} disabled={connecting || modeChanging}>
-              wlan0 Wi‑Fi + wlan1 AP 모드
+              {t('network.mode.concurrentButton')}
             </ActionButton>
             <ActionButton onClick={() => handleSwitchWifiMode('single')} disabled={connecting || modeChanging}>
-              wlan0 단일 모드로 복귀
+              {t('network.mode.singleButton')}
             </ActionButton>
             <ActionButton onClick={refreshAccessInfo} disabled={connecting || modeChanging}>
-              모드 상태 새로고침
+              {t('network.mode.refresh')}
             </ActionButton>
           </ButtonWrap>
           {modeMessage && <SmallNote style={{ marginTop: '1.2rem' }}>{modeMessage}</SmallNote>}
@@ -663,10 +669,10 @@ const Network = () => {
           <ConnectPanel>
             <ConnectPanelTop>
               <div>
-                <h3>네트워크 직접 입력</h3>
-                <p>검색 목록이 비어 있거나 숨김 SSID인 경우 네트워크 이름을 직접 입력해서 연결할 수 있습니다.</p>
+                <h3>{t('network.manual.title')}</h3>
+                <p>{t('network.manual.description')}</p>
               </div>
-              <StatusBadge tone={manualMode ? 'blue' : 'gray'}>{manualMode ? '직접 입력 선택됨' : 'Fallback'}</StatusBadge>
+              <StatusBadge tone={manualMode ? 'blue' : 'gray'}>{manualMode ? t('network.manual.selected') : 'Fallback'}</StatusBadge>
             </ConnectPanelTop>
 
             <ManualGrid>
@@ -677,26 +683,26 @@ const Network = () => {
                   value={manualSsid}
                   onChange={(e) => { setManualSsid(e.target.value); setManualMode(true); setSelected(null) }}
                   onFocus={() => setManualMode(true)}
-                  placeholder="Wi‑Fi 이름을 직접 입력하세요"
+                  placeholder={t('network.manual.ssidPlaceholder')}
                   autoComplete="off"
                 />
               </div>
               <div>
-                <ManualLabel>비밀번호</ManualLabel>
+                <ManualLabel>{t('network.manual.password')}</ManualLabel>
                 <PasswordField>
                   <PasswordInput
                     type={showPassword ? 'text' : 'password'}
                     value={manualMode ? password : ''}
                     onChange={(e) => { setPassword(e.target.value); setManualMode(true); setSelected(null) }}
                     onFocus={() => setManualMode(true)}
-                    placeholder="개방형 네트워크면 비워둘 수 있습니다"
+                    placeholder={t('network.manual.passwordPlaceholder')}
                     autoComplete="current-password"
                   />
                   <TogglePasswordButton
                     type="button"
                     onClick={() => setShowPassword((value) => !value)}
-                    aria-label={showPassword ? '비밀번호 숨기기' : '비밀번호 보기'}
-                    title={showPassword ? '비밀번호 숨기기' : '비밀번호 보기'}
+                    aria-label={showPassword ? t('network.connect.hidePassword') : t('network.connect.showPassword')}
+                    title={showPassword ? t('network.connect.hidePassword') : t('network.connect.showPassword')}
                   >
                     {showPassword ? '🙈' : '👁️'}
                   </TogglePasswordButton>
@@ -711,14 +717,14 @@ const Network = () => {
                   checked={manualHidden}
                   onChange={(e) => { setManualHidden(e.target.checked); setManualMode(true); setSelected(null) }}
                 />
-                숨김 SSID로 연결 시도
+                {t('network.manual.hidden')}
               </label>
               <ButtonWrap className="alignRight">
                 <ActionButton
                   onClick={handleConnect}
                   disabled={!manualSsid.trim()}
                 >
-                  입력한 Wi‑Fi로 연결
+                  {t('network.manual.connect')}
                 </ActionButton>
               </ButtonWrap>
             </div>
@@ -729,11 +735,11 @@ const Network = () => {
           <ConnectPanel>
             <ConnectPanelTop>
               <div>
-                <h3>Wi‑Fi 연결 상태</h3>
+                <h3>{t('network.status.title')}</h3>
                 <p>{connectionNotice}</p>
               </div>
               <StatusBadge tone={connectionState === 'failed' ? 'red' : connectionState === 'connected' ? 'green' : 'orange'}>
-                {connectionState === 'connected' ? '연결 완료' : connectionState === 'failed' ? '연결 실패' : '확인 필요'}
+                {connectionState === 'connected' ? t('network.status.connected') : connectionState === 'failed' ? t('network.status.failed') : t('network.status.check')}
               </StatusBadge>
             </ConnectPanelTop>
           </ConnectPanel>
@@ -744,17 +750,17 @@ const Network = () => {
             <SwitchingIcon>📶</SwitchingIcon>
             <SwitchingContent>
               <span>Wi‑Fi Connecting</span>
-              <h3>Wi‑Fi 연결 중입니다</h3>
+              <h3>{t('network.status.connecting')}</h3>
               <p>{connectMessage || connectionNotice}</p>
 
               <ReconnectBox>
-                <span>진행 상태</span>
+                <span>{t('network.status.progress')}</span>
                 <ReconnectLink as="div">
-                  {connectionState === 'requesting' ? '연결 요청 전송 중' : '현재 연결 상태 확인 중'}
+                  {connectionState === 'requesting' ? t('network.status.sending') : t('network.status.verifying')}
                 </ReconnectLink>
               </ReconnectBox>
 
-              <CountdownPill>입력/선택 잠금 · 완료 후 자동 재스캔</CountdownPill>
+              <CountdownPill>{t('network.status.locked')}</CountdownPill>
             </SwitchingContent>
           </SwitchingPanel>
         )}
@@ -764,33 +770,33 @@ const Network = () => {
             <SwitchingIcon>📡</SwitchingIcon>
             <SwitchingContent>
               <span>Network Switching</span>
-              <h3>네트워크 전환 중입니다</h3>
+              <h3>{t('network.status.switching')}</h3>
               <p>{connectMessage}</p>
 
               <ReconnectBox>
-                <span>다시 접속할 주소</span>
+                <span>{t('network.status.reconnect')}</span>
                 <ReconnectLink as="div" style={{ textDecoration: 'none' }}>
                   {accessText.map((line) => <div key={line}>{line}</div>)}
                 </ReconnectLink>
               </ReconnectBox>
 
-              <CountdownPill>남은 시간 {countdown}초</CountdownPill>
+              <CountdownPill>{t('network.status.remaining', { seconds: countdown })}</CountdownPill>
             </SwitchingContent>
           </SwitchingPanel>
         )}
         <WizardButtonWrap style={{ width: 'min(82rem, 100%)' }}>
           <SecondaryActionButton type="button" onClick={() => navigate('/language')} disabled={connecting || modeChanging}>
-            이전
+            {t('common.previous')}
           </SecondaryActionButton>
-          <ActionButton type="button" onClick={() => navigate('/site-code')} disabled={connecting || modeChanging}>
-            다음
+          <ActionButton type="button" onClick={handleNext} disabled={connecting || modeChanging}>
+            {t('common.next')}
           </ActionButton>
         </WizardButtonWrap>
 
       </Section>
 
       <SmallNote>
-        단일 Wi‑Fi 인터페이스 구조에서는 AP에서 일반 Wi‑Fi로 전환되는 순간 연결이 끊기는 것이 정상입니다.
+        {t('network.note')}
       </SmallNote>
     </StyledPageContent>
   )

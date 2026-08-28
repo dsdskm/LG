@@ -8,6 +8,15 @@ export const SemanticWorkspace = styled(StyledPageContent)`
   min-height: 0;
 `
 
+// POI 상세는 지도/목록 줄 아래에 전체 폭으로 펼친다 — 편집 중에도 목록이 계속 보이도록.
+// SemanticDetail 이 자기 Section 을 직접 그리므로 여기서 Section 으로 감싸지 않고(카드 이중),
+// 공용 Section 의 flex:1(늘어남)만 내용 높이로 되돌린다.
+export const DetailPanel = styled.div`
+  & section {
+    flex: 0 0 auto;
+  }
+`
+
 export const ButtonWrapper = styled.div`
   margin-top: 3.2rem;
   display: flex;
@@ -41,6 +50,13 @@ export const CommandFilters = styled.div`
 export const CommandBar = styled.div`
   & > section {
     flex: 0 0 auto;
+  }
+`
+
+// 상세 헤더 카드 — 제목과 액션 버튼이 한 줄이고 그 아래 내용이 없으므로 제목의 아래 여백을 지운다.
+export const DetailHeader = styled.div`
+  & .title {
+    margin-bottom: 0;
   }
 `
 

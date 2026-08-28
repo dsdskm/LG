@@ -1,4 +1,4 @@
-import API_BASE from './index'
+import { API_BASE } from './index'
 const apiUrl = (path) => `${API_BASE}${path}`
 
 async function readJsonResponse(res) {

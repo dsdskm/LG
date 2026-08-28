@@ -2,8 +2,6 @@ import { StyledHeaderButton } from '@repo/ui/components/layout/Header/styles'
 import { StyledLanguageSelect } from './styles'
 import SvgLanguage from '../../../assets/svgs/language.svg'
 import Icon from '../../common/Icon'
-import { useResponsiveStore } from '@repo/stores/useResponsiveStore'
-import { useLanguageStore } from '@repo/stores/useLanguageStore'
 import useToggle from '@repo/hooks/useToggle'
 import languageOptions from './data'
 import { Suspense, useRef } from 'react'
@@ -13,20 +11,9 @@ import { useTranslation } from 'react-i18next'
 const LanguageSelect = () => {
   const languageRef = useRef(null)
   const { t, i18n } = useTranslation('layout')
-  const { currentLanguage, setCurrentLanguage } = useLanguageStore()
-  const { responsiveMode } = useResponsiveStore()
   const { state: isLanguageOpen, toggle: toggleLanguage, off: closeLanguage } = useToggle()
 
   useClickOutSide(languageRef, closeLanguage)
-
-  // const handleClickSelectButton = useCallback(
-  //   ({ currentTarget }) => {
-  //     const { value } = currentTarget;
-  //     setCurrentLanguage(value);
-  //     closeLanguage();
-  //   },
-  //   [setCurrentLanguage, closeLanguage]
-  // );
 
   const handleLanguageChange = (key) => {
     i18n.changeLanguage(key).then(() => {
@@ -37,9 +24,6 @@ const LanguageSelect = () => {
   return (
     <StyledLanguageSelect ref={languageRef} className="languageSelect">
       <StyledHeaderButton type="button" className="language" onClick={toggleLanguage}>
-        {responsiveMode === 'PC' && (
-          <span className="typographyButton3" style={{ color: 'var(--color-neutral-10)' }}></span>
-        )}
         <i className="icon">
           <SvgLanguage />
         </i>

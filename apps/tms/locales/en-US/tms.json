@@ -14,9 +14,9 @@
       "saving": "저장중...",
       "saveNotConnected": "저장 기능이 연결되지 않았습니다.",
       "saveNoChanges": "저장할 변경사항이 없습니다.",
-      "resetToFinal": "최종 버전으로 리셋",
-      "resetToFinalTitle": "캔버스 내용을 저장된 최종 버전으로 되돌립니다.",
-      "resetToFinalNone": "저장된 최종 버전이 없습니다."
+      "resetToFinal": "운영 버전으로 리셋",
+      "resetToFinalTitle": "캔버스 내용을 저장된 운영 버전으로 되돌립니다.",
+      "resetToFinalNone": "저장된 운영 버전이 없습니다."
     },
     "confirmDelete": {
       "title": "노드를 삭제할까요?",
@@ -47,6 +47,12 @@
         "denyControlBottom": "A control node cannot connect from the bottom.",
         "denyLeftNotControl": "Only control nodes can connect from the left.",
         "denyTargetNotLeft": "Nodes can only be connected at their input point (horizontal: left / vertical: top).",
+        "denyActionRightOutOnly": "ACTION nodes can only exit to the right.",
+        "denyActionSingleIn": "ACTION nodes can only have one input from the left.",
+        "denyActionSingleOut": "ACTION nodes can only have one output to the right.",
+        "denyControlSingleRightOut": "CONTROL nodes can only have one output to the right.",
+        "denyControlSingleLeftIn": "CONTROL nodes can only have one input from the left.",
+        "denyParallelDuplicateContentType": "Parallel nodes cannot have more than one ACTION child with the same content type.",
         "denyDefault": "This connection is not allowed."
       }
     },
@@ -124,9 +130,9 @@
       "leaveConfirmDesc": "Unsaved changes will not be kept.",
       "leaveConfirmYes": "Yes",
       "leaveConfirmNo": "No",
-      "finalSaveDoneTitle": "최종 버전으로 저장되었습니다",
-      "finalSaveDoneDesc": "작업 내용을 저장 버전과 최종 버전에 함께 저장했습니다.",
-      "finalSkipped": "최종 버전은 갱신하지 않았습니다. (Behavior Tree 생성 불가)"
+      "finalSaveDoneTitle": "운영 버전으로 저장되었습니다",
+      "finalSaveDoneDesc": "작업 내용을 저장 버전과 운영 버전에 함께 저장했습니다.",
+      "finalSkipped": "운영 버전은 갱신하지 않았습니다. (Behavior Tree 생성 불가)"
     },
     "sound": {
       "play": "재생",
@@ -148,27 +154,27 @@
       "confirm": "나가기"
     },
     "finalReset": {
-      "title": "최종 버전으로 리셋할까요?",
-      "description": "현재 캔버스 내용을 저장된 최종 버전으로 바꿉니다.\n저장하기 전까지는 서버에 반영되지 않고, 되돌리기(Ctrl+Z)로 취소할 수 있습니다.",
+      "title": "운영 버전으로 리셋할까요?",
+      "description": "현재 캔버스 내용을 저장된 운영 버전으로 바꿉니다.\n저장하기 전까지는 서버에 반영되지 않고, 되돌리기(Ctrl+Z)로 취소할 수 있습니다.",
       "confirm": "리셋"
     },
     "btWarning": {
       "title": "Behavior Tree 생성이 불가능합니다",
-      "description": "현재 구성은 Behavior Tree 로 변환할 수 없어 최종 버전으로는 저장할 수 없습니다.\n저장 버전으로만 저장하시겠습니까?",
-      "commandSavedOnlyDescription": "현재 구성은 Behavior Tree 로 변환할 수 없어 최종 버전으로는 저장할 수 없습니다.\n저장 버전으로만 저장하였습니다.",
-      "confirm": "저장 버전으로 저장"
+      "description": "현재 구성은 Behavior Tree 로 변환할 수 없어 운영 버전으로는 저장할 수 없습니다.\n작성중 버전으로만 저장하시겠습니까?",
+      "commandSavedOnlyDescription": "현재 구성은 Behavior Tree 로 변환할 수 없어 운영 버전으로는 저장할 수 없습니다.\n작성중 버전으로만 저장하였습니다.",
+      "confirm": "작성중 버전으로 저장"
     },
     "commandErrors": {
       "undoUnavailable": "실행 취소할 캔버스 작업이 없습니다.",
       "redoUnavailable": "다시 실행할 캔버스 작업이 없습니다.",
-      "finalUnavailable": "리셋할 최종 버전이 없습니다.",
+      "finalUnavailable": "리셋할 운영 버전이 없습니다.",
       "unsupported": "지원하지 않는 캔버스 명령입니다."
     },
     "saveConfirm": {
       "title": "저장하시겠습니까?",
       "description": "현재 캔버스 구성을 저장합니다.",
-      "saveFinal": "최종 버전 저장",
-      "saveFinalHint": "체크하면 저장 버전과 함께 최종 버전(배포에 쓰이는 버전)도 갱신합니다.\n(Behavior Tree 생성이 가능한 구성이어야 합니다)"
+      "saveFinal": "운영 버전 저장",
+      "saveFinalHint": "체크하면 저장 버전과 함께 운영 버전(배포에 쓰이는 버전)도 갱신합니다.\n(Behavior Tree 생성이 가능한 구성이어야 합니다)"
     }
   },
   "infoDialog": {
@@ -210,7 +216,7 @@
   },
   "detail": {
     "status": {
-      "draft": "Draft",
+      "draft": "Working",
       "activated": "Activated",
       "deactivated": "Deactivated",
       "disabled": "Disabled"
@@ -273,9 +279,9 @@
       "processFail": "처리 실패"
     },
     "flowTab": {
-      "final": "최종 버전",
+      "final": "운영 버전",
       "saved": "저장 버전",
-      "finalEmpty": "저장된 최종 버전이 없습니다.",
+      "finalEmpty": "저장된 운영 버전이 없습니다.",
       "savedEmpty": "저장된 버전이 없습니다."
     }
   },

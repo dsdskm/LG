@@ -25,6 +25,7 @@ import { PaletteItem } from '@/types/palette'
 import { useFlowEditorStore } from '@/store/taskflow.canvas.store'
 import { ContentApiPayload, TaskApiPayload } from '@/types/api/taskPayload'
 import { DND_FALLBACK_TEXT, DND_MIME, TASK_PANEL, TASK_TYPE_CONTROL } from '@/common/constants'
+import { getSiteById } from '@/api/siteApi'
 import { TaskType } from '@/types/task'
 
 const PALETTE_COMPACT_RATIO = 0.5
@@ -36,6 +37,84 @@ const getMaxVisibleGridItems = (compact: boolean) => {
 function makePaletteLabel(kind: PaletteItem['kind'], task: TaskApiPayload, content?: ContentApiPayload) {
   if (kind === 'controlTaskNode') return task.name
   return content?.name ?? task.name
+}
+
+function parseContentValue(raw: string): unknown {
+  const trimmed = raw?.trim?.() ?? ''
+  if (!trimmed || (trimmed[0] !== '{' && trimmed[0] !== '[')) return raw
+
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    return raw
+  }
+}
+
+function pickLocationValue(...candidates: Array<unknown>): string | null {
+  for (const value of candidates) {
+    if (value == null) continue
+    const text = String(value).trim()
+    if (text) return text
+  }
+  return null
+}
+
+async function resolveMoveToGroupTitle(content: ContentApiPayload): Promise<string> {
+  const rawValue = parseContentValue(content.contentValue ?? '')
+  const source =
+    typeof rawValue === 'object' && rawValue !== null && !Array.isArray(rawValue)
+      ? (rawValue as Record<string, unknown>)
+      : {}
+
+  const contentRecord = content as unknown as Record<string, unknown>
+
+  const buildingId = pickLocationValue(
+    source.buildingId,
+    source.building_id,
+    contentRecord.buildingId,
+    contentRecord.building_id
+  )
+  const floorId = pickLocationValue(
+    source.floorId,
+    source.floor_id,
+    contentRecord.floorId,
+    contentRecord.floor_id
+  )
+
+  if (!content.siteId || (!buildingId && !floorId)) {
+    return '[기타]'
+  }
+
+  try {
+    const response = await getSiteById(content.siteId)
+    const data = (response as any)?.data ?? response
+    const buildings = Array.isArray(data?.buildings) ? data.buildings : []
+
+    const matchedBuilding = buildings.find((item: any) => {
+      const id = pickLocationValue(item?.buildingId, item?.building_id)
+      return id && buildingId && String(id) === String(buildingId)
+    })
+
+    const buildingName = String(
+      matchedBuilding?.buildingName ?? matchedBuilding?.building_name ?? buildingId ?? '기타'
+    ).trim()
+
+    let floorName = '기타'
+    if (buildingId && floorId) {
+      const floors = Array.isArray(matchedBuilding?.floors) ? matchedBuilding.floors : []
+      const matchedFloor = floors.find((item: any) => {
+        const id = pickLocationValue(item?.floorId, item?.floor_id)
+        return id && floorId && String(id) === String(floorId)
+      })
+      floorName = String(matchedFloor?.floorName ?? matchedFloor?.floor_name ?? floorId ?? '기타').trim()
+    } else if (floorId) {
+      floorName = String(floorId)
+    }
+
+    return `[${buildingName}][${floorName}]`
+  } catch {
+    return '[기타]'
+  }
 }
 
 // 태스크 패널의 모든 목록(컨트롤/액션/컨텐츠)은 name 오름차순으로 보여준다.
@@ -137,6 +216,53 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
 
   const [openMap, setOpenMap] = useState<Record<number, boolean>>({})
   const [defaultOpen, setDefaultOpen] = useState(false)
+  const [moveToGroupsByTask, setMoveToGroupsByTask] = useState<Record<number, Array<{ key: string; title: string; contents: ContentApiPayload[] }>>>({})
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadMoveToGroups = async () => {
+      const groupedEntries: Record<number, Array<{ key: string; title: string; contents: ContentApiPayload[] }>> = {}
+
+      for (const task of expandableTasks) {
+        const normalizedName = String(task.name ?? '').toLowerCase()
+        if (normalizedName !== 'moveto') {
+          groupedEntries[task.id] = [{ key: `${task.id}-default`, title: task.name, contents: task.contents ?? [] }]
+          continue
+        }
+
+        const resolvedGroups = await Promise.all(
+          (task.contents ?? []).map(async (content) => {
+            const title = await resolveMoveToGroupTitle(content)
+            return { content, title }
+          })
+        )
+
+        const map = new Map<string, ContentApiPayload[]>()
+        for (const entry of resolvedGroups) {
+          const list = map.get(entry.title) ?? []
+          list.push(entry.content)
+          map.set(entry.title, list)
+        }
+
+        groupedEntries[task.id] = Array.from(map.entries()).map(([title, contents]) => ({
+          key: `${task.id}-${title}`,
+          title,
+          contents: sortByNameAsc(contents)
+        }))
+      }
+
+      if (!cancelled) {
+        setMoveToGroupsByTask(groupedEntries)
+      }
+    }
+
+    void loadMoveToGroups()
+
+    return () => {
+      cancelled = true
+    }
+  }, [expandableTasks])
 
   useEffect(() => {
     console.log('[TASK_PANEL][VISIBLE_LIST]', {
@@ -168,7 +294,7 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
           contents: (task.contents ?? []).map((content) => ({
             id: content.id,
             name: content.name,
-            type: content.type
+            type: content.contentTypeName
           }))
         }))
       }
@@ -196,7 +322,7 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
         contents: (task.contents ?? []).map((content) => ({
           id: content.id,
           name: content.name,
-          type: content.type
+          type: content.contentTypeName
         }))
       }))
     })
@@ -267,6 +393,7 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
               {expandableTasks.map((task) => {
                 const contents = sortByNameAsc(task.contents ?? [])
                 const open = openMap[task.id] ?? false
+                const taskGroups = moveToGroupsByTask[task.id] ?? [{ key: `${task.id}-default`, title: task.name, contents }]
 
                 return (
                   <div key={task.id}>
@@ -281,30 +408,38 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
 
                     {open ? (
                       <ContentBlock>
-                        <ContentGrid $compact={paletteGridCompact}>
-                          {contents.map((content) => (
-                            <ContentNodeCard
-                              key={content.id}
-                              task={task}
-                              content={content}
-                              selected={
-                                selectedPalette?.taskId === task.id && selectedPalette?.contentId === content.id
-                              }
-                              onSelect={selectPalette}
-                              onDoubleAdd={() =>
-                                addNodeFromPalette(
-                                  {
-                                    kind: 'contentNode',
-                                    task,
-                                    content,
-                                    label: makePaletteLabel('contentNode', task, content)
-                                  },
-                                  getNextCanvasPosition()
-                                )
-                              }
-                            />
-                          ))}
-                        </ContentGrid>
+                        {taskGroups.map((group) => (
+                          <div key={group.key}>
+                            <TaskToggleButton type="button" title={group.title} style={{ marginTop:10 }}>
+                              <TaskName>{group.title}</TaskName>
+                            </TaskToggleButton>
+
+                            <ContentGrid $compact={paletteGridCompact}>
+                              {group.contents.map((content) => (
+                                <ContentNodeCard
+                                  key={content.id}
+                                  task={task}
+                                  content={content}
+                                  selected={
+                                    selectedPalette?.taskId === task.id && selectedPalette?.contentId === content.id
+                                  }
+                                  onSelect={selectPalette}
+                                  onDoubleAdd={() =>
+                                    addNodeFromPalette(
+                                      {
+                                        kind: 'contentNode',
+                                        task,
+                                        content,
+                                        label: makePaletteLabel('contentNode', task, content)
+                                      },
+                                      getNextCanvasPosition()
+                                    )
+                                  }
+                                />
+                              ))}
+                            </ContentGrid>
+                          </div>
+                        ))}
                       </ContentBlock>
                     ) : null}
                   </div>
@@ -379,7 +514,7 @@ function ContentNodeCard({
     kind: 'contentNode',
     task,
     content,
-    label: makePaletteLabel('contentNode', task, content)
+    label: content.name
   }
 
   return (

@@ -18,13 +18,14 @@ import { deviceApis, mapApis } from '@/apis'
 import ModalEditRobot from '../modal/ModalEditRobot'
 import ModalMoveLocation from '../modal/ModalMoveLocation.jsx'
 import ModalSelectTaskFlow from '../modal/ModalSelectTaskFlow.jsx'
+import ModalLogUploadRequest from '../modal/ModalLogUploadRequest.jsx'
 import { useTranslation } from 'react-i18next'
 import { useUserStore } from '@repo/stores'
 // import SiteMap from '../../../common/SiteMap'
 import SiteMap3D from '../../../common/SiteMap3D'
 import PartsStatusPanel from '../component/PartsStatusPanel'
 import RobotControlPanel from '../component/RobotControlPanel'
-import { Play, GamePad, Battery, Wifi, Clock, Upload, OperationStatus, StopCircle, Trash } from '@/assets/icon'
+import { Play, GamePad, Battery, Wifi, Clock, OperationStatus, StopCircle, Trash } from '@/assets/icon'
 
 const MajorActionButton = styled(Button)`
   background: var(--t-major-action-btn-bg) !important;
@@ -73,6 +74,7 @@ const AssetInfo = ({ t, deviceId }) => {
   const MoveLocationModal = useModalState()
   const SelectTaskFlowModal = useModalState()
   const DeleteRobotModal = useModalState()
+  const LogUploadRequestModal = useModalState()
   const navigate = useNavigate()
   const { session } = useUserStore()
   const [isLive, setIsLive] = useState(false)
@@ -85,7 +87,8 @@ const AssetInfo = ({ t, deviceId }) => {
     tms: null, // tms.tmsUpdatedAt (taskFlows 변경 감지)
     hwTs: null,
     senTs: null,
-    swTs: null
+    swTs: null,
+    posInit: null
   })
   const [channel, setChannel] = useState('CLOUD')
 
@@ -279,6 +282,29 @@ const AssetInfo = ({ t, deviceId }) => {
       setConfirmMessage(t('errorReport'))
       setIsConfirmModalOpen(true)
     }
+  }
+
+  // 로그 업로드 요청 모달 확인 — 선택한 시작 시각 + 지속 시간(분)을 uploadLog 액션으로 전송
+  const handleLogUploadRequest = ({ startDate, startHour, startMinute, duration }) => {
+    LogUploadRequestModal.onClose()
+
+    const startAt = new Date(startDate)
+    startAt.setHours(Number(startHour), Number(startMinute), 0, 0)
+
+    sendActions(
+      [
+        {
+          actionType: 'uploadLog',
+          actionId: crypto.randomUUID(),
+          blockingType: 'NONE',
+          actionParameters: [
+            { key: 'start_time', value: startAt.toISOString() },
+            { key: 'duration', value: String(duration) }
+          ]
+        }
+      ],
+      `${t('logUploadRequest')} ${t('sendCommand')}`
+    )
   }
 
   const handleLogPlayClick = () => {
@@ -576,15 +602,18 @@ const AssetInfo = ({ t, deviceId }) => {
         c.tms = tms
       }
 
-      // PartsStatusPanel용 robotState는 hw/sen/sw 타임스탬프가 바뀐 경우에만 갱신
+      // PartsStatusPanel/GKR 위치 인식 배지용 robotState는 hw/sen/sw 타임스탬프 또는
+      // positionInitialized(위치 인식 상태)가 바뀐 경우에만 갱신
       const hwTs = data.state?.hwComponentsUpdatedAt ?? null
       const senTs = data.state?.sensorsUpdatedAt ?? null
       const swTs = data.state?.sWmodulesUpdatedAt ?? null
-      if (hwTs !== c.hwTs || senTs !== c.senTs || swTs !== c.swTs) {
+      const posInit = data.state?.position?.positionInitialized ?? null
+      if (hwTs !== c.hwTs || senTs !== c.senTs || swTs !== c.swTs || posInit !== c.posInit) {
         setRobotState(data.state)
         c.hwTs = hwTs
         c.senTs = senTs
         c.swTs = swTs
+        c.posInit = posInit
       }
 
       c.updatedAt = data.updatedAt
@@ -886,9 +915,7 @@ const AssetInfo = ({ t, deviceId }) => {
             <MajorActionButton onClick={handleClick}>
               <GamePad className="w-[14px] h-[14px]" /> {t('manipulationLogReplay')}
             </MajorActionButton>
-            <MajorActionButton>
-              <Upload className="w-[14px] h-[14px]" /> {t('logUploadRequest')}
-            </MajorActionButton>
+            <MajorActionButton onClick={LogUploadRequestModal.onOpen}>{t('logUploadRequest')}</MajorActionButton>
           </div>
         </Section>
         <Section className="mt-8">
@@ -909,6 +936,7 @@ const AssetInfo = ({ t, deviceId }) => {
               onManualMove={handleManualMove}
               onMotion={handleMotion}
               onMoveLocation={MoveLocationModal.onOpen}
+              positionInitialized={robotState?.position?.positionInitialized}
             />
           </div>
         </Section>
@@ -982,6 +1010,13 @@ const AssetInfo = ({ t, deviceId }) => {
         onClose={SelectTaskFlowModal.onClose}
         onConfirm={handleStartTaskFlow}
         taskFlows={taskFlows}
+        t={t}
+      />
+      <ModalLogUploadRequest
+        isOpen={LogUploadRequestModal.isOpen}
+        onClose={LogUploadRequestModal.onClose}
+        onConfirm={handleLogUploadRequest}
+        deviceInfo={deviceInfo}
         t={t}
       />
       <Modal

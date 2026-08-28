@@ -131,3 +131,57 @@ export const DeleteButton = styled(BaseActionButton)`
     background-color: #e9a8ae;
   }
 `
+
+export const AddSiteButton = styled(BaseActionButton)`
+  color: #0f5132;
+  background-color: #d1e7dd;
+  border-color: #badbcc;
+
+  &:hover:not(:disabled) {
+    background-color: #bcd4c9;
+    border-color: #a8cdbb;
+  }
+
+  &:active:not(:disabled) {
+    background-color: #a9c7bb;
+  }
+`
+
+export const AssignedSiteList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  max-height: 220px;
+  overflow-y: auto;
+`
+
+export const AssignedSiteItem = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #f9fafb;
+  font-size: 13px;
+`
+
+export const RemoveTagButton = styled.button`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #842029;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+
+  &:hover {
+    background-color: #f8d7da;
+  }
+`

@@ -62,8 +62,11 @@ const LeftMapCard = memo(function LeftMapCard({
 
   gridData,
   pathPoints,
+  plannedPathPoints,
+  fullTrajectoryPoints,
   lidarScans,
   localCostmapFrames,
+  odomRawPoints,
   dwaGoals,
   currentTimestampMs,
   t0EpochMs,
@@ -204,8 +207,11 @@ const LeftMapCard = memo(function LeftMapCard({
               isActive={is3D}
               gridData={gridData}
               pathPoints={pathPoints}
+              plannedPathPoints={plannedPathPoints}
+              fullTrajectoryPoints={fullTrajectoryPoints}
               lidarScans={lidarScans}
               localCostmapFrames={localCostmapFrames}
+              odomRawPoints={odomRawPoints}
               dwaGoals={dwaGoals}
               currentTimestampMs={currentTimestampMs}
               t0EpochMs={t0EpochMs}
@@ -247,8 +253,11 @@ function MapPanels({
   // ▼ 3D용 데이터
   gridData,
   pathPoints,
+  plannedPathPoints,
+  fullTrajectoryPoints,
   lidarScans,
   localCostmapFrames,
+  odomRawPoints,
   dwaGoals,
   t0EpochMs,
 
@@ -388,8 +397,11 @@ function MapPanels({
         // ▼ 3D용
         gridData={gridData}
         pathPoints={pathPoints}
+        plannedPathPoints={plannedPathPoints}
+        fullTrajectoryPoints={fullTrajectoryPoints}
         lidarScans={lidarScans}
         localCostmapFrames={localCostmapFrames}
+        odomRawPoints={odomRawPoints}
         dwaGoals={dwaGoals}
         currentTimestampMs={currentTimestampMs}
         t0EpochMs={t0EpochMs}

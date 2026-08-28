@@ -16,46 +16,26 @@ export const rule_ifThenElse: BtRule<typeof ifThenElseNodeName> = {
     return isIfThenElseRuleMatch(node, outgoing)
   },
 
-  apply: ({ node, outgoing, outgoingById, nodeById, buildAstList }) => {
-    const conditionTargetRefs = sortOutgoingEdgeRefsByCanvasPosition(outgoing.leftBranches ?? [], nodeById)
+  apply: ({ node, outgoing, nodeById, buildAstList }) => {
+    const orderedBranchRefs = sortOutgoingEdgeRefsByCanvasPosition(outgoing.leftBranches ?? [], nodeById)
 
-    if (conditionTargetRefs.length === 0) {
-      throw new Error(`IfThenElse 노드에 condition task가 연결되어 있지 않습니다. (node_id=${String(node.id)})`)
+    if (orderedBranchRefs.length < 2) {
+      throw new Error(`IfThenElse 노드는 condition + success 조합이 최소 2개 필요합니다. (node_id=${String(node.id)})`)
     }
 
-    if (conditionTargetRefs.length > 1) {
-      throw new Error(`IfThenElse 노드는 condition task를 1개만 가져야 합니다. (node_id=${String(node.id)})`)
+    if (orderedBranchRefs.length > 3) {
+      throw new Error(`IfThenElse 노드는 condition + success + failure 최대 3개까지만 연결할 수 있습니다. (node_id=${String(node.id)})`)
     }
 
-    const conditionTargetRef = conditionTargetRefs[0]
-    const conditionNodeId = conditionTargetRef.targetId
-    const conditionNode = nodeById.get(conditionNodeId)
+    const conditionRef = orderedBranchRefs[0]
+    const successRef = orderedBranchRefs[1]
+    const failureRef = orderedBranchRefs[2]
 
-    if (!conditionNode) {
-      throw new Error(`IfThenElse의 condition 노드를 찾을 수 없습니다. (condition_node_id=${String(conditionNodeId)})`)
-    }
-
-    const conditionOutgoing = outgoingById.get(conditionNodeId) ?? { leftBranches: [] }
-
-    const thenTargetRef = conditionOutgoing.right
-    const elseTargetRef = conditionOutgoing.bottom
     const nextTargetRef = outgoing.right
 
-    if (!thenTargetRef) {
-      throw new Error(`Condition Task의 성공(then) 경로가 없습니다. (condition_node_id=${String(conditionNodeId)})`)
-    }
-
-    if (!elseTargetRef) {
-      throw new Error(`Condition Task의 실패(else) 경로가 없습니다. (condition_node_id=${String(conditionNodeId)})`)
-    }
-
-    const conditionAction = createBtActionNode(conditionNode)
-
-    const trueChildren: BtAstNode[] = nextTargetRef
-      ? [...buildAstList(thenTargetRef.targetId), ...buildAstList(nextTargetRef.targetId)]
-      : [...buildAstList(thenTargetRef.targetId)]
-
-    const falseChildren: BtAstNode[] = buildAstList(elseTargetRef.targetId)
+    const conditionChildren = buildAstList(conditionRef.targetId)
+    const successChildren = buildAstList(successRef.targetId)
+    const failureChildren = failureRef ? buildAstList(failureRef.targetId) : []
 
     const ifThenElseNode: BtIfThenElseNode = {
       kind: ifThenElseNodeType,
@@ -64,12 +44,16 @@ export const rule_ifThenElse: BtRule<typeof ifThenElseNodeName> = {
         node_id: String(node.id)
       },
       children: [
-        conditionAction,
-        wrapAstListAsSequenceIfNeeded(trueChildren, 'true_case'),
-        wrapAstListAsSequenceIfNeeded(falseChildren, 'false_case')
+        wrapAstListAsSequenceIfNeeded(conditionChildren, 'condition_case'),
+        wrapAstListAsSequenceIfNeeded(successChildren, 'success_case'),
+        ...(failureRef ? [wrapAstListAsSequenceIfNeeded(failureChildren, 'failure_case')] : [])
       ]
     }
 
-    return [ifThenElseNode]
+    if (!nextTargetRef) {
+      return [ifThenElseNode]
+    }
+
+    return [ifThenElseNode, ...buildAstList(nextTargetRef.targetId)]
   }
 }

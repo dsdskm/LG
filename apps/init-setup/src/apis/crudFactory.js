@@ -1,5 +1,5 @@
 import { client } from '@repo/apis'
-import API_BASE from './index'
+import { API_BASE } from './index'
 
 // init-setup-be 백엔드 공용 클라이언트.
 // - baseURL 은 apis/index.js 가 계산한 API_BASE(현재 페이지 hostname + VITE_BE_PORT,

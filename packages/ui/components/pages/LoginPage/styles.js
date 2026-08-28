@@ -10,6 +10,7 @@ export const LoginContainer = styled.div`
   background-color: var(--color-secondary-10);
   background: linear-gradient(136deg, #80c3e2 0%, #95c2dc 95.46%);
   overflow-y: auto;
+  --login-language-icon-color: var(--t-primary-btn-bg);
 `
 
 export const LoginBox = styled.div`
@@ -59,6 +60,42 @@ export const LanguageSelectWrapper = styled.div`
   display: flex;
   align-items: center;
   gap: 0.8rem;
+
+  button.language {
+    color: var(--login-language-icon-color) !important;
+
+    @media all and (max-width: 767px) {
+      background: transparent !important;
+      border-radius: var(--radius-xs) !important;
+    }
+
+    .icon {
+      &:hover {
+        background: transparent;
+      }
+
+      &:active {
+        background: transparent;
+      }
+
+      @media all and (max-width: 767px) {
+        border-radius: var(--radius-xs) !important;
+      }
+    }
+  }
+
+  .languageSelect {
+    @media all and (max-width: 767px) {
+      position: relative;
+      right: auto;
+      z-index: auto;
+      bottom: auto;
+
+      .languageOption {
+        top: calc(100% + 0.2rem) !important;
+      }
+    }
+  }
 `
 
 export const ButtonWrapper = styled.div`

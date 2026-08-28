@@ -21,7 +21,7 @@ import { TOTAL_GROUP_ID, TOTAL_SITE_ID } from '@/common/constants'
 import ConfirmModal from '@/pages/components/modal/ConfirmModal'
 import { useDeployTaskFlowAction, deleteTaskFlow } from '@/api/taskFlowApis'
 import { useInstantAction } from '@/api/deviceControlApis'
-import type { DeployActionRequest } from '@/types/taskflow'
+import { DeploymentStatus, type DeployActionRequest } from '@/types/taskflow'
 import type { InstantActionsRequest } from '@/types/api/deviceControl'
 import {
   AI_TASKFLOW_CANVAS_COMMAND_EVENT,
@@ -38,6 +38,8 @@ type TaskFlowSortOption =
   | 'createdAt-desc'
   | 'updatedAt-asc'
   | 'updatedAt-desc'
+
+type TaskFlowDeployFilter = 'all' | 'not-deployed' | DeploymentStatus
 
 export default function TaskFlowListPage() {
   const { t } = useTranslation(['tms', 'common'])
@@ -79,7 +81,9 @@ export default function TaskFlowListPage() {
   }
 
   const [searchQuery, setSearchQuery] = useState('')
-  const [sortOption, setSortOption] = useState<TaskFlowSortOption>('updatedAt-desc')
+  const [sortOption, setSortOption] = useState<TaskFlowSortOption>('name-asc')
+  const [deployStatusFilter, setDeployStatusFilter] = useState<TaskFlowDeployFilter>('all')
+
   const sortOptions = [
     { value: 'name-asc', name: t('list.sort.nameAsc') },
     { value: 'name-desc', name: t('list.sort.nameDesc') },
@@ -87,6 +91,15 @@ export default function TaskFlowListPage() {
     { value: 'createdAt-desc', name: t('list.sort.createdAtDesc') },
     { value: 'updatedAt-asc', name: t('list.sort.updatedAtAsc') },
     { value: 'updatedAt-desc', name: t('list.sort.updatedAtDesc') }
+  ]
+
+  const deployStatusOptions = [
+    { value: 'all', name: t('list.deployFilter.all') },
+    { value: 'not-deployed', name: t('list.notDeployed') },
+    ...Object.values(DeploymentStatus).map((status) => ({
+      value: status,
+      name: t(`list.deployStatus.${status}`, { defaultValue: status })
+    }))
   ]
 
   const orderedFlows = useMemo(() => {
@@ -109,15 +122,27 @@ export default function TaskFlowListPage() {
   }, [flows, sortOption])
 
   const filteredFlows = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase()
-    if (query === '') return orderedFlows
+    let result = orderedFlows
 
-    return orderedFlows.filter((flow) => {
+    if (deployStatusFilter !== 'all') {
+      result = result.filter((flow) => {
+        if (deployStatusFilter === 'not-deployed') {
+          return !flow?.deployment
+        }
+
+        return flow?.deployment?.status === deployStatusFilter
+      })
+    }
+
+    const query = searchQuery.trim().toLowerCase()
+    if (query === '') return result
+
+    return result.filter((flow) => {
       const name = String(flow?.name ?? '').toLowerCase()
       const description = String(flow?.description ?? '').toLowerCase()
       return name.includes(query) || description.includes(query)
     })
-  }, [orderedFlows, searchQuery])
+  }, [orderedFlows, searchQuery, deployStatusFilter])
 
   const { responsiveMode } = useResponsiveStore()
   const isMobile = responsiveMode !== 'PC' ? true : false
@@ -490,6 +515,15 @@ ${firstError}`
               options={sortOptions}
               useSelectedIcon
               onChange={(value: TaskFlowSortOption) => setSortOption(value)}
+            />
+            <Dropdown
+              label={t('list.deployFilter.label')}
+              size="lg"
+              minWidth="220px"
+              value={deployStatusFilter}
+              options={deployStatusOptions}
+              useSelectedIcon
+              onChange={(value: string) => setDeployStatusFilter(value as TaskFlowDeployFilter)}
             />
           </ListControls>
 

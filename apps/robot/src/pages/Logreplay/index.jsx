@@ -127,8 +127,11 @@ const BodyContainer = React.memo(
 
       gridData,
       pathPoints,
+      plannedPathPoints,
+      fullTrajectoryPoints,
       lidarScans,
       localCostmapFrames,
+      odomRawPoints,
       dwaGoals,
       t0EpochMs,
 
@@ -201,8 +204,11 @@ const BodyContainer = React.memo(
             coveragePathPoints={coveragePathPoints}
             gridData={gridData}
             pathPoints={pathPoints}
+            plannedPathPoints={plannedPathPoints}
+            fullTrajectoryPoints={fullTrajectoryPoints}
             lidarScans={lidarScans}
             localCostmapFrames={localCostmapFrames}
+            odomRawPoints={odomRawPoints}
             dwaGoals={dwaGoals}
             t0EpochMs={t0EpochMs}
             odomChart1={odomChart1}
@@ -378,8 +384,11 @@ export default function Logreplay({ robotName = '로봇 명', initialDate }) {
 
     gridData,
     pathPoints,
+    plannedPathPoints,
+    fullTrajectoryPoints,
     lidarScans,
     localCostmapFrames,
+    odomRawPoints,
     dwaGoals,
     t0EpochMs,
 
@@ -512,8 +521,11 @@ export default function Logreplay({ robotName = '로봇 명', initialDate }) {
           coveragePathPoints={coveragePathPoints}
           gridData={gridData}
           pathPoints={pathPoints}
+          plannedPathPoints={plannedPathPoints}
+          fullTrajectoryPoints={fullTrajectoryPoints}
           lidarScans={lidarScans}
           localCostmapFrames={localCostmapFrames}
+          odomRawPoints={odomRawPoints}
           dwaGoals={dwaGoals}
           t0EpochMs={t0EpochMs}
           odomChart1={odomChart1}

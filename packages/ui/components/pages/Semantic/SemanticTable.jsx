@@ -12,6 +12,9 @@ const SemanticTable = ({
   operationMode,
   isLoading,
   noData,
+  // 상세/생성 폼이 열려 있는 동안 목록의 명령 버튼을 잠근다 — 편집 중에 삭제 모드로 들어가거나
+  // 새 POI 생성을 겹쳐 시작하면 어느 POI 를 고치는 중인지 알 수 없게 된다.
+  actionsDisabled = false,
   onCreate,
   onNameClick,
   onPoiDeleted,
@@ -106,19 +109,25 @@ const SemanticTable = ({
       {operationMode === 'WORKING' && (
         <ButtonWrapper>
           {!isDeleteMode ? (
-            <Button theme="delete" onClick={handleDelete}>
+            <Button theme="delete" disabled={actionsDisabled} onClick={handleDelete}>
               {t('delete')}
             </Button>
           ) : (
             <>
-              <Button theme="delete" onClick={() => setIsDeleteModalOpen(true)}>
+              <Button theme="delete" disabled={actionsDisabled} onClick={() => setIsDeleteModalOpen(true)}>
                 선택 삭제
               </Button>
-              <Button onClick={handleDeleteCancel}>취소</Button>
+              <Button disabled={actionsDisabled} onClick={handleDeleteCancel}>
+                취소
+              </Button>
             </>
           )}
 
-          {!isDeleteMode && <Button onClick={onCreate}>생성</Button>}
+          {!isDeleteMode && (
+            <Button disabled={actionsDisabled} onClick={onCreate}>
+              생성
+            </Button>
+          )}
         </ButtonWrapper>
       )}
       <Suspense fallback={<div>Loading...</div>}>

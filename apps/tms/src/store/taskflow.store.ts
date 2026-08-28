@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { TaskFlowStatus, ReactFlowObject, TaskFlow } from '../types/taskflow'
+import { TaskFlowStatus, ReactFlowObject, TaskFlow, TaskFlowWithDeployment } from '../types/taskflow'
 import { ensureStartNode } from '@/utils/node.util'
 
 // ✅ 여기만 "방금 바꾼 axiosClient 기반 API 파일" 경로로 교체
@@ -7,7 +7,7 @@ import { listTaskFlows, getTaskFlow, createTaskFlow, updateTaskFlow, deleteTaskF
 
 type TaskFlowState = {
   /** 목록 */
-  flows: TaskFlow[]
+  flows: TaskFlowWithDeployment[]
 
   /** 선택된 Flow ID */
   selectedFlowId: number | null
@@ -21,11 +21,17 @@ type TaskFlowState = {
   /** 선택된 Flow 1개 갱신(서버에서 다시 가져오기) */
   refreshSelectedFlow: () => Promise<void>
 
+  /** 새 TaskFlow 생성 */
+  newFlow: (name: string, description?: string) => Promise<TaskFlow | null>
+
   /** Flow의 이름/설명 수정 */
   updateFlowInfo: (id: number, patch: Pick<Partial<TaskFlow>, 'name' | 'description'>) => Promise<TaskFlow | null>
 
   /** Flow 통째로 복사 (id 만 새로 발급되고 나머지 값은 원본과 동일) */
   copyFlow: (id: number, customName?: string) => Promise<TaskFlow>
+
+  /** 선택된 Flow 제거 */
+  removeSelectedFlow: () => Promise<void>
 }
 
 /**
@@ -77,6 +83,78 @@ function withDraftStatusIfEdited(current: TaskFlow | undefined, patch: Partial<T
   if (!currentStatus || currentStatus === TaskFlowStatus.DRAFT) return patch
 
   return { ...patch, status: TaskFlowStatus.DRAFT }
+}
+
+function makeFreshFlowNodeId(): string {
+  return String(Date.now())
+}
+
+export function cloneFlowWithFreshNodeIds<T extends Record<string, any>>(definition: T | null | undefined): T {
+  if (!definition || typeof definition !== 'object') return (definition ?? {}) as T
+
+  const clone =
+    typeof structuredClone === 'function'
+      ? structuredClone(definition)
+      : JSON.parse(JSON.stringify(definition))
+
+  const nodeIdMap = new Map<string, string>()
+
+  const nodes = Array.isArray(clone.nodes) ? clone.nodes : []
+  nodes.forEach((node: any) => {
+    if (!node || typeof node !== 'object') return
+
+    const oldId = node.id
+    if (oldId == null || oldId === 'start') {
+      node.id = 'start'
+      return
+    }
+
+    const nextId = makeFreshFlowNodeId()
+    nodeIdMap.set(String(oldId), nextId)
+    node.id = nextId
+
+    if (Array.isArray(node.data?.mainNodes)) {
+      node.data.mainNodes = node.data.mainNodes.map((mainNodeId: unknown) => {
+        const mapped = nodeIdMap.get(String(mainNodeId))
+        return mapped ?? mainNodeId
+      })
+    }
+  })
+
+  const edges = Array.isArray(clone.edges) ? clone.edges : []
+  edges.forEach((edge: any) => {
+    if (!edge || typeof edge !== 'object') return
+
+    const nextEdgeId = makeFreshFlowNodeId()
+    const oldEdgeId = edge.id
+    if (oldEdgeId != null) {
+      edge.id = nextEdgeId
+    }
+
+    if (edge.source != null) {
+      const mappedSource = nodeIdMap.get(String(edge.source))
+      if (mappedSource) edge.source = mappedSource
+    }
+
+    if (edge.target != null) {
+      const mappedTarget = nodeIdMap.get(String(edge.target))
+      if (mappedTarget) edge.target = mappedTarget
+    }
+
+    if (edge.data && typeof edge.data === 'object') {
+      if (edge.data.sourceNodeId != null) {
+        const mappedSourceNodeId = nodeIdMap.get(String(edge.data.sourceNodeId))
+        if (mappedSourceNodeId) edge.data.sourceNodeId = mappedSourceNodeId
+      }
+
+      if (edge.data.targetNodeId != null) {
+        const mappedTargetNodeId = nodeIdMap.get(String(edge.data.targetNodeId))
+        if (mappedTargetNodeId) edge.data.targetNodeId = mappedTargetNodeId
+      }
+    }
+  })
+
+  return clone
 }
 
 // 목록/선택 상태는 메모리 전용이다. 브라우저 저장소에 남기면 다른 세션에서 바뀐 내용이
@@ -190,8 +268,13 @@ export const useTaskFlowStore = create<TaskFlowState>()((set, get) => ({
         get().flows.map((flow) => flow.name),
       )
 
+    const copiedFlowDefinition = cloneFlowWithFreshNodeIds(source.flowDefinition ?? { nodes: [], edges: [] })
+    const copiedFlowDefinitionDraft = cloneFlowWithFreshNodeIds(source.flowDefinitionDraft ?? { nodes: [], edges: [] })
+
     const created = await createTaskFlow({
       ...rest,
+      flowDefinition: copiedFlowDefinition,
+      flowDefinitionDraft: copiedFlowDefinitionDraft,
       id: 0,
       name,
       version: 0,

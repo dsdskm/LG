@@ -29,9 +29,10 @@ function buildGridTexture(gridData) {
         b = 235
         a = 255
       } else if (raw === 255) {
-        r = 170
-        g = 170
-        b = 170
+        // unknown space — 남은 경로(#9CA3AF)와 명도가 거의 같아 겹치면 안 보이던 문제 때문에 더 밝게 조정
+        r = 214
+        g = 214
+        b = 214
         a = 255
       } else {
         const t = raw / 254
@@ -258,7 +259,7 @@ function OccupancyGridMesh({ gridData }) {
 // ─────────────────────────────────────────────
 // 코스트맵 오버레이 (ROBUST PICK + MAP SNAP + DEBUG LOGS)
 // ─────────────────────────────────────────────
-function CostmapOverlay({ localCostmapFrames, playbackCutoffSec, pathPoints }) {
+function CostmapOverlay({ localCostmapFrames, playbackCutoffSec, pathPoints, odomRawPoints }) {
   const curT = playbackCutoffSec ?? 0
 
   // 2D와 유사한 정책값(원인 파악용으로 로그에 why가 같이 찍힘)
@@ -272,6 +273,10 @@ function CostmapOverlay({ localCostmapFrames, playbackCutoffSec, pathPoints }) {
   const ENABLE_SNAP_FOR_MAP_LCM = true
   const SNAP_ONLY_WHEN_SMALL_M = 6.0
   const SNAP_MAX_DIST_M = 3.0
+
+  // ✅ 2D(render2d.js)와 동일: costmap이 odom 프레임일 때, raw odom과 map 프레임 pose(pathPoints)를
+  //   costmap 캡처 시각(currentFrame.tSec)에서 비교해 odom→map SLAM 드리프트 보정을 적용한다.
+  const APPLY_ODOM_FRAME_CORRECTION = true
 
   // 마지막으로 그린 프레임(hold-last 용)
   const lastRecRef = useRef(null)
@@ -427,16 +432,42 @@ function CostmapOverlay({ localCostmapFrames, playbackCutoffSec, pathPoints }) {
 
     const fid = String(g.frame_id || '').toLowerCase()
     let snapInfo = null
+    // ✅ 기본값(map / 보정 불가): 축정렬 사각형 그대로 — 코너 + 절반너비/높이
+    let cx = ox + worldW * 0.5
+    let cy = oy + worldH * 0.5
+
     if (fid.includes('map')) {
       snapInfo = maybeSnapMapLocal(g, poseNow)
       if (snapInfo?.snapped) {
         ox = snapInfo.originX
         oy = snapInfo.originY
+        cx = ox + worldW * 0.5
+        cy = oy + worldH * 0.5
+      }
+    } else if (APPLY_ODOM_FRAME_CORRECTION && fid === 'odom') {
+      // ✅ 2D(render2d.js)와 동일 회전+평행이동을, "코너"가 아니라 "그리드 중심"에 직접 적용한다.
+      //   (메시 자체는 회전시키지 않으므로, 코너를 옮기고 축정렬로 절반너비/높이를 더하면
+      //   dyaw가 클 때 중심이 완전히 엉뚱한 곳으로 튐 — 중심을 직접 회전 변환해야 로봇 위치와 일치)
+      const tRef = Number.isFinite(currentFrame.tSec) ? currentFrame.tSec : curT
+      const odomSeries = Array.isArray(odomRawPoints) ? odomRawPoints : []
+      if (odomSeries.length >= 2 && Array.isArray(pathPoints) && pathPoints.length >= 2) {
+        const odomAtT = getInterpolatedPoseAtTime(odomSeries, tRef)
+        const mapAtT = getInterpolatedPoseAtTime(pathPoints, tRef)
+        if (odomAtT && mapAtT) {
+          let dyaw = (mapAtT.yaw || 0) - (odomAtT.yaw || 0)
+          while (dyaw > Math.PI) dyaw -= 2 * Math.PI
+          while (dyaw < -Math.PI) dyaw += 2 * Math.PI
+          const c = Math.cos(dyaw)
+          const s = Math.sin(dyaw)
+          const centerOdomX = ox + worldW * 0.5
+          const centerOdomY = oy + worldH * 0.5
+          const relX = centerOdomX - odomAtT.x
+          const relY = centerOdomY - odomAtT.y
+          cx = mapAtT.x + (c * relX - s * relY)
+          cy = mapAtT.y + (s * relX + c * relY)
+        }
       }
     }
-
-    const cx = ox + worldW * 0.5
-    const cy = oy + worldH * 0.5
 
     const dist = poseNow ? Math.hypot((poseNow.x ?? 0) - cx, (poseNow.y ?? 0) - cy) : null
 
@@ -458,7 +489,7 @@ function CostmapOverlay({ localCostmapFrames, playbackCutoffSec, pathPoints }) {
         snap: snapInfo
       }
     }
-  }, [currentFrame, curT, pickedWhy, poseNow])
+  }, [currentFrame, curT, pickedWhy, poseNow, pathPoints, odomRawPoints])
 
   // ✅ hold-last 캐시 업데이트 (2D와 같은 의도: hold-last인 경우는 갱신 안함)
   useEffect(() => {
@@ -519,32 +550,28 @@ function CostmapOverlay({ localCostmapFrames, playbackCutoffSec, pathPoints }) {
 // ─────────────────────────────────────────────
 // 경로선
 // ─────────────────────────────────────────────
-function PathLine({ pathPoints, playbackCutoffSec }) {
+function PathLine({ pathPoints, fullTrajectoryPoints, playbackCutoffSec }) {
   const currentSec = playbackCutoffSec ?? 0
 
-  const { pastGeometry, futureGeometry } = useMemo(() => {
-    if (!Array.isArray(pathPoints) || pathPoints.length === 0) {
-      return { pastGeometry: null, futureGeometry: null }
-    }
-
+  const pastGeometry = useMemo(() => {
+    if (!Array.isArray(pathPoints) || pathPoints.length === 0) return null
     const pastPts = []
-    const futurePts = []
-
     for (const pt of pathPoints) {
-      const v = new THREE.Vector3(pt.x, 0.03, -pt.y)
-      if ((pt.tSec ?? 0) <= currentSec) pastPts.push(v)
-      else futurePts.push(v)
+      if ((pt.tSec ?? 0) <= currentSec) pastPts.push(new THREE.Vector3(pt.x, 0.03, -pt.y))
     }
-
-    if (pastPts.length > 0 && futurePts.length > 0) {
-      futurePts.unshift(pastPts[pastPts.length - 1].clone())
-    }
-
-    return {
-      pastGeometry: pastPts.length >= 2 ? new THREE.BufferGeometry().setFromPoints(pastPts) : null,
-      futureGeometry: futurePts.length >= 2 ? new THREE.BufferGeometry().setFromPoints(futurePts) : null
-    }
+    return pastPts.length >= 2 ? new THREE.BufferGeometry().setFromPoints(pastPts) : null
   }, [pathPoints, currentSec])
+
+  // 남은 경로(회색) = 2D의 routePts와 동일 소스(fullTrajectoryPoints, 파일 전체 sparse 궤적).
+  // pathPoints는 "현재까지"만 담고 있어 future 구간이 항상 비어있음(2D와 동일한 이유).
+  const futureGeometry = useMemo(() => {
+    if (!Array.isArray(fullTrajectoryPoints) || fullTrajectoryPoints.length === 0) return null
+    const futurePts = []
+    for (const pt of fullTrajectoryPoints) {
+      if ((pt.tSec ?? 0) >= currentSec) futurePts.push(new THREE.Vector3(pt.x, 0.03, -pt.y))
+    }
+    return futurePts.length >= 2 ? new THREE.BufferGeometry().setFromPoints(futurePts) : null
+  }, [fullTrajectoryPoints, currentSec])
 
   useEffect(() => {
     return () => {
@@ -566,6 +593,37 @@ function PathLine({ pathPoints, playbackCutoffSec }) {
         </line>
       )}
     </>
+  )
+}
+
+// ─────────────────────────────────────────────
+// 계획 경로(/plan 등, 2D의 파란 점선과 동일 소스) — 남은 경로(회색)와는 별개
+// ─────────────────────────────────────────────
+function PlannedPathLine({ plannedPathPoints }) {
+  const geometry = useMemo(() => {
+    if (!Array.isArray(plannedPathPoints) || plannedPathPoints.length < 2) return null
+    const pts = []
+    for (const p of plannedPathPoints) {
+      if (!Number.isFinite(p?.x) || !Number.isFinite(p?.y)) continue
+      pts.push(new THREE.Vector3(p.x, 0.04, -p.y))
+    }
+    if (pts.length < 2) return null
+    const g = new THREE.BufferGeometry().setFromPoints(pts)
+    g.computeLineDistances()
+    return g
+  }, [plannedPathPoints])
+
+  useEffect(() => {
+    return () => {
+      if (geometry) geometry.dispose()
+    }
+  }, [geometry])
+
+  if (!geometry) return null
+  return (
+    <line geometry={geometry}>
+      <lineDashedMaterial color="#00A0FF" dashSize={0.3} gapSize={0.3} linewidth={1.5} />
+    </line>
   )
 }
 
@@ -705,7 +763,10 @@ function pickDwaGoalRecord(series, curT, lastRec, cfg) {
 const DWA_PICK_CFG_DEFAULT = {
   HOLD_LAST_SEC: 3.0,
   NEAREST_SEC_BASE: 2.0,
-  ALWAYS_NEAREST: false,
+  // ✅ dwaGoals는 항상 원소 1개(재생 위치 기준으로 이미 선택됨)만 내려오므로, 2D와 동일하게
+  //   무조건 그 값을 사용해야 한다. false면 estimateGoalTimeShiftSec의 재생시간에 비례해 커지는
+  //   시간축 보정값 때문에 past/nearest 조건을 통과 못 해 마커가 전혀 안 보이는 버그가 있었다.
+  ALWAYS_NEAREST: true,
   // 아래 2개는 2D에서 frame 변환 쓸 때 필요(보통 frame_id가 map이면 영향 없음)
   APPLY_BASE_FRAME: true,
   APPLY_POSE_YAW: true
@@ -782,29 +843,86 @@ function GoalMarker({ dwaGoals, pathPoints, playbackCutoffSec, markerSize = 0.3,
   const armLen = markerSize
   const armThick = Math.max(0.025, markerSize * 0.16)
   const armHeight = 0.02
+  // ✅ 2D 범례와 동일한 십자+원(⊕) 모양을 위한 원형 링
+  const ringOuterR = armLen * 0.75
+  const ringInnerR = Math.max(0.01, ringOuterR - armThick)
 
   const barXGeo = useMemo(() => new THREE.BoxGeometry(armLen, armHeight, armThick), [armLen, armThick])
   const barZGeo = useMemo(() => new THREE.BoxGeometry(armThick, armHeight, armLen), [armLen, armThick])
+  const ringGeo = useMemo(() => new THREE.RingGeometry(ringInnerR, ringOuterR, 32), [ringInnerR, ringOuterR])
 
   // markerSize 변경/언마운트 시 이전 지오메트리 해제 (GPU 누수 방지)
   useEffect(() => {
     return () => {
       barXGeo.dispose()
       barZGeo.dispose()
+      ringGeo.dispose()
     }
-  }, [barXGeo, barZGeo])
+  }, [barXGeo, barZGeo, ringGeo])
 
   if (!pickedPose) return null
 
   return (
     <group position={[pickedPose.x, 0.07, -pickedPose.y]}>
       <mesh geometry={barXGeo}>
-        <meshBasicMaterial color="#06B6D4" />
+        <meshBasicMaterial color="#2563EB" />
       </mesh>
       <mesh geometry={barZGeo}>
-        <meshBasicMaterial color="#06B6D4" />
+        <meshBasicMaterial color="#2563EB" />
+      </mesh>
+      <mesh geometry={ringGeo} rotation={[-Math.PI / 2, 0, 0]}>
+        <meshBasicMaterial color="#2563EB" side={THREE.DoubleSide} />
       </mesh>
     </group>
+  )
+}
+
+// ─────────────────────────────────────────────
+// LiDAR 포인트 — 2D(render2d.js)와 동일한 가정: 스캐너는 로봇 몸체에 고정된 프레임이라
+// 스캔이 캡처된 시각(scan.tSec)의 로봇 pose로 회전/평행이동한다.
+// ─────────────────────────────────────────────
+function LidarPoints({ lidarScans, pathPoints, pointSizePx = 3 }) {
+  const scan = Array.isArray(lidarScans) && lidarScans.length ? lidarScans[lidarScans.length - 1] : null
+
+  const geometry = useMemo(() => {
+    if (!scan?.localPts || scan.localPts.length < 2) return null
+    const scanT = Number.isFinite(scan.tSec) ? scan.tSec : 0
+    const pose = getInterpolatedPoseAtTime(pathPoints, scanT)
+    if (!pose) return null
+
+    const c = Math.cos(pose.yaw)
+    const s = Math.sin(pose.yaw)
+    const localPts = scan.localPts
+    const n = localPts.length >> 1
+    const positions = new Float32Array(n * 3)
+    for (let i = 0; i < n; i++) {
+      const lx = localPts[i * 2]
+      const ly = localPts[i * 2 + 1]
+      const wx = pose.x + (c * lx - s * ly)
+      const wy = pose.y + (s * lx + c * ly)
+      positions[i * 3] = wx
+      positions[i * 3 + 1] = 0.06
+      positions[i * 3 + 2] = -wy
+    }
+
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    return geo
+  }, [scan, pathPoints])
+
+  // scan 변경/언마운트 시 이전 지오메트리 해제 (GPU 누수 방지 — 다른 3D 요소와 동일 패턴)
+  useEffect(() => {
+    return () => {
+      if (geometry) geometry.dispose()
+    }
+  }, [geometry])
+
+  if (!geometry) return null
+
+  return (
+    <points geometry={geometry}>
+      <pointsMaterial color="#FFA500" size={pointSizePx} sizeAttenuation={false} transparent opacity={0.85} />
+    </points>
   )
 }
 
@@ -915,8 +1033,11 @@ function DrivingMap3D({
   isActive = true,
   gridData,
   pathPoints,
+  plannedPathPoints,
+  fullTrajectoryPoints,
   lidarScans,
   localCostmapFrames,
+  odomRawPoints,
   dwaGoals,
   currentTimestampMs,
   t0EpochMs
@@ -927,8 +1048,10 @@ function DrivingMap3D({
   const controlsRef = useRef()
 
   const hasPath = Array.isArray(pathPoints) && pathPoints.length > 0
+  const hasPlannedPath = Array.isArray(plannedPathPoints) && plannedPathPoints.length >= 2
   const hasCostmap = Array.isArray(localCostmapFrames) && localCostmapFrames.length > 0
   const hasGoal = Array.isArray(dwaGoals) && dwaGoals.length > 0
+  const hasLidar = Array.isArray(lidarScans) && lidarScans.length > 0
 
   const playbackCutoffSec = useMemo(() => {
     return getPlaybackCutoffSec(pathPoints, currentTimestampMs)
@@ -1003,7 +1126,8 @@ function DrivingMap3D({
           }}
         />
 
-        <gridHelper args={[50, 50, '#374151', '#374151']} />
+        {/* 남은 경로(회색)와 명도가 겹치지 않도록 보조 격자선은 연하게 */}
+        <gridHelper args={[50, 50, '#D1D5DB', '#E5E7EB']} />
 
         <OccupancyGridMesh gridData={gridData} />
 
@@ -1012,10 +1136,21 @@ function DrivingMap3D({
             localCostmapFrames={localCostmapFrames}
             playbackCutoffSec={playbackCutoffSec}
             pathPoints={pathPoints}
+            odomRawPoints={odomRawPoints}
           />
         )}
 
-        {hasPath && <PathLine pathPoints={pathPoints} playbackCutoffSec={playbackCutoffSec} />}
+        {hasLidar && <LidarPoints lidarScans={lidarScans} pathPoints={pathPoints} />}
+
+        {hasPath && (
+          <PathLine
+            pathPoints={pathPoints}
+            fullTrajectoryPoints={fullTrajectoryPoints}
+            playbackCutoffSec={playbackCutoffSec}
+          />
+        )}
+
+        {hasPlannedPath && <PlannedPathLine plannedPathPoints={plannedPathPoints} />}
 
         {hasPath && (
           <RobotMarker pathPoints={pathPoints} playbackCutoffSec={playbackCutoffSec} markerSize={markerSize} />

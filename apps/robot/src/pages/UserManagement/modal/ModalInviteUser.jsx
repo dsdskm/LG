@@ -7,6 +7,8 @@ import { useUserStore } from '@repo/stores'
 
 const EMPTYVALUE = ''
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+// 초대 모달에 노출되는 역할 순서 (userLevel과 무관하게 사이트 관리자 ~ 그룹 관리자 사이에 설치 관리자 배치)
+const ROLE_DISPLAY_ORDER = ['SITE_MANAGER', 'INSTALL_MANAGER', 'GROUP_MANAGER', 'SYSTEM_MANAGER', 'SYSTEM_ADMIN', 'TERM_MANAGER']
 
 const ModalInviteUser = ({ isOpen, t, onClose, onConfirm }) => {
   const { handleSubmit } = useForm({ mode: 'onChange' })
@@ -31,9 +33,11 @@ const ModalInviteUser = ({ isOpen, t, onClose, onConfirm }) => {
       .filter((r) => {
         // TERM_MANAGER는 SYSTEM_ADMIN일 때만 노출
         if (r.value === 'TERM_MANAGER') return isSystemAdmin
+        // INSTALL_MANAGER는 그룹 관리자 이상(자기 그룹 대상)만 초대 가능
+        if (r.value === 'INSTALL_MANAGER') return sessionLevel >= 1
         return (r.userLevel ?? Infinity) <= maxLevel
       })
-      .sort((a, b) => a.userLevel - b.userLevel) // SITE_MANAGER → SYSTEM_MANAGER → TERM_MANAGER 순
+      .sort((a, b) => ROLE_DISPLAY_ORDER.indexOf(a.value) - ROLE_DISPLAY_ORDER.indexOf(b.value)) // SITE_MANAGER → INSTALL_MANAGER → GROUP_MANAGER → SYSTEM_MANAGER → SYSTEM_ADMIN → TERM_MANAGER 순
       .map((r) => ({ value: r.value, name: t(r.roleName) }))
   }, [session?.userRole, t])
 
@@ -42,9 +46,9 @@ const ModalInviteUser = ({ isOpen, t, onClose, onConfirm }) => {
   }, [groupsSites])
 
   // 선택한 역할에 따른 그룹/사이트 노출 여부
-  // 사이트 관리자(level 0): 그룹 + 사이트 / 그룹 관리자(level 1): 그룹만 / 그 이상: 노출 안 함
+  // 사이트 관리자(level 0): 그룹 + 사이트 / 그룹 관리자(level 1), 설치 관리자: 그룹만 / 그 이상: 노출 안 함
   const selectedLevel = getUserLevelByuserRole(filterRole)
-  const showGroup = selectedLevel === 0 || selectedLevel === 1
+  const showGroup = selectedLevel === 0 || selectedLevel === 1 || filterRole === 'INSTALL_MANAGER'
   const showSite = selectedLevel === 0
 
   // 저장 버튼 활성화 조건: 노출된 Select 를 모두 선택하고 이메일 형식이 유효할 때

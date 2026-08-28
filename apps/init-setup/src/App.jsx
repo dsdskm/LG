@@ -12,6 +12,7 @@ import {
 } from './router/routes'
 import RootGuard from './components/RootGuard'
 import useRobotSetupStatus from './hooks/useRobotSetupStatus'
+import useNetworkGate, { NETWORK_SETUP_PATH } from './hooks/useNetworkGate'
 import useAdminSchemas from './hooks/useAdminSchemas'
 import { createGlobalStyle } from 'styled-components'
 import { GlobalStyle } from '@repo/ui/styles'
@@ -42,6 +43,9 @@ const App = () => {
   // 초기 설정 그룹 노출 · 단계 순서 잠금 · 기본 착지점을 결정한다.
   // 완료 이력은 되돌아가지 않으므로(utils/setupProgress) 완료 후 맵을 다시 스캔해도 그대로 유지된다.
   const { loading: setupLoading, completed: setupCompleted, setup } = useRobotSetupStatus()
+  // 로봇이 외부 네트워크에 붙기 전에는 로그인이 불가능하므로 네트워크 설정 화면이 가장 먼저 온다.
+  // 여기서는 그 상태를 착지 경로 · 단계 잠금에 반영한다(경로 이동은 RootGuard · NetworkGuard).
+  const { loading: networkLoading, blocked: networkBlocked } = useNetworkGate()
 
   const processedAppRoutes = useMemo(() => {
     const processRoutes = (routes) => {
@@ -68,16 +72,26 @@ const App = () => {
   // admin 탭은 SYSTEM_MANAGER 이상만 본다. 세션이 바뀌면 탭도 따라가야 하므로 store 를 구독한다.
   const userLevel = useUserStore((state) => state.session?.userLevel)
   const canUseAdmin = (Number(userLevel) || 0) >= USER_ROLE_LEVEL.SYSTEM_MANAGER
+  const hasSession = useUserStore((state) => Boolean(state.session?.accessToken))
 
   // 설치 단계 순서 강제. currentStep 까지는 열려 있고(이미 끝낸 단계로 되돌아가기 허용)
   // 그 뒤 단계는 초기 설정 · 맵 설정 안에서도 모두 잠긴다.
   // 잠긴 경로는 탭 클릭 / 사이드바 클릭 / URL 직접 진입 모두 SetupOrderModal 로 막는다.
   // VITE_ENFORCE_SETUP_ORDER=false 면 순서 강제를 끈다. 값이 없으면 강제(안전한 기본값).
   const enforceSetupOrder = import.meta.env.VITE_ENFORCE_SETUP_ORDER !== 'false'
-  const { pendingStep, lockedPaths } = useMemo(
+  const { pendingStep, lockedPaths: stepLockedPaths } = useMemo(
     () => getSetupProgress(setup, { completed: setupCompleted, enforce: enforceSetupOrder }),
     [setup, setupCompleted, enforceSetupOrder]
   )
+  // 네트워크 설정은 로그인 전에 반드시 지나가야 하므로 세션이 없으면 단계 순서로 잠그지 않는다.
+  // (offline 판정만으로 열면, Wi-Fi 연결에 성공한 순간 서 있던 /network 가 SetupOrderModal 로 바뀐다)
+  const unlockNetworkPath = networkBlocked || !hasSession
+  const lockedPaths = useMemo(() => {
+    if (!unlockNetworkPath || !stepLockedPaths.has(NETWORK_SETUP_PATH)) return stepLockedPaths
+    const next = new Set(stepLockedPaths)
+    next.delete(NETWORK_SETUP_PATH)
+    return next
+  }, [stepLockedPaths, unlockNetworkPath])
   const gate = useMemo(
     () =>
       pendingStep ? { pendingPath: pendingStep.path, pendingLabel: appT(`SideBar.gnb.${pendingStep.name}`) } : null,
@@ -124,9 +138,10 @@ const App = () => {
 
   // 앱 진입('/') · 없는 URL 의 착지점 = 저장된 currentStep 이 가리키는 '작업 중인 단계' 화면.
   // 셋업 조회가 끝난 뒤에만 라우트를 그리므로(아래 setupLoading 가드) 값이 준비된 상태로 내려간다.
+  // 네트워크 미연결이면 착지점은 무조건 네트워크 설정 화면이다 — 진행 중인 단계보다 앞선다.
   const setupLandingPath = useMemo(
-    () => getSetupLandingPath(setup, { completed: setupCompleted }),
-    [setup, setupCompleted]
+    () => (networkBlocked ? NETWORK_SETUP_PATH : getSetupLandingPath(setup, { completed: setupCompleted })),
+    [setup, setupCompleted, networkBlocked]
   )
 
   const allRoutes = useMemo(
@@ -136,7 +151,7 @@ const App = () => {
 
   // 상태 조회가 끝나기 전에 라우트를 그리면 완료 여부에 따른 착지점이 순간적으로 달라질 수 있다.
   // /version 은 예외 — BE 가 죽어 셋업 조회가 늦어도 버전은 확인할 수 있어야 한다.
-  if (setupLoading && pathname !== '/version') {
+  if ((setupLoading || networkLoading) && pathname !== '/version') {
     return (
       <>
         <GlobalStyle />

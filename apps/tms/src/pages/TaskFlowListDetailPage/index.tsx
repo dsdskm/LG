@@ -52,6 +52,7 @@ import {
   hasFinal,
   hasSaved,
   isSameFlowDefinition,
+  shouldShowFinalTab,
   type FlowDefinitionSource
 } from '@/utils/flowDefinition'
 
@@ -139,24 +140,51 @@ const TaskFlowListDetailPage = () => {
     return ((taskFlow as any)?.deployment as Deployment | undefined) ?? null
   }, [taskFlow])
 
-  // 보여줄 정의 선택: "저장 버전"(flowDefinitionDraft) / "최종 버전"(flowDefinition)
-  const [flowSource, setFlowSource] = useState<FlowDefinitionSource>('saved')
+  // 보여줄 정의 선택: "저장 버전"(flowDefinitionDraft) / "운영 버전"(flowDefinition)
+  const [flowSource, setFlowSource] = useState<FlowDefinitionSource>('final')
+  const initializedFlowSourceRef = useRef(false)
 
-  // 저장 버전과 최종 버전이 같으면 같은 흐름을 두 번 보여줄 필요가 없어 최종 버전 탭만 노출한다.
-  const showSavedTab = useMemo(
-    () => !isSameFlowDefinition(taskFlow?.flowDefinitionDraft, taskFlow?.flowDefinition),
-    [taskFlow]
+  const isDraftStatus = useMemo(
+    () => String(taskFlow?.status ?? '').trim().toUpperCase() === 'DRAFT',
+    [taskFlow?.status]
   )
 
-  // 저장 버전 탭이 없거나 저장 버전이 비어 있으면 최종 버전 탭을 기본으로 연다.
+  const showFinalTab = useMemo(() => shouldShowFinalTab(taskFlow), [taskFlow])
+
+  // DRAFT 상태면 작성중(saved) 탭을 우선 노출한다.
+  // 운영 버전이 없으면 final 탭 자체를 숨긴다.
+  const showSavedTab = useMemo(() => {
+    if (isDraftStatus && hasSaved(taskFlow)) return true
+    if (!hasSaved(taskFlow)) return false
+    return !isSameFlowDefinition(taskFlow?.flowDefinitionDraft, taskFlow?.flowDefinition)
+  }, [isDraftStatus, taskFlow])
+
+  // 최초 로딩 시에는 안전한 기본 탭을 선택하고, 이후에는 사용자의 선택을 유지한다.
   useEffect(() => {
     if (!taskFlow) return
-    if (!showSavedTab) {
-      setFlowSource('final')
+
+    const allowedSources: FlowDefinitionSource[] = []
+    if (showFinalTab) allowedSources.push('final')
+    if (showSavedTab) allowedSources.push('saved')
+
+    if (!allowedSources.length) return
+
+    if (!initializedFlowSourceRef.current) {
+      initializedFlowSourceRef.current = true
+
+      const preferredSource: FlowDefinitionSource = isDraftStatus && hasSaved(taskFlow) ? 'saved' : showFinalTab ? 'final' : 'saved'
+      if (allowedSources.includes(preferredSource)) {
+        setFlowSource(preferredSource)
+      } else {
+        setFlowSource(allowedSources[0])
+      }
       return
     }
-    if (!hasSaved(taskFlow) && hasFinal(taskFlow)) setFlowSource('final')
-  }, [taskFlow, showSavedTab])
+
+    if (!allowedSources.includes(flowSource)) {
+      setFlowSource(allowedSources[0])
+    }
+  }, [taskFlow, showFinalTab, showSavedTab, isDraftStatus, flowSource])
 
   const selectedFlowDefinition = useMemo(() => getFlowDefinitionBySource(taskFlow, flowSource), [taskFlow, flowSource])
 
@@ -389,13 +417,14 @@ const TaskFlowListDetailPage = () => {
   }
 
   const handleDeployManage = () => {
-    if (!taskFlow?.id) return
+    if (!taskFlow?.id || flowSource === 'saved' || isSubmitting) return
 
     navigate(`/tms/taskflows/${taskFlow.id}/detail/deploy`)
   }
 
   const openConfirmDialog = (action: Exclude<PendingAction, null>) => {
     if (!taskFlow?.id || isSubmitting) return
+    if (flowSource === 'saved' && action === 'delete') return
 
     setIsMoreOpen(false)
 
@@ -512,6 +541,9 @@ const TaskFlowListDetailPage = () => {
 
   const showActivateMenu = taskFlow?.status === TaskFlowStatus.INACTIVE
   const showDeactivateMenu = taskFlow?.status === TaskFlowStatus.ACTIVE
+  const isSavedTabSelected = flowSource === 'saved'
+  const isDeployActionDisabled = isSavedTabSelected || !!isSubmitting
+  const isDeleteMenuDisabled = isSavedTabSelected || !!isSubmitting
 
   const confirmDialog = useMemo(() => {
     return getConfirmDialogContent(pendingAction, taskFlow?.name ?? '', isSubmitting, t)
@@ -568,7 +600,7 @@ const TaskFlowListDetailPage = () => {
               </Button>
             )}
 
-            <Button theme="primary" type="button" onClick={handleDeployManage} disabled={!!isSubmitting}>
+            <Button theme="primary" type="button" onClick={handleDeployManage} disabled={isDeployActionDisabled}>
               <Icon name="robot" size={18} />
               {t('detail.deployManage')}
             </Button>
@@ -578,7 +610,7 @@ const TaskFlowListDetailPage = () => {
                 theme="secondary"
                 type="button"
                 onClick={() => setIsMoreOpen((prev) => !prev)}
-                disabled={!!isSubmitting}
+                disabled={isDeleteMenuDisabled}
               >
                 <Icon name="more" size={18} />
                 {t('detail.more')}
@@ -598,7 +630,12 @@ const TaskFlowListDetailPage = () => {
                       {t('detail.deactivate')}
                     </DropdownMenuItem>
                   )}
-                  <DropdownMenuItem type="button" $danger onClick={handleDeleteClick} disabled={!!isSubmitting}>
+                  <DropdownMenuItem
+                    type="button"
+                    $danger
+                    onClick={handleDeleteClick}
+                    disabled={isDeleteMenuDisabled}
+                  >
                     {t('actions.delete')}
                   </DropdownMenuItem>
                 </DropdownMenu>
@@ -715,18 +752,24 @@ const TaskFlowListDetailPage = () => {
       <CenteredContent>
         <Section>
           <FlowTabsWrap>
-            <Tabs activeId={flowSource} onChange={(id: string) => setFlowSource(id as FlowDefinitionSource)}>
-              <Tab id="final" label={t('detail.flowTab.final')}>
-                <FlowArea>
-                  <FlowCanvasWrap>
-                    {hasFinal(taskFlow) ? (
-                      <TaskFlowReadonlyCanvas flowDefinition={selectedFlowDefinition} />
-                    ) : (
-                      <PageMessage>{t('detail.flowTab.finalEmpty')}</PageMessage>
-                    )}
-                  </FlowCanvasWrap>
-                </FlowArea>
-              </Tab>
+            <Tabs
+              key={`${showFinalTab}-${showSavedTab}-${flowSource}`}
+              activeId={flowSource}
+              onChange={(id: string) => setFlowSource(id as FlowDefinitionSource)}
+            >
+              {showFinalTab && (
+                <Tab id="final" label={t('detail.flowTab.final')}>
+                  <FlowArea>
+                    <FlowCanvasWrap>
+                      {hasFinal(taskFlow) ? (
+                        <TaskFlowReadonlyCanvas flowDefinition={selectedFlowDefinition} />
+                      ) : (
+                        <PageMessage>{t('detail.flowTab.finalEmpty')}</PageMessage>
+                      )}
+                    </FlowCanvasWrap>
+                  </FlowArea>
+                </Tab>
+              )}
               {showSavedTab && (
                 <Tab id="saved" label={t('detail.flowTab.saved')}>
                   <FlowArea>

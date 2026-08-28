@@ -4,7 +4,7 @@ import type { ReactFlowObject, TaskFlow } from '@/types/taskflow'
  * flowDefinition / flowDefinitionDraft 규칙
  *
  *  - flowDefinitionDraft : "저장 버전". 캔버스에서 저장할 때마다 항상 갱신된다.
- *  - flowDefinition      : "최종 버전". 저장 시 "최종 버전 저장"을 선택했을 때만 갱신된다.
+ *  - flowDefinition      : "운영 버전". 저장 시 "운영 버전 저장"을 선택했을 때만 갱신된다.
  *                          (배포에 쓰이는 behaviorTree 와 짝을 이루는 정의)
  */
 export type FlowDefinitionSource = 'final' | 'saved'
@@ -24,9 +24,22 @@ export function hasSaved(flow?: Partial<TaskFlow> | null): boolean {
   return !isEmptyFlowDefinition(flow?.flowDefinitionDraft)
 }
 
-/** 최종 버전(flowDefinition) 이 있는지 */
+/** 운영 버전(flowDefinition) 이 있는지 */
 export function hasFinal(flow?: Partial<TaskFlow> | null): boolean {
   return !isEmptyFlowDefinition(flow?.flowDefinition)
+}
+
+/** 최종 운영 버전 탭을 보여줄지 여부.
+ *  - 실제 운영 버전이 비어 있으면 숨긴다.
+ *  - DRAFT 상태에서 final == draft 이면 "작성중 저장만 있는 상태"로 간주해 숨긴다.
+ */
+export function shouldShowFinalTab(flow?: Partial<TaskFlow> | null): boolean {
+  if (!hasFinal(flow)) return false
+
+  const isDraftStatus = String(flow?.status ?? '').trim().toUpperCase() === 'DRAFT'
+  if (!isDraftStatus) return true
+
+  return !isSameFlowDefinition(flow?.flowDefinitionDraft, flow?.flowDefinition)
 }
 
 /** key 순서 차이로 다르게 판정되지 않도록, 객체 key 를 정렬해서 직렬화한다. */
@@ -48,7 +61,7 @@ function stableStringify(value: unknown): string {
 
 /**
  * 두 정의가 같은 내용인지. (둘 다 비어 있으면 같은 것으로 본다)
- * 최종 버전 저장은 두 필드를 같은 스냅샷으로 맞추므로, 이 경우 정확히 일치한다.
+ * 운영 버전 저장은 두 필드를 같은 스냅샷으로 맞추므로, 이 경우 정확히 일치한다.
  */
 export function isSameFlowDefinition(a: unknown, b: unknown): boolean {
   const aEmpty = isEmptyFlowDefinition(a)
@@ -82,15 +95,18 @@ export function normalizeFlowSource(value: unknown): FlowDefinitionSource | null
 
 /**
  * 편집(canvas)에서 불러올 쪽을 정한다.
- * 명시적으로 지정하지 않았다면 저장 버전을 쓰고, 없으면 최종 버전으로 넘어간다.
+ * 명시적으로 지정하지 않았다면 저장 버전을 쓰고, 없으면 운영 버전으로 넘어간다.
  */
 export function resolveEditableSource(
   flow?: Partial<TaskFlow> | null,
   requested?: FlowDefinitionSource | null
 ): FlowDefinitionSource {
+  const isDraftStatus = String(flow?.status ?? '').trim().toUpperCase() === 'DRAFT'
+
   if (requested === 'final') return hasFinal(flow) ? 'final' : 'saved'
   if (requested === 'saved') return hasSaved(flow) ? 'saved' : 'final'
 
+  if (isDraftStatus) return hasSaved(flow) ? 'saved' : 'final'
   return hasSaved(flow) ? 'saved' : 'final'
 }
 

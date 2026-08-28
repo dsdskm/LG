@@ -6,6 +6,20 @@ import {
 import { useTranslation } from 'react-i18next'
 import { Checkbox, Input } from '@repo/ui'
 
+function normalizeNodeName(value?: string | null): string {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, ' ')
+    .replace(/\s+/g, ' ')
+}
+
+function isIfThenElseNode(node: any): boolean {
+  const taskType = String(node?.data?.taskType ?? '').toUpperCase()
+  const name = normalizeNodeName(node?.data?.taskName ?? node?.data?.label ?? node?.data?.name)
+  return taskType === 'CONTROL' && (name === 'ifthenelse' || name === 'if then else' || name === 'if_then_else')
+}
+
 import { SelectedData } from '../types'
 import { useFlowEditorStore } from '@/store/taskflow.canvas.store'
 import { PropertyDef } from '../../../types'
@@ -38,9 +52,60 @@ export default function TaskInfoSection({
 }: TaskInfoSectionProps) {
   const { t } = useTranslation('tms')
 
+  const selectedNodeId = useFlowEditorStore((state) => state.selectedNodeId)
+  const nodes = useFlowEditorStore((state) => state.nodes)
+  const edges = useFlowEditorStore((state) => state.edges)
   const updateSelectedNodeProps = useFlowEditorStore(
     (state) => state.updateSelectedNodeProps
   )
+
+  const selectedNode = useMemo(
+    () => (selectedNodeId ? nodes.find((node) => node.id === selectedNodeId) ?? null : null),
+    [nodes, selectedNodeId]
+  )
+
+  const ifThenElseChildNodes = useMemo<Array<{ id: string; data?: Record<string, any> }>>(() => {
+    if (!selectedNode || !isIfThenElseNode(selectedNode)) return []
+
+    const childIds = Array.from(
+      new Set(
+        edges
+          .filter(
+            (edge) =>
+              String(edge.source) === String(selectedNode.id) &&
+              String((edge as any)?.sourceHandle ?? '') === 'left'
+          )
+          .map((edge) => String(edge.target))
+      )
+    )
+
+    return childIds.flatMap((id) => {
+      const node = nodes.find((candidate) => String(candidate.id) === id)
+      return node ? [{ id: String(node.id), data: (node as any)?.data ?? {} }] : []
+    })
+  }, [edges, nodes, selectedNode])
+
+  const branchRoleState = useMemo(() => {
+    const raw = (selectedNode?.data as any)?.properties?.ifthenelse_branch_roles
+    if (!raw || typeof raw !== 'object') return {}
+
+    const next: Record<string, string> = {}
+    for (const [targetId, role] of Object.entries(raw)) {
+      if (typeof role === 'string' && role.trim()) {
+        next[targetId] = role.trim().toLowerCase()
+      }
+    }
+
+    return next as Record<string, string>
+  }, [selectedNode])
+
+  const branchRoleOptions = useMemo(() => {
+    return [
+      { value: 'condition', label: 'Condition' },
+      { value: 'success', label: 'Success' },
+      { value: 'failure', label: 'Failure' }
+    ]
+  }, [])
 
   const taskRows = useMemo(() => {
     if (!selectedData) {
@@ -97,7 +162,7 @@ export default function TaskInfoSection({
     )
 
     return keys
-      .filter((key) => key !== 'main_nodes')
+      .filter((key) => key !== 'main_nodes' && key !== 'ifthenelse_branch_roles')
       .map((key) => {
         const schema = schemaProperties[key] as
           | PropertyDef
@@ -273,6 +338,58 @@ export default function TaskInfoSection({
             : t('canvas.property.noEditableProperty')}
         </InfoBox>
       )}
+
+      {selectedNode && isIfThenElseNode(selectedNode) ? (
+        <FieldCard>
+          <FieldLabel>Branch Roles</FieldLabel>
+          <FieldBody>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {branchRoleOptions.map((branch) => {
+                const currentTargetId = Object.entries(branchRoleState).find(([, role]) => role === branch.value)?.[0] ?? ''
+
+                return (
+                  <div key={branch.value} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <FieldLabel style={{ fontSize: 12, fontWeight: 600 }}>{branch.label}</FieldLabel>
+                    <Select
+                      value={currentTargetId}
+                      disabled={readOnly}
+                      onChange={(event: ChangeEvent<HTMLSelectElement>) => {
+                        if (readOnly) return
+
+                        const nextValue = event.target.value
+                        const previous = { ...(selectedNode?.data as any)?.properties?.ifthenelse_branch_roles }
+
+                        const cleaned: Record<string, string> = {}
+                        for (const [targetId, role] of Object.entries(previous)) {
+                          const normalized = String(role ?? '').trim().toLowerCase()
+                          if (normalized && normalized !== branch.value && targetId !== nextValue) {
+                            cleaned[targetId] = normalized
+                          }
+                        }
+
+                        if (nextValue) {
+                          cleaned[nextValue] = branch.value
+                        }
+
+                        updateSelectedNodeProps({
+                          ifthenelse_branch_roles: cleaned
+                        })
+                      }}
+                    >
+                      <option value="">- 선택 안 함 -</option>
+                      {ifThenElseChildNodes.map((node) => (
+                        <option key={String(node.id)} value={String(node.id)}>
+                          {String((node.data as any)?.label ?? node.id)}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                )
+              })}
+            </div>
+          </FieldBody>
+        </FieldCard>
+      ) : null}
 
       {/* Parallel 노드의 Main Node 선택 UI */}
       <ParallelMainNodesSection

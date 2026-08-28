@@ -32,7 +32,7 @@ export const SETUP_GROUP = {
 
 export const HEADER_GNB = [
   { name: SETUP_GROUP.INITIAL, path: '/language', prefix: '', group: SETUP_GROUP.INITIAL },
-  { name: SETUP_GROUP.MAP, path: '/map/scan', prefix: '', group: SETUP_GROUP.MAP },
+  { name: SETUP_GROUP.MAP, path: '/download', prefix: '', group: SETUP_GROUP.MAP },
   // admin 탭은 SYSTEM_MANAGER 이상만 본다 (라우트 접근 제한은 AdminGuard 가 담당).
   {
     name: SETUP_GROUP.ADMIN,
@@ -90,13 +90,15 @@ export const appRoutes = [
     prefix: '',
     icon: 'policy',
     group: SETUP_GROUP.INITIAL,
+    // TODO: 약관 적용 시 다시 노출. 현재는 기능/라우트는 유지하고 메뉴에서만 숨긴다.
+    hide: true,
     element: <Terms />
   },
   {
     name: 'download',
     path: '/download',
     prefix: '',
-    icon: 'publish',
+    icon: 'download',
     group: SETUP_GROUP.MAP,
     element: <Download />
   },

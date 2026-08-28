@@ -8,6 +8,7 @@ import { ManageActions, SuspendButton, EditButton, DeleteButton } from '../style
 import { allRoles, getUserLevelByuserRole, allUserStatus } from '@/utils/roleUtils'
 import ModalModifyUser from '../modal/ModalEditUser'
 import ModalDeleteUser from '../modal/ModalDeleteUser'
+import ModalInstallerSites from '../modal/ModalInstallerSites'
 import { useModalState } from '@repo/hooks'
 
 const ALLVALUE = 'all'
@@ -25,6 +26,7 @@ const UserList = () => {
   const [userId, setUserId] = useState('')
   const [userInfo, setUserInfo] = useState('')
   const [userEmail, setUserEmail] = useState('')
+  const [installerGroupId, setInstallerGroupId] = useState('')
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false)
 
   const [confirmMessage, setConfirmMessage] = useState('')
@@ -32,8 +34,9 @@ const UserList = () => {
   function setTableList(tList) {
     let loopList = []
     for (var i = 0; i < tList.length; i++) {
-      //userLevel이 더 높은 계정은 리스트에서 제외
-      if (getUserLevelByuserRole(tList[i].userRole) > session.userLevel) {
+      const rowUserLevel = getUserLevelByuserRole(tList[i].userRole)
+      //userLevel이 더 높은 계정은 리스트에서 제외 (단, 4 이상인 특수 역할은 제외 규칙을 적용하지 않음)
+      if (rowUserLevel < 4 && rowUserLevel > session.userLevel) {
         continue
       }
       tList[i].createdAt = toYmdHmKST(tList[i].createdAt)
@@ -120,6 +123,14 @@ const UserList = () => {
     loadUserList()
   }
 
+  const InstallerSitesModal = useModalState()
+
+  const openModalInstallerSites = (_userId, _groupId) => {
+    setUserId(_userId)
+    setInstallerGroupId(_groupId)
+    InstallerSitesModal.onOpen()
+  }
+
   const DeleteUserModal = useModalState()
 
   const openModalDeleteUser = (_userId, _userEmail) => {
@@ -198,23 +209,22 @@ const UserList = () => {
     {
       name: t('management'),
       cell: (row) => {
-        const isEditDisable = getUserLevelByuserRole(row.userRole) > 1 ? true : false
+        const isInstallManager = row.userRole === 'INSTALL_MANAGER'
+        const isEditDisable = isInstallManager ? false : getUserLevelByuserRole(row.userRole) > 1 ? true : false
         const jsonUserInfo = {
           userRole: row.userRole,
           groupId: row.groupId,
           siteId: row.siteId
         }
+        const handleEditClick = () =>
+          isInstallManager ? openModalInstallerSites(row.userId, row.groupId) : openModalEditUser(row.userId, jsonUserInfo)
         return (
           <ManageActions>
             {/*정지기능 API 준비 안*/}
             <SuspendButton type="button" disabled={true} onClick={() => handleSuspend(row.userId, row.userEmail)}>
               {t('suspend')}
             </SuspendButton>
-            <EditButton
-              type="button"
-              disabled={isEditDisable}
-              onClick={() => openModalEditUser(row.userId, jsonUserInfo)}
-            >
+            <EditButton type="button" disabled={isEditDisable} onClick={handleEditClick}>
               {t('modify')}
             </EditButton>
             <DeleteButton type="button" onClick={() => openModalDeleteUser(row.userId, row.userEmail)}>
@@ -239,7 +249,7 @@ const UserList = () => {
     return [
       { value: ALLVALUE, name: t('totalRole') },
       ...allRoles
-        .filter((r) => (r.userLevel ?? Infinity) <= session.userLevel)
+        .filter((r) => (r.userLevel ?? Infinity) >= 4 || (r.userLevel ?? Infinity) <= session.userLevel)
         .map((r) => ({ value: r.value, name: t(r.roleName) }))
     ]
   }, [allRoles, t])
@@ -299,6 +309,13 @@ const UserList = () => {
         t={t}
         userId={userId}
         userEmail={userEmail}
+      />
+      <ModalInstallerSites
+        isOpen={InstallerSitesModal.isOpen}
+        onClose={InstallerSitesModal.onClose}
+        t={t}
+        userId={userId}
+        groupId={installerGroupId}
       />
 
       <Modal

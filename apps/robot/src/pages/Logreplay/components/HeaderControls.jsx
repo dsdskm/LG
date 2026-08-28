@@ -128,6 +128,15 @@ export default function HeaderControls({
                 />
                 {t('logreplay.settings.plannedPath')}
               </label>
+
+              <label style={S.checkboxRow}>
+                <input
+                  type="checkbox"
+                  checked={settings.value.showLidar}
+                  onChange={(e) => settings.set({ ...settings.value, showLidar: e.target.checked })}
+                />
+                {t('logreplay.settings.lidar')}
+              </label>
             </div>
           )}
         </div>

@@ -20,6 +20,7 @@ type ResolveEdgeLabelArgs = {
   sourceNode?: { id?: string | number; data?: Record<string, any> } | null
   sourceHandleId?: string | null
   targetHandleId?: string | null
+  targetNodeId?: string | null
   nodes?: Array<{ id?: string | number; data?: Record<string, any> }> | null
   edges?: Array<{
     source?: string | null
@@ -35,10 +36,13 @@ export function resolveEdgeLabel({
   sourceNode,
   sourceHandleId,
   targetHandleId,
+  targetNodeId,
   nodes = [],
   edges = [],
   sourceTaskType
 }: ResolveEdgeLabelArgs): 'condition' | 'success' | 'failure' | null {
+  const safeNodes = nodes ?? []
+  const safeEdges = edges ?? []
   const sourceId = String(sourceNode?.id ?? '')
   const sourceName = String((sourceNode?.data as any)?.taskName ?? '').trim().toLowerCase()
   const resolvedSourceTaskType = String(sourceTaskType ?? (sourceNode?.data as any)?.taskType ?? '').toUpperCase()
@@ -49,36 +53,8 @@ export function resolveEdgeLabel({
     sourceName === 'if_then_else' ||
     sourceName === 'ifthen else'
 
-  if (sourceHandleId === 'left' && targetHandleId === 'left' && isIfThenElseNode) {
-    return 'condition'
-  }
-
-  const isConnectedFromIfThenElse = (nodes ?? []).some((node) => {
-    const nodeId = String(node?.id ?? '')
-    const taskName = String((node?.data as any)?.taskName ?? '').trim().toLowerCase()
-    const isIfThenElse =
-      taskName === 'ifthenelse' ||
-      taskName === 'if then else' ||
-      taskName === 'if_then_else' ||
-      taskName === 'ifthen else'
-
-    if (!isIfThenElse) return false
-
-    return (edges ?? []).some((edge) => {
-      const edgeSourceId = String(edge?.source ?? '')
-      const edgeTargetId = String(edge?.target ?? '')
-      const edgeSourceHandle = String(edge?.sourceHandle ?? (edge?.data as any)?.sourceHandleId ?? '')
-      const edgeTargetHandle = String(edge?.targetHandle ?? (edge?.data as any)?.targetHandleId ?? '')
-      return edgeSourceId === String(nodeId) && edgeTargetId === sourceId && edgeSourceHandle === 'left' && edgeTargetHandle === 'left'
-    })
-  })
-
-  if (isConnectedFromIfThenElse && sourceHandleId === 'right' && targetHandleId === 'left') {
-    return 'success'
-  }
-
-  if (isConnectedFromIfThenElse && sourceHandleId === 'left' && targetHandleId === 'left') {
-    return 'failure'
+  if (isIfThenElseNode && sourceHandleId === 'left' && targetHandleId === 'left') {
+    return null
   }
 
   if (resolvedSourceTaskType === 'ACTION' && sourceHandleId === 'left' && targetHandleId === 'left') {
@@ -144,22 +120,26 @@ export default function TaskEdge({
   const sourceTaskType = String((sourceNode?.data as any)?.taskType ?? '').toUpperCase()
   const nodes = useFlowEditorStore((s) => s.nodes)
   const edges = useFlowEditorStore((s) => s.edges)
+  const targetNodeId = String((data as any)?.targetNodeId ?? '') || String((data as any)?.target ?? '')
+
   const labelText = resolveEdgeLabel({
     sourceNode,
     sourceHandleId,
     targetHandleId,
+    targetNodeId,
     nodes,
     edges,
     sourceTaskType
   })
   const isFailureBranch = labelText === 'failure'
 
-  const strokeColor = isFailureBranch ? '#dc2626' : (style?.stroke as string | undefined) ?? '#94a3b8'
-  const edgeMarkerEnd = isFailureBranch
-    ? markerEnd
-      ? ({ ...(markerEnd as Record<string, unknown>), color: strokeColor } as Record<string, unknown>)
-      : { type: 'arrowclosed', color: strokeColor }
-    : markerEnd
+  const strokeColor = (style?.stroke as string | undefined) ?? '#94a3b8'
+  const edgeMarkerEnd: any = markerEnd
+
+  const labelPosition = {
+    x: (sourceX + targetX) / 2,
+    y: (sourceY + targetY) / 2
+  }
 
   const { screenToFlowPosition } = useReactFlow()
   const setEdgeWaypoints = useFlowEditorStore((s) => s.setEdgeWaypoints)
@@ -312,8 +292,10 @@ export default function TaskEdge({
             className="nodrag nopan"
             style={{
               position: 'absolute',
-              transform: `translate(-50%, -50%) translate(${(sourceX + targetX) / 2}px, ${(sourceY + targetY) / 2}px)`,
-              padding: '1px 4px',
+              left: labelPosition.x,
+              top: labelPosition.y,
+              transform: 'translate(-50%, -50%)',
+              padding: '2px 6px',
               borderRadius: '999px',
               background:
                 labelText === 'failure'
@@ -333,7 +315,7 @@ export default function TaskEdge({
                   : labelText === 'success'
                     ? '#166534'
                     : '#1d4ed8',
-              fontSize: '5.5px',
+              fontSize: '6px',
               fontWeight: 700,
               lineHeight: 1.1,
               whiteSpace: 'nowrap',
@@ -343,10 +325,19 @@ export default function TaskEdge({
                   ? '0 2px 6px rgba(127, 29, 29, 0.12)'
                   : labelText === 'success'
                     ? '0 2px 6px rgba(21, 128, 61, 0.12)'
-                    : '0 2px 6px rgba(30, 64, 175, 0.12)'
+                    : '0 2px 6px rgba(30, 64, 175, 0.12)',
+              zIndex: 30,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minWidth: 26,
+              minHeight: 18,
+              transformOrigin: 'center center',
+              margin: 0,
+              userSelect: 'none'
             }}
           >
-            {labelText}
+            {labelText.toUpperCase()}
           </div>
         </EdgeLabelRenderer>
       )}

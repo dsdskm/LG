@@ -1493,8 +1493,8 @@ export default function TaskFlowCanvasPage() {
   const { taskFlowId } = useParams()
   const [searchParams] = useSearchParams()
 
-  // 상세 화면에서 어느 쪽(저장 버전 / 최종 버전)을 불러올지 지정해서 들어온다.
-  // 저장은 항상 저장 버전을 기준으로 하고, 최종 버전은 체크했을 때만 함께 갱신한다.
+  // 상세 화면에서 어느 쪽(저장 버전 / 운영 버전)을 불러올지 지정해서 들어온다.
+  // 저장은 항상 저장 버전을 기준으로 하고, 운영 버전은 체크했을 때만 함께 갱신한다.
   const requestedSource = normalizeFlowSource(searchParams.get(FLOW_SOURCE_QUERY_KEY))
 
   const flows = useTaskFlowStore((s) => s.flows)
@@ -2002,7 +2002,7 @@ export default function TaskFlowCanvasPage() {
   const [resetAllNodesConfirmOpen, setResetAllNodesConfirmOpen] = useState(false)
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false)
 
-  // 저장 확인 모달 안에서 매번 선택한다. (체크하면 flowDefinition = 최종 버전까지 함께 갱신)
+  // 저장 확인 모달 안에서 매번 선택한다. (체크하면 flowDefinition = 운영 버전까지 함께 갱신)
   const [saveConfirmOpen, setSaveConfirmOpen] = useState(false)
   const [saveFinal, setSaveFinal] = useState(false)
 
@@ -2016,7 +2016,7 @@ export default function TaskFlowCanvasPage() {
   const [infoDialogOpen, setInfoDialogOpen] = useState(false)
   const saveAfterInfoRef = useRef(false)
 
-  // 최종 버전을 만들지 못한 이유 (저장 완료 안내에 함께 보여준다)
+  // 운영 버전을 만들지 못한 이유 (저장 완료 안내에 함께 보여준다)
   const [savedOnlyReason, setSavedOnlyReason] = useState('')
 
   const syncAfterCreate = async (created: TaskFlow) => {
@@ -2088,10 +2088,10 @@ export default function TaskFlowCanvasPage() {
 
   /**
    * 저장 대상 결정.
-   *  - "최종 버전 저장" 체크 → flowDefinitionDraft + flowDefinition 동시 갱신
+   *  - "운영 버전 저장" 체크 → flowDefinitionDraft + flowDefinition 동시 갱신
    *  - 체크 없음            → flowDefinitionDraft(저장 버전) 만 갱신
    *
-   * 최종 버전은 BT 생성이 되어야 만들 수 있다. BT 를 만들 수 없으면 reason 을 돌려주고,
+   * 운영 버전은 BT 생성이 되어야 만들 수 있다. BT 를 만들 수 없으면 reason 을 돌려주고,
    * 저장 버전으로만 저장할지 사용자에게 한 번 더 확인한다.
    */
   const resolveSaveTarget = useCallback(
@@ -2198,7 +2198,7 @@ export default function TaskFlowCanvasPage() {
     }
   }
 
-  // withFinal: "최종 버전 저장" 체크 여부. (AI 커맨드 등 확인 모달을 거치지 않는 저장은 저장 버전만 갱신)
+  // withFinal: "운영 버전 저장" 체크 여부. (AI 커맨드 등 확인 모달을 거치지 않는 저장은 저장 버전만 갱신)
   const requestSave = async (override?: SaveOverride, withFinal = false) => {
     if (saving) return
 
@@ -2312,7 +2312,7 @@ export default function TaskFlowCanvasPage() {
   const onSave = () => {
     if (saving) return
 
-    // 최종 버전 저장 여부는 저장할 때마다 새로 판단한다.
+    // 운영 버전 저장 여부는 저장할 때마다 새로 판단한다.
     setSaveFinal(false)
     setSaveConfirmOpen(true)
   }
