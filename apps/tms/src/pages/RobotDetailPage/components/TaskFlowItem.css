@@ -1,0 +1,7 @@
+.taskflow-list.unselected {
+  background-color: white;
+}
+
+.taskflow-list.unselected:hover {
+  background-color: #f9fafb; /* 기본 회색 */ /* 호버시 흰색 */
+}

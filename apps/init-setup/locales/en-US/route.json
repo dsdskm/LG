@@ -1,0 +1,23 @@
+{
+  "SideBar": {
+    "gnb": {
+      "initialSetup": "Initial Setup",
+      "mapSetup": "Map Setup",
+      "admin": "Admin",
+      "map": "Map",
+      "language": "Language",
+      "network": "Network",
+      "siteCode": "Site Code",
+      "robotInfo": "Robot Info",
+      "location": "Location",
+      "terms": "Terms",
+      "download": "Download",
+      "upload": "Upload",
+      "default": "Default",
+      "scan": "Scan",
+      "semantic": "Semantic",
+      "poi": "POI",
+      "zone": "Zone"
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "labelTitle": "라벨 설정",
+  "labelName": "라벨명",
+  "labelType": "라벨종류",
+  "createdAt": "생성일",
+  "create": "생성",
+  "modify": "수정",
+  "delete": "삭제",
+  "cancel": "취소",
+  "detail": "상세",
+  "default": "기본",
+  "normal": "일반",
+  "enterLabel": "라벨을 입력하세요",
+  "duplicateName": "중복된 라벨은 입력할 수 없습니다.",
+  "save": "저장",
+  "systemLabel": "시스템 라벨"
+}

@@ -1,0 +1,23 @@
+{
+  "SideBar": {
+    "gnb": {
+      "initialSetup": "初期設定",
+      "mapSetup": "マップ設定",
+      "admin": "管理者",
+      "map": "地図",
+      "language": "言語設定",
+      "network": "ネットワーク設定",
+      "siteCode": "サイトコード",
+      "robotInfo": "ロボット情報",
+      "location": "位置設定",
+      "terms": "利用規約",
+      "download": "ダウンロード",
+      "upload": "アップロード",
+      "default": "基本",
+      "scan": "スキャン",
+      "semantic": "セマンティック",
+      "poi": "POI",
+      "zone": "エリア"
+    }
+  }
+}

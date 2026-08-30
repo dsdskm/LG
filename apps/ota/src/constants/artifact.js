@@ -1,0 +1,10 @@
+export const ARTIFACT_STATUS = {
+  SUCCESS: 'SUCCESS',
+  FAILED: 'FAILED',
+  IN_PROGRESS: 'IN_PROGRESS'
+}
+
+export const PACKAGE_TYPE_CODE = {
+  DOCKER: '0000',
+  FORGE: '1000'
+}

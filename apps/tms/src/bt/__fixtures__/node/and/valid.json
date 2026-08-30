@@ -1,0 +1,296 @@
+{
+    "id": 0,
+    "name": "and(왼쪽 자식 → 오른쪽 흐름)",
+    "groupId": "rBEAAp1NGc2BnVDXCa8ACA",
+    "siteId": "rBEAAp1NGc2BnVDYFR8ACg",
+    "status": "ACTIVE",
+    "version": 0,
+    "createdAt": "",
+    "updatedAt": "",
+    "description": "",
+    "tasks": [
+        {
+            "id": 39,
+            "siteId": null,
+            "taskType": "ROOT",
+            "name": "Start",
+            "propertySchema": {
+                "properties": {
+                    "execution_condition": {
+                        "type": "string",
+                        "required": true,
+                        "direction": "in",
+                        "description": ""
+                    }
+                }
+            },
+            "minExecVer": "1.0.0",
+            "version": "1.0.0",
+            "description": null,
+            "isDeployable": true,
+            "status": "ACTIVE",
+            "createdAt": "",
+            "updatedAt": ""
+        },
+        {
+            "id": 52,
+            "siteId": null,
+            "taskType": "CONTROL",
+            "name": "Sequence",
+            "propertySchema": {},
+            "minExecVer": "1.0.0",
+            "version": "1.0.0",
+            "description": null,
+            "isDeployable": true,
+            "status": "ACTIVE",
+            "createdAt": "",
+            "updatedAt": ""
+        },
+        {
+            "id": 48,
+            "siteId": null,
+            "taskType": "ACTION",
+            "name": "SetInterrupt",
+            "propertySchema": {
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "required": true,
+                        "direction": "in",
+                        "description": "모니터링할 인터럽트 name"
+                    }
+                }
+            },
+            "minExecVer": "1.0.0",
+            "version": "1.0.0",
+            "description": null,
+            "isDeployable": true,
+            "status": "ACTIVE",
+            "createdAt": "",
+            "updatedAt": ""
+        },
+        {
+            "id": 47,
+            "siteId": null,
+            "taskType": "ACTION",
+            "name": "ScriptCondition",
+            "propertySchema": {
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "required": true,
+                        "direction": "in",
+                        "description": "간단한 조건 비교문"
+                    }
+                }
+            },
+            "minExecVer": "1.0.0",
+            "version": "1.0.0",
+            "description": null,
+            "isDeployable": true,
+            "status": "ACTIVE",
+            "createdAt": "",
+            "updatedAt": ""
+        }
+    ],
+    "contents": [],
+    "nodes": [
+        {
+            "id": "start",
+            "type": "startNode",
+            "position": {
+                "x": -155,
+                "y": -71
+            },
+            "data": {
+                "label": "Start",
+                "locked": false,
+                "taskId": 39,
+                "taskName": "Start",
+                "taskType": "ROOT",
+                "properties": {
+                    "execution_condition": "Boot"
+                },
+                "propertySchema": {
+                    "properties": {
+                        "execution_condition": {
+                            "type": "string",
+                            "required": true,
+                            "direction": "in",
+                            "description": ""
+                        }
+                    }
+                }
+            },
+            "measured": {
+                "width": 78,
+                "height": 47
+            },
+            "selected": false,
+            "dragging": false,
+            "draggable": true,
+            "selectable": true,
+            "deletable": false,
+            "connectable": true
+        },
+        {
+            "id": "1785200000001",
+            "type": "taskNode",
+            "position": {
+                "x": -60.75,
+                "y": -71
+            },
+            "data": {
+                "groupId": null,
+                "siteId": null,
+                "label": "Sequence",
+                "taskId": 52,
+                "taskName": "Sequence",
+                "taskType": "CONTROL",
+                "propertySchema": {},
+                "properties": {}
+            },
+            "measured": {
+                "width": 78,
+                "height": 47
+            },
+            "selected": false,
+            "dragging": false,
+            "draggable": true,
+            "selectable": true,
+            "deletable": true,
+            "connectable": true
+        },
+        {
+            "id": "1785200000002",
+            "type": "taskNode",
+            "position": {
+                "x": -60.75,
+                "y": -12.25
+            },
+            "data": {
+                "groupId": null,
+                "siteId": null,
+                "label": "SetInterrupt",
+                "taskId": 48,
+                "taskName": "SetInterrupt",
+                "taskType": "ACTION",
+                "propertySchema": {
+                    "properties": {
+                        "code": {
+                            "type": "string",
+                            "required": true,
+                            "direction": "in",
+                            "description": "모니터링할 인터럽트 name"
+                        }
+                    }
+                },
+                "properties": {
+                    "code": "interrupt-1"
+                }
+            },
+            "measured": {
+                "width": 78,
+                "height": 47
+            },
+            "selected": false,
+            "dragging": false,
+            "draggable": true,
+            "selectable": true,
+            "deletable": true,
+            "connectable": true
+        },
+        {
+            "id": "1785200000003",
+            "type": "taskNode",
+            "position": {
+                "x": 32.25,
+                "y": -12.25
+            },
+            "data": {
+                "groupId": null,
+                "siteId": null,
+                "label": "ScriptCondition",
+                "taskId": 47,
+                "taskName": "ScriptCondition",
+                "taskType": "ACTION",
+                "propertySchema": {
+                    "properties": {
+                        "code": {
+                            "type": "string",
+                            "required": true,
+                            "direction": "in",
+                            "description": "간단한 조건 비교문"
+                        }
+                    }
+                },
+                "properties": {
+                    "code": "a == 1"
+                }
+            },
+            "measured": {
+                "width": 78,
+                "height": 47
+            },
+            "selected": false,
+            "dragging": false,
+            "draggable": true,
+            "selectable": true,
+            "deletable": true,
+            "connectable": true
+        }
+    ],
+    "edges": [
+        {
+            "id": "xy-edge__startright-1785200000001left",
+            "source": "start",
+            "target": "1785200000001",
+            "sourceHandle": "right",
+            "targetHandle": "left",
+            "type": "taskEdge",
+            "data": {
+                "sourceNodeId": "start",
+                "targetNodeId": "1785200000001",
+                "sourceHandleId": "right",
+                "targetHandleId": "left",
+                "edgeType": "bezier"
+            }
+        },
+        {
+            "id": "xy-edge__1785200000001left-1785200000002left",
+            "source": "1785200000001",
+            "target": "1785200000002",
+            "sourceHandle": "left",
+            "targetHandle": "left",
+            "type": "taskEdge",
+            "data": {
+                "sourceNodeId": "1785200000001",
+                "targetNodeId": "1785200000002",
+                "sourceHandleId": "left",
+                "targetHandleId": "left",
+                "edgeType": "bezier"
+            }
+        },
+        {
+            "id": "xy-edge__1785200000002right-1785200000003left",
+            "source": "1785200000002",
+            "target": "1785200000003",
+            "sourceHandle": "right",
+            "targetHandle": "left",
+            "type": "taskEdge",
+            "data": {
+                "sourceNodeId": "1785200000002",
+                "targetNodeId": "1785200000003",
+                "sourceHandleId": "right",
+                "targetHandleId": "left",
+                "edgeType": "bezier"
+            }
+        }
+    ],
+    "viewport": {
+        "x": 264.125,
+        "y": 316.5,
+        "zoom": 2
+    },
+    "flowMode": "default"
+}

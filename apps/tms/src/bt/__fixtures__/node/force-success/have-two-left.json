@@ -1,0 +1,460 @@
+{
+    "id": 29,
+    "name": "FORCE SUCCESS",
+    "groupId": "rBEAAp1NGc2BnVDXCa8ACA",
+    "siteId": "rBEAAp1NGc2BnVDYFR8ACg",
+    "status": "ACTIVE",
+    "version": 0,
+    "createdAt": "2026-07-24T00:27:03.753Z",
+    "updatedAt": "2026-07-26T18:16:13.891Z",
+    "description": "",
+    "tasks": [
+        {
+            "id": 39,
+            "siteId": null,
+            "taskType": "ROOT",
+            "name": "Start",
+            "propertySchema": {
+                "properties": {
+                    "execution_condition": {
+                        "type": "string",
+                        "required": true,
+                        "direction": "in",
+                        "description": ""
+                    }
+                }
+            },
+            "minExecVer": "1.0.0",
+            "version": "1.0.0",
+            "description": null,
+            "isDeployable": true,
+            "status": "ACTIVE",
+            "createdAt": "",
+            "updatedAt": ""
+        },
+        {
+            "id": 51,
+            "siteId": null,
+            "taskType": "CONTROL",
+            "name": "ForceSuccess",
+            "propertySchema": {},
+            "minExecVer": "1.0.0",
+            "version": "1.0.0",
+            "description": null,
+            "isDeployable": true,
+            "status": "ACTIVE",
+            "createdAt": "",
+            "updatedAt": ""
+        },
+        {
+            "id": 47,
+            "siteId": null,
+            "taskType": "ACTION",
+            "name": "ScriptCondition",
+            "propertySchema": {
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "required": true,
+                        "direction": "in",
+                        "description": "간단한 조건 비교문"
+                    }
+                }
+            },
+            "minExecVer": "1.0.0",
+            "version": "1.0.0",
+            "description": null,
+            "isDeployable": true,
+            "status": "ACTIVE",
+            "createdAt": "",
+            "updatedAt": ""
+        },
+        {
+            "id": 8,
+            "siteId": null,
+            "taskType": "ACTION",
+            "name": "AutoDancing",
+            "propertySchema": {},
+            "minExecVer": "1.0.0",
+            "version": "1.0.0",
+            "description": null,
+            "isDeployable": true,
+            "status": "ACTIVE",
+            "createdAt": "",
+            "updatedAt": ""
+        },
+        {
+            "id": 1,
+            "siteId": null,
+            "taskType": "ACTION",
+            "name": "b-2-test-action",
+            "propertySchema": {},
+            "minExecVer": "1.0.0",
+            "version": "1.0.0",
+            "description": null,
+            "isDeployable": true,
+            "status": "ACTIVE",
+            "createdAt": "",
+            "updatedAt": ""
+        },
+        {
+            "id": 34,
+            "siteId": null,
+            "taskType": "ACTION",
+            "name": "GetBetteryLevel",
+            "propertySchema": {
+                "properties": {
+                    "battery_level_result": {
+                        "type": "int",
+                        "required": true,
+                        "direction": "out",
+                        "description": ""
+                    }
+                }
+            },
+            "minExecVer": "1.0.0",
+            "version": "1.0.0",
+            "description": null,
+            "isDeployable": true,
+            "status": "ACTIVE",
+            "createdAt": "",
+            "updatedAt": ""
+        }
+    ],
+    "contents": [],
+    "nodes": [
+        {
+            "id": "start",
+            "type": "startNode",
+            "position": {
+                "x": -118.5,
+                "y": -45.5
+            },
+            "data": {
+                "label": "Start",
+                "locked": false,
+                "taskId": 39,
+                "taskName": "Start",
+                "taskType": "ROOT",
+                "properties": {
+                    "execution_condition": "Boot"
+                },
+                "propertySchema": {
+                    "properties": {
+                        "execution_condition": {
+                            "type": "string",
+                            "required": true,
+                            "direction": "in",
+                            "description": ""
+                        }
+                    }
+                }
+            },
+            "measured": {
+                "width": 78,
+                "height": 47
+            },
+            "selected": false,
+            "dragging": false,
+            "draggable": true,
+            "selectable": true,
+            "deletable": false,
+            "connectable": true
+        },
+        {
+            "id": "1784886126777",
+            "type": "taskNode",
+            "position": {
+                "x": -20.375,
+                "y": -45.5
+            },
+            "data": {
+                "groupId": null,
+                "siteId": null,
+                "label": "ForceSuccess",
+                "taskId": 51,
+                "taskName": "ForceSuccess",
+                "taskType": "CONTROL",
+                "propertySchema": {},
+                "properties": {}
+            },
+            "measured": {
+                "width": 78,
+                "height": 47
+            },
+            "selected": false,
+            "dragging": false,
+            "draggable": true,
+            "selectable": true,
+            "deletable": true,
+            "connectable": true
+        },
+        {
+            "id": "1784886671696",
+            "type": "taskNode",
+            "position": {
+                "x": -20.375,
+                "y": 18.25
+            },
+            "data": {
+                "groupId": null,
+                "siteId": null,
+                "label": "ScriptCondition",
+                "taskId": 47,
+                "taskName": "ScriptCondition",
+                "taskType": "ACTION",
+                "propertySchema": {
+                    "properties": {
+                        "code": {
+                            "type": "string",
+                            "required": true,
+                            "direction": "in",
+                            "description": "간단한 조건 비교문"
+                        }
+                    }
+                },
+                "properties": {
+                    "code": ""
+                }
+            },
+            "measured": {
+                "width": 78,
+                "height": 47
+            },
+            "selected": false,
+            "dragging": false,
+            "draggable": true,
+            "selectable": true,
+            "deletable": true,
+            "connectable": true
+        },
+        {
+            "id": "1784886902160",
+            "type": "taskNode",
+            "position": {
+                "x": 76.90625,
+                "y": -45.5
+            },
+            "data": {
+                "groupId": "rBEAAp1NGc2BnVDXCa8ACA",
+                "siteId": null,
+                "label": "AutoDancing",
+                "taskId": 8,
+                "taskName": "AutoDancing",
+                "taskType": "ACTION",
+                "propertySchema": {},
+                "properties": {}
+            },
+            "measured": {
+                "width": 78,
+                "height": 47
+            },
+            "selected": false,
+            "dragging": false,
+            "draggable": true,
+            "selectable": true,
+            "deletable": true,
+            "connectable": true
+        },
+        {
+            "id": "1784887514827",
+            "type": "taskNode",
+            "position": {
+                "x": 76.90625,
+                "y": 18.25
+            },
+            "data": {
+                "groupId": "rBEAAp1NGc2BnVDXCa8ACA",
+                "siteId": "rBEAAp1NGc2BnVDYFR8ACg",
+                "label": "b-2-test-action",
+                "taskId": 1,
+                "taskName": "b-2-test-action",
+                "taskType": "ACTION",
+                "propertySchema": {},
+                "properties": {}
+            },
+            "measured": {
+                "width": 78,
+                "height": 47
+            },
+            "selected": false,
+            "dragging": false,
+            "draggable": true,
+            "selectable": true,
+            "deletable": true,
+            "connectable": true
+        },
+        {
+            "id": "1785122158767",
+            "type": "taskNode",
+            "position": {
+                "x": -20.375,
+                "y": 83.625
+            },
+            "data": {
+                "groupId": null,
+                "siteId": null,
+                "label": "GetBetteryLevel",
+                "taskId": 34,
+                "taskName": "GetBetteryLevel",
+                "taskType": "ACTION",
+                "propertySchema": {
+                    "properties": {
+                        "battery_level_result": {
+                            "type": "int",
+                            "required": true,
+                            "direction": "out",
+                            "description": ""
+                        }
+                    }
+                },
+                "properties": {
+                    "battery_level_result": ""
+                }
+            },
+            "measured": {
+                "width": 78,
+                "height": 47
+            },
+            "selected": true,
+            "dragging": false,
+            "draggable": true,
+            "selectable": true,
+            "deletable": true,
+            "connectable": true
+        }
+    ],
+    "edges": [
+        {
+            "id": "1784886128382",
+            "source": "start",
+            "target": "1784886126777",
+            "sourceHandle": "right",
+            "targetHandle": "left",
+            "type": "default",
+            "markerEnd": {
+                "type": "arrowclosed",
+                "width": 10,
+                "height": 10,
+                "color": "#94a3b8"
+            },
+            "style": {
+                "stroke": "#94a3b8",
+                "strokeWidth": 1.25
+            },
+            "data": {
+                "sourceNodeId": "start",
+                "targetNodeId": "1784886126777",
+                "sourceHandleId": "right",
+                "targetHandleId": "left",
+                "edgeType": "bezier"
+            }
+        },
+        {
+            "id": "1784886673544",
+            "source": "1784886126777",
+            "target": "1784886671696",
+            "sourceHandle": "left",
+            "targetHandle": "left",
+            "type": "default",
+            "markerEnd": {
+                "type": "arrowclosed",
+                "width": 10,
+                "height": 10,
+                "color": "#94a3b8"
+            },
+            "style": {
+                "stroke": "#94a3b8",
+                "strokeWidth": 1.25
+            },
+            "data": {
+                "sourceNodeId": "1784886126777",
+                "targetNodeId": "1784886671696",
+                "sourceHandleId": "left",
+                "targetHandleId": "left",
+                "edgeType": "bezier"
+            }
+        },
+        {
+            "id": "1784886905378",
+            "source": "1784886126777",
+            "target": "1784886902160",
+            "sourceHandle": "right",
+            "targetHandle": "left",
+            "type": "default",
+            "markerEnd": {
+                "type": "arrowclosed",
+                "width": 10,
+                "height": 10,
+                "color": "#94a3b8"
+            },
+            "style": {
+                "stroke": "#94a3b8",
+                "strokeWidth": 1.25
+            },
+            "data": {
+                "sourceNodeId": "1784886126777",
+                "targetNodeId": "1784886902160",
+                "sourceHandleId": "right",
+                "targetHandleId": "left",
+                "edgeType": "bezier"
+            }
+        },
+        {
+            "id": "1784887516405",
+            "source": "1784886671696",
+            "target": "1784887514827",
+            "sourceHandle": "right",
+            "targetHandle": "left",
+            "type": "default",
+            "markerEnd": {
+                "type": "arrowclosed",
+                "width": 10,
+                "height": 10,
+                "color": "#94a3b8"
+            },
+            "style": {
+                "stroke": "#94a3b8",
+                "strokeWidth": 1.25
+            },
+            "data": {
+                "sourceNodeId": "1784886671696",
+                "targetNodeId": "1784887514827",
+                "sourceHandleId": "right",
+                "targetHandleId": "left",
+                "edgeType": "bezier"
+            }
+        },
+        {
+            "id": "1785122165201",
+            "source": "1784886126777",
+            "target": "1785122158767",
+            "sourceHandle": "left",
+            "targetHandle": "left",
+            "type": "default",
+            "markerEnd": {
+                "type": "arrowclosed",
+                "width": 10,
+                "height": 10,
+                "color": "#94a3b8"
+            },
+            "style": {
+                "stroke": "#94a3b8",
+                "strokeWidth": 1.25
+            },
+            "data": {
+                "sourceNodeId": "1784886126777",
+                "targetNodeId": "1785122158767",
+                "sourceHandleId": "left",
+                "targetHandleId": "left",
+                "edgeType": "bezier"
+            }
+        }
+    ],
+    "viewport": {
+        "x": 399.09375,
+        "y": 343.75,
+        "zoom": 2
+    },
+    "flowMode": "default"
+}

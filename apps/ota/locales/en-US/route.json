@@ -1,0 +1,87 @@
+{
+  "SideBar": {
+    "gnb": {
+      "ota": "OTA",
+      "campaign": "Campaign",
+      "artifact": "Artifact",
+      "targetGroup": "Target Group",
+      "action": "Action",
+      "management": "Management",
+      "organization": "Organization",
+      "policy": "Policy",
+      "device": "Device",
+      "admin": "Admin",
+      "settings": "Settings",
+      "approve": "Approve",
+      "request": "Request",
+      "role": "Role",
+      "module": "Module",
+      "cicdSetting": "CI/CD Setting",
+      "deviceType": "Device Type",
+      "apiDoc": "API Document",
+      "icons": "Icon Viewer"
+    }
+  },
+  "Depth": {
+    "artifact": {
+      "name": "Artifact"
+    },
+    "campaign": {
+      "name": "Campaign"
+    },
+    "targetGroup": {
+      "name": "Target Group"
+    },
+    "action": {
+      "name": "Action"
+    },
+    "management": {
+      "name": "Management"
+    },
+    "campaignDetail": {
+      "name": "Campaign Detail"
+    },
+    "actionDetail": {
+      "name": "Action Detail"
+    },
+    "approve": {
+      "name": "Approve"
+    },
+    "approveDetail": {
+      "name": "Approve Detail"
+    },
+    "request": {
+      "name": "Request"
+    },
+    "requestDetail": {
+      "name": "Request Detail"
+    },
+    "role": {
+      "name": "Role"
+    },
+    "module": {
+      "name": "Module"
+    },
+    "deviceType": {
+      "name": "Device Type"
+    },
+    "roleDetail": {
+      "name": "Role Detail"
+    },
+    "moduleDetail": {
+      "name": "Module Detail"
+    },
+    "deviceTypeDetail": {
+      "name": "Device Type Detail"
+    },
+    "organizationDetail": {
+      "name": "Organization Detail"
+    },
+    "policyDetail": {
+      "name": "Policy Detail"
+    },
+    "deviceDetail": {
+      "name": "Device Detail"
+    }
+  }
+}
