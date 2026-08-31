@@ -16,7 +16,7 @@ import {
     updateChatPrompt,
     updateChatRagDoc,
     upsertChatRule,
-} from '@repo/apis/ai/chatSettings.js'
+} from '@repo/apis/ai/chatSettings'
 
 import {
     ModalActions,
@@ -27,7 +27,7 @@ import {
     SecondaryTextButton,
 } from '../styles'
 
-const APP_OPTIONS = ['cms', 'ota', 'robot', 'tms', 'learning']
+const APP_OPTIONS = ['common', 'cms', 'ota', 'robot', 'tms', 'learning']
 
 const FORM_CONFIG = {
     screen: {
@@ -58,7 +58,7 @@ const FORM_CONFIG = {
                 required: true,
                 identity: true,
                 type: 'select',
-                options: ['instruction', 'intent-classifier', 'rag'],
+                options: ['instruction', 'intent-classifier', 'rag-info', 'rag-action'],
                 defaultValue: 'instruction',
             },
             { key: 'prompt', label: '프롬프트', type: 'textarea', rows: 14 },
@@ -69,7 +69,7 @@ const FORM_CONFIG = {
         label: 'RAG 문서',
         fields: [
             { key: 'appKey', label: '앱', identity: true },
-            { key: 'chunkKey', label: 'Chunk Key', required: true, identity: true },
+            { key: 'chunkKey', label: 'Chunk Key', required: true },
             { key: 'title', label: '제목' },
             { key: 'keywords', label: '키워드 JSON', type: 'json', rows: 5, defaultValue: [] },
             { key: 'body', label: '본문', type: 'textarea', rows: 12 },
@@ -108,6 +108,22 @@ const createDraft = (fields, record) => Object.fromEntries(fields.map((field) =>
     return [field.key, field.type === 'json' ? JSON.stringify(value, null, 2) : value]
 }))
 
+const BodyLengthMeter = ({ value, maxChars = 700 }) => {
+    const text = typeof value === 'string' ? value : ''
+    const length = text.length
+    const limit = Number(maxChars ?? 700)
+    const isOverLimit = length > limit
+
+    return (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
+            <span style={{ fontSize: '12px', color: '#64748b' }}>본문 길이</span>
+            <strong style={{ fontSize: '12px', color: isOverLimit ? '#dc2626' : '#334155' }}>
+                현재 {length} / 제한 {limit}자
+            </strong>
+        </div>
+    )
+}
+
 const parseJsonField = (value, label) => {
     try {
         return JSON.parse(String(value || 'null'))
@@ -123,7 +139,17 @@ const assertSuccessful = (response) => {
     return response?.data
 }
 
-export const DatabaseRecordEditorModal = ({ kind, item, screens, onClose, onChanged }) => {
+export const DatabaseRecordEditorModal = ({
+    kind,
+    item,
+    screens,
+    promptTypes,
+    onClose,
+    onChanged,
+    maxCharsPerChunk = 700,
+    maxChunksPerApp = 3,
+    appRagCountMap = {},
+}) => {
     const config = FORM_CONFIG[kind] ?? FORM_CONFIG.guidance
     const editing = Boolean(item?.id)
     const screenOptions = (Array.isArray(screens) ? screens : [])
@@ -152,7 +178,7 @@ export const DatabaseRecordEditorModal = ({ kind, item, screens, onClose, onChan
         setDraft((current) => ({
             ...current,
             appKey,
-            screenKey: kind === 'screen' ? current.screenKey : '',
+            screenKey: kind === 'screen' ? current.screenKey : (kind === 'prompt' && appKey === 'common' ? 'common' : ''),
         }))
     }
 
@@ -205,6 +231,28 @@ export const DatabaseRecordEditorModal = ({ kind, item, screens, onClose, onChan
             else if (field.type === 'checkbox') payload[field.key] = Boolean(value)
             else payload[field.key] = String(value ?? '')
         }
+
+        if (kind === 'rag') {
+            const bodyLimit = Number(maxCharsPerChunk ?? 700)
+            if (String(payload.body ?? '').length > bodyLimit) {
+                throw new Error(`RAG 본문은 ${bodyLimit}자를 넘길 수 없습니다.`)
+            }
+
+            if (!editing) {
+                const targetAppKey = String(payload.appKey ?? '').trim()
+                const targetIntentType = String(payload.intentType ?? 'info').trim().toLowerCase()
+                const appCounts = targetAppKey ? appRagCountMap[targetAppKey] ?? { info: 0, action: 0 } : { info: 0, action: 0 }
+                const limit = Math.max(1, Number(maxChunksPerApp ?? 3))
+
+                const exceedsInfo = (targetIntentType === 'info' || targetIntentType === 'both') && appCounts.info >= limit
+                const exceedsAction = (targetIntentType === 'action' || targetIntentType === 'both') && appCounts.action >= limit
+                if (targetAppKey && (exceedsInfo || exceedsAction)) {
+                    const intentLabel = targetIntentType === 'action' ? '액션 인텐트' : targetIntentType === 'both' ? '정보/액션 인텐트' : '정보 인텐트'
+                    throw new Error(`앱당 ${intentLabel} RAG 청크는 최대 ${limit}개까지 등록할 수 있습니다.`)
+                }
+            }
+        }
+
         return payload
     }
 
@@ -235,6 +283,7 @@ export const DatabaseRecordEditorModal = ({ kind, item, screens, onClose, onChan
                 else assertSuccessful(await createChatPrompt(payload))
             } else if (kind === 'rag') {
                 const writable = {
+                    chunkKey: payload.chunkKey,
                     title: payload.title,
                     keywords: payload.keywords,
                     body: payload.body,
@@ -301,7 +350,7 @@ export const DatabaseRecordEditorModal = ({ kind, item, screens, onClose, onChan
                                         <FormSelect
                                             id={`${kind}-${field.key}`}
                                             value={String(draft.screenKey ?? '')}
-                                            disabled={!selectedAppKey}
+                                            disabled={!selectedAppKey || selectedAppKey === 'common'}
                                             onChange={(event) => selectScreen(event.target.value)}
                                         >
                                             <option value="">{selectedAppKey ? '화면을 선택하세요' : '앱을 먼저 선택하세요'}</option>
@@ -330,15 +379,27 @@ export const DatabaseRecordEditorModal = ({ kind, item, screens, onClose, onChan
                                             {editing && field.key === 'intentType' && draft[field.key] === 'both' ? (
                                                 <option value="both">both (기존 데이터)</option>
                                             ) : null}
-                                            {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
+                                            {(kind === 'prompt' && field.key === 'type'
+                                                ? (Array.isArray(promptTypes) && promptTypes.length > 0 ? promptTypes : field.options)
+                                                : field.options
+                                            ).map((option) => {
+                                                const value = typeof option === 'string' ? option : option.key
+                                                const label = typeof option === 'string' ? option : option.label
+                                                return <option key={value} value={value}>{label}</option>
+                                            })}
                                         </FormSelect>
                                     ) : field.type === 'textarea' || field.type === 'json' ? (
-                                        <FormTextarea
-                                            id={`${kind}-${field.key}`}
-                                            rows={field.rows}
-                                            value={String(draft[field.key] ?? '')}
-                                            onChange={(event) => setField(field.key, event.target.value)}
-                                        />
+                                        <>
+                                            <FormTextarea
+                                                id={`${kind}-${field.key}`}
+                                                rows={field.rows}
+                                                value={String(draft[field.key] ?? '')}
+                                                onChange={(event) => setField(field.key, event.target.value)}
+                                            />
+                                            {kind === 'rag' && field.key === 'body' ? (
+                                                <BodyLengthMeter value={draft.body} maxChars={maxCharsPerChunk} />
+                                            ) : null}
+                                        </>
                                     ) : (
                                         <FormInput
                                             id={`${kind}-${field.key}`}

@@ -11,6 +11,7 @@ import * as mapApi from '@/apis/mapApis'
 import * as poiApi from '@/apis/mapPoiApis'
 import { buildApplyPoiBatchBody } from '@/utils/poiBatch'
 import { isWorkingMapDir, publishedNameOf, resolveMapDir, visibleMaps } from '@/utils/mapRecord'
+import { useUserStore } from '@repo/stores'
 
 // 다국어 이름 {default, ko-KR, en-US} 에서 표시 문자열을 고른다.
 const nameOf = (n) => n?.default ?? n?.['ko-KR'] ?? n?.['en-US'] ?? '-'
@@ -44,6 +45,9 @@ const UploadTable = () => {
   const [reloadKey, setReloadKey] = useState(0)
 
   // 업로드 요약 모달
+  const [mapUplaodModalOpen, setMapUplaodModalOpen] = useState(false)
+  const [selectMapUploadRow, setSelectMapUploadRow] = useState(false)
+
   const [summaryOpen, setSummaryOpen] = useState(false)
   const [summaryLoading, setSummaryLoading] = useState(false)
   const [summaryRow, setSummaryRow] = useState(null)
@@ -90,13 +94,21 @@ const UploadTable = () => {
           const site = building && sites[building.siteId]
           return {
             id: `area-${area.id}`,
+            siteId: site?.id,
             site: site ? nameOf(site.siteName) : '-',
+            siteExtId: site.extId,
             buildingId: floor?.buildingId,
             building: building ? nameOf(building.name) : '-',
+            buildingExtId: building.extId,
+            buildingName: building.name.default,
             floorId: area.floorId,
             floor: floor ? nameOf(floor.name) : '-',
+            floorExitId: floor.extId,
+            floorName: floor.name.default,
             areaId: area.id,
             area: nameOf(area.name),
+            areaExitId: area.extId,
+            areaName: area.name.default,
             maps: mapsByArea[area.id] ?? []
           }
         })
@@ -211,8 +223,43 @@ const UploadTable = () => {
   // 맵 업로드 버튼 → 행에 붙은 맵 레코드에서 작업본 디렉터리를 찾아 승격한다.
   // 행이 이미 대상 맵을 들고 있으므로 areaId 로 다시 조회하지 않는다 — 구역 없는 행(areaId=null)은
   // areaId 쿼리가 전체 맵을 돌려줘 엉뚱한 맵을 올리게 된다.
-  const handleMapUpload = async (row) => {
-    const dirs = Array.from(new Set((row.maps ?? []).map(resolveMapDir).filter(Boolean)))
+  const handleConfirmMapUpload = async () => {
+    console.log('selectMapUploadRow:', selectMapUploadRow)
+    const mapRes = await mapApi.list({
+      areaId: selectMapUploadRow.areaId,
+      status: 'inactive'
+    })
+    console.log('mapRes:', mapRes.total)
+
+    if (mapRes?.total !== 1) {
+      console.log('no map to uplaod')
+      return
+    }
+    const session = useUserStore.getState().session
+
+    const res = await siteApi.retrieveSiteScope({
+      siteId: selectMapUploadRow.siteExtId,
+      authorization: session?.accessToken
+    })
+    console.log('res:', res)
+
+    const resUplaod = await mapApi.uploadMap({
+      groupId: res?.data.groupId,
+      siteId: selectMapUploadRow.siteExtId,
+      buildingId: selectMapUploadRow.buildingExtId,
+      floorId: selectMapUploadRow.floorExitId,
+      areaId: selectMapUploadRow.areaExitId,
+      mapType: 'navi',
+      filename: 'test.zip',
+      authorization: session?.accessToken,
+      sourceDir: `/ws/maps/${selectMapUploadRow.buildingName}_${selectMapUploadRow.floorName}_${selectMapUploadRow.areaName}_working`,
+      localMapId: mapRes.data[0].id
+    })
+
+    console.log('resUplaod:', resUplaod)
+
+    const dirs = Array.from(new Set((selectMapUploadRow.maps ?? []).map(resolveMapDir).filter(Boolean)))
+    console.log('dirs:', dirs)
 
     if (!dirs.length) {
       toast.warn('이 항목에 등록된 맵이 없습니다. 맵 스캔 후 저장해 주세요.', { autoClose: 3000 })
@@ -234,8 +281,13 @@ const UploadTable = () => {
     const savePath = working[0]
     const result = await publishMapDir({ savePath, overwrite: false })
     if (result === 'conflict') {
-      setConflict({ row, savePath, publishedName: publishedNameOf(savePath) })
+      setConflict({ selectMapUploadRow, savePath, publishedName: publishedNameOf(savePath) })
     }
+  }
+
+  const handleMapUpload = async (row) => {
+    setSelectMapUploadRow(row)
+    setMapUplaodModalOpen(true)
   }
 
   // 업로드 버튼 → 대상 Area 의 맵 POI 를 editStatus 로 분류해 요약 모달을 연다.
@@ -265,14 +317,27 @@ const UploadTable = () => {
     }
   }
 
-  const closeSummary = () => setSummaryOpen(false)
-
-  const handleConfirmUpload = () => {
+  const handleConfirmUpload = async () => {
     if (!summary) return
-    // 관제 applyPoiBatch 요청 body 생성(현재는 콘솔 출력까지).
-    // TODO(user): POST 관제 applyPoiBatch (X-API-Key 인증, 엔드포인트) 연동 + 주행맵 업로드
+
+    const session = useUserStore.getState().session
+    const res = await siteApi.retrieveSiteScope({
+      siteId: summaryRow.siteExtId,
+      authorization: session?.accessToken
+    })
     const body = buildApplyPoiBatchBody(summary)
+    body.groupId = res?.data.groupId
+    body.siteId = summaryRow.siteExtId
+    body.buildingId = summaryRow.buildingExtId
+    body.floorId = summaryRow.floorExitId
+    body.areaId = summaryRow.areaExitId
+    body.basePoiVersionId = summaryRow.poiVersion
+    body.authorization = session?.accessToken
+
     console.log('[applyPoiBatch body]', JSON.stringify(body, null, 2))
+
+    const resUplaod = await mapApi.uploadPoi(body)
+
     toast.info('업로드 요청 body 생성됨 (콘솔 확인) — 실제 전송은 미연동', { autoClose: 2500 })
     setSummaryOpen(false)
   }
@@ -353,16 +418,40 @@ const UploadTable = () => {
       </Modal>
 
       <Modal
+        isOpen={mapUplaodModalOpen}
+        title="맵 업로드"
+        onClose={() => setMapUplaodModalOpen(false)}
+        size="md"
+        renderButtonComponent={
+          <ModalButtons>
+            <Button onClick={handleConfirmMapUpload}>업로드</Button>
+            <Button variant="outline" onClick={() => setMapUplaodModalOpen(false)}>
+              취소
+            </Button>
+          </ModalButtons>
+        }
+      >
+        {selectMapUploadRow && (
+          <div>
+            <p> 싸이트 : {selectMapUploadRow.site} </p>
+            <p> 빌딩 : {selectMapUploadRow.building} </p>
+            <p> 층 : {selectMapUploadRow.floor} </p>
+            <p> 구역 : {selectMapUploadRow.area} </p>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
         isOpen={summaryOpen}
-        title="업로드 요약"
-        onClose={closeSummary}
+        title="POI 업로드"
+        onClose={() => setSummaryOpen(false)}
         size="md"
         renderButtonComponent={
           <ModalButtons>
             <Button onClick={handleConfirmUpload} disabled={summaryLoading}>
               확인
             </Button>
-            <Button variant="outline" onClick={closeSummary}>
+            <Button variant="outline" onClick={() => setSummaryOpen(false)}>
               취소
             </Button>
           </ModalButtons>

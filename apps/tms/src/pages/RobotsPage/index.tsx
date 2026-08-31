@@ -7,7 +7,7 @@ import { Dropdown } from '@repo/ui'
 import { Title } from '@repo/ui'
 import { StyledPageContent } from '@repo/ui'
 import RobotList from '@/pages/components/robot/RobotList'
-import { toRobotInfo } from '@/pages/components/robot/toRobotInfo'
+import { makeBuildingInfo, toRobotInfo } from '@/pages/components/robot/toRobotInfo'
 import { useEffect, useMemo, useState } from 'react'
 import { useDeviceList } from '@/api/deviceApis'
 import { useOrgFilter } from '@/pages/hooks/useOrgFilter'
@@ -18,12 +18,11 @@ import { SimpleRobotInfo } from '@/types/taskflow'
 import { useDeployTaskFlowAction } from '@/api/taskFlowApis'
 import { useInstantAction } from '@/api/deviceControlApis'
 import { useOrganizationStore, useUserStore } from '@repo/stores'
-import {
-  AI_TASKFLOW_CANVAS_COMMAND_EVENT,
-  AI_TASKFLOW_CANVAS_RESULT_EVENT
-} from '@repo/constants'
+import { AI_TASKFLOW_CANVAS_COMMAND_EVENT, AI_TASKFLOW_CANVAS_RESULT_EVENT } from '@repo/constants'
 import { RULE_KEY } from '@repo/constants'
 import { buildAiTaskflowReplyText } from '@/utils/aiTaskflowCommand'
+import { toast } from 'react-toastify'
+import { useSite } from '@/api/siteApi'
 
 const taskFlowOptions = [{ value: 'all', name: 'all' }]
 
@@ -52,6 +51,9 @@ const RobotsPage = () => {
   const [searchQuery, setSearchQuery] = useState('')
   const { onOrgChanged, deviceParams, matchesOrgFilter } = useOrgFilter()
   const { data: devicesData, error: devicesError, isLoading: devicesLoading } = useDeviceList(deviceParams)
+  const { data: siteInfo } = useSite(selectedOrgs[1])
+
+  const buildingInfo = useMemo(() => makeBuildingInfo(siteInfo?.buildings), [siteInfo])
 
   const robotList: RobotInfo[] = useMemo(() => {
     const targetRobots = devicesData?.content ?? []
@@ -67,7 +69,7 @@ const RobotsPage = () => {
       })
 
       return {
-        ...toRobotInfo(device),
+        ...toRobotInfo(device, buildingInfo),
         installedTaskFlowCount: taskFlowState?.taskFlows?.length ?? 0,
         runningTaskFlowId,
         runningTaskFlowName: runningTaskFlow?.name,
@@ -104,7 +106,7 @@ const RobotsPage = () => {
 
       return (a.name ?? '').localeCompare(b.name ?? '', 'ko')
     })
-  }, [devicesData, firstFilter, secondFilter, matchesOrgFilter])
+  }, [devicesData, firstFilter, secondFilter, matchesOrgFilter, buildingInfo])
 
   const onSearchQueryChaged = (e: any) => {
     setSearchQuery(e.target.value)
@@ -124,24 +126,28 @@ const RobotsPage = () => {
       const command = custom?.detail?.command
       if (!command || typeof command !== 'object') return
 
-      const type = String(command?.type ?? '').trim().toLowerCase()
+      const type = String(command?.type ?? '')
+        .trim()
+        .toLowerCase()
       console.info('[AI_TASKFLOW][RAW_EVENT_RECEIVED]', {
         page: 'RobotsPage',
         type,
         command
       })
-      if (![
-        RULE_KEY.TASKFLOW_DEPLOY,
-        RULE_KEY.TASKFLOW_RUN,
-        RULE_KEY.TASKFLOW_PAUSE,
-        RULE_KEY.TASKFLOW_RESUME,
-        RULE_KEY.TASKFLOW_STOP,
-        'deploy-taskflow',
-        'run-taskflow',
-        'pause-taskflow',
-        'resume-taskflow',
-        'stop-taskflow'
-      ].includes(type)) {
+      if (
+        ![
+          RULE_KEY.TASKFLOW_DEPLOY,
+          RULE_KEY.TASKFLOW_RUN,
+          RULE_KEY.TASKFLOW_PAUSE,
+          RULE_KEY.TASKFLOW_RESUME,
+          RULE_KEY.TASKFLOW_STOP,
+          'deploy-taskflow',
+          'run-taskflow',
+          'pause-taskflow',
+          'resume-taskflow',
+          'stop-taskflow'
+        ].includes(type)
+      ) {
         console.warn('[AI_TASKFLOW][UNSUPPORTED_COMMAND_TYPE]', {
           page: 'RobotsPage',
           type
@@ -199,7 +205,13 @@ const RobotsPage = () => {
         )
       }
 
-      if (!robotId || !Number.isFinite(taskFlowId) || taskFlowId <= 0 || (!resolvedGroupId && (type === RULE_KEY.TASKFLOW_DEPLOY || type === 'deploy-taskflow')) || (!resolvedSiteId && (type === RULE_KEY.TASKFLOW_DEPLOY || type === 'deploy-taskflow'))) {
+      if (
+        !robotId ||
+        !Number.isFinite(taskFlowId) ||
+        taskFlowId <= 0 ||
+        (!resolvedGroupId && (type === RULE_KEY.TASKFLOW_DEPLOY || type === 'deploy-taskflow')) ||
+        (!resolvedSiteId && (type === RULE_KEY.TASKFLOW_DEPLOY || type === 'deploy-taskflow'))
+      ) {
         console.warn('[AI_TASKFLOW][COMMAND_BLOCKED_BY_GUARD]', {
           page: 'RobotsPage',
           type,
@@ -237,8 +249,15 @@ const RobotsPage = () => {
 
           const deployResult = await deployTaskFlowActionAsync(deployPayload)
           console.info('[AI_TASKFLOW][DEPLOY_API_RESULT]', { type, robotId, taskFlowId, result: deployResult })
-          const finalDeployReply = buildAiTaskflowReplyText(custom?.detail?.replyText || `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 배포를 요청했습니다.`, robotId, taskFlowId)
-          dispatchResult(true, finalDeployReply || `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 배포를 요청했습니다.`)
+          const finalDeployReply = buildAiTaskflowReplyText(
+            custom?.detail?.replyText || `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 배포를 요청했습니다.`,
+            robotId,
+            taskFlowId
+          )
+          dispatchResult(
+            true,
+            finalDeployReply || `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 배포를 요청했습니다.`
+          )
           return
         }
 
@@ -263,12 +282,14 @@ const RobotsPage = () => {
           deviceId: robotId,
           body: {
             userId,
-            actions: [{
-              actionType: instantActionTypeMap[type] ?? 'start',
-              actionId: crypto.randomUUID(),
-              blockingType: 'HARD',
-              actionParameters: [{ key: 'tms_id', value: String(taskFlowId) }]
-            }]
+            actions: [
+              {
+                actionType: instantActionTypeMap[type] ?? 'start',
+                actionId: crypto.randomUUID(),
+                blockingType: 'HARD',
+                actionParameters: [{ key: 'tms_id', value: String(taskFlowId) }]
+              }
+            ]
           }
         }
 
@@ -294,7 +315,13 @@ const RobotsPage = () => {
           'stop-taskflow': `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 정지를 요청했습니다.`
         }
 
-        const finalReplyText = buildAiTaskflowReplyText(custom?.detail?.replyText || defaultReplyMap[type] || `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 제어를 요청했습니다.`, robotId, taskFlowId)
+        const finalReplyText = buildAiTaskflowReplyText(
+          custom?.detail?.replyText ||
+            defaultReplyMap[type] ||
+            `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 제어를 요청했습니다.`,
+          robotId,
+          taskFlowId
+        )
         dispatchResult(true, finalReplyText || `${robotId} 로봇에서 ${taskFlowId} 태스크플로우 제어를 요청했습니다.`)
       } catch (error) {
         console.error('[AI_TASKFLOW][COMMAND_RUN_FAILED]', error)

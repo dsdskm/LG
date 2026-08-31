@@ -68,24 +68,49 @@ const RowWrap = styled.div`
   align-items: center;
 `
 
-// GKR 버튼 옆 위치 인식(positionInitialized) 상태 배지
-const PositionStatusBadge = styled.span`
+// GKR / TOFU / ZeroGain 상태 배지 (state.information[].infoReferences[] 기반)
+const STATUS_BADGE_COLORS = {
+  ok: { color: '#16a34a', bg: '#dcfce7' },
+  error: { color: '#dc2626', bg: '#fee2e2' },
+  progress: { color: '#2563eb', bg: '#dbeafe' },
+  warn: { color: '#d97706', bg: '#fef3c7' },
+  off: { color: '#475569', bg: '#e2e8f0' },
+  unknown: { color: '#6b7280', bg: '#f1f5f9' }
+}
+
+const StatusBadge = styled.span`
   flex-shrink: 0;
   padding: 2px 8px;
   border-radius: 9999px;
   font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
-  color: ${({ $variant }) => ($variant === 'ok' ? '#16a34a' : $variant === 'error' ? '#dc2626' : '#6b7280')};
-  background-color: ${({ $variant }) => ($variant === 'ok' ? '#dcfce7' : $variant === 'error' ? '#fee2e2' : '#f1f5f9')};
+  color: ${({ $variant }) => (STATUS_BADGE_COLORS[$variant] ?? STATUS_BADGE_COLORS.unknown).color};
+  background-color: ${({ $variant }) => (STATUS_BADGE_COLORS[$variant] ?? STATUS_BADGE_COLORS.unknown).bg};
 `
 
-// positionInitialized: true(인식됨) / false(인식 안됨) / undefined(필드 없음, 구버전 로봇)
-const getPositionStatus = (positionInitialized) => {
-  if (positionInitialized === true) return { variant: 'ok', labelKey: 'positionInitOk' }
-  if (positionInitialized === false) return { variant: 'error', labelKey: 'positionInitFail' }
-  return { variant: 'unknown', labelKey: 'positionInitUnknown' }
+const NO_DATA_STATUS = { variant: 'unknown', labelKey: 'stateNoData' }
+
+// referenceValue: NOT_STARTED / RUNNING / SUCCESS / FAILED / STALE / UNKNOWN
+const GKR_STATE_MAP = {
+  NOT_STARTED: { variant: 'warn', labelKey: 'gkrNotStarted' },
+  RUNNING: { variant: 'progress', labelKey: 'gkrRunning' },
+  SUCCESS: { variant: 'ok', labelKey: 'gkrSuccess' },
+  FAILED: { variant: 'error', labelKey: 'gkrFailed' },
+  STALE: { variant: 'warn', labelKey: 'stateStale' },
+  UNKNOWN: NO_DATA_STATUS
 }
+
+// referenceValue: ON / OFF / STALE / UNKNOWN (TOFU_STATE, ZEROGAIN_STATE 공용)
+const ON_OFF_STATE_MAP = {
+  ON: { variant: 'ok', labelKey: 'stateOn' },
+  OFF: { variant: 'off', labelKey: 'stateOff' },
+  STALE: { variant: 'warn', labelKey: 'stateStale' },
+  UNKNOWN: NO_DATA_STATUS
+}
+
+// referenceKey 자체가 없으면(구버전 로봇 등) NO_DATA_STATUS
+const getStatusBadge = (map, value) => (value && map[value]) || NO_DATA_STATUS
 
 // 모션 목록: 한 줄에 [번호. 라벨] + [옵션 버튼들]
 const MotionGrid = styled.div`
@@ -312,7 +337,9 @@ const MOTIONS = [
  * @param {Function} props.onManualMove - 수동 이동 명령 전송 (direction: 'forward'|'backward', distance: number(m))
  * @param {Function} props.onMotion - 모션 명령 전송 ({ actionType, blockingType, actionParameters }, 표시명)
  * @param {Function} props.onMoveLocation - 장소 이동 모달 오픈
- * @param {boolean|undefined} props.positionInitialized - state.position.positionInitialized (없으면 undefined)
+ * @param {string|undefined} props.gkrState - state.information[].infoReferences[GKR_STATE] (없으면 undefined)
+ * @param {string|undefined} props.tofuState - state.information[].infoReferences[TOFU_STATE] (없으면 undefined)
+ * @param {string|undefined} props.zeroGainState - state.information[].infoReferences[ZEROGAIN_STATE] (없으면 undefined)
  */
 const RobotControlPanel = ({
   t,
@@ -327,11 +354,15 @@ const RobotControlPanel = ({
   onManualMove,
   onMotion,
   onMoveLocation,
-  positionInitialized
+  gkrState,
+  tofuState,
+  zeroGainState
 }) => {
   const [rotateDir, setRotateDir] = useState('ccw') // cw: 시계, ccw: 반시계 (기본: 반시계방향)
   const [moveDir, setMoveDir] = useState('forward') // forward: 전진, backward: 후진 (기본: 전진)
-  const positionStatus = getPositionStatus(positionInitialized)
+  const gkrStatus = getStatusBadge(GKR_STATE_MAP, gkrState)
+  const tofuStatus = getStatusBadge(ON_OFF_STATE_MAP, tofuState)
+  const zeroGainStatus = getStatusBadge(ON_OFF_STATE_MAP, zeroGainState)
 
   // 모션 버튼 클릭 → params(object)를 actionParameters(key/value 배열)로 변환해 전송
   const handleMotionClick = (m, o) => {
@@ -372,7 +403,7 @@ const RobotControlPanel = ({
             <ControlBtn onClick={() => onAction('gkr')} disabled={!isOnline}>
               <Gkr className="w-[14px] h-[14px]" />
               {t('gkr')}
-              <PositionStatusBadge $variant={positionStatus.variant}>{t(positionStatus.labelKey)}</PositionStatusBadge>
+              <StatusBadge $variant={gkrStatus.variant}>{t(gkrStatus.labelKey)}</StatusBadge>
             </ControlBtn>
           </ControlDiv>
         </ExpandableSection>
@@ -402,12 +433,17 @@ const RobotControlPanel = ({
         </ExpandableSection>
       </div>
 
-      {/* 특수 모드 — 자유 구동 / 제로 게인 (현재 상태값을 알 수 없어 모션과 동일하게 상태 표시 없는 버튼으로 구성) */}
+      {/* 특수 모드 — 자유 구동 / 제로 게인 (TOFU_STATE / ZEROGAIN_STATE 상태 배지 표시) */}
       <div className="ctrlHeaderPlain">
         <ExpandableSection iconPosition="left" header={<span>{t('specialMode')}</span>}>
           <MotionGrid>
             <MotionRow>
-              <MotionTitle>{t('freeRunMode')}</MotionTitle>
+              <MotionTitle>
+                {t('freeRunMode')}
+                <StatusBadge $variant={tofuStatus.variant} style={{ marginLeft: 6 }}>
+                  {t(tofuStatus.labelKey)}
+                </StatusBadge>
+              </MotionTitle>
               <MotionButtonsWrap>
                 <MiniBtn $lg disabled={!isOnline} onClick={() => onAction('freeRunOn')}>
                   {t('turnOn')}
@@ -418,7 +454,12 @@ const RobotControlPanel = ({
               </MotionButtonsWrap>
             </MotionRow>
             <MotionRow>
-              <MotionTitle>{t('zeroGainMode')}</MotionTitle>
+              <MotionTitle>
+                {t('zeroGainMode')}
+                <StatusBadge $variant={zeroGainStatus.variant} style={{ marginLeft: 6 }}>
+                  {t(zeroGainStatus.labelKey)}
+                </StatusBadge>
+              </MotionTitle>
               <MotionButtonsWrap>
                 <MiniBtn $lg disabled={!isOnline} onClick={() => onAction('zeroGainOn')}>
                   {t('turnOn')}

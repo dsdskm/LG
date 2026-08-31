@@ -402,6 +402,7 @@
   "robotDetail": {
     "control": {
       "start": "실행",
+      "proceed": "계속",
       "pause": "일시정지",
       "resume": "리줌",
       "stop": "정지",

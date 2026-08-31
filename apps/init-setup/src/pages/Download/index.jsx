@@ -5,8 +5,7 @@ import useRobotSetupStatus from '@/hooks/useRobotSetupStatus'
 import { completeSetup } from '@/utils/setupProgress'
 import DownloadTable from './downloadTable'
 
-import { retrieveSiteScope } from '@/apis/dmApis'
-import { list as listSites } from '@/apis/siteApis'
+import { list as listSites, retrieveSiteScope } from '@/apis/siteApis'
 import {
   list as listBuildings,
   create as createBuildings,
@@ -20,6 +19,7 @@ import {
   update as updateFloors
 } from '@/apis/floorApis'
 import { list as listAreas, create as createAreas, remove as removeAreas, update as updateAreas } from '@/apis/areaApis'
+import { useUserStore } from '@repo/stores'
 
 const Download = () => {
   const navigate = useNavigate()
@@ -175,13 +175,10 @@ const Download = () => {
             Object.assign(localArea, updatedArea)
           }
         }
-
         console.log('----------area end----------')
       }
-
       console.log('----------floor end----------')
     }
-
     console.log('----------building end----------')
 
     //server에는 없는데, 로봇 DB에만 있는 항목은 삭제해야하므로, 삭제해야할 DB id(pk) 리스트를 확정한다.
@@ -253,9 +250,9 @@ const Download = () => {
     console.log('siteBuildings in active site', siteBuildings)
     console.log('siteFloors in active site', siteFloors)
     console.log('siteAreas in active site', siteAreas)
-
-    const res = await retrieveSiteScope(activeSite.extId)
-    setScope(res)
+    const session = useUserStore.getState().session
+    const res = await retrieveSiteScope({ siteId: activeSite.extId, authorization: session?.accessToken })
+    setScope(res?.data)
     setActiveSite(activeSite)
   }
 

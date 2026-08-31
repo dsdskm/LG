@@ -1,4 +1,4 @@
-import { AI_TASKFLOW_CANVAS_COMMAND_EVENT, TASKFLOW_CANVAS_RULE_ROUTE_KEY } from '@repo/constants'
+import { AI_TASKFLOW_CANVAS_COMMAND_EVENT, RULE_KEY, TASKFLOW_CANVAS_RULE_ROUTE_KEY } from '@repo/constants'
 
 export const ruleKey = 'node-reset'
 
@@ -17,7 +17,7 @@ export async function executeNodeReset(context = {}) {
     window.dispatchEvent(
       new CustomEvent(AI_TASKFLOW_CANVAS_COMMAND_EVENT, {
         detail: {
-          command: { type: 'reset-to-final' },
+          command: { type: RULE_KEY.NODE_RESET },
           replyText: replyText
         }
       })

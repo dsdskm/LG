@@ -3,6 +3,14 @@ import { axiosApi, axiosHealthApi, createCrud } from './crudFactory'
 // 맵 리소스 CRUD (init-setup-be: /api/v1/maps)
 export const { create, list, getById, update, remove } = createCrud('maps')
 
+export const uploadMap = async (body) => {
+  return await axiosApi.post('/maps/upload', body)
+}
+
+export const uploadPoi = async (body) => {
+  return await axiosApi.post('/map-pois/upload-mapserver', body)
+}
+
 /**
  * 매핑(SLAM) 제어 API.
  *

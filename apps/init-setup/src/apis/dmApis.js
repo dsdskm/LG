@@ -21,14 +21,30 @@ const retrieveSiteScope = async (siteId, params) => {
  * 반환/에러 형태는 @repo/apis 의 login 과 같게 맞춘다(useLogin 이 그대로 쓴다):
  * - 성공: 클라우드 로그인 본문(accessToken/refreshToken/userId) + userInfo
  * - 실패: error.response.data.errorCode 를 담은 Error (useLogin 이 메시지 키로 변환)
+ *
+ * userInfo 는 BE 가 로그인 응답에 직접 붙여 준다(services/cloudAuth.service.js) — userRole 조회도
+ * 같은 네트워크 제약을 받는 클라우드 호출이라 BE 가 한 번에 처리한다. 그래서 FE 에는 이에 대응하는
+ * 별도 조회 함수가 없고, useLogin 이 응답의 userInfo 를 그대로 쓴다.
  */
 const loginViaRobot = async (userEmail, userPassword) => {
-  const res = await fetch(`${API_BASE}/api/auth/login`, {
+  return await requestViaRobot('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    cache: 'no-store',
     body: JSON.stringify({ userEmail, userPassword })
   })
+}
+
+/**
+ * 로봇 BE 대행 라우트 공용 fetch.
+ *
+ * axios(@repo/apis client)를 쓰지 않는 이유: 그 클라이언트는 세션 accessToken 을 주입하고
+ * 401 에서 전역 토큰 갱신/로그아웃 인터셉터를 돌리는데, 로그인 시점에는 세션이 비어 있어
+ * 오히려 방해가 된다. 대신 반환/에러 형태만 @repo/apis 와 같게 맞춘다:
+ * - 성공: 클라우드 응답 본문 그대로(BE 가 봉투로 감싸지 않고 verbatim 전달한다)
+ * - 실패: error.response.data 에 클라우드 에러 본문 (useLogin 이 errorCode 를 메시지 키로 변환)
+ */
+const requestViaRobot = async (path, init) => {
+  const res = await fetch(`${API_BASE}${path}`, { cache: 'no-store', ...init })
 
   const text = await res.text()
   let body = {}
@@ -43,7 +59,7 @@ const loginViaRobot = async (userEmail, userPassword) => {
 
   if (!res.ok) {
     // useLogin 의 catch 가 error.response.data.errorCode 를 읽는다 — axios 에러 형태로 맞춘다.
-    const message = body?.error?.message || body?.message || res.statusText || '로그인 실패'
+    const message = body?.error?.message || body?.message || res.statusText || 'Request failed'
     const error = new Error(`${message} (${res.status})`)
     error.response = { status: res.status, data: body }
     throw error

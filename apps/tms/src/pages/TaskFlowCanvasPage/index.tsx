@@ -32,7 +32,8 @@ import {
   AI_TASKFLOW_CANVAS_DRAFT_EVENT,
   AI_TASKFLOW_CANVAS_RESULT_EVENT,
   AI_TASKFLOW_REFRESH_CONTENTS_EVENT,
-  RULE_KEY
+  RULE_KEY,
+  TASKFLOW_CANVAS_COMMAND_TYPE
 } from '@repo/constants'
 import { useOrganizationStore, useUserStore } from '@repo/stores'
 import { Checkbox } from '@repo/ui'
@@ -2399,18 +2400,18 @@ export default function TaskFlowCanvasPage() {
 
       // 저장 방식이 하나로 통합되어, 예전 temp-save 커맨드도 같은 저장으로 처리한다.
       if (
-        type === 'save' ||
-        type === 'save-final' ||
+        type === TASKFLOW_CANVAS_COMMAND_TYPE.SAVE ||
+        type === RULE_KEY.NODE_SAVE_FINAL ||
         type === 'temp-save' ||
-        type === 'save-temp' ||
+        type === RULE_KEY.NODE_SAVE_TEMP ||
         type === 'tempsave'
       ) {
-        const result = await saveFromCommand(type === 'save' || type === 'save-final')
+        const result = await saveFromCommand(type === TASKFLOW_CANVAS_COMMAND_TYPE.SAVE || type === RULE_KEY.NODE_SAVE_FINAL)
         dispatchResult(result.success, result.message || replyText)
         return
       }
 
-      if (type === 'refresh-contents') {
+      if (type === RULE_KEY.NODE_CONTENTS_REFRESH) {
         const detail: {
           handled: boolean
           complete: (result: { success: boolean; message?: string }) => void
@@ -2433,7 +2434,7 @@ export default function TaskFlowCanvasPage() {
         return
       }
 
-      if (type === 'remove-nodes-by-name') {
+      if (type === RULE_KEY.NODE_DELETE) {
         const names = Array.isArray(command?.names)
           ? command.names.map((name: unknown) => String(name ?? '').trim()).filter(Boolean)
           : []
@@ -2461,7 +2462,7 @@ export default function TaskFlowCanvasPage() {
         return
       }
 
-      if (type === 'set-flow-mode') {
+      if (type === TASKFLOW_CANVAS_COMMAND_TYPE.SET_FLOW_MODE) {
         const modeRaw = String(command?.mode ?? '')
           .trim()
           .toLowerCase()
@@ -2471,7 +2472,7 @@ export default function TaskFlowCanvasPage() {
         return
       }
 
-      if (type === 'undo') {
+      if (type === RULE_KEY.NODE_UNDO) {
         if (!canUndo) {
           dispatchResult(false, t('canvas.commandErrors.undoUnavailable'))
           return
@@ -2481,7 +2482,7 @@ export default function TaskFlowCanvasPage() {
         return
       }
 
-      if (type === 'redo') {
+      if (type === RULE_KEY.NODE_REDO) {
         if (!canRedo) {
           dispatchResult(false, t('canvas.commandErrors.redoUnavailable'))
           return
@@ -2491,7 +2492,7 @@ export default function TaskFlowCanvasPage() {
         return
       }
 
-      if (type === 'reset-to-final') {
+      if (type === RULE_KEY.NODE_RESET) {
         if (!canResetToFinal) {
           dispatchResult(false, t('canvas.commandErrors.finalUnavailable'))
           return
@@ -2501,13 +2502,13 @@ export default function TaskFlowCanvasPage() {
         return
       }
 
-      if (type === 'clear-all' || type === 'reset-all') {
+      if (type === RULE_KEY.NODE_CLEAR_ALL || type === 'reset-all') {
         clearAllNodesExceptStart()
         dispatchResult(true)
         return
       }
 
-      if (type === 'align') {
+      if (type === TASKFLOW_CANVAS_COMMAND_TYPE.ALIGN) {
         const direction = String(command?.direction ?? '').trim().toLowerCase()
         alignSelectedNodesAuto(direction === 'vertical' || direction === '세로' ? 'vertical' : 'horizontal')
         dispatchResult(true)

@@ -12,6 +12,8 @@ import SkillIndicator from '../SkillIndicator'
 //   | { type: 'groupHeader'; key: string; groupName: string; siteName: string }
 //   | { type: 'robot'; key: string; robot: RobotInfo }
 
+const SEP = '\u00B7'
+
 type RobotItemProps = {
   robot: RobotInfo
   checked: boolean
@@ -202,6 +204,10 @@ const RobotItem = ({
                 alignItems: 'center',
                 gap: '8px',
                 fontSize: '14px',
+                // 전역 reset 이 body 에 line-height: 1 을 주고 GlobalStyle 이 * 로 상속시킨다.
+                // 아래 텍스트들은 ellipsis 때문에 overflow: hidden 이라, 줄 높이가 글자 크기와 같으면
+                // 폰트의 descent(g·y·받침)가 박스를 넘어 잘린다. 그래서 여기서 줄 높이를 넓혀 준다.
+                lineHeight: 1.5,
                 color: '#4b5563'
               }}
             >
@@ -209,28 +215,30 @@ const RobotItem = ({
                 style={{ display: 'flex', flexWrap: 'wrap', flexDirection: 'row', alignItems: 'center', gap: '10px' }}
               >
                 <div style={{ display: 'flex', flexDirection: 'row', minWidth: 0, flex: '0 1 auto' }}>
-                  <span style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>{t('common:group')}:</span>
-                  <span
-                    style={{ color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                  >
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {robot.group?.length > 0 ? robot.group : t('deploy.robot.unassigned')}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'row', minWidth: 0, flex: '0 1 auto' }}>
-                  <span style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>{t('common:site')}:</span>
-                  <span
-                    style={{ color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                  >
+                    {SEP}
                     {robot.site?.length > 0 ? robot.site : t('deploy.robot.unassigned')}
                   </span>
                 </div>
+
+                {robot.buildingName && (
+                  <>
+                    <Div />
+                    <div style={{ display: 'flex', flexDirection: 'row', minWidth: 0, flex: '0 1 auto' }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {robot.buildingName}
+                        {SEP}
+                        {robot.floorName}
+                      </span>
+                    </div>
+                  </>
+                )}
+
+                <Div />
                 <div style={{ display: 'flex', flexDirection: 'row', minWidth: 0, flex: '0 1 auto' }}>
-                  <span style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>로봇ID:</span>
-                  <span
-                    style={{ color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                  >
-                    {robot.id}
-                  </span>
+                  <span style={{ color: '#9ca3af', flexShrink: 0, whiteSpace: 'nowrap' }}>로봇ID:</span>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{robot.id}</span>
                 </div>
 
                 {displaySpec && missingSkills.length > 0 && (

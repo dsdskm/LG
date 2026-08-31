@@ -1,4 +1,4 @@
-import { AI_TASKFLOW_CANVAS_COMMAND_EVENT, TASKFLOW_CANVAS_RULE_ROUTE_KEY } from '@repo/constants'
+import { AI_TASKFLOW_CANVAS_COMMAND_EVENT, RULE_KEY, TASKFLOW_CANVAS_RULE_ROUTE_KEY } from '@repo/constants'
 
 export const ruleKey = 'node-delete'
 
@@ -21,7 +21,7 @@ export async function executeNodeDelete(context = {}) {
       new CustomEvent(AI_TASKFLOW_CANVAS_COMMAND_EVENT, {
         detail: {
           command: {
-            type: 'remove-nodes-by-name',
+            type: RULE_KEY.NODE_DELETE,
             names: [nodeName],
             notFoundText: fallbackText
           },

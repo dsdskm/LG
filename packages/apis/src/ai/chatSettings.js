@@ -164,6 +164,14 @@ export async function listPrompts({ appKey, screenKey, instruction, type } = {})
   return json
 }
 
+export async function listChatPromptTypes() {
+  const response = await fetch(`${BASE_URL}/chat/settings/prompts/types`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  return response.json()
+}
+
 export async function createChatPrompt(payload) {
   const response = await fetch(`${BASE_URL}/chat/settings/prompts`, {
     method: 'POST',

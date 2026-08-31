@@ -65,7 +65,7 @@ import {
   StyledAiStopButton
 } from './styles'
 import { postSiteAssistantChat } from '@repo/apis/ai/chat.js'
-import { ruleCheck } from '@repo/ai/rules/tms/chat-rule-matcher.js'
+import { ruleCheck } from '@repo/ai/rules/chat-rule-matcher.js'
 
 const ENABLE_QUICK_COMMANDS = true
 const ENABLE_MESSAGE_SUGGESTED_ACTIONS = false

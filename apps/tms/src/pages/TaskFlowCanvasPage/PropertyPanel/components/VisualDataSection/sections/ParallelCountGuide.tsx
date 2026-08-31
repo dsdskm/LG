@@ -10,6 +10,7 @@ type ParallelCountPropertyKey = 'success_count' | 'failure_count'
 type ParallelCountGuideProps = {
   selectedData: SelectedData | null
   propertyKey: ParallelCountPropertyKey
+  readOnly: boolean
 }
 
 type CountGuide = {
@@ -21,8 +22,8 @@ function isParallelNode(selectedData: SelectedData): boolean {
   const taskType = String(selectedData.taskType ?? '').toUpperCase()
   const taskName = String(
     selectedData.taskName ??
-      selectedData.label ??
-      ''
+    selectedData.label ??
+    ''
   )
     .trim()
     .toLowerCase()
@@ -32,7 +33,8 @@ function isParallelNode(selectedData: SelectedData): boolean {
 
 export default function ParallelCountGuide({
   selectedData,
-  propertyKey
+  propertyKey,
+  readOnly
 }: ParallelCountGuideProps) {
   const { t } = useTranslation('tms')
 
@@ -181,7 +183,7 @@ export default function ParallelCountGuide({
     t
   ])
 
-  if (!guide) {
+  if (!guide || (readOnly && guide.isError)) {
     return null
   }
 

@@ -93,6 +93,22 @@ const normalizeImageAttachMode = (value) => {
     return 'auto'
 }
 
+const BodyLengthMeter = ({ value, maxChars = 700 }) => {
+    const text = typeof value === 'string' ? value : ''
+    const length = text.length
+    const limit = Number(maxChars ?? 700)
+    const isOverLimit = length > limit
+
+    return (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
+            <span style={{ fontSize: '12px', color: '#64748b' }}>본문 길이</span>
+            <strong style={{ fontSize: '12px', color: isOverLimit ? '#dc2626' : '#334155' }}>
+                현재 {length} / 제한 {limit}자
+            </strong>
+        </div>
+    )
+}
+
 const IMAGE_ATTACH_MODE_OPTIONS = [
     { key: 'auto', label: '자동' },
     { key: 'always', label: '항상 표시' },
@@ -431,6 +447,8 @@ export const AppScreenSettingsTab = ({
     onGoToCommonTab,
 }) => {
     const filteredGroups = filterScreenGroupsByRoute(screenGroups, activeRouteKey)
+    const maxCharsPerChunk = Number(values?.ragContextMaxCharsPerChunk ?? 700)
+    const maxChunksPerApp = Number(values?.ragContextTopK ?? 5)
 
     console.info('[chat-settings][screen-group-render]', {
         activeRouteKey,
@@ -730,6 +748,7 @@ const ScreenSettingGroup = ({
                                         onDeleteRag={onDeleteRag}
                                         initialIntentType="info"
                                         fixedIntentType="info"
+                                        values={values}
                                     />
                                 </div>
                             ) : null}
@@ -753,6 +772,7 @@ const ScreenSettingGroup = ({
                                         initialIntentType="info"
                                         fixedIntentType="info"
                                         readOnly
+                                        values={values}
                                     />
                                 </div>
                             ) : null}
@@ -1655,6 +1675,7 @@ const ScreenRagList = ({
     initialIntentType = 'info',
     fixedIntentType = '',
     readOnly = false,
+    values,
 }) => {
     const sortedRagDocs = useMemo(() => {
         return [...ragDocs].sort((left, right) => {
@@ -1722,6 +1743,10 @@ const ScreenRagList = ({
         }).length
     }, [sortedRagDocs])
 
+    const maxChunksPerApp = Number(values?.ragContextTopK ?? 5)
+    const maxCharsPerChunk = Number(values?.ragContextMaxCharsPerChunk ?? 700)
+    const hasReachedMaxChunks = filteredRagDocs.length >= Math.max(1, maxChunksPerApp)
+
     useEffect(() => {
         if (filteredRagDocs.length === 0) {
             if (activeRagKey) setActiveRagKey('')
@@ -1758,6 +1783,10 @@ const ScreenRagList = ({
         : null
 
     const handleCreateRag = async () => {
+        if (hasReachedMaxChunks) {
+            return
+        }
+
         const ok = await onCreateRag({
             appKey,
             key: routeKey,
@@ -1786,10 +1815,10 @@ const ScreenRagList = ({
                     <PrimaryButton
                         type="button"
                         onClick={() => setCreatingOpen(true)}
-                        disabled={savingCreateRag}
+                        disabled={savingCreateRag || hasReachedMaxChunks}
                         style={{ height: '36px' }}
                     >
-                        {savingCreateRag ? '저장 중...' : '+ RAG 추가'}
+                        {savingCreateRag ? '저장 중...' : hasReachedMaxChunks ? `${Math.max(1, maxChunksPerApp)}개 초과 불가` : '+ RAG 추가'}
                     </PrimaryButton>
                 ) : null}
             </SectionTitleRow>
@@ -1799,6 +1828,7 @@ const ScreenRagList = ({
                     ? `${getRagIntentLabel(normalizedFixedIntentType)}에서 사용하는 RAG만 표시합니다.`
                     : 'info 인텐트와 action 인텐트에서 참조할 RAG를 분리해서 관리합니다.'}
                 {readOnly ? ' 앱 화면에서는 조회만 가능하고, 편집은 공통 탭에서 합니다.' : ''}
+                {!readOnly && hasReachedMaxChunks ? ` 현재 ${filteredRagDocs.length}개로 최대 ${Math.max(1, maxChunksPerApp)}개를 초과할 수 없습니다.` : ''}
             </PageDescription>
 
             {!isIntentFixed ? (
@@ -2005,7 +2035,14 @@ const ScreenRagList = ({
                                 onChange={(e) => onRagChange(activeRagKey, 'body', e.target.value)}
                                 style={{ minHeight: '180px' }}
                             />
-                            <FieldHint>한 청크는 한 주제만 다루는 것이 좋습니다.</FieldHint>
+                            <BodyLengthMeter value={activeRagDraft.body} maxChars={maxCharsPerChunk} />
+                            {String(activeRagDraft.body ?? '').length > maxCharsPerChunk ? (
+                                <FieldHint style={{ color: '#dc2626' }}>
+                                    본문이 설정된 최대 {maxCharsPerChunk}자를 초과했습니다. 저장할 수 없습니다.
+                                </FieldHint>
+                            ) : (
+                                <FieldHint>한 청크는 한 주제만 다루는 것이 좋습니다.</FieldHint>
+                            )}
 
                             <FieldLabel>imageUrl</FieldLabel>
                             <input
@@ -2036,7 +2073,7 @@ const ScreenRagList = ({
                                 <PrimaryButton
                                     type="button"
                                     onClick={() => onSaveRag(activeRagDoc)}
-                                    disabled={savingRagKey === activeRagKey}
+                                    disabled={savingRagKey === activeRagKey || String(activeRagDraft.body ?? '').length > maxCharsPerChunk}
                                 >
                                     {savingRagKey === activeRagKey ? '저장 중...' : '저장'}
                                 </PrimaryButton>
@@ -2107,6 +2144,12 @@ const ScreenRagList = ({
                                 onChange={(e) => setNewRagDraft((prev) => ({ ...prev, body: e.target.value }))}
                                 style={{ minHeight: '180px' }}
                             />
+                            <BodyLengthMeter value={newRagDraft.body} maxChars={maxCharsPerChunk} />
+                            {String(newRagDraft.body ?? '').length > maxCharsPerChunk ? (
+                                <FieldHint style={{ color: '#dc2626' }}>
+                                    본문이 설정된 최대 {maxCharsPerChunk}자를 초과했습니다. 추가할 수 없습니다.
+                                </FieldHint>
+                            ) : null}
 
                             <FieldLabel>imageUrl</FieldLabel>
                             <input
@@ -2130,8 +2173,13 @@ const ScreenRagList = ({
 
                         <ModalActions style={{ gap: '10px' }}>
                             <SecondaryTextButton type="button" onClick={() => setCreatingOpen(false)} style={MODAL_BUTTON_STYLE}>취소</SecondaryTextButton>
-                            <PrimaryButton type="button" onClick={handleCreateRag} disabled={savingCreateRag} style={MODAL_BUTTON_STYLE}>
-                                {savingCreateRag ? '저장 중...' : '저장'}
+                            <PrimaryButton
+                                type="button"
+                                onClick={handleCreateRag}
+                                disabled={savingCreateRag || hasReachedMaxChunks || String(newRagDraft.body ?? '').length > maxCharsPerChunk}
+                                style={MODAL_BUTTON_STYLE}
+                            >
+                                {savingCreateRag ? '저장 중...' : hasReachedMaxChunks ? `최대 ${Math.max(1, maxChunksPerApp)}개 초과 불가` : '저장'}
                             </PrimaryButton>
                         </ModalActions>
                     </ModalCard>

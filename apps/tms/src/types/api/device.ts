@@ -58,6 +58,24 @@ interface State {
   sWmodulesUpdatedAt?: null
   stateCreatedAt: '2026-05-21T00:37:54.343Z'
   stateUpdatedAt: '2026-05-21T00:37:54.343Z'
+  position?: Position
+  sitePosition?: SitePosition
+}
+
+interface Position {
+  x: number
+  y: number
+  mapId: string
+  theta: number
+  localizationScore: number
+  positionInitialized: boolean
+}
+
+interface SitePosition {
+  areaId: string
+  siteId: string
+  floorId: string
+  buildingId: string
 }
 
 interface TaskFlowState {

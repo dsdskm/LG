@@ -3,6 +3,7 @@ import styled from 'styled-components'
 
 import { PageDescription, PrimaryButton } from '../styles'
 import { DatabaseRecordEditorModal } from '../components/DatabaseRecordEditorModal'
+import { listChatPromptTypes } from '@repo/apis/ai/chatSettings'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50]
 
@@ -56,6 +57,7 @@ const TABLE_CONFIG = {
         columns: [
             { key: 'id', label: 'ID', width: '72px' },
             { key: 'appKey', label: '앱', width: '110px' },
+            { key: 'chunkKey', label: 'Chunk Key', width: '180px' },
             { key: 'title', label: '제목', width: '180px' },
             { key: 'body', label: '본문', width: 'minmax(320px, 1fr)' },
             { key: 'intentType', label: '인텐트', width: '110px' },
@@ -81,6 +83,7 @@ const TABLE_CONFIG = {
 const getValue = (item, key) => {
     if (key === 'appKey') return item?.appKey ?? item?.app_key ?? ''
     if (key === 'screenKey') return item?.screenKey ?? item?.screen_key ?? item?.key ?? ''
+    if (key === 'chunkKey') return item?.chunkKey ?? item?.chunk_key ?? ''
     if (key === 'ruleKey') return item?.ruleKey ?? item?.rule_key ?? ''
     if (key === 'patternRegex') return item?.patternRegex ?? item?.pattern_regex ?? ''
     if (key === 'intentType') return item?.intentType ?? item?.intent_type ?? ''
@@ -109,7 +112,14 @@ const uniqueOptions = (items, getter) =>
         a.localeCompare(b)
     )
 
-export const DatabaseTableSettingsTab = ({ kind, items, screens, onChanged }) => {
+export const DatabaseTableSettingsTab = ({
+    kind,
+    items,
+    screens,
+    onChanged,
+    maxCharsPerChunk = 700,
+    maxChunksPerApp = 3,
+}) => {
     const config = TABLE_CONFIG[kind] ?? TABLE_CONFIG.guidance
     const rows = Array.isArray(items) ? items : []
     const [search, setSearch] = useState('')
@@ -121,8 +131,29 @@ export const DatabaseTableSettingsTab = ({ kind, items, screens, onChanged }) =>
     const [pageSize, setPageSize] = useState(20)
     const [selectedItem, setSelectedItem] = useState(null)
     const [editorOpen, setEditorOpen] = useState(false)
+    const [promptTypes, setPromptTypes] = useState([])
+
+    useEffect(() => {
+        if (kind !== 'prompt') return
+        listChatPromptTypes()
+            .then((response) => setPromptTypes(Array.isArray(response?.data?.items) ? response.data.items : []))
+            .catch(() => setPromptTypes([]))
+    }, [kind])
 
     const appOptions = useMemo(() => uniqueOptions(rows, (item) => getValue(item, 'appKey')), [rows])
+    const appRagCounts = useMemo(() => {
+        if (kind !== 'rag') return {}
+        return rows.reduce((acc, item) => {
+            const appKey = String(getValue(item, 'appKey') ?? '').trim()
+            if (!appKey) return acc
+            const intentType = String(getValue(item, 'intentType') ?? '').trim().toLowerCase()
+            const entry = acc[appKey] ?? { info: 0, action: 0 }
+            if (intentType === 'info' || intentType === 'both') entry.info += 1
+            if (intentType === 'action' || intentType === 'both') entry.action += 1
+            acc[appKey] = entry
+            return acc
+        }, {})
+    }, [kind, rows])
     const screenOptions = useMemo(
         () =>
             uniqueOptions(
@@ -253,8 +284,12 @@ export const DatabaseTableSettingsTab = ({ kind, items, screens, onChanged }) =>
                     kind={kind}
                     item={selectedItem}
                     screens={screens}
+                    promptTypes={promptTypes}
                     onClose={() => setEditorOpen(false)}
                     onChanged={onChanged}
+                    maxCharsPerChunk={maxCharsPerChunk}
+                    maxChunksPerApp={maxChunksPerApp}
+                    appRagCountMap={appRagCounts}
                 />
             ) : null}
         </TableSection>
