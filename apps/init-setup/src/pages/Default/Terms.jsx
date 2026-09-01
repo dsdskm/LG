@@ -24,7 +24,7 @@ import {
   WizardButtonWrap,
   ErrorText
 } from './styles'
-import { advanceSetupProgress, SETUP_STEPS } from '@/utils/setupProgress'
+import { completeInitialSetup } from '@/utils/setupProgress'
 
 const TERMS = [
   { id: 'service', title: '(필수) 서비스 이용 약관' },
@@ -62,12 +62,13 @@ const Terms = () => {
     setBusy(true)
     setErr('')
     try {
-      // 약관 동의는 초기 설정(1~6단계)의 마지막이지 셋업 전체의 끝이 아니다.
-      // 그래서 status 는 'draft' 로 두고 작업 중인 단계만 맵 스캔으로 옮긴다 — 'completed' 로 올리면
-      // routes.jsx getSetupProgress 가 잠금을 전부 풀어서 맵 스캔/시맨틱을 건너뛰고 업로드가 열린다.
-      // (전역 완료는 마지막 단계인 업로드에서만 기록한다 — utils/setupProgress.completeSetup)
-      await advanceSetupProgress(SETUP_STEPS.MAP_SCAN)
-      navigate('/map/scan', { replace: true })
+      // 약관 동의가 초기 설정(1~6단계)의 마지막이다 — status 를 'completed' 로 올려 헤더에서
+      // 초기 설정 탭이 사라지게 하고(App.jsx setupCompleted), 작업 단계는 맵 스캔으로 옮긴다.
+      // 같은 값이 단계 순서 잠금도 풀기 때문에 이후에는 맵 스캔·시맨틱을 건너뛰고 업로드로도
+      // 들어갈 수 있다(routes.jsx getSetupProgress).
+      await completeInitialSetup()
+      // '/map' 은 화면이 없는 부모 경로라 맵 설정 첫 화면으로 리다이렉트된다(router/routes.jsx mapIndex).
+      navigate('/map', { replace: true })
       window.location.reload()
     } catch (error) {
       setErr(`초기 설정 완료 처리 실패: ${error.message}`)

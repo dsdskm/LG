@@ -14,8 +14,8 @@ export const NETWORK_SETUP_PATH = '/network'
  *
  * 게이트를 걸지 않는 경우:
  * - unknown: Wi-Fi 상태를 못 읽은 것(유선 연결·개발 환경 포함) — 갇히는 쪽이 더 위험하다.
- * - 셋업 완료(status 'completed'): 설치가 끝난 로봇은 초기 설정 그룹이 라우트에서 제거되므로
- *   보낼 /network 자체가 없다.
+ * - 셋업 완료(status 'completed'): 설치가 끝난 로봇을 Wi-Fi 화면에 가둘 이유가 없다.
+ *   (/network 라우트 자체는 설치 단계 밖이라 완료 후에도 남아 있다 — 헤더 Wi-Fi 아이콘으로 들어간다)
  * - 사용자가 명시적으로 우회(utils/networkStatus 의 bypass) 한 경우.
  *
  * @returns {{ loading: boolean, state: 'online'|'offline'|'unknown', blocked: boolean }}

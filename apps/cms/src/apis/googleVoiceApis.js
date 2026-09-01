@@ -2,6 +2,7 @@ import { client } from '@repo/apis'
 import { ENDPOINTS } from './constants'
 
 const axiosCms = client(import.meta.env.VITE_API_BASE_URL)
+const axiosTTS = client(import.meta.env.VITE_API_BASE_URL, 30000)
 
 const getGoogleVoices = async (params) => {
   try {
@@ -15,7 +16,7 @@ const getGoogleVoices = async (params) => {
 
 const synthesizeTts = async (data) => {
   try {
-    const response = await axiosCms.post(`${ENDPOINTS.GOOGLE_VOICE}/synthesize`, data)
+    const response = await axiosTTS.post(`${ENDPOINTS.GOOGLE_VOICE}/synthesize`, data)
     return response
   } catch (error) {
     console.error('Failed to synthesize tts:', error)

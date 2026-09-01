@@ -35,6 +35,50 @@ const loginViaRobot = async (userEmail, userPassword) => {
 }
 
 /**
+ * 세션(accessToken) 유효성 확인. 로그인과 같은 이유로 로봇 BE 를 경유한다.
+ *
+ * BE 는 만료된 토큰에도 200 { valid: false } 로 답한다(init-setup-be routes/auth.routes.js) —
+ * 401 로 오면 공용 axios 인터셉터가 먼저 강제 로그아웃을 돌려 화면 쪽에서 '갱신 → 실패 시 안내'
+ * 순서를 제어할 수 없다.
+ *
+ * @param {string} userId
+ * @param {string} accessToken
+ * @returns {Promise<{ valid: boolean, userInfo: object|null, cloudStatus: number }>}
+ */
+const validateSessionViaRobot = async (userId, accessToken) => {
+  return await requestViaRobot(`/api/auth/session?userId=${encodeURIComponent(userId)}`, {
+    method: 'GET',
+    headers: { authorization: `Bearer ${accessToken}` }
+  })
+}
+
+/**
+ * refreshToken 으로 accessToken 재발급. 로그인과 같은 이유로 로봇 BE 를 경유한다.
+ *
+ * 성공: 클라우드 응답 본문(accessToken/refreshToken)
+ * 실패: 클라우드 상태/본문을 담은 Error (error.response.status/data)
+ *
+ * 만료된 accessToken 도 Authorization 헤더로 함께 보낸다 — 클라우드 갱신 API 가 이를 요구한다
+ * (@repo/apis 의 client.js 인터셉터도 같은 엔드포인트에 Bearer 를 붙인다). BE 는 이 헤더를 읽어
+ * 클라우드 요청에 그대로 전달한다(init-setup-be routes/auth.routes.js).
+ *
+ * @param {string} userId
+ * @param {string} refreshToken
+ * @param {string} [accessToken] 만료된 accessToken (있으면 Authorization 으로 전달)
+ * @returns {Promise<{ accessToken: string, refreshToken?: string }>}
+ */
+const refreshSessionViaRobot = async (userId, refreshToken, accessToken) => {
+  return await requestViaRobot('/api/auth/token/refresh', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {})
+    },
+    body: JSON.stringify({ userId, refreshToken })
+  })
+}
+
+/**
  * 로봇 BE 대행 라우트 공용 fetch.
  *
  * axios(@repo/apis client)를 쓰지 않는 이유: 그 클라이언트는 세션 accessToken 을 주입하고
@@ -68,4 +112,4 @@ const requestViaRobot = async (path, init) => {
   return body
 }
 
-export { retrieveSiteScope, loginViaRobot }
+export { retrieveSiteScope, loginViaRobot, validateSessionViaRobot, refreshSessionViaRobot }

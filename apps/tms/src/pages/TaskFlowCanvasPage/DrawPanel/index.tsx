@@ -696,9 +696,12 @@ function InnerCanvas() {
             panOnDrag={[0, 1]} // 0=좌클릭, 1=휠(가운데) 버튼
             // Ctrl / ⌘ 는 선택 추가·제외 키
             multiSelectionKeyCode={['Control', 'Meta']}
-            // 스크롤: 기본은 배경 이동, Ctrl 누르고 스크롤하면 확대/축소
-            panOnScroll
-            zoomOnScroll={false}
+            // 스크롤/핀치 = 확대·축소. (화면 이동은 위 panOnDrag 로 좌클릭 드래그가 담당한다)
+            //
+            // panOnScroll 을 켜면 xyflow 내부에서 스크롤이 '이동'으로 배정되고
+            // (isPanOnScroll = panOnScroll && !zoomActivationKeyPressed && !userSelectionActive)
+            // 확대·축소는 ctrlKey 가 실린 핀치 제스처만 남는다.
+            // 맥북 트랙패드의 두 손가락 스크롤 확대가 동작하지 않았던 이유라 켜지 않는다.
             zoomOnDoubleClick={false}
             style={{ width: '100%', height: '100%' }}
             nodes={nodes}

@@ -11,22 +11,23 @@ import { resetRobotSetupCache } from '@/hooks/useRobotSetupStatus'
  * 필드 의미는 router/routes.jsx 가 정한다.
  * - currentStep: '지금 작업 중인 단계' (SETUP_STEP_ROUTES 의 1-based 위치).
  *   getSetupLandingPath 가 착지 화면을, getSetupProgress 가 여기까지의 열림 범위를 계산한다.
- * - status: 'draft' = 셋업 진행 중 / 'completed' = 마지막 단계(업로드)까지 끝난 전역 완료.
- *   completed 는 순서 잠금을 모두 풀고 초기 설정 메뉴를 감추므로 업로드 완료에서만 올린다.
+ * - status: 'draft' = 셋업 진행 중 / 'completed' = 초기 설정(언어~약관)을 끝낸 상태.
+ *   App.jsx 가 이 값으로 초기 설정 그룹을 헤더 탭·사이드바·라우트에서 감추고,
+ *   getSetupProgress 는 단계 순서 잠금을 모두 푼다.
  *
  * 단계 번호는 routes.jsx 의 SETUP_STEP_ROUTES 순서와 같다. routes.jsx 를 import 해서 계산하면
  * routes → pages → 이 모듈 → routes 로 순환 참조가 되므로 상수로 둔다.
  */
+// 네트워크(Wi-Fi) 설정은 설치 단계에서 빠졌다(routes.jsx SETUP_GROUP.NETWORK) — 번호가 한 칸씩 당겨진다.
 export const SETUP_STEPS = {
   LANGUAGE: 1,
-  NETWORK: 2,
-  SITE_CODE: 3,
-  LOCATION: 4,
-  ROBOT_INFO: 5,
-  TERMS: 6,
-  MAP_SCAN: 7,
-  MAP_SEMANTIC: 8,
-  UPLOAD: 9
+  SITE_CODE: 2,
+  LOCATION: 3,
+  ROBOT_INFO: 4,
+  TERMS: 5,
+  MAP_SCAN: 6,
+  MAP_SEMANTIC: 7,
+  UPLOAD: 8
 }
 
 /** 최신 robotSetup 1건 (없으면 null). 캐시(useRobotSetupStatus)가 아니라 항상 서버 값을 읽는다. */
@@ -80,7 +81,19 @@ export const tryAdvanceSetupProgress = async (currentStep) => {
 }
 
 /**
- * 셋업 전역 완료 처리 (마지막 단계인 업로드에서만 호출한다).
- * 이후 순서 잠금이 모두 풀리고 초기 설정 메뉴가 사라진다 — 재매핑도 이 상태를 되돌리지 않는다.
+ * 초기 설정(언어~약관) 완료 처리 — 약관 동의의 '완료' 에서 호출한다.
+ *
+ * status 를 'completed' 로 올리는 것이 헤더에서 초기 설정 탭을 감추는 값이다(App.jsx setupCompleted:
+ * headerRoutes / visibleAppRoutes 가 SETUP_GROUP.INITIAL 을 제거한다). 작업 중인 단계는 다음 단계인
+ * 맵 스캔으로 옮긴다.
+ *
+ * 이 상태는 단계 순서 잠금도 함께 푼다(routes.jsx getSetupProgress) — 초기 설정을 마친 뒤에는
+ * 맵 스캔·시맨틱을 거치지 않고 업로드 화면으로 바로 들어갈 수 있다.
+ */
+export const completeInitialSetup = () => upsertLatest({ status: 'completed', currentStep: SETUP_STEPS.MAP_SCAN })
+
+/**
+ * 셋업 전역 완료 처리 (마지막 단계인 업로드에서 호출한다).
+ * 초기 설정 완료로 이미 'completed' 이므로 여기서는 작업 단계를 마지막(업로드)으로 확정하는 의미다.
  */
 export const completeSetup = () => upsertLatest({ status: 'completed', currentStep: SETUP_STEPS.UPLOAD })

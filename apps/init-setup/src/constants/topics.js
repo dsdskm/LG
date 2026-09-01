@@ -36,6 +36,12 @@ export const SCAN_TOPICS = ['/lidar_points']
 // 매핑/측위 진행 상태 (std_msgs/String)
 export const STATUS_TOPICS = ['/lio_node/status']
 
+// 비상정지 버튼(하드웨어 키) 상태 (power_on_micom_msgs/EmergencyKeyStatus, uint8 emergency_key).
+// power-on-micom 이 CAN 0x700 을 받을 때마다(약 1Hz) 발행한다 — 0=Released, 1=Detected(눌림).
+// 소프트 E-Stop 명령 채널인 /e_stop(std_msgs/Bool)과는 다른 토픽이다: 그쪽은 앱이 걸는 명령이고
+// 이쪽이 사람이 누른 물리 버튼의 실제 상태다. 판정은 @/utils/emergencyKey 가 한다.
+export const EMERGENCY_TOPICS = ['/emergency_key_status']
+
 // 주행(Nav2) 진행 상태 (std_msgs/String, JSON: { cruise, goto_status }).
 // corepath 의 nav_action_command_handler 가 액션 goal/feedback/result 를 추적해 재발행한다 —
 // 이동 명령은 gRPC(navApis)로 보내고 진행 상태는 이 토픽으로만 받는다(gRPC 상태 조회 금지 규칙).
@@ -66,6 +72,7 @@ export const SPATIAL_TOPICS = [
 // cdrParser.js가 해석할 수 있는 스키마. 그 외에는 JSON으로 취급한다.
 const CDR_SCHEMAS = new Set([
   'geometry_msgs/msg/PolygonStamped',
+  'power_on_micom_msgs/msg/EmergencyKeyStatus',
   'nav_msgs/msg/OccupancyGrid',
   'nav_msgs/msg/Odometry',
   'nav_msgs/msg/Path',

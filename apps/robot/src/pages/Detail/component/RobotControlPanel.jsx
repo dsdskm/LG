@@ -11,8 +11,7 @@ import {
   PauseCircle,
   BatteryCharging,
   Navigation,
-  RotateCcw,
-  Gkr
+  RotateCcw
 } from '@/assets/icon'
 
 // 섹션 헤더 배경을 연한 색(파란색 아님)으로 통일하고, hover 밑줄 제거
@@ -400,11 +399,6 @@ const RobotControlPanel = ({
               <RotateCcw className="w-[14px] h-[14px]" />
               {t('reboot')}
             </ControlBtn>
-            <ControlBtn onClick={() => onAction('gkr')} disabled={!isOnline}>
-              <Gkr className="w-[14px] h-[14px]" />
-              {t('gkr')}
-              <StatusBadge $variant={gkrStatus.variant}>{t(gkrStatus.labelKey)}</StatusBadge>
-            </ControlBtn>
           </ControlDiv>
         </ExpandableSection>
       </div>
@@ -437,6 +431,19 @@ const RobotControlPanel = ({
       <div className="ctrlHeaderPlain">
         <ExpandableSection iconPosition="left" header={<span>{t('specialMode')}</span>}>
           <MotionGrid>
+            <MotionRow>
+              <MotionTitle>
+                {t('gkr')}
+                <StatusBadge $variant={gkrStatus.variant} style={{ marginLeft: 6 }}>
+                  {t(gkrStatus.labelKey)}
+                </StatusBadge>
+              </MotionTitle>
+              <MotionButtonsWrap>
+                <MiniBtn $lg disabled={!isOnline || !showMap} onClick={() => onAction('gkr')}>
+                  {t('gkrRun')}
+                </MiniBtn>
+              </MotionButtonsWrap>
+            </MotionRow>
             <MotionRow>
               <MotionTitle>
                 {t('freeRunMode')}

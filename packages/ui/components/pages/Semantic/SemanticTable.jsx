@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, Suspense } from 'react'
 import { Button, Modal } from '@repo/ui'
-import { ButtonWrapper } from './styles'
+import { ButtonWrapper, RowCommands } from './styles'
 
-import { TableCard } from '@repo/ui'
+import { TableCard, Icon } from '@repo/ui'
 import { useTranslation } from 'react-i18next'
 
 const SemanticTable = ({
@@ -18,7 +18,12 @@ const SemanticTable = ({
   onCreate,
   onNameClick,
   onPoiDeleted,
-  onPoiRestore
+  onPoiRestore,
+  // 이동 명령은 앱이 갖고 있으므로 주입받는다 — 없으면 이동 버튼을 노출하지 않는다.
+  onPoiGoto = null,
+  gotoDisabled = false,
+  // 문구는 앱이 자기 i18n 으로 넘길 수 있게 열어 두고, 없으면 이 컴포넌트의 번역을 쓴다.
+  gotoLabel = ''
 }) => {
   const [isDeleteMode, setIsDeleteMode] = useState(false)
   const [toggleCleared, setToggleCleared] = useState(false)
@@ -31,45 +36,86 @@ const SemanticTable = ({
 
   const columns = [
     {
-      name: 'ver',
-      cell: (row) => poiVersion,
-      sortable: 'true'
+      name: t('columns.inUse'),
+      cell: (row) => {
+        if (row?.editStatus?.inUsed) {
+          return (
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '3.2rem',
+                height: '3.2rem',
+                borderRadius: '50%',
+                background: '#f0f9ff',
+                border: `1px solid #e0f2fe`
+              }}
+            >
+              <Icon name={'check'} size={18} color={'#0284c7'} />
+            </span>
+          )
+        } else {
+          return null
+        }
+      },
+      grow: 0.2
     },
     {
-      name: 'name',
+      name: t('columns.id'),
+      cell: (row) => (row.poiId ? String(row.poiId).slice(0, 5) + '***' : ''),
+      sortable: 'true',
+      grow: 0.2
+    },
+    {
+      name: t('columns.name'),
       cell: (row) => (
         <Button theme="link" onClick={() => onNameClick(row)}>
           {row.name.default}
         </Button>
       ),
-      sortable: 'true'
+      sortable: 'true',
+      grow: 1.5
     },
     {
-      name: 'type',
+      name: t('columns.type'),
       selector: (row) => row.type,
       cell: (row) => row.type,
-      sortable: 'true'
+      sortable: 'true',
+      grow: 0.2
     },
     {
-      name: 'pos',
-      cell: (row) => `[ ${row.pose?.position.x}, ${row.pose?.position.y}, ${row.pose?.position.z} ]`
-    },
-    {
-      name: 'state',
+      name: t('columns.position'),
       cell: (row) =>
-        row.editStatus ? JSON.stringify(Object.keys(row.editStatus).filter((e) => row.editStatus[e])) : null
+        `[ ${row.pose?.position.x.toFixed(2)}, ${row.pose?.position.y.toFixed(2)}, ${row.pose?.position.z.toFixed(2)} ]`
     },
+
     {
-      name: 'command',
-      cell: (row) =>
-        row.editStatus?.softDelete && (
-          <>
+      name: t('columns.command'),
+      cell: (row) => (
+        <RowCommands>
+          {row.editStatus?.softDelete ? (
             <Button size="sm" color="primary" onClick={() => onPoiRestore(row)}>
-              삭제 취소
+              {t('restore')}
             </Button>
-          </>
-        )
+          ) : (
+            // 삭제 예정 POI 는 이동 대상이 아니므로 이동 버튼을 내리고 삭제 취소만 남긴다.
+            onPoiGoto && (
+              <Button size="sm" disabled={gotoDisabled} onClick={() => onPoiGoto(row)}>
+                {gotoLabel || t('goto')}
+              </Button>
+            )
+          )}
+        </RowCommands>
+      ),
+      grow: 0.5
     }
+    //  for debug
+    // {
+    //   name: 'debug',
+    //   cell: (row) =>
+    //     row.editStatus ? JSON.stringify(Object.keys(row.editStatus).filter((e) => row.editStatus[e])) : null
+    // }
   ]
 
   const handleDelete = () => {
@@ -115,24 +161,24 @@ const SemanticTable = ({
           ) : (
             <>
               <Button theme="delete" disabled={actionsDisabled} onClick={() => setIsDeleteModalOpen(true)}>
-                선택 삭제
+                {tCommon('removeSelected')}
               </Button>
-              <Button disabled={actionsDisabled} onClick={handleDeleteCancel}>
-                취소
+              <Button theme="tertiary" disabled={actionsDisabled} onClick={handleDeleteCancel}>
+                {tCommon('cancel')}
               </Button>
             </>
           )}
 
           {!isDeleteMode && (
             <Button disabled={actionsDisabled} onClick={onCreate}>
-              생성
+              {t('create')}
             </Button>
           )}
         </ButtonWrapper>
       )}
-      <Suspense fallback={<div>Loading...</div>}>
+      <Suspense fallback={<div>{t('loading')}</div>}>
         <div style={{ margin: '16px 0', fontSize: '14px', fontWeight: 'bold' }}>
-          {tCommon('count')} : {data.length}
+          {tCommon('count')} : {operationMode === 'IN-USE' ? data.length : workingData.length}
         </div>
 
         <TableCard
@@ -150,7 +196,7 @@ const SemanticTable = ({
       </Suspense>
       <Modal
         isOpen={isDeleteModalOpen}
-        title={t('delete', '삭제')}
+        title={t('delete')}
         onClose={() => setIsDeleteModalOpen(false)}
         size="md"
         renderButtonComponent={
@@ -158,17 +204,14 @@ const SemanticTable = ({
             <Button theme="delete" onClick={handleConfirmDelete}>
               {tCommon('confirm')}
             </Button>
-            <Button onClick={() => setIsDeleteModalOpen(false)}>{tCommon('cancel')}</Button>
+            <Button theme="tertiary" onClick={() => setIsDeleteModalOpen(false)}>
+              {tCommon('cancel')}
+            </Button>
           </ButtonWrapper>
         }
       >
         <div style={{ padding: '1rem 0' }}>
-          <p>
-            {t('confirmDeleteContents', {
-              count: selectedRows.length,
-              defaultValue: '선택한 콘텐츠를 삭제하시겠습니까?'
-            })}
-          </p>
+          <p>{t('confirmDeleteContents', { count: selectedRows.length })}</p>
         </div>
       </Modal>
     </>

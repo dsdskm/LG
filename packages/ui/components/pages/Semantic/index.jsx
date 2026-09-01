@@ -1,10 +1,11 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
-import { Section, Button, Dropdown } from '@repo/ui'
-import { CommandBar, CommandButtons, CommandRow, CommandFilters, DetailPanel, SemanticWorkspace } from './styles'
+import { useState, useEffect, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
+import { Section, Button, Dropdown, Modal } from '@repo/ui'
+import { CommandBar, CommandButtons, CommandRow, CommandFilters, DetailModalBody, SemanticWorkspace } from './styles'
 import SemanticTable from './SemanticTable'
 import SemanticDetail from './SemanticDetail'
 
-const SEMANTIC_TYPES = ['POI', 'ETC']
+const SEMANTIC_TYPES = ['POI']
 const OPERATION_TYPES = ['IN-USE', 'WORKING']
 
 /**
@@ -21,8 +22,26 @@ const OPERATION_TYPES = ['IN-USE', 'WORKING']
  * @param {object|null} [robotPose] 로봇 현재 위치 { x, y, yaw(rad) } — 지도와 같은 프레임.
  *   POI 상세의 '현재 위치로 설정' 버튼이 쓴다. 텔레메트리는 앱이 들고 있으므로 주입받는다.
  * @param {string} [noData] POI 가 하나도 없을 때 목록 자리에 보여줄 문구(앱의 i18n 문자열).
+ * @param {Function} [onPoiGoto] 목록의 이동 버튼 — (poi) => void. 이동 명령은 앱이 갖고 있으므로
+ *   주입받고, 없으면 이동 버튼을 아예 노출하지 않는다(이동을 지원하지 않는 앱).
+ * @param {boolean} [gotoDisabled] 이동 버튼을 잠글지 — 이미 주행 중이거나 요청 중일 때 앱이 켠다.
+ * @param {string} [gotoLabel] 이동 버튼 문구(앱의 i18n 문자열). 없으면 semantic 번역의 goto 를 쓴다.
  */
-const SemanticPage = ({ poiVersion, poiList, onSave, onCancel, mapSlot, robotPose = null, noData = '' }) => {
+const SemanticPage = ({
+  poiVersion,
+  poiList,
+  onSave,
+  onCancel,
+  mapSlot,
+  robotPose = null,
+  noData = '',
+  onPoiGoto = null,
+  gotoDisabled = false,
+  gotoLabel = ''
+}) => {
+  const { t } = useTranslation('semantic')
+  const { t: tCommon } = useTranslation('common')
+
   const [loading, setLoading] = useState(false)
   const [mode, setMode] = useState('MODE_LIST')
   const [selectedRow, setSeletedRow] = useState(null)
@@ -46,13 +65,6 @@ const SemanticPage = ({ poiVersion, poiList, onSave, onCancel, mapSlot, robotPos
     setWorkingPois([...working, ...copies])
     setLoading(true)
   }, [poiList])
-
-  // 상세가 지도/목록 아래에 열리므로 화면 밖에 있을 수 있다 — 열릴 때 폼이 보이는 곳까지 스크롤한다.
-  const detailRef = useRef(null)
-  useEffect(() => {
-    if (mode === 'MODE_LIST') return
-    detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-  }, [mode, selectedRow])
 
   // 목록(SemanticTable)에 지금 보이는 POI — 지도도 같은 목록을 그린다.
   // IN-USE 는 저장된 POI, WORKING 은 작업본(미저장 생성/수정/삭제 예정 포함)이다.
@@ -152,14 +164,14 @@ const SemanticPage = ({ poiVersion, poiList, onSave, onCancel, mapSlot, robotPos
             <CommandRow>
               <CommandFilters>
                 <Dropdown
-                  label="type"
+                  label={t('filterType')}
                   size="md"
                   value={semanticType}
                   options={SEMANTIC_TYPES.map((tp) => ({ name: tp, value: tp }))}
                   onChange={setSemanticType}
                 />
                 <Dropdown
-                  label="operation"
+                  label={t('filterOperation')}
                   size="md"
                   value={operationMode}
                   options={OPERATION_TYPES.map((op) => ({ name: op, value: op }))}
@@ -169,10 +181,10 @@ const SemanticPage = ({ poiVersion, poiList, onSave, onCancel, mapSlot, robotPos
               {operationMode === 'WORKING' && (
                 <CommandButtons>
                   <Button disabled={mode === 'MODE_DETAIL'} size="md" onClick={handleSave}>
-                    임시 저장
+                    {t('tempSave')}
                   </Button>
-                  <Button disabled={mode === 'MODE_DETAIL'} size="md" onClick={handleCancel}>
-                    취소
+                  <Button theme="tertiary" disabled={mode === 'MODE_DETAIL'} size="md" onClick={handleCancel}>
+                    {tCommon('cancel')}
                   </Button>
                 </CommandButtons>
               )}
@@ -197,16 +209,23 @@ const SemanticPage = ({ poiVersion, poiList, onSave, onCancel, mapSlot, robotPos
               onPoiDeleted={handlePoiDeleted} // delete
               onPoiRestore={handlePoiRestore} // restore
               onPoiCancel={handlePoiCancel}
+              onPoiGoto={onPoiGoto} // goto — 실제 이동 명령은 앱이 갖는다
+              gotoDisabled={gotoDisabled}
+              gotoLabel={gotoLabel}
             ></SemanticTable>
           </Section>
         </SemanticWorkspace>
 
-        {/* 상세/생성 폼 — 지도·목록 아래에 펼친다.
+        {/* 상세/생성 폼 — 모달로 띄운다. 아래에 펼치면 지도·목록 높이만큼 밀려 폼이 화면 밖에서
+            열렸다(스크롤해야 보였다).
+            모달 헤더는 두지 않는다(title/closeButton 없음) — 제목과 취소/닫기 버튼을 이미
+            SemanticDetail 이 갖고 있어 X 를 두면 닫는 길이 둘로 갈린다.
+            onClose 는 남겨 둔다 — 공용 Modal 이 배경 클릭 닫기를 연결하면 그때 쓰인다.
             key 로 편집 대상이 바뀔 때 다시 마운트한다 — SemanticDetail 은 마운트 시점에만
             row 를 폼으로 옮기므로(useEffect deps []), 목록이 살아 있는 지금은 다른 POI 를
             눌러도 폼이 그대로 남는다. */}
-        {mode !== 'MODE_LIST' && (
-          <DetailPanel ref={detailRef}>
+        <Modal isOpen={mode !== 'MODE_LIST'} size="lg" onClose={handlePoiCancel}>
+          <DetailModalBody>
             <SemanticDetail
               key={selectedRow?.poiId ?? 'new'}
               row={selectedRow}
@@ -216,8 +235,8 @@ const SemanticPage = ({ poiVersion, poiList, onSave, onCancel, mapSlot, robotPos
               onPoiEdited={handleEdited}
               onPoiCancel={handlePoiCancel}
             ></SemanticDetail>
-          </DetailPanel>
-        )}
+          </DetailModalBody>
+        </Modal>
       </>
     )
   )

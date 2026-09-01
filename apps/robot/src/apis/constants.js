@@ -8,6 +8,7 @@ export const ENDPOINTS = {
     GROUPS: `${API_CONFIG.PREFIX_ROBOT}/groups`,
     MAPS: `${API_CONFIG.PREFIX_ROBOT}/maps`,
     SITES: `${API_CONFIG.PREFIX_ROBOT}/sites`,
+    LOCATIONS: `${API_CONFIG.PREFIX_ROBOT}/locations`,
     BUILDINGS: `${API_CONFIG.PREFIX_ROBOT}/buildings`,
     FLOORS: `${API_CONFIG.PREFIX_ROBOT}/floors`,
     AREAS: `${API_CONFIG.PREFIX_ROBOT}/areas`,
@@ -25,4 +26,4 @@ export const ENDPOINTS = {
   }
 }
 
-export const GETSIZE = '100'
+export const GETSIZE = '300'

@@ -72,26 +72,18 @@ const App = () => {
   // admin 탭은 SYSTEM_MANAGER 이상만 본다. 세션이 바뀌면 탭도 따라가야 하므로 store 를 구독한다.
   const userLevel = useUserStore((state) => state.session?.userLevel)
   const canUseAdmin = (Number(userLevel) || 0) >= USER_ROLE_LEVEL.SYSTEM_MANAGER
-  const hasSession = useUserStore((state) => Boolean(state.session?.accessToken))
 
   // 설치 단계 순서 강제. currentStep 까지는 열려 있고(이미 끝낸 단계로 되돌아가기 허용)
   // 그 뒤 단계는 초기 설정 · 맵 설정 안에서도 모두 잠긴다.
   // 잠긴 경로는 탭 클릭 / 사이드바 클릭 / URL 직접 진입 모두 SetupOrderModal 로 막는다.
   // VITE_ENFORCE_SETUP_ORDER=false 면 순서 강제를 끈다. 값이 없으면 강제(안전한 기본값).
   const enforceSetupOrder = import.meta.env.VITE_ENFORCE_SETUP_ORDER !== 'false'
-  const { pendingStep, lockedPaths: stepLockedPaths } = useMemo(
+  // 네트워크(Wi-Fi) 설정은 설치 단계 목록에서 빠져 있어(routes.jsx SETUP_GROUP.NETWORK) 여기서
+  // 따로 잠금을 풀어 줄 필요가 없다 — 헤더 · 로그인 화면의 Wi-Fi 아이콘으로 언제든 들어갈 수 있다.
+  const { pendingStep, lockedPaths } = useMemo(
     () => getSetupProgress(setup, { completed: setupCompleted, enforce: enforceSetupOrder }),
     [setup, setupCompleted, enforceSetupOrder]
   )
-  // 네트워크 설정은 로그인 전에 반드시 지나가야 하므로 세션이 없으면 단계 순서로 잠그지 않는다.
-  // (offline 판정만으로 열면, Wi-Fi 연결에 성공한 순간 서 있던 /network 가 SetupOrderModal 로 바뀐다)
-  const unlockNetworkPath = networkBlocked || !hasSession
-  const lockedPaths = useMemo(() => {
-    if (!unlockNetworkPath || !stepLockedPaths.has(NETWORK_SETUP_PATH)) return stepLockedPaths
-    const next = new Set(stepLockedPaths)
-    next.delete(NETWORK_SETUP_PATH)
-    return next
-  }, [stepLockedPaths, unlockNetworkPath])
   const gate = useMemo(
     () =>
       pendingStep ? { pendingPath: pendingStep.path, pendingLabel: appT(`SideBar.gnb.${pendingStep.name}`) } : null,

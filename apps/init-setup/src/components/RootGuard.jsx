@@ -4,6 +4,7 @@ import { useUserStore } from '@repo/stores'
 import { getUserInfo } from '@repo/apis'
 import useNetworkGate, { NETWORK_SETUP_PATH } from '@/hooks/useNetworkGate'
 import { LOG_TAG } from '@/utils/networkStatus'
+import { ensureSession, clearSessionForLogin, SESSION_STATE } from '@/utils/session'
 
 // 세션 검증 후 착지할 경로. App 이 robotSetup.currentStep 으로 계산해 내려준다
 // (초기 설정이 끝난 로봇은 '초기 설정' 메뉴가 없어 맵 설정 첫 화면이 된다).
@@ -92,27 +93,17 @@ const RootGuard = ({ landingPath }) => {
           setIsValidating(false)
         }
       } else {
-        // Case 2: No query parameters
-        const session = useUserStore.getState().session
-        if (session?.accessToken && session?.userId) {
-          try {
-            const userInfo = await getUserInfo(session.userId, session.accessToken)
-            if (userInfo) {
-              navigate(resolvedLandingPath, { replace: true })
-            } else {
-              navigate('/login', { replace: true })
-            }
-          } catch (error) {
-            console.error('Validation failed for stored session:', error)
-            navigate('/login', { replace: true })
-          } finally {
-            setIsValidating(false)
-          }
+        // Case 2: No query parameters — 저장된 세션을 확인한다.
+        // 확인·갱신은 로봇 BE 를 경유한다(utils/session) — 브라우저가 로봇 AP 에 붙어 있으면
+        // 클라우드로 직접 갈 수 없다. 만료면 refreshToken 으로 갱신하고, 갱신까지 실패하면
+        // 세션을 비우고 '/login?sessionout=Y' 로 보내 기존 만료 안내 토스트를 띄운다.
+        const state = await ensureSession()
+        if (state === SESSION_STATE.EXPIRED) {
+          navigate(clearSessionForLogin(), { replace: true })
         } else {
-          // No stored session
-          navigate('/login', { replace: true })
-          setIsValidating(false)
+          navigate(resolvedLandingPath, { replace: true })
         }
+        setIsValidating(false)
       }
     }
 

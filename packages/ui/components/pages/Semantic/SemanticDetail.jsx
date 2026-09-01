@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Section, SectionTitle, Button, Input, Dropdown, IconButton, Icon } from '@repo/ui'
 import { generateUuid36 } from '@repo/utils'
-import { DetailHeader, DetailWrapper, FieldGrid, MetaText, PropertyRow } from './styles'
+import { ButtonWrapper, DetailHeader, DetailWrapper, FieldGrid, MetaText, PropertyRow } from './styles'
 
 const DEG2RAD = Math.PI / 180
 const RAD2DEG = 180 / Math.PI
@@ -13,12 +14,35 @@ const yawDegToQuaternion = (deg) => {
 }
 
 /**
+ * 로봇 현재 위치를 폼의 좌표 필드 모양으로 바꾼다 — { yawDeg, position, orientation }.
+ *
+ * yaw 는 rad 로 들어오므로 도(度)로 바꿔 넣고, orientation 은 다른 입력과 같은 경로로 yaw 에서
+ * 파생시킨다. z 는 TF 합성 결과에 없으므로(2D 주행) 값이 있을 때만 넣는다.
+ */
+const poseFieldsFrom = (robotPose) => {
+  const yawDeg = round6((Number(robotPose.yaw) || 0) * RAD2DEG)
+  return {
+    yawDeg,
+    position: {
+      x: round6(Number(robotPose.x) || 0),
+      y: round6(Number(robotPose.y) || 0),
+      ...(Number.isFinite(robotPose.z) ? { z: round6(robotPose.z) } : {})
+    },
+    orientation: yawDegToQuaternion(yawDeg)
+  }
+}
+
+/**
  * @param {object|null} [robotPose] 로봇 현재 위치 { x, y, yaw(rad), z? } — 지도와 같은 프레임이어야 한다.
  *   주입한 쪽이 프레임을 확인해서 넘긴다(init-setup 은 map 프레임일 때만 넘긴다).
- *   있으면 Position 에 '현재 위치로 설정' 버튼이 열린다.
+ *   있으면 Position 에 '현재 위치로 설정' 버튼이 열리고, 새 POI 는 이 좌표로 시작한다.
  */
 const SemanticDetail = ({ row, readOnly = false, robotPose = null, onPoiCreated, onPoiEdited, onPoiCancel }) => {
-  const POI_TYPES = ['GENERAL', 'ETC']
+  // POI 타입은 BE 에 저장되는 값이므로 번역하지 않는다(표시 문자열이 곧 저장 값이다).
+  const POI_TYPES = ['GENERAL', 'CHARGING']
+
+  const { t } = useTranslation('semantic')
+  const { t: tCommon } = useTranslation('common')
 
   const [loading, setLoading] = useState(false)
   const [workObj, setWorkObj] = useState(null)
@@ -70,25 +94,20 @@ const SemanticDetail = ({ row, readOnly = false, robotPose = null, onPoiCreated,
   /**
    * 로봇이 지금 서 있는 자리를 POI 좌표로 그대로 넣는다 — 로봇을 원하는 지점에 세워 두고
    * 이 버튼을 누르는 것이 좌표를 손으로 입력하는 것보다 정확하다.
-   *
-   * yaw 는 rad 로 들어오므로 도(度)로 바꿔 넣고, orientation 은 다른 입력과 같은 경로로
-   * yaw 에서 파생시킨다. z 는 TF 합성 결과에 없으므로(2D 주행) 값이 있을 때만 덮어쓴다.
+   * 새 POI 는 폼이 열릴 때 이미 이 좌표로 채워지므로(아래 마운트 effect), 이 버튼은
+   * 그 뒤에 로봇을 옮겼을 때 다시 가져오는 용도다.
    */
   const handleUseRobotPose = () => {
     if (!robotPose) return
-    const yawDeg = round6((Number(robotPose.yaw) || 0) * RAD2DEG)
+    const fields = poseFieldsFrom(robotPose)
     setWorkObj((prev) => ({
       ...prev,
-      yawDeg,
+      yawDeg: fields.yawDeg,
       pose: {
         ...prev.pose,
-        position: {
-          ...prev.pose?.position,
-          x: round6(Number(robotPose.x) || 0),
-          y: round6(Number(robotPose.y) || 0),
-          ...(Number.isFinite(robotPose.z) ? { z: round6(robotPose.z) } : {})
-        },
-        orientation: yawDegToQuaternion(yawDeg)
+        // z 가 없는 pose 면 이전 값을 남긴다(2D 주행에서는 TF 에 z 가 없다).
+        position: { ...prev.pose?.position, ...fields.position },
+        orientation: fields.orientation
       }
     }))
   }
@@ -167,14 +186,20 @@ const SemanticDetail = ({ row, readOnly = false, robotPose = null, onPoiCreated,
       tempObj.name['default'] = ''
       tempObj.name['ko-KR'] = ''
       tempObj.name['en-US'] = ''
+      // 새 POI 는 로봇이 지금 서 있는 자리에서 시작한다 — 원하는 지점에 로봇을 세워 두고
+      // 생성을 누르는 것이 실제 사용 흐름이라, 좌표를 손으로 넣게 하는 것보다 정확하다.
+      // 현재 위치를 아직 못 받았으면(robotPose null) 원점에서 시작하고 손으로 채운다.
+      const poseFields = robotPose ? poseFieldsFrom(robotPose) : null
       tempObj.pose = {}
       tempObj.pose.position = {
         x: 0.0,
         y: 0.0,
-        z: 0.0
+        z: 0.0,
+        ...(poseFields?.position ?? {})
       }
-      tempObj.yawDeg = 0.0
-      tempObj.pose.orientation = yawDegToQuaternion(0) // { x:0, y:0, z:0, w:1 }
+      tempObj.yawDeg = poseFields?.yawDeg ?? 0.0
+      // orientation 은 yaw 에서 파생한다(yaw 0 이면 { x:0, y:0, z:0, w:1 }).
+      tempObj.pose.orientation = poseFields?.orientation ?? yawDegToQuaternion(0)
       tempObj.properties = {}
       tempObj.editStatus = {}
       setWorkObj(tempObj)
@@ -184,187 +209,190 @@ const SemanticDetail = ({ row, readOnly = false, robotPose = null, onPoiCreated,
 
   return (
     loading && (
-      <DetailWrapper key={workObj.id}>
-        {/* 상단: 제목 + 액션 버튼. SectionTitle 의 children 자리(오른쪽)에 버튼을 넣어 한 줄로 둔다 */}
-        <DetailHeader>
-          <Section>
-            <SectionTitle title={readOnly ? 'POI 상세 (읽기 전용)' : 'POI 상세'}>
-              {readOnly ? (
-                <Button size="md" variant="outline" onClick={onPoiCancel}>
-                  닫기
+      <Section>
+        <DetailWrapper key={workObj.id}>
+          {/* 상단: 제목만. 액션 버튼(생성/수정/취소)은 폼 아래에 둔다 — 필드를 다 채운 다음
+              누르는 순서라 시선이 위로 되돌아가지 않는 편이 낫다(아래 ButtonWrapper).
+              제목만 남았으므로 Section 으로 감싸지 않는다 — 카드 안에 제목 한 줄만 있는 모양이 된다. */}
+          <DetailHeader>
+            <SectionTitle title={readOnly ? t('detailTitleReadOnly') : t('detailTitle')} />
+          </DetailHeader>
+
+          {/* 기본 정보 */}
+          <Section gap="1.2rem">
+            <SectionTitle title={t('basicInfo')} />
+            <Dropdown
+              label={t('poiType')}
+              size="md"
+              value={workObj.type}
+              options={POI_TYPES.map((type) => ({ name: type, value: type }))}
+              onChange={(value) => handleTypeChange(value)}
+              disabled={readOnly}
+            />
+            <Input
+              label={t('nameDefault')}
+              size="md"
+              readOnly={readOnly}
+              value={workObj.name?.default || ''}
+              onChange={(e) => handleNameChange('default', e.target.value)}
+            />
+            <FieldGrid>
+              <Input
+                label={t('nameEn')}
+                size="md"
+                readOnly={readOnly}
+                value={workObj.name?.['en-US'] || ''}
+                onChange={(e) => handleNameChange('en-US', e.target.value)}
+              />
+              <Input
+                label={t('nameKo')}
+                size="md"
+                readOnly={readOnly}
+                value={workObj.name?.['ko-KR'] || ''}
+                onChange={(e) => handleNameChange('ko-KR', e.target.value)}
+              />
+            </FieldGrid>
+          </Section>
+
+          {/* Position — 좌표 직접 입력, 또는 로봇이 서 있는 자리를 그대로 가져오기 */}
+          <Section gap="1.2rem">
+            <SectionTitle title={t('position')}>
+              {!readOnly && (
+                <Button
+                  size="md"
+                  onClick={handleUseRobotPose}
+                  disabled={!robotPose}
+                  title={robotPose ? undefined : t('useRobotPoseUnavailable')}
+                >
+                  {t('useRobotPose')}
                 </Button>
-              ) : (
-                <>
-                  {row ? (
-                    <Button size="md" onClick={handlePoiEdit}>
-                      수정
-                    </Button>
-                  ) : (
-                    <Button size="md" onClick={handlePoiCreate}>
-                      생성
-                    </Button>
-                  )}
-                  <Button size="md" variant="outline" onClick={onPoiCancel}>
-                    취소
-                  </Button>
-                </>
               )}
             </SectionTitle>
+            <FieldGrid>
+              {['x', 'y', 'z'].map((axis) => (
+                <Input
+                  key={axis}
+                  label={axis.toUpperCase()}
+                  type="number"
+                  step="0.001"
+                  size="md"
+                  readOnly={readOnly}
+                  value={workObj.pose?.position?.[axis] ?? ''}
+                  onChange={(e) => handlePosChange(axis, e.target.value)}
+                />
+              ))}
+            </FieldGrid>
           </Section>
-        </DetailHeader>
 
-        {/* 기본 정보 */}
-        <Section gap="1.2rem">
-          <SectionTitle title="기본 정보" />
-          <MetaText>ID: {workObj.id}</MetaText>
-          <Dropdown
-            label="Type"
-            size="md"
-            value={workObj.type}
-            options={POI_TYPES.map((t) => ({ name: t, value: t }))}
-            onChange={(value) => handleTypeChange(value)}
-            disabled={readOnly}
-          />
-          <Input
-            label="기본 이름"
-            size="md"
-            readOnly={readOnly}
-            value={workObj.name?.default || ''}
-            onChange={(e) => handleNameChange('default', e.target.value)}
-          />
-          <FieldGrid>
-            <Input
-              label="영문 이름"
-              size="md"
-              readOnly={readOnly}
-              value={workObj.name?.['en-US'] || ''}
-              onChange={(e) => handleNameChange('en-US', e.target.value)}
-            />
-            <Input
-              label="한글 이름"
-              size="md"
-              readOnly={readOnly}
-              value={workObj.name?.['ko-KR'] || ''}
-              onChange={(e) => handleNameChange('ko-KR', e.target.value)}
-            />
-          </FieldGrid>
-        </Section>
+          {/* Orientation */}
+          <Section gap="1.2rem">
+            <SectionTitle title={t('orientation')} />
+            <MetaText>{t('orientationFromYaw')}</MetaText>
+            <FieldGrid>
+              {['x', 'y', 'z', 'w'].map((axis) => (
+                <Input
+                  key={axis}
+                  label={axis.toUpperCase()}
+                  type="number"
+                  step="0.001"
+                  size="md"
+                  readOnly
+                  value={workObj.pose?.orientation?.[axis] ?? ''}
+                />
+              ))}
+            </FieldGrid>
+          </Section>
 
-        {/* Position — 좌표 직접 입력, 또는 로봇이 서 있는 자리를 그대로 가져오기 */}
-        <Section gap="1.2rem">
-          <SectionTitle title="Position">
-            {!readOnly && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleUseRobotPose}
-                disabled={!robotPose}
-                title={robotPose ? undefined : '로봇 현재 위치를 아직 받지 못했습니다'}
-              >
-                현재 위치로 설정
-              </Button>
-            )}
-          </SectionTitle>
-          <FieldGrid>
-            {['x', 'y', 'z'].map((axis) => (
+          {/* 기타 */}
+          <Section gap="1.2rem">
+            <SectionTitle title={t('etc')} />
+            <FieldGrid>
               <Input
-                key={axis}
-                label={axis.toUpperCase()}
+                label={t('yawDeg')}
+                type="number"
+                step="0.001"
+                unit="°"
+                size="md"
+                readOnly={readOnly}
+                value={workObj.yawDeg ?? 0.0}
+                onChange={(e) => handleYawDegChange(e.target.value)}
+              />
+              <Input
+                label={t('tolerance')}
                 type="number"
                 step="0.001"
                 size="md"
                 readOnly={readOnly}
-                value={workObj.pose?.position?.[axis] ?? ''}
-                onChange={(e) => handlePosChange(axis, e.target.value)}
+                value={workObj.tolerance ?? 0.0}
+                onChange={(e) => handleToleranceChange(e.target.value)}
               />
-            ))}
-          </FieldGrid>
-        </Section>
+            </FieldGrid>
+          </Section>
 
-        {/* Orientation */}
-        <Section gap="1.2rem">
-          <SectionTitle title="Orientation" />
-          <MetaText>yaw 로부터 자동 계산</MetaText>
-          <FieldGrid>
-            {['x', 'y', 'z', 'w'].map((axis) => (
-              <Input
-                key={axis}
-                label={axis.toUpperCase()}
-                type="number"
-                step="0.001"
-                size="md"
-                readOnly
-                value={workObj.pose?.orientation?.[axis] ?? ''}
-              />
-            ))}
-          </FieldGrid>
-        </Section>
-
-        {/* 기타 */}
-        <Section gap="1.2rem">
-          <SectionTitle title="기타" />
-          <FieldGrid>
-            <Input
-              label="yaw deg"
-              type="number"
-              step="0.001"
-              unit="°"
-              size="md"
-              readOnly={readOnly}
-              value={workObj.yawDeg ?? 0.0}
-              onChange={(e) => handleYawDegChange(e.target.value)}
-            />
-            <Input
-              label="tolerance"
-              type="number"
-              step="0.001"
-              size="md"
-              readOnly={readOnly}
-              value={workObj.tolerance ?? 0.0}
-              onChange={(e) => handleToleranceChange(e.target.value)}
-            />
-          </FieldGrid>
-        </Section>
-
-        {/* Properties (사용자 정의 key/value, string 값, 최대 5개) */}
-        <Section gap="1.2rem">
-          <SectionTitle title="Properties">
-            {!readOnly && (
-              <IconButton size="sm" onClick={handleAddProp} disabled={propEntries.length >= 5}>
-                <Icon name="add" size={18} />
-              </IconButton>
-            )}
-          </SectionTitle>
-          {!readOnly && <MetaText>키/값 문자열, 최대 5개</MetaText>}
-          {propEntries.map((entry) => (
-            <PropertyRow key={entry.poiId}>
-              <div className="field">
-                <Input
-                  size="sm"
-                  placeholder="key"
-                  readOnly={readOnly}
-                  value={entry.key}
-                  onChange={(e) => handlePropKeyChange(entry.poiId, e.target.value)}
-                />
-              </div>
-              <div className="field">
-                <Input
-                  size="sm"
-                  placeholder="value"
-                  readOnly={readOnly}
-                  value={entry.value}
-                  onChange={(e) => handlePropValueChange(entry.poiId, e.target.value)}
-                />
-              </div>
+          {/* Properties (사용자 정의 key/value, string 값, 최대 5개) */}
+          <Section gap="1.2rem">
+            <SectionTitle title={t('properties')}>
               {!readOnly && (
-                <IconButton size="sm" onClick={() => handleRemoveProp(entry.poiId)}>
-                  <Icon name="subtract" size={18} />
+                <IconButton size="sm" onClick={handleAddProp} disabled={propEntries.length >= 5}>
+                  <Icon name="add" size={18} />
                 </IconButton>
               )}
-            </PropertyRow>
-          ))}
-        </Section>
-      </DetailWrapper>
+            </SectionTitle>
+            {!readOnly && <MetaText>{t('propertiesHint')}</MetaText>}
+            {propEntries.map((entry) => (
+              <PropertyRow key={entry.poiId}>
+                <div className="field">
+                  <Input
+                    size="sm"
+                    placeholder={t('propertyKey')}
+                    readOnly={readOnly}
+                    value={entry.key}
+                    onChange={(e) => handlePropKeyChange(entry.poiId, e.target.value)}
+                  />
+                </div>
+                <div className="field">
+                  <Input
+                    size="sm"
+                    placeholder={t('propertyValue')}
+                    readOnly={readOnly}
+                    value={entry.value}
+                    onChange={(e) => handlePropValueChange(entry.poiId, e.target.value)}
+                  />
+                </div>
+                {!readOnly && (
+                  <IconButton size="sm" onClick={() => handleRemoveProp(entry.poiId)}>
+                    <Icon name="subtract" size={18} />
+                  </IconButton>
+                )}
+              </PropertyRow>
+            ))}
+          </Section>
+
+          {/* 액션 버튼 — 폼 맨 아래(오른쪽 정렬). 목록의 저장/취소와 같은 ButtonWrapper 를 쓴다. */}
+          <ButtonWrapper>
+            {readOnly ? (
+              <Button size="md" theme="tertiary" onClick={onPoiCancel}>
+                {tCommon('close')}
+              </Button>
+            ) : (
+              <>
+                {row ? (
+                  <Button size="md" onClick={handlePoiEdit}>
+                    {t('edit')}
+                  </Button>
+                ) : (
+                  <Button size="md" onClick={handlePoiCreate}>
+                    {t('create')}
+                  </Button>
+                )}
+                <Button size="md" theme="tertiary" onClick={onPoiCancel}>
+                  {tCommon('cancel')}
+                </Button>
+              </>
+            )}
+          </ButtonWrapper>
+        </DetailWrapper>
+      </Section>
     )
   )
 }

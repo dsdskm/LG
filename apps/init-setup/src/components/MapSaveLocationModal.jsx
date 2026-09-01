@@ -14,7 +14,8 @@ import { Button, Modal } from '@repo/ui'
  * @param {object} props
  * @param {boolean} props.isOpen
  * @param {React.ReactNode} props.children 위치 선택 UI (pages/Map 의 LocationBar)
- * @param {string} props.mapName 현재 선택으로 만들어질 저장 이름 ([Building]_[Floor]_[Area]_working)
+ * @param {string} props.mapName 현재 선택으로 만들어질 맵 이름 ([Building]_[Floor]_[Area]).
+ *   저장 폴더 이름은 난수라 미리 보여줄 값이 아니다 — 사용자가 확인할 것은 이 표시용 이름이다.
  * @param {boolean} [props.busy] 저장 요청 진행 중
  * @param {Function} props.onConfirm 저장 실행 핸들러
  * @param {Function} props.onClose 닫기 핸들러
@@ -55,7 +56,7 @@ const MapSaveLocationModal = ({ isOpen, children, mapName = '', busy = false, on
         {/* Building > Floor > Area 드롭다운 */}
         {children}
 
-        {/* 확정될 저장 이름 미리보기 — 선택이 덜 끝나면 안내 문구를 대신 보여준다. */}
+        {/* 확정될 맵 이름 미리보기 — 선택이 덜 끝나면 안내 문구를 대신 보여준다. */}
         <div style={styles.preview}>
           <span style={styles.previewLabel}>{t('saveLocation.nameLabel')}</span>
           <strong style={styles.previewValue}>{mapName || t('saveLocation.selectAll')}</strong>

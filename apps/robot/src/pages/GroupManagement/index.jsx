@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
-import { groupApis, siteApis } from '@/apis'
+import { groupApis, siteApis, locationApis } from '@/apis'
 import { ManageActions, EditButton, AddButton } from '@/utils/style'
 import {
   StyledPageContent,
@@ -18,6 +18,7 @@ import { useModalState } from '@repo/hooks'
 import { useNavigate } from 'react-router-dom'
 import ModalEditGroup from './modal/ModalEditGroup'
 import ModalEditSite from './modal/ModalEditSite'
+import ModalRoleCode from './modal/ModalRoleCode'
 
 const GroupTableWrapper = styled.div`
   .rdt_ExpanderRow {
@@ -141,6 +142,8 @@ const GroupManagement = () => {
   const [groupInfo, setGroupInfo] = useState({})
   const [siteId, setSiteId] = useState('')
   const [siteInfo, setSiteInfo] = useState({})
+  const [locations, setLocations] = useState([])
+  const [roleCodeValue, setRoleCodeValue] = useState('')
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false)
   const [confirmMessage, setConfirmMessage] = useState('')
   const navigate = useNavigate()
@@ -156,6 +159,9 @@ const GroupManagement = () => {
 
       const data2 = await siteApis.getSites({})
       const dataSites = data2.content
+
+      const data3 = await locationApis.getLocations({})
+      setLocations(data3.content)
 
       let _groupsSites = []
       for (let i = 0; i < dataGroups.length; i++) {
@@ -213,6 +219,13 @@ const GroupManagement = () => {
               >
                 {t('modify')}
               </EditButton>
+              <EditButton
+                type="button"
+                style={{ paddingLeft: '8px', paddingRight: '8px' }}
+                onClick={() => openModalRoleCode(row.groupId, null)}
+              >
+                {t('roleCode')}
+              </EditButton>
               <AddButton
                 type="button"
                 style={{ paddingLeft: '8px', paddingRight: '8px' }}
@@ -227,7 +240,7 @@ const GroupManagement = () => {
         sortable: false
       }
     ],
-    [t]
+    [t, locations]
   )
 
   const handleSearchChange = (e) => {
@@ -271,6 +284,13 @@ const GroupManagement = () => {
                 }
               >
                 {t('modify')}
+              </EditButton>
+              <EditButton
+                type="button"
+                style={{ paddingLeft: '8px', paddingRight: '8px' }}
+                onClick={() => openModalRoleCode(site.groupId, site.siteId)}
+              >
+                {t('roleCode')}
               </EditButton>
             </ManageActions>
           </SiteItem>
@@ -321,6 +341,16 @@ const GroupManagement = () => {
     loadGetGroupsSites()
   }
 
+  const RoleCodeModal = useModalState()
+
+  const openModalRoleCode = (_groupId, _siteId) => {
+    const location = _siteId
+      ? locations.find((l) => l.siteId === _siteId)
+      : locations.find((l) => l.groupId === _groupId && l.siteName === '*')
+    setRoleCodeValue(location?.locationId ?? '')
+    RoleCodeModal.onOpen()
+  }
+
   return (
     <>
       <StyledPageContent className="column">
@@ -335,7 +365,9 @@ const GroupManagement = () => {
             />
           </SearchContainer>
           <div className="alignRight" style={{ marginBottom: '0' }}>
-            <Button onClick={handleClickGroupCreate} style={{ whiteSpace: 'nowrap' }}>{t('groupAdd')}</Button>
+            <Button onClick={handleClickGroupCreate} style={{ whiteSpace: 'nowrap' }}>
+              {t('groupAdd')}
+            </Button>
           </div>
         </HeaderTitleGroup>
         <SectionRobot style={{ maxWidth: '1600px' }}>
@@ -389,6 +421,7 @@ const GroupManagement = () => {
           siteId={siteId}
           siteInfo={siteInfo}
         />
+        <ModalRoleCode isOpen={RoleCodeModal.isOpen} onClose={RoleCodeModal.onClose} t={t} locationId={roleCodeValue} />
         <Modal
           isOpen={isConfirmModalOpen}
           size="xs"

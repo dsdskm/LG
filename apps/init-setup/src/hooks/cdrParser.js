@@ -69,6 +69,13 @@ export function parseCDR(buffer, schemaName) {
       return { data: readString() }
     }
 
+    // ── power_on_micom_msgs/msg/EmergencyKeyStatus ──────────────────
+    // /emergency_key_status — 비상정지 버튼(하드웨어 키). 필드는 uint8 emergency_key 하나뿐이라
+    // CDR 헤더 바로 뒤 1바이트가 곧 값이다(0=Released, 1=Detected).
+    if (schemaName === 'power_on_micom_msgs/msg/EmergencyKeyStatus') {
+      return { emergency_key: readU8() }
+    }
+
     // ── tf2_msgs/msg/TFMessage ──────────────────────────────────────
     // /tf, /tf_static — map->lio_odom->base_link 합성으로 로봇의 지도 기준 pose 를 구한다.
     if (schemaName === 'tf2_msgs/msg/TFMessage') {

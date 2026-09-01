@@ -120,20 +120,11 @@ async function resolveMoveToGroupTitle(content: ContentApiPayload, noLabelTitle:
 
   const contentRecord = content as unknown as Record<string, unknown>
 
-  const buildingId = pickLocationValue(
-    source.buildingId,
-    source.building_id,
-    contentRecord.buildingId,
-    contentRecord.building_id
-  )
-  const floorId = pickLocationValue(
-    source.floorId,
-    source.floor_id,
-    contentRecord.floorId,
-    contentRecord.floor_id
-  )
+  const buildingId = pickLocationValue(source.buildingId, contentRecord.buildingId)
+  const floorId = pickLocationValue(source.floorId, contentRecord.floorId)
+  const areaId = pickLocationValue(source.areaId, contentRecord.areaId)
 
-  if (!content.siteId || (!buildingId && !floorId)) {
+  if (!content.siteId || (!buildingId && !floorId && !areaId)) {
     return noLabelTitle
   }
 
@@ -143,7 +134,7 @@ async function resolveMoveToGroupTitle(content: ContentApiPayload, noLabelTitle:
     const buildings = Array.isArray(data?.buildings) ? data.buildings : []
 
     const matchedBuilding = buildings.find((item: any) => {
-      const id = pickLocationValue(item?.buildingId, item?.building_id)
+      const id = pickLocationValue(item?.buildingId)
       return id && buildingId && String(id) === String(buildingId)
     })
 
@@ -152,18 +143,32 @@ async function resolveMoveToGroupTitle(content: ContentApiPayload, noLabelTitle:
     ).trim()
 
     let floorName = '기타'
+    let areas: any[] = []
     if (buildingId && floorId) {
       const floors = Array.isArray(matchedBuilding?.floors) ? matchedBuilding.floors : []
       const matchedFloor = floors.find((item: any) => {
-        const id = pickLocationValue(item?.floorId, item?.floor_id)
+        const id = pickLocationValue(item?.floorId)
         return id && floorId && String(id) === String(floorId)
       })
       floorName = String(matchedFloor?.floorName ?? matchedFloor?.floor_name ?? floorId ?? '기타').trim()
+      areas = Array.isArray(matchedFloor?.areas) ? matchedFloor.areas : []
     } else if (floorId) {
       floorName = String(floorId)
     }
 
-    return `[${buildingName}][${floorName}]`
+    let areaName = '기타'
+    if (areaId) {
+      const matchedArea = areas.find((item: any) => {
+        const id = pickLocationValue(item?.areaId)
+        return id && String(id) === String(areaId)
+      })
+      areaName = String(matchedArea?.areaName ?? matchedArea?.area_name ?? areaId ?? '기타').trim()
+    }
+
+    return [buildingName, floorName, areaId ? areaName : null]
+      .filter(Boolean)
+      .map((name) => `[${name}]`)
+      .join('')
   } catch {
     return noLabelTitle
   }

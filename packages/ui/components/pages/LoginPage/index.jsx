@@ -31,6 +31,8 @@ import {
  * @param {string} [props.copyright] - 하단 카피라이트 문구
  * @param {Function} [props.loginFn] - 인증 요청 함수 (미지정 시 클라우드 직접 호출). useLogin 참고.
  * @param {Function} [props.userInfoFn] - 유저 정보 조회 함수. loginFn 과 짝을 맞춰 넘긴다.
+ * @param {React.ReactNode} [props.headerActions] - 언어 선택 좌측에 놓을 앱 전용 버튼
+ *        (예: init-setup 의 네트워크 설정 바로가기)
  */
 const LoginPage = ({
   redirectTo,
@@ -38,7 +40,8 @@ const LoginPage = ({
   extraTabs = [],
   copyright = 'Copyright © 2026 LG Electronics. All rights reserved.',
   loginFn,
-  userInfoFn
+  userInfoFn,
+  headerActions
 }) => {
   const { t } = useTranslation('login')
   // loginFn/userInfoFn 은 undefined 면 useLogin 의 기본 인자(클라우드 직접 호출)가 적용되므로
@@ -57,6 +60,7 @@ const LoginPage = ({
       </LogoWrapper>
       <LoginBox>
         <LanguageSelectWrapper>
+          {headerActions}
           <LanguageSelect />
         </LanguageSelectWrapper>
         <Tabs defaultActiveId="login">

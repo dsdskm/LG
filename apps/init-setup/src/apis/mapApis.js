@@ -150,7 +150,8 @@ export const waitForGridMap = async (name, { timeoutMs = 20000, intervalMs = 100
 /**
  * 작업본 맵을 확정본으로 승격 (POST /robot-hub/save-map/publish).
  *
- * 매핑 저장은 '<Building>_<Floor>_<Area>_working' 디렉터리에 떨어진다. 업로드 단계에서 이 API 가
+ * 매핑 저장은 '<난수 8자>_working' 디렉터리에 떨어진다(utils/mapRecord.newWorkingMapDirName —
+ * 표시용 이름은 레코드 name.default 가 갖는다). 업로드 단계에서 이 API 가
  * 접미사를 뗀 디렉터리로 rename 하고, 그 디렉터리를 가리키던 맵 레코드의 경로/이름도 BE 가 함께
  * 갱신한다. 파일 이동이라 robot-hub 를 거치지 않는다(로봇 명령이 아니다).
  *

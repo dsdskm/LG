@@ -4,10 +4,10 @@ import { API_CONFIG, ENDPOINTS } from './constants'
 import { generateUuid36, getTimestampSec } from '@repo/utils'
 
 // Create base instance
-const createClient = (baseURL, options = {}) => {
+const createClient = (baseURL, timeout, options = {}) => {
   const instance = axios.create({
     baseURL: baseURL,
-    timeout: API_CONFIG.TIMEOUT,
+    timeout: timeout || API_CONFIG.TIMEOUT,
     headers: {
       'Content-Type': 'application/json',
       ...options.headers

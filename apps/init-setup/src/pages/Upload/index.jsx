@@ -38,20 +38,8 @@ const Upload = () => {
 
   return (
     <StyledPageContent className="column">
-      <Title>업로드</Title>
       <Section gap="1.2rem">
-        {completed ? (
-          <p>설치가 완료된 로봇입니다.</p>
-        ) : (
-          <>
-            <p>맵 스캔과 시맨틱 설정이 끝났습니다. 설치를 완료하면 설치 단계 순서 제한이 해제됩니다.</p>
-            {err && <p role="alert">{err}</p>}
-            <Button size="md" onClick={handleComplete} disabled={busy}>
-              {busy ? '완료 처리 중...' : '설치 완료'}
-            </Button>
-            <UploadTable></UploadTable>
-          </>
-        )}
+        <UploadTable></UploadTable>
       </Section>
     </StyledPageContent>
   )

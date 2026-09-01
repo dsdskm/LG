@@ -424,7 +424,6 @@ const TaskFlowListDetailPage = () => {
 
   const openConfirmDialog = (action: Exclude<PendingAction, null>) => {
     if (!taskFlow?.id || isSubmitting) return
-    if (flowSource === 'saved' && action === 'delete') return
 
     setIsMoreOpen(false)
 
@@ -543,7 +542,8 @@ const TaskFlowListDetailPage = () => {
   const showDeactivateMenu = taskFlow?.status === TaskFlowStatus.ACTIVE
   const isSavedTabSelected = flowSource === 'saved'
   const isDeployActionDisabled = isSavedTabSelected || !!isSubmitting
-  const isDeleteMenuDisabled = isSavedTabSelected || !!isSubmitting
+  // 삭제는 작성중(저장 버전) 탭에서도 허용한다.
+  const isDeleteMenuDisabled = !!isSubmitting
 
   const confirmDialog = useMemo(() => {
     return getConfirmDialogContent(pendingAction, taskFlow?.name ?? '', isSubmitting, t)
@@ -610,7 +610,7 @@ const TaskFlowListDetailPage = () => {
                 theme="secondary"
                 type="button"
                 onClick={() => setIsMoreOpen((prev) => !prev)}
-                disabled={isDeleteMenuDisabled}
+                disabled={!!isSubmitting}
               >
                 <Icon name="more" size={18} />
                 {t('detail.more')}
@@ -620,13 +620,13 @@ const TaskFlowListDetailPage = () => {
               {isMoreOpen && (
                 <DropdownMenu>
                   {showActivateMenu && (
-                    <DropdownMenuItem type="button" onClick={handleActivateClick} disabled={!!isSubmitting}>
+                    <DropdownMenuItem type="button" onClick={handleActivateClick} disabled={isDeployActionDisabled}>
                       {t('detail.activate')}
                     </DropdownMenuItem>
                   )}
 
                   {showDeactivateMenu && (
-                    <DropdownMenuItem type="button" onClick={handleDeactivateClick} disabled={!!isSubmitting}>
+                    <DropdownMenuItem type="button" onClick={handleDeactivateClick} disabled={isDeployActionDisabled}>
                       {t('detail.deactivate')}
                     </DropdownMenuItem>
                   )}

@@ -29,6 +29,8 @@ const MARKER_ARROW_LENGTH_RATIO = 1.9
 const MARKER_ARROW_HALF_WIDTH_RATIO = 0.72
 // 마커 중심의 흰 점 — 마커가 커지면 본체가 면으로 보여 정확한 좌표가 어디인지 흐려진다.
 const MARKER_CORE_RATIO = 0.3
+// POI 를 클릭으로 잡는 판정 반경(px) — 마커보다 조금 넉넉하게 잡아 정확히 점을 찍지 않아도 집힌다.
+const POI_HIT_RADIUS_PX = MARKER_RADIUS_PX + 4
 
 /**
  * 방향(yaw)을 가리키는 삼각형. 마커 본체보다 먼저 그려서 밑변이 본체에 묻히게 한다.
@@ -119,9 +121,12 @@ const poiColorsOf = (type, isDeleted) => {
  *   — { name: { default }, pose: { position: {x,y}, orientation: {x,y,z,w} }, editStatus }.
  *   좌표는 지도(map) 프레임 기준이라 보정 없이 찍는다.
  *
- * @param {Function} [onMapClick] 지도 클릭 시 호출 — ({x, y, canvasX, canvasY}).
+ * @param {Function} [onMapClick] 지도 클릭 시 호출 — ({x, y, canvasX, canvasY, poi}).
  *   x/y 는 지도 프레임 월드 좌표(m), canvasX/Y 는 래퍼 기준 픽셀(말풍선 배치용).
  *   드래그(팬)와 구분하기 위해 CLICK_SLOP 이내로 움직인 경우만 클릭으로 본다.
+ *   클릭 지점이 POI 마커(POI_HIT_RADIUS_PX) 안이면 그 POI 를 poi 로 함께 넘기고, x/y/canvasX/Y 도
+ *   마커 좌표로 맞춘다 — 말풍선이 마커에 붙고, 이동 목표가 클릭 오차 없이 POI 그 자리가 된다.
+ *   POI 를 잡지 못하면 poi 는 null 이다.
  * @param {Function} [onViewChange] 줌/팬/전체보기로 뷰가 바뀔 때 호출 — canvasX/Y 기준 오버레이를
  *   띄운 쪽이 위치가 어긋난 오버레이를 닫을 수 있게 알려준다.
  */
@@ -162,6 +167,9 @@ function MapCanvas({
 
   // 클릭 좌표 역변환에 필요한 지도 기하 정보 — render 가 매번 갱신한다.
   const geoRef = useRef(null)
+  // 지금 화면에 찍혀 있는 POI 마커의 캔버스 좌표 — 클릭으로 POI 를 집는 판정에 쓴다.
+  // 줌/팬마다 값이 달라지므로 render 가 매번 다시 채운다(상태로 들 필요가 없다).
+  const poiHitsRef = useRef([])
   // 콜백은 ref 로 들고 쓴다 — 리스너를 다시 붙이지 않아도 최신 함수가 호출된다.
   const onMapClickRef = useRef(onMapClick)
   const onViewChangeRef = useRef(onViewChange)
@@ -647,6 +655,7 @@ function MapCanvas({
     // ── Layer 4: POI 마커 ────────────────────────────────────────────────
     // 지도(map) 프레임 좌표를 그대로 찍는다 — POI 는 저장된 맵 기준 좌표라 보정 대상이 아니다.
     // 마지막 레이어로 두어 지도/점군 위에 얹는다.
+    poiHitsRef.current = []
     if (pois.length > 0) {
       ctx.font = '600 12px sans-serif'
       ctx.textAlign = 'center'
@@ -657,6 +666,8 @@ function MapCanvas({
         if (typeof position?.x !== 'number' || typeof position?.y !== 'number') return
 
         const { px, py } = worldToCanvas(position.x, position.y)
+        // 클릭 판정용 좌표를 그린 그대로 남긴다 — 그리기와 판정이 같은 뷰 변환을 쓰게 된다.
+        poiHitsRef.current.push({ poi, px, py })
         // 색은 타입(poi.type)으로 구분한다. 삭제 예정(작업본의 softDelete)은 목록에도 남아 있으므로
         // 지우지 않고 무채색으로 낮춰 구분만 한다.
         const isDeleted = !!poi?.editStatus?.softDelete
@@ -881,8 +892,21 @@ function MapCanvas({
       const rect = (canvasRef.current ?? wrapper).getBoundingClientRect()
       const canvasX = drag.startX - rect.left
       const canvasY = drag.startY - rect.top
+
+      // 먼저 POI 를 집었는지 본다 — 겹쳐 있으면 클릭 지점에 가장 가까운 하나만 고른다.
+      const hit = poiHitsRef.current.reduce((best, candidate) => {
+        const distance = Math.hypot(candidate.px - canvasX, candidate.py - canvasY)
+        if (distance > POI_HIT_RADIUS_PX) return best
+        return !best || distance < best.distance ? { ...candidate, distance } : best
+      }, null)
+      if (hit) {
+        const position = hit.poi.pose.position
+        handler({ x: position.x, y: position.y, canvasX: hit.px, canvasY: hit.py, poi: hit.poi })
+        return
+      }
+
       const world = canvasToWorld(canvasX, canvasY)
-      if (world) handler({ ...world, canvasX, canvasY })
+      if (world) handler({ ...world, canvasX, canvasY, poi: null })
     }
 
     // 더블클릭 → 전체보기로 초기화

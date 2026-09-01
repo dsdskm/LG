@@ -498,7 +498,12 @@ const AssetInfo = ({ t, deviceId }) => {
       listen: { actionType: 'searchByVoice', blockingType: 'NONE', labelKey: 'listen' },
       shutdown: { actionType: 'poweroff', blockingType: 'HARD', labelKey: 'powerEnd' },
       go_charging: { actionType: 'goCharging', blockingType: 'NONE', messageKey: 'chargingStationMoveSent' },
-      gkr: { actionType: 'gkr', blockingType: 'HARD', labelKey: 'gkr' },
+      gkr: {
+        actionType: 'gkr',
+        blockingType: 'HARD',
+        labelKey: 'gkr',
+        actionParameters: [{ key: 'map_id', value: mapServer?.mapId }]
+      },
       freeRunOn: { actionType: 'tofuOn', blockingType: 'HARD', labelKey: 'freeRunModeOn' },
       freeRunOff: { actionType: 'tofuOff', blockingType: 'HARD', labelKey: 'freeRunModeOff' },
       zeroGainOn: { actionType: 'zeroGainOn', blockingType: 'HARD', labelKey: 'zeroGainModeOn' },
@@ -508,7 +513,14 @@ const AssetInfo = ({ t, deviceId }) => {
     const command = commandActionMap[action]
     if (command) {
       await sendActions(
-        [{ actionType: command.actionType, actionId: crypto.randomUUID(), blockingType: command.blockingType }],
+        [
+          {
+            actionType: command.actionType,
+            actionId: crypto.randomUUID(),
+            blockingType: command.blockingType,
+            ...(command.actionParameters ? { actionParameters: command.actionParameters } : {})
+          }
+        ],
         command.messageKey ? t(command.messageKey) : `${t(command.labelKey)} ${t('sendCommand')}`
       )
       return

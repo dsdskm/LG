@@ -46,12 +46,19 @@ import {
   ManualGrid,
   ManualLabel,
   SecondaryActionButton,
-  WizardButtonWrap,
+  WizardButtonWrap
 } from './styles'
 import { Section } from '@repo/ui'
 import { useUserStore } from '@repo/stores'
-import { scanWifi, connectWifi, disconnectWifi, rescanWifiOffline, getWifiStatus, getWifiModeStatus, switchWifiMode } from '@/apis/wifi'
-import { SETUP_STEPS, tryAdvanceSetupProgress } from '@/utils/setupProgress'
+import {
+  scanWifi,
+  connectWifi,
+  disconnectWifi,
+  rescanWifiOffline,
+  getWifiStatus,
+  getWifiModeStatus,
+  switchWifiMode
+} from '@/apis/wifi'
 import { deriveRobotOnline, bypassNetworkGate } from '@/utils/networkStatus'
 import { publishRobotOnline } from '@/hooks/useRobotOnline'
 
@@ -59,10 +66,13 @@ const UI_PORT = '18080'
 const FIXED_ACCESS_URLS = {
   lan: `http://192.168.55.1:${UI_PORT}`,
   ap: `http://192.168.10.1:${UI_PORT}`,
-  wifi: '',
+  wifi: ''
 }
 
-const normalizeIp = (value = '') => String(value || '').split('/')[0].trim()
+const normalizeIp = (value = '') =>
+  String(value || '')
+    .split('/')[0]
+    .trim()
 
 const buildWifiUrl = (ip) => {
   const cleanIp = normalizeIp(ip)
@@ -135,16 +145,16 @@ const Network = () => {
     apMode: false,
     cached: false,
     method: '-',
-    iface: '-',
+    iface: '-'
   })
   const [accessUrls, setAccessUrls] = useState(FIXED_ACCESS_URLS)
   const [wifiModeStatus, setWifiModeStatus] = useState(null)
   const [modeChanging, setModeChanging] = useState(false)
   const [modeMessage, setModeMessage] = useState('')
 
-  const targetSsid = manualMode ? manualSsid.trim() : (selected?.ssid || '')
+  const targetSsid = manualMode ? manualSsid.trim() : selected?.ssid || ''
   const selectedName = targetSsid || t('network.hiddenNetwork')
-  const selectedIsOpen = useMemo(() => manualMode ? false : isOpenNetwork(selected), [manualMode, selected])
+  const selectedIsOpen = useMemo(() => (manualMode ? false : isOpenNetwork(selected)), [manualMode, selected])
   const canOfflineRescan = wifiMode.apMode
   const displayedNetworks = useMemo(() => {
     const list = Array.isArray(networks) ? [...networks] : []
@@ -164,14 +174,14 @@ const Network = () => {
       setAccessUrls({
         lan: status?.lan_url || FIXED_ACCESS_URLS.lan,
         ap: status?.ap_url || FIXED_ACCESS_URLS.ap,
-        wifi: wifiUrl,
+        wifi: wifiUrl
       })
       setWifiModeStatus({
         mode: status?.mode,
         label: status?.mode_label,
         sta_iface: status?.sta_iface,
         ap_iface: status?.ap_iface,
-        wifi_ip: status?.wifi_ip || normalizeIp(status?.ipv4),
+        wifi_ip: status?.wifi_ip || normalizeIp(status?.ipv4)
       })
       return status
     } catch (e) {
@@ -181,7 +191,7 @@ const Network = () => {
         setAccessUrls({
           lan: status?.lan_url || FIXED_ACCESS_URLS.lan,
           ap: status?.ap_url || FIXED_ACCESS_URLS.ap,
-          wifi: status?.wifi_url || buildWifiUrl(status?.wifi_ip),
+          wifi: status?.wifi_url || buildWifiUrl(status?.wifi_ip)
         })
         return status
       } catch (ignored) {
@@ -197,19 +207,19 @@ const Network = () => {
     return !!accessUrls.wifi && (mode === 'single_wifi' || mode === 'concurrent')
   }, [wifiModeStatus, accessUrls])
 
-  const accessText = useMemo(() => ([
-    t('network.access.wired', { address: accessUrls.lan.replace(/^https?:\/\//, '') }),
-    t('network.access.ap', { address: accessUrls.ap.replace(/^https?:\/\//, '') }),
-    wifiConnected
-      ? t('network.access.wifi', { address: accessUrls.wifi.replace(/^https?:\/\//, '') })
-      : t('network.access.wifiDisconnected'),
-  ]), [accessUrls, wifiConnected, t])
+  const accessText = useMemo(
+    () => [
+      t('network.access.wired', { address: accessUrls.lan.replace(/^https?:\/\//, '') }),
+      t('network.access.ap', { address: accessUrls.ap.replace(/^https?:\/\//, '') }),
+      wifiConnected
+        ? t('network.access.wifi', { address: accessUrls.wifi.replace(/^https?:\/\//, '') })
+        : t('network.access.wifiDisconnected')
+    ],
+    [accessUrls, wifiConnected, t]
+  )
 
   const handleScan = async (options = {}) => {
-    const {
-      preserveSelection = false,
-      preserveConnectionNotice = false,
-    } = options
+    const { preserveSelection = false, preserveConnectionNotice = false } = options
 
     setLoading(true)
     setScanMessage(t('network.loadingNetworks'))
@@ -239,7 +249,7 @@ const Network = () => {
           apMode: !!res.ap_mode,
           cached: !!res.cached,
           method: res.method || '-',
-          iface: res.iface || '-',
+          iface: res.iface || '-'
         })
 
         const method = res.method || 'unknown'
@@ -264,10 +274,9 @@ const Network = () => {
   }
 
   useEffect(() => {
-      handleScan()
-      refreshAccessInfo()
+    handleScan()
+    refreshAccessInfo()
   }, [])
-
 
   const verifyNormalWifiConnection = async (ssidToConnect) => {
     for (let attempt = 1; attempt <= CONNECTION_VERIFY_ATTEMPTS; attempt += 1) {
@@ -282,7 +291,7 @@ const Network = () => {
       await sleep(CONNECTION_VERIFY_DELAY_MS)
       const scanResult = await handleScan({
         preserveSelection: true,
-        preserveConnectionNotice: true,
+        preserveConnectionNotice: true
       })
       const connected = findConnectedNetwork(scanResult?.networks, ssidToConnect)
 
@@ -311,9 +320,7 @@ const Network = () => {
 
     if (isApToStaSwitch) {
       setCountdown(10)
-      setConnectMessage(
-        t('network.connect.switchStart')
-      )
+      setConnectMessage(t('network.connect.switchStart'))
 
       let c = 10
       timer = setInterval(() => {
@@ -336,19 +343,13 @@ const Network = () => {
       if (isApToStaSwitch) {
         const next = res.next_url || reconnectUrl
         setNextUrl(next)
-        setConnectMessage(
-          t('network.connect.switchStarted')
-        )
+        setConnectMessage(t('network.connect.switchStarted'))
         return
       }
 
       setConnectionState('verifying')
-      setConnectMessage(
-        t('network.connect.requestSent', { ssid: selectedName })
-      )
-      setConnectionNotice(
-        t('network.connect.requestSent', { ssid: selectedName })
-      )
+      setConnectMessage(t('network.connect.requestSent', { ssid: selectedName }))
+      setConnectionNotice(t('network.connect.requestSent', { ssid: selectedName }))
 
       const connected = await verifyNormalWifiConnection(ssidToConnect)
 
@@ -360,20 +361,14 @@ const Network = () => {
         await refreshAccessInfo()
       } else {
         setConnectionState('pending')
-        setConnectMessage(
-          t('network.connect.pending', { ssid: selectedName })
-        )
-        setConnectionNotice(
-          t('network.connect.pendingPassword', { ssid: selectedName })
-        )
+        setConnectMessage(t('network.connect.pending', { ssid: selectedName }))
+        setConnectionNotice(t('network.connect.pendingPassword', { ssid: selectedName }))
       }
     } catch (e) {
       console.warn('Wi‑Fi 연결 요청 실패:', e)
 
       if (isApToStaSwitch) {
-        setConnectMessage(
-          t('network.connect.switchInterrupted')
-        )
+        setConnectMessage(t('network.connect.switchInterrupted'))
         return
       }
 
@@ -395,9 +390,7 @@ const Network = () => {
     setConnecting(true)
     setShowSwitchingGuide(true)
     setCountdown(15)
-    setConnectMessage(
-      t('network.scan.offlineMessage')
-    )
+    setConnectMessage(t('network.scan.offlineMessage'))
 
     let c = 15
     const timer = setInterval(() => {
@@ -423,9 +416,7 @@ const Network = () => {
   const handleDisconnect = async () => {
     if (connecting) return
 
-    const ok = window.confirm(
-      t('network.disconnect.confirm')
-    )
+    const ok = window.confirm(t('network.disconnect.confirm'))
     if (!ok) return
 
     setConnecting(true)
@@ -436,9 +427,7 @@ const Network = () => {
     try {
       const res = await disconnectWifi()
       setConnectMessage(t('network.disconnect.requested'))
-      setConnectionNotice(
-        t('network.disconnect.reconnectHint')
-      )
+      setConnectionNotice(t('network.disconnect.reconnectHint'))
     } catch (e) {
       // 해제 순간 현재 요청 연결이 끊기는 것은 정상일 수 있다.
       console.warn('Wi‑Fi 연결 해제 요청 중 연결이 끊겼을 수 있습니다:', e)
@@ -452,19 +441,12 @@ const Network = () => {
     }
   }
 
-  // 네트워크 단계 완료 기록. 실패해도 화면 이동은 막지 않는다(토스트로만 알림) —
-  // 이 페이지는 Wi‑Fi 전환 중 요청이 끊기는 것이 정상인 화면이라 진행 기록 실패로 다음을 막을 수 없다.
-  const handleNext = async () => {
-    // 로그인 전 진입: 다음 단계(지점 코드 …)는 클라우드 세션이 있어야 하는 화면이라 진행할 수 없고,
-    // 단계 기록도 남기지 않는다 — 언어 설정(1단계)을 건너뛴 채 3단계로 기록되는 것을 막는다.
-    // '/' 로 보내면 RootGuard 가 네트워크 · 세션을 다시 판정해 /login 또는 진행 중인 단계로 보낸다.
-    if (!hasSession) {
-      navigate('/')
-      return
-    }
-
-    await tryAdvanceSetupProgress(SETUP_STEPS.SITE_CODE)
-    navigate('/site-code')
+  // 이 화면은 설치 단계가 아니라 언제든 열 수 있는 Wi-Fi 설정이다(routes.jsx SETUP_GROUP.NETWORK) —
+  // 그래서 단계 진행(currentStep)을 건드리지 않는다. 건드리면 뒷 단계를 밟던 로봇이 앞 단계로
+  // 되돌아가 열려 있던 화면이 다시 잠긴다.
+  // '/' 로 보내면 RootGuard 가 네트워크 · 세션을 다시 판정해 /login 또는 진행 중인 단계로 보낸다.
+  const handleDone = () => {
+    navigate('/')
   }
 
   // 로그인 전 게이트로 들어온 사용자를 위한 탈출구. 로봇이 유선으로 인터넷에 연결된 경우처럼
@@ -478,11 +460,7 @@ const Network = () => {
     if (connecting || modeChanging) return
 
     const isConcurrent = mode === 'concurrent'
-    const ok = window.confirm(
-      isConcurrent
-        ? t('network.mode.confirmConcurrent')
-        : t('network.mode.confirmSingle')
-    )
+    const ok = window.confirm(isConcurrent ? t('network.mode.confirmConcurrent') : t('network.mode.confirmSingle'))
     if (!ok) return
 
     setModeChanging(true)
@@ -490,7 +468,8 @@ const Network = () => {
 
     try {
       const res = await switchWifiMode(mode)
-      const label = res?.status?.label || (isConcurrent ? t('network.mode.concurrentLabel') : t('network.mode.singleLabel'))
+      const label =
+        res?.status?.label || (isConcurrent ? t('network.mode.concurrentLabel') : t('network.mode.singleLabel'))
       setModeMessage(t('network.mode.changed', { label }))
       await refreshAccessInfo()
       await handleScan({ preserveSelection: true, preserveConnectionNotice: true })
@@ -507,9 +486,7 @@ const Network = () => {
         <PageHero>
           <HeroText>
             <HeroTitle>{t('network.title')}</HeroTitle>
-            <HeroDescription>
-              {t('network.description')}
-            </HeroDescription>
+            <HeroDescription>{t('network.description')}</HeroDescription>
           </HeroText>
 
           <BadgeGroup>
@@ -535,25 +512,14 @@ const Network = () => {
               </div>
               <StatusBadge tone="orange">{t('network.gate.badge')}</StatusBadge>
             </ConnectPanelTop>
-            <ButtonWrap className="alignRight">
-              <SecondaryActionButton type="button" onClick={handleSkipToLogin} disabled={connecting || modeChanging}>
-                {t('network.gate.skip')}
-              </SecondaryActionButton>
-            </ButtonWrap>
           </ConnectPanel>
         )}
 
         <SummaryGrid>
           <SummaryCard>
             <SummaryLabel>{t('network.summary.status')}</SummaryLabel>
-            <SummaryValue>
-              {wifiMode.apMode ? t('network.summary.ap') : t('network.summary.wifi')}
-            </SummaryValue>
-            <SummaryHint>
-              {wifiMode.apMode
-                ? t('network.summary.apHint')
-                : t('network.summary.wifiHint')}
-            </SummaryHint>
+            <SummaryValue>{wifiMode.apMode ? t('network.summary.ap') : t('network.summary.wifi')}</SummaryValue>
+            <SummaryHint>{wifiMode.apMode ? t('network.summary.apHint') : t('network.summary.wifiHint')}</SummaryHint>
             {wifiConnected && (
               <ActionButton
                 onClick={handleDisconnect}
@@ -568,7 +534,9 @@ const Network = () => {
           <SummaryCard>
             <SummaryLabel>{t('network.access.title')}</SummaryLabel>
             <SummaryValue accent as="div" style={{ lineHeight: 1.65 }}>
-              {accessText.map((line) => <div key={line}>{line}</div>)}
+              {accessText.map((line) => (
+                <div key={line}>{line}</div>
+              ))}
             </SummaryValue>
             <SummaryHint>{t('network.access.hint')}</SummaryHint>
           </SummaryCard>
@@ -597,11 +565,7 @@ const Network = () => {
             <EmptyState>
               <EmptyIcon>📶</EmptyIcon>
               <h4>{t('network.scan.empty')}</h4>
-              <p>
-                {wifiMode.apMode
-                  ? t('network.scan.emptyAp')
-                  : t('network.scan.emptyWifi')}
-              </p>
+              <p>{wifiMode.apMode ? t('network.scan.emptyAp') : t('network.scan.emptyWifi')}</p>
             </EmptyState>
           )}
 
@@ -615,7 +579,15 @@ const Network = () => {
                   <WifiCard
                     key={`${network.ssid}-${idx}`}
                     className={active ? 'active' : ''}
-                    onClick={() => { if (!connecting) { setSelected(network); setManualMode(false); setManualSsid(''); setManualHidden(false); setPassword('') } }}
+                    onClick={() => {
+                      if (!connecting) {
+                        setSelected(network)
+                        setManualMode(false)
+                        setManualSsid('')
+                        setManualHidden(false)
+                        setPassword('')
+                      }
+                    }}
                   >
                     <WifiMain>
                       <WifiNameRow>
@@ -649,7 +621,9 @@ const Network = () => {
               <div>
                 <h3>{t('network.connect.title')}</h3>
                 <p>
-                  {selectedIsOpen ? t('network.connect.descriptionOpen', { ssid: selectedName }) : t('network.connect.descriptionSecure', { ssid: selectedName })}
+                  {selectedIsOpen
+                    ? t('network.connect.descriptionOpen', { ssid: selectedName })
+                    : t('network.connect.descriptionSecure', { ssid: selectedName })}
                 </p>
               </div>
               <StatusBadge tone="blue">{t('network.badges.selectedNetwork')}</StatusBadge>
@@ -676,10 +650,7 @@ const Network = () => {
             )}
 
             <ButtonWrap className="alignRight">
-              <ActionButton
-                onClick={handleConnect}
-                disabled={!selectedIsOpen && !password}
-              >
+              <ActionButton onClick={handleConnect} disabled={!selectedIsOpen && !password}>
                 {t('network.connect.start')}
               </ActionButton>
             </ButtonWrap>
@@ -690,10 +661,18 @@ const Network = () => {
           <ConnectPanelTop>
             <div>
               <h3>{t('network.mode.title')}</h3>
-              <p>{t('network.mode.current')} <b>{wifiModeStatus?.label || wifiModeStatus?.mode || t('network.mode.checking')}</b> · STA: {wifiModeStatus?.sta_iface || 'wlan0'} · AP: {wifiModeStatus?.ap_iface || 'wlan1'}</p>
+              <p>
+                {t('network.mode.current')}{' '}
+                <b>{wifiModeStatus?.label || wifiModeStatus?.mode || t('network.mode.checking')}</b> · STA:{' '}
+                {wifiModeStatus?.sta_iface || 'wlan0'} · AP: {wifiModeStatus?.ap_iface || 'wlan1'}
+              </p>
               <p>{t('network.mode.description')}</p>
             </div>
-            <StatusBadge tone={wifiModeStatus?.mode === 'concurrent' ? 'green' : wifiModeStatus?.mode === 'single_ap' ? 'blue' : 'gray'}>
+            <StatusBadge
+              tone={
+                wifiModeStatus?.mode === 'concurrent' ? 'green' : wifiModeStatus?.mode === 'single_ap' ? 'blue' : 'gray'
+              }
+            >
               {wifiModeStatus?.mode || 'mode'}
             </StatusBadge>
           </ConnectPanelTop>
@@ -718,7 +697,9 @@ const Network = () => {
                 <h3>{t('network.manual.title')}</h3>
                 <p>{t('network.manual.description')}</p>
               </div>
-              <StatusBadge tone={manualMode ? 'blue' : 'gray'}>{manualMode ? t('network.manual.selected') : 'Fallback'}</StatusBadge>
+              <StatusBadge tone={manualMode ? 'blue' : 'gray'}>
+                {manualMode ? t('network.manual.selected') : 'Fallback'}
+              </StatusBadge>
             </ConnectPanelTop>
 
             <ManualGrid>
@@ -727,7 +708,11 @@ const Network = () => {
                 <PasswordInput
                   type="text"
                   value={manualSsid}
-                  onChange={(e) => { setManualSsid(e.target.value); setManualMode(true); setSelected(null) }}
+                  onChange={(e) => {
+                    setManualSsid(e.target.value)
+                    setManualMode(true)
+                    setSelected(null)
+                  }}
                   onFocus={() => setManualMode(true)}
                   placeholder={t('network.manual.ssidPlaceholder')}
                   autoComplete="off"
@@ -739,7 +724,11 @@ const Network = () => {
                   <PasswordInput
                     type={showPassword ? 'text' : 'password'}
                     value={manualMode ? password : ''}
-                    onChange={(e) => { setPassword(e.target.value); setManualMode(true); setSelected(null) }}
+                    onChange={(e) => {
+                      setPassword(e.target.value)
+                      setManualMode(true)
+                      setSelected(null)
+                    }}
                     onFocus={() => setManualMode(true)}
                     placeholder={t('network.manual.passwordPlaceholder')}
                     autoComplete="current-password"
@@ -756,20 +745,39 @@ const Network = () => {
               </div>
             </ManualGrid>
 
-            <div style={{ marginTop: '1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.6rem', color: '#667085', fontSize: '1.25rem', fontWeight: 800 }}>
+            <div
+              style={{
+                marginTop: '1.2rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '1rem',
+                flexWrap: 'wrap'
+              }}
+            >
+              <label
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.6rem',
+                  color: '#667085',
+                  fontSize: '1.25rem',
+                  fontWeight: 800
+                }}
+              >
                 <input
                   type="checkbox"
                   checked={manualHidden}
-                  onChange={(e) => { setManualHidden(e.target.checked); setManualMode(true); setSelected(null) }}
+                  onChange={(e) => {
+                    setManualHidden(e.target.checked)
+                    setManualMode(true)
+                    setSelected(null)
+                  }}
                 />
                 {t('network.manual.hidden')}
               </label>
               <ButtonWrap className="alignRight">
-                <ActionButton
-                  onClick={handleConnect}
-                  disabled={!manualSsid.trim()}
-                >
+                <ActionButton onClick={handleConnect} disabled={!manualSsid.trim()}>
                   {t('network.manual.connect')}
                 </ActionButton>
               </ButtonWrap>
@@ -784,8 +792,14 @@ const Network = () => {
                 <h3>{t('network.status.title')}</h3>
                 <p>{connectionNotice}</p>
               </div>
-              <StatusBadge tone={connectionState === 'failed' ? 'red' : connectionState === 'connected' ? 'green' : 'orange'}>
-                {connectionState === 'connected' ? t('network.status.connected') : connectionState === 'failed' ? t('network.status.failed') : t('network.status.check')}
+              <StatusBadge
+                tone={connectionState === 'failed' ? 'red' : connectionState === 'connected' ? 'green' : 'orange'}
+              >
+                {connectionState === 'connected'
+                  ? t('network.status.connected')
+                  : connectionState === 'failed'
+                    ? t('network.status.failed')
+                    : t('network.status.check')}
               </StatusBadge>
             </ConnectPanelTop>
           </ConnectPanel>
@@ -822,7 +836,9 @@ const Network = () => {
               <ReconnectBox>
                 <span>{t('network.status.reconnect')}</span>
                 <ReconnectLink as="div" style={{ textDecoration: 'none' }}>
-                  {accessText.map((line) => <div key={line}>{line}</div>)}
+                  {accessText.map((line) => (
+                    <div key={line}>{line}</div>
+                  ))}
                 </ReconnectLink>
               </ReconnectBox>
 
@@ -830,20 +846,16 @@ const Network = () => {
             </SwitchingContent>
           </SwitchingPanel>
         )}
+        {/* 설치 단계가 아니므로 '이전/다음' 대신 나가기 버튼 하나만 둔다 —
+            로그인 전이면 로그인으로, 로그인 후면 진행 중인 단계로 되돌아간다('/' 판정: RootGuard). */}
         <WizardButtonWrap style={{ width: 'min(82rem, 100%)' }}>
-          <SecondaryActionButton type="button" onClick={() => navigate('/language')} disabled={connecting || modeChanging}>
-            {t('common.previous')}
-          </SecondaryActionButton>
-          <ActionButton type="button" onClick={handleNext} disabled={connecting || modeChanging}>
-            {hasSession ? t('common.next') : t('network.gate.next')}
+          <ActionButton type="button" onClick={handleDone} disabled={connecting || modeChanging}>
+            {hasSession ? t('common.complete') : t('network.gate.next')}
           </ActionButton>
         </WizardButtonWrap>
-
       </Section>
 
-      <SmallNote>
-        {t('network.note')}
-      </SmallNote>
+      <SmallNote>{t('network.note')}</SmallNote>
     </StyledPageContent>
   )
 }

@@ -61,7 +61,7 @@
     "registering": "등록 중..."
   },
   "network": {
-    "title": "초기 네트워크 설정",
+    "title": "네트워크 설정",
     "description": "로봇이 사용할 Wi‑Fi를 선택하고 설정 AP에서 일반 네트워크로 전환합니다.",
     "gate": {
       "title": "로그인 전에 네트워크 연결이 필요합니다",

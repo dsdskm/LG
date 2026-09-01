@@ -230,6 +230,8 @@ const RobotItem = ({
                         {robot.buildingName}
                         {SEP}
                         {robot.floorName}
+                        {SEP}
+                        {robot.areaName}
                       </span>
                     </div>
                   </>

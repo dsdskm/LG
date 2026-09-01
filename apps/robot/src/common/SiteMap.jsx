@@ -850,16 +850,16 @@ const SiteMap = ({
                     </span>
                   </div>
                 )}
-                {poi.yawDeg != null && (
+                {poi.yawDeg != null && Number.isFinite(Number(poi.yawDeg)) && (
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Yaw:</span>
-                    <span>{poi.yawDeg.toFixed(1)}°</span>
+                    <span>{Number(poi.yawDeg).toFixed(1)}°</span>
                   </div>
                 )}
-                {poi.tolerance != null && (
+                {poi.tolerance != null && Number.isFinite(Number(poi.tolerance)) && (
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Tolerance:</span>
-                    <span>{poi.tolerance.toFixed(2)}m</span>
+                    <span>{Number(poi.tolerance).toFixed(2)}m</span>
                   </div>
                 )}
                 {poi.properties?.description && (

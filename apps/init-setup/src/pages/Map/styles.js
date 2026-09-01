@@ -21,6 +21,10 @@ export const LocationRow = styled.div`
 
 // 매핑 진행 상태(/lio_node/status). 매핑 중 여부를 멀리서도 알아볼 수 있어야 해서
 // 토픽 상세 목록에서 떼어내 위치 선택 줄 오른쪽에 배지로 띄운다.
+//
+// $alert 는 "지금 조작을 막고 있는 상태" 를 뜻한다($active 의 강조와 구분해야 한다) —
+// 비상정지 버튼이 눌려 있는 동안 그 배지만 경고색으로 띄워, 다른 상태 배지들 사이에서
+// 원인을 바로 짚을 수 있게 한다.
 export const MappingStatusBadge = styled.div`
   display: flex;
   align-items: center;
@@ -28,9 +32,12 @@ export const MappingStatusBadge = styled.div`
   flex-shrink: 0;
   margin-bottom: 2rem;
   padding: 0.8rem 1.6rem;
-  border: 1px solid ${({ $active }) => ($active ? 'var(--color-primary-50)' : 'var(--color-secondary-20)')};
+  border: 1px solid
+    ${({ $active, $alert }) =>
+      $alert ? 'var(--color-error-60)' : $active ? 'var(--color-primary-50)' : 'var(--color-secondary-20)'};
   border-radius: var(--radius-sm);
-  background: ${({ $active }) => ($active ? 'var(--color-primary-10)' : 'var(--color-neutral-10)')};
+  background: ${({ $active, $alert }) =>
+    $alert ? 'var(--color-error-15)' : $active ? 'var(--color-primary-10)' : 'var(--color-neutral-10)'};
 
   /* 글꼴/크기는 공용 typography 클래스(typographyBody5)를 쓰고 여기서는 색·굵기만 준다. */
   & > .label {
@@ -39,7 +46,8 @@ export const MappingStatusBadge = styled.div`
   }
 
   & > .value {
-    color: ${({ $active }) => ($active ? 'var(--color-primary-50)' : 'var(--color-neutral-70)')};
+    color: ${({ $active, $alert }) =>
+      $alert ? 'var(--color-error-70)' : $active ? 'var(--color-primary-50)' : 'var(--color-neutral-70)'};
     font-weight: 700;
     white-space: nowrap;
   }
@@ -121,6 +129,12 @@ export const NavBubble = styled.div`
     border-right: 1px solid var(--color-secondary-20);
     border-bottom: 1px solid var(--color-secondary-20);
     background: var(--color-neutral-10);
+  }
+
+  /* POI 마커를 집었을 때만 나오는 POI 이름 — 좌표보다 먼저 읽혀야 한다. */
+  & > .poiName {
+    color: var(--color-primary-50);
+    font-weight: 700;
   }
 
   & > .coords {
