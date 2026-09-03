@@ -1,8 +1,8 @@
 import { useMemo, useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
-import { groupApis, siteApis } from '@/apis'
-import { ManageActions, EditButton, AddButton } from '@/utils/style'
+import { groupApis, siteApis, locationApis } from '@/apis'
+import { ManageActions, EditButton, AddButton, DeleteButton } from '@/utils/style'
 import {
   StyledPageContent,
   Title,
@@ -12,12 +12,14 @@ import {
   HeaderTitleGroup,
   Table,
   Button,
-  Modal
+  Modal,
+  ModalButton
 } from '@repo/ui'
 import { useModalState } from '@repo/hooks'
 import { useNavigate } from 'react-router-dom'
 import ModalEditGroup from './modal/ModalEditGroup'
 import ModalEditSite from './modal/ModalEditSite'
+import ModalRoleCode from './modal/ModalRoleCode'
 
 const GroupTableWrapper = styled.div`
   .rdt_ExpanderRow {
@@ -141,6 +143,8 @@ const GroupManagement = () => {
   const [groupInfo, setGroupInfo] = useState({})
   const [siteId, setSiteId] = useState('')
   const [siteInfo, setSiteInfo] = useState({})
+  const [locations, setLocations] = useState([])
+  const [roleCodeValue, setRoleCodeValue] = useState('')
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false)
   const [confirmMessage, setConfirmMessage] = useState('')
   const navigate = useNavigate()
@@ -156,6 +160,9 @@ const GroupManagement = () => {
 
       const data2 = await siteApis.getSites({})
       const dataSites = data2.content
+
+      const data3 = await locationApis.getLocations({})
+      setLocations(data3.content)
 
       let _groupsSites = []
       for (let i = 0; i < dataGroups.length; i++) {
@@ -213,6 +220,13 @@ const GroupManagement = () => {
               >
                 {t('modify')}
               </EditButton>
+              <EditButton
+                type="button"
+                style={{ paddingLeft: '8px', paddingRight: '8px' }}
+                onClick={() => openModalRoleCode(row.groupId, null)}
+              >
+                {t('roleCode')}
+              </EditButton>
               <AddButton
                 type="button"
                 style={{ paddingLeft: '8px', paddingRight: '8px' }}
@@ -227,7 +241,7 @@ const GroupManagement = () => {
         sortable: false
       }
     ],
-    [t]
+    [t, locations]
   )
 
   const handleSearchChange = (e) => {
@@ -272,6 +286,21 @@ const GroupManagement = () => {
               >
                 {t('modify')}
               </EditButton>
+              <EditButton
+                type="button"
+                style={{ paddingLeft: '8px', paddingRight: '8px' }}
+                onClick={() => openModalRoleCode(site.groupId, site.siteId)}
+              >
+                {t('roleCode')}
+              </EditButton>
+              <DeleteButton
+                type="button"
+                style={{ paddingLeft: '8px', paddingRight: '8px' }}
+                disabled={site.isDefaultSite}
+                onClick={() => openModalDeleteSite(site)}
+              >
+                {t('delete')}
+              </DeleteButton>
             </ManageActions>
           </SiteItem>
         ))}
@@ -321,6 +350,45 @@ const GroupManagement = () => {
     loadGetGroupsSites()
   }
 
+  const RoleCodeModal = useModalState()
+
+  const openModalRoleCode = (_groupId, _siteId) => {
+    const location = _siteId
+      ? locations.find((l) => l.siteId === _siteId)
+      : locations.find((l) => l.groupId === _groupId && l.siteName === '*')
+    setRoleCodeValue(location?.locationId ?? '')
+    RoleCodeModal.onOpen()
+  }
+
+  const DeleteSiteModal = useModalState()
+  const [siteToDelete, setSiteToDelete] = useState(null)
+  const [isDeletingSite, setIsDeletingSite] = useState(false)
+
+  const openModalDeleteSite = (site) => {
+    setSiteToDelete(site)
+    DeleteSiteModal.onOpen()
+  }
+
+  const handleDeleteSite = async () => {
+    if (!siteToDelete) return
+    setIsDeletingSite(true)
+    try {
+      await siteApis.deleteSites(siteToDelete.siteId)
+      setConfirmMessage(t('siteDeleteSuccess'))
+    } catch (err) {
+      if (err?.response?.data?.errorCode === 'SITE_40902') {
+        setConfirmMessage(t('siteDeleteBlockedRobotAssigned'))
+      } else {
+        console.error('Error deleteSites:', err)
+        setConfirmMessage(t('errorReport'))
+      }
+    } finally {
+      setIsDeletingSite(false)
+      DeleteSiteModal.onClose()
+      setIsConfirmModalOpen(true)
+    }
+  }
+
   return (
     <>
       <StyledPageContent className="column">
@@ -335,7 +403,9 @@ const GroupManagement = () => {
             />
           </SearchContainer>
           <div className="alignRight" style={{ marginBottom: '0' }}>
-            <Button onClick={handleClickGroupCreate} style={{ whiteSpace: 'nowrap' }}>{t('groupAdd')}</Button>
+            <Button onClick={handleClickGroupCreate} style={{ whiteSpace: 'nowrap' }}>
+              {t('groupAdd')}
+            </Button>
           </div>
         </HeaderTitleGroup>
         <SectionRobot style={{ maxWidth: '1600px' }}>
@@ -389,6 +459,26 @@ const GroupManagement = () => {
           siteId={siteId}
           siteInfo={siteInfo}
         />
+        <ModalRoleCode isOpen={RoleCodeModal.isOpen} onClose={RoleCodeModal.onClose} t={t} locationId={roleCodeValue} />
+        <Modal
+          isOpen={DeleteSiteModal.isOpen}
+          size="xs"
+          onClose={DeleteSiteModal.onClose}
+          renderButtonComponent={
+            <>
+              <ModalButton onClick={DeleteSiteModal.onClose}>{t('cancel')}</ModalButton>
+              <ModalButton onClick={handleDeleteSite} theme="primary" disabled={isDeletingSite}>
+                {t('delete')}
+              </ModalButton>
+            </>
+          }
+        >
+          <div style={{ textAlign: 'center', padding: '20px 0' }}>
+            <p className="typographyBody2" style={{ whiteSpace: 'pre-wrap', textAlign: 'center' }}>
+              {t('siteDeleteConfirm', { siteName: siteToDelete?.siteName })}
+            </p>
+          </div>
+        </Modal>
         <Modal
           isOpen={isConfirmModalOpen}
           size="xs"

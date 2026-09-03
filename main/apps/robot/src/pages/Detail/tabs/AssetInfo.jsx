@@ -88,7 +88,9 @@ const AssetInfo = ({ t, deviceId }) => {
     hwTs: null,
     senTs: null,
     swTs: null,
-    posInit: null
+    gkr: null,
+    tofu: null,
+    zeroGain: null
   })
   const [channel, setChannel] = useState('CLOUD')
 
@@ -495,7 +497,12 @@ const AssetInfo = ({ t, deviceId }) => {
       listen: { actionType: 'searchByVoice', blockingType: 'NONE', labelKey: 'listen' },
       shutdown: { actionType: 'poweroff', blockingType: 'HARD', labelKey: 'powerEnd' },
       go_charging: { actionType: 'goCharging', blockingType: 'NONE', messageKey: 'chargingStationMoveSent' },
-      gkr: { actionType: 'gkr', blockingType: 'HARD', labelKey: 'gkr' },
+      gkr: {
+        actionType: 'gkr',
+        blockingType: 'HARD',
+        labelKey: 'gkr',
+        actionParameters: [{ key: 'map_id', value: mapServer?.mapId }]
+      },
       freeRunOn: { actionType: 'tofuOn', blockingType: 'HARD', labelKey: 'freeRunModeOn' },
       freeRunOff: { actionType: 'tofuOff', blockingType: 'HARD', labelKey: 'freeRunModeOff' },
       zeroGainOn: { actionType: 'zeroGainOn', blockingType: 'HARD', labelKey: 'zeroGainModeOn' },
@@ -505,7 +512,14 @@ const AssetInfo = ({ t, deviceId }) => {
     const command = commandActionMap[action]
     if (command) {
       await sendActions(
-        [{ actionType: command.actionType, actionId: crypto.randomUUID(), blockingType: command.blockingType }],
+        [
+          {
+            actionType: command.actionType,
+            actionId: crypto.randomUUID(),
+            blockingType: command.blockingType,
+            ...(command.actionParameters ? { actionParameters: command.actionParameters } : {})
+          }
+        ],
         command.messageKey ? t(command.messageKey) : `${t(command.labelKey)} ${t('sendCommand')}`
       )
       return
@@ -602,18 +616,29 @@ const AssetInfo = ({ t, deviceId }) => {
         c.tms = tms
       }
 
-      // PartsStatusPanel/GKR 위치 인식 배지용 robotState는 hw/sen/sw 타임스탬프 또는
-      // positionInitialized(위치 인식 상태)가 바뀐 경우에만 갱신
+      // PartsStatusPanel/GKR·TOFU·ZeroGain 상태 배지용 robotState는 hw/sen/sw 타임스탬프 또는
+      // gkrState/tofuState/zerogainState 값이 바뀐 경우에만 갱신
       const hwTs = data.state?.hwComponentsUpdatedAt ?? null
       const senTs = data.state?.sensorsUpdatedAt ?? null
       const swTs = data.state?.sWmodulesUpdatedAt ?? null
-      const posInit = data.state?.position?.positionInitialized ?? null
-      if (hwTs !== c.hwTs || senTs !== c.senTs || swTs !== c.swTs || posInit !== c.posInit) {
+      const gkr = data.state?.gkrState ?? null
+      const tofu = data.state?.tofuState ?? null
+      const zeroGain = data.state?.zerogainState ?? null
+      if (
+        hwTs !== c.hwTs ||
+        senTs !== c.senTs ||
+        swTs !== c.swTs ||
+        gkr !== c.gkr ||
+        tofu !== c.tofu ||
+        zeroGain !== c.zeroGain
+      ) {
         setRobotState(data.state)
         c.hwTs = hwTs
         c.senTs = senTs
         c.swTs = swTs
-        c.posInit = posInit
+        c.gkr = gkr
+        c.tofu = tofu
+        c.zeroGain = zeroGain
       }
 
       c.updatedAt = data.updatedAt
@@ -936,7 +961,9 @@ const AssetInfo = ({ t, deviceId }) => {
               onManualMove={handleManualMove}
               onMotion={handleMotion}
               onMoveLocation={MoveLocationModal.onOpen}
-              positionInitialized={robotState?.position?.positionInitialized}
+              gkrState={robotState?.gkrState}
+              tofuState={robotState?.tofuState}
+              zeroGainState={robotState?.zerogainState}
             />
           </div>
         </Section>

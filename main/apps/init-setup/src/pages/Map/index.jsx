@@ -1,7 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useTelemetry } from '@/hooks/useTelemetry'
+import { useEmergencyKey } from '@/hooks/useEmergencyKey'
 import ConnectionBar from '@/components/ConnectionBar'
+import EmergencyKeyBadge from './EmergencyKeyBadge'
 import { LocationBar, resolveLocationName, Section, Title } from '@repo/ui'
 import MapCanvas from '@/components/MapCanvas'
 import StatusPanel from '@/components/StatusPanel'
@@ -11,8 +13,6 @@ import { list as listAreas } from '@/apis/areaApis'
 import { STATUS_TOPICS } from '@/constants/topics'
 import { resolveMappingMode } from '@/utils/lioStatus'
 import { syncLevelSelection } from '@/utils/location'
-// 접미사는 업로드 단계의 승격(_working 제거)과 짝이라 utils/mapRecord 를 정본으로 쓴다.
-import { WORKING_SUFFIX } from '@/utils/mapRecord'
 import { useLocationStore } from '@/stores/useLocationStore'
 import { resolveWsUrl } from '@/utils/wsUrl'
 import { StyledMapPageContent, BadgeRow, MapWorkspace, LocationRow, MappingStatusBadge } from './styles'
@@ -22,7 +22,7 @@ import { StyledMapPageContent, BadgeRow, MapWorkspace, LocationRow, MappingStatu
  *
  * 메인 페이지.
  * - wsUrl 상태 관리
- * - useTelemetry 훅으로 데이터 수신
+ * - useTelemetry 훅으로 데이터 수신 (진입 시 바로 연결한다 — 아래 autoConnectedRef 참고)
  * - 위치 계층(Building/Floor/Area) 목록 조회 및 선택 상태 관리 (LocationBar 는 표현만 담당)
  * - ConnectionBar + MapCanvas + StatusPanel 조합
  *
@@ -48,15 +48,18 @@ const sanitizeSegment = (value) =>
     .replace(/[/\\]+/g, '_')
 
 /**
- * 선택된 위치 계층으로 저장할 맵 이름을 만든다: [Building명]_[Floor명]_[Area명]_working
+ * 선택된 위치 계층으로 맵 이름을 만든다: [Building명]_[Floor명]_[Area명]
  *
- * 건물 정보를 못 받아온 경우(목록이 비어 있음)는 고를 위치가 없으므로 'Default_working' 으로 둔다
+ * 이 이름은 맵 레코드(name.default)에 남아 목록·드롭다운에 보이는 표시용 이름이다 — 저장 폴더
+ * 이름과는 별개다(폴더는 난수, utils/mapRecord.newWorkingMapDirName).
+ *
+ * 건물 정보를 못 받아온 경우(목록이 비어 있음)는 고를 위치가 없으므로 'Default' 로 둔다
  * — 위치 계층 없이 쓰는 로봇도 매핑/저장은 해야 한다.
  * 건물 정보가 있으면 목록을 받아온 계층이 모두 선택돼야 이름이 나오고(Floor/Area 도 내려오면 셋 다),
  * 미선택 상태에서는 빈 문자열을 돌려 저장 모달이 저장 버튼을 막는다.
  */
 const resolveMapName = ({ buildings, floors, areas, location, language }) => {
-  if (!buildings.length) return `Default_${WORKING_SUFFIX}`
+  if (!buildings.length) return 'Default'
 
   const levels = [
     [buildings, location.buildingId],
@@ -73,7 +76,7 @@ const resolveMapName = ({ buildings, floors, areas, location, language }) => {
   }
 
   const base = parts.filter(Boolean).join('_')
-  return `${base || 'Default'}_${WORKING_SUFFIX}`
+  return base || 'Default'
 }
 
 export default function Map() {
@@ -182,12 +185,29 @@ export default function Map() {
     topics,
     subscribedTopics,
     customTopicsData,
+    customTopicsUpdatedAt,
     toggleSubscribe,
     subscribeTopics,
     unsubscribeTopics,
     connect,
     disconnect
   } = useTelemetry(wsUrl, fps)
+
+  // 화면에 들어오면 바로 연결한다 — 조작 전에 확인해야 하는 값(비상정지 버튼 상태, 매핑 상태)이
+  // 모두 텔레메트리로 오므로, 시작 버튼을 누를 때까지 기다리면 그때까지 아무 것도 알 수 없다.
+  // 연결만 하고 아무 명령도 보내지 않으므로 로봇이 움직이지는 않는다(시맨틱 화면과 같은 방식).
+  //
+  // 진입 시 한 번만 건다. connect 는 wsUrl 에 매여 있어 의존성으로 걸면 주소를 손으로 고치는 동안
+  // (연결이 끊긴 상태에서만 입력할 수 있다) 글자마다 재연결이 걸린다 — 이후 연결/해제는 툴바 버튼이 맡는다.
+  const autoConnectedRef = useRef(false)
+  useEffect(() => {
+    if (autoConnectedRef.current) return
+    autoConnectedRef.current = true
+    connect()
+  }, [connect])
+
+  // 화면을 떠날 때 정리. disconnect 는 고정 참조라 이 정리는 언마운트에서만 돈다.
+  useEffect(() => () => disconnect(), [disconnect])
 
   // 매핑 진행 상태는 폴링이 아니라 /lio_node/status 구독으로 들어온다.
   // 상태 토픽 이름은 로봇 구성에 따라 달라서 구독 목록에서 실제로 잡힌 것을 쓴다.
@@ -196,6 +216,11 @@ export default function Map() {
   // 세분된 status 값은 배지에 그대로 보여주고, 조작부(ConnectionBar)에는 모드로 접어 넘긴다.
   const mappingMode = resolveMappingMode(mappingStatus)
   const isMapping = mappingMode === 'mapping' || mappingMode === 'saving'
+
+  // 비상정지 버튼(하드웨어 키) 상태 — /emergency_key_status.
+  // 눌려 있으면 로봇이 움직일 수 없으므로 매핑 시작을 걸어봐야 스캔이 진행되지 않는다.
+  // 배지로 상태를 보여주고, 시작 버튼은 ConnectionBar 가 이 값으로 막는다.
+  const emergency = useEmergencyKey(subscribedTopics, customTopicsData, customTopicsUpdatedAt)
 
   // 주행 상태는 이 화면에서 보여주지 않는다 — 맵 스캔은 매핑 세션이라 이동 명령을 걸 수 없고
   // (map 프레임 기준 목표를 잡을 수 없다), 주행은 시맨틱 화면의 일이다.
@@ -210,6 +235,9 @@ export default function Map() {
         {/* 상태 배지 묶음 — LocationRow 가 space-between 이라 배지를 감싸야 오른쪽에 붙는다
             (배지를 그대로 두면 가운데에 떠 보인다). */}
         <BadgeRow>
+          {/* 비상정지 버튼 상태 (/emergency_key_status) — 눌려 있으면 스캔을 시작해도 로봇이 못 움직인다 */}
+          <EmergencyKeyBadge emergency={emergency} t={t} />
+
           {/* 매핑 진행 상태 (/lio_node/status) */}
           <MappingStatusBadge $active={isMapping}>
             <span className="label typographyBody5">{t('status')}</span>
@@ -232,6 +260,7 @@ export default function Map() {
             mapName={mapName}
             locationSelector={locationSelector}
             mode={mappingMode}
+            emergencyLocked={emergency.isLocked}
             mapOwner={mapOwner}
             mapInfo={mapData?.info ?? null}
             t={t}
@@ -250,7 +279,7 @@ export default function Map() {
         </Section>
 
         {/* 정보 패널 — 토픽 정보 / 토픽 목록 / 범례를 각각 Section 으로 쌓는다 */}
-        <StatusPanel
+        {/* <StatusPanel
           status={status}
           wsUrl={wsUrl}
           mapData={mapData}
@@ -263,7 +292,7 @@ export default function Map() {
           subscribeTopics={subscribeTopics}
           unsubscribeTopics={unsubscribeTopics}
           t={t}
-        />
+        /> */}
       </MapWorkspace>
     </StyledMapPageContent>
   )

@@ -1,3 +1,59 @@
 {
-  "delete": "삭제"
+  "delete": "삭제",
+  "restore": "삭제 취소",
+  "create": "생성",
+  "edit": "수정",
+  "tempSave": "임시 저장",
+  "goto": "이동",
+  "loading": "불러오는 중...",
+  "confirmDeleteContents": "선택한 콘텐츠를 삭제하시겠습니까?",
+  "filterType": "타입",
+  "filterOperation": "구분",
+  "semanticTypes": {
+    "POI": "POI",
+    "FIXED-OBSTACLE": "고정장애물"
+  },
+  "obstacleCreate": "고정장애물 추가",
+  "obstacleShape": "형태",
+  "obstacleShapes": {
+    "RECTANGLE": "사각형",
+    "POLYGON": "폴리곤"
+  },
+  "obstacleDrawHint": "지도에서 마우스로 누른 채 끌어 영역을 지정하고 놓으세요.",
+  "obstaclePolygonHint": "지도를 클릭해 점을 찍고, 우클릭 또는 Enter(첫 점 클릭)로 닫으세요. Esc: 다시 찍기, 드래그: 지도 이동",
+  "obstacleEditDone": "수정 완료",
+  "obstacleEditHint": "지도에서 도형의 꼭지점을 끌어 모양을 고치세요.",
+  "noObstacles": "등록된 고정장애물이 없습니다.",
+  "obstacleColumns": {
+    "no": "번호",
+    "shape": "형태",
+    "points": "점 좌표 (X, Y)"
+  },
+  "columns": {
+    "inUse": "사용 중",
+    "id": "ID",
+    "name": "이름",
+    "type": "타입",
+    "position": "좌표",
+    "command": "명령"
+  },
+  "detailTitle": "POI 상세",
+  "detailTitleReadOnly": "POI 상세 (읽기 전용)",
+  "basicInfo": "기본 정보",
+  "poiType": "타입",
+  "nameDefault": "기본 이름",
+  "nameEn": "영문 이름",
+  "nameKo": "한글 이름",
+  "position": "Position",
+  "useRobotPose": "현재 위치로 설정",
+  "useRobotPoseUnavailable": "로봇 현재 위치를 아직 받지 못했습니다",
+  "orientation": "Orientation",
+  "orientationFromYaw": "yaw 로부터 자동 계산",
+  "etc": "기타",
+  "yawDeg": "yaw deg",
+  "tolerance": "tolerance",
+  "properties": "Properties",
+  "propertiesHint": "키/값 문자열, 최대 5개",
+  "propertyKey": "key",
+  "propertyValue": "value"
 }

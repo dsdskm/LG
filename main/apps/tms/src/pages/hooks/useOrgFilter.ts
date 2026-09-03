@@ -19,8 +19,11 @@ export type OrgChangeEvent = {
   matchesOrg?: (itemOrg: unknown) => boolean
 }
 
-/** 조직 정보를 가진 대상(로봇 등). 문자열이 비어 있으면 "미지정"으로 본다. */
-type OrgOwner = {
+/**
+ * 조직 정보를 가진 대상(로봇 등). 문자열이 비어 있으면 "미지정"으로 본다.
+ * 필터가 실제로 읽는 필드만 요구하므로 RobotInfo 등을 그대로 넘길 수 있다.
+ */
+export type OrgOwner = {
   group: string
   site: string
 }
@@ -47,18 +50,28 @@ export function toDeviceParams([group, site]: OrgSelection): DeviceParams | unde
 export function matchesOrgSelection([group, site]: OrgSelection, target: OrgOwner): boolean {
   if (group === ORG_NONE && target.group !== '') return false
   if (site === ORG_NONE && target.site !== '') return false
+  if (site === ORG_ALL && target.site === '') return false
+
   return true
 }
 
 /**
- * OrganizationSelector 선택 상태와, 그로부터 파생되는 조회 파라미터/필터를 함께 관리한다.
- * deviceParams 는 state 가 아니라 파생값이므로 선택값과 어긋날 수 없다.
+ * 조직 선택값 → 조회 파라미터/필터 파생값. **상태를 갖지 않는다.**
  *
- * 여러 화면(RobotsPage / DeployPage / TaskFlowListPage 등)에서 OrganizationSelector 와 함께 쓰는
- * 공용 hook 이다. device 조회 파라미터를 만들므로 device 목록을 다루는 화면이 대상이다.
+ * 선택을 이 hook 밖(전역 스토어 등)이 소유하는 화면용이다. 예: DeployPage 는 조직 셀렉터를
+ * 직접 렌더하지 않고 useOrganizationStore 의 selectedOrgs 를 그대로 따른다.
+ * 상태로 복사하지 않으므로 스토어가 언제 확정되든(persist rehydrate 타이밍) 다음 렌더에 바로
+ * 반영되고, 첫 렌더에 엉뚱한 파라미터로 조회가 나가지 않는다.
+ *
+ * @param selection [groupId, siteId]. 값이 없으면 'all' 로 본다.
  */
-export function useOrgFilter() {
-  const [groupSite, setGroupSite] = useState<OrgSelection>([ORG_ALL, ORG_ALL])
+export function useOrgFilterValues(selection: readonly string[]) {
+  const [group, site] = selection
+
+  // 문자열 단위로 의존성을 잡아 파생값의 참조를 안정화한다.
+  // (스토어가 매 렌더 새 배열을 주면 deviceParams·matchesOrgFilter 참조가 계속 바뀌어
+  //  조회 파라미터와 목록 useMemo 가 불필요하게 재계산된다)
+  const groupSite = useMemo<OrgSelection>(() => [group ?? ORG_ALL, site ?? ORG_ALL], [group, site])
 
   const deviceParams = useMemo(() => toDeviceParams(groupSite), [groupSite])
   const taskParams = useMemo(() => {
@@ -66,12 +79,25 @@ export function useOrgFilter() {
     return { groupId: groupId, siteId: siteId }
   }, [groupSite])
 
+  const matchesOrgFilter = useCallback((target: OrgOwner) => matchesOrgSelection(groupSite, target), [groupSite])
+
+  return { groupSite, deviceParams, taskParams, matchesOrgFilter }
+}
+
+/**
+ * OrganizationSelector 선택 상태와, 그로부터 파생되는 조회 파라미터/필터를 함께 관리한다.
+ * deviceParams 는 state 가 아니라 파생값이므로 선택값과 어긋날 수 없다.
+ *
+ * 조직 셀렉터를 **직접 렌더하는** 화면용이다(선택의 주인이 이 hook). 선택을 외부가 소유하는
+ * 화면은 onOrgChanged 가 필요 없으므로 useOrgFilterValues 를 쓴다.
+ */
+export function useOrgFilter() {
+  const [groupSite, setGroupSite] = useState<OrgSelection>([ORG_ALL, ORG_ALL])
+
   const onOrgChanged = useCallback((e: OrgChangeEvent) => {
     const [group = ORG_ALL, site = ORG_ALL] = e.values ?? []
     setGroupSite([group, site])
   }, [])
 
-  const matchesOrgFilter = useCallback((target: OrgOwner) => matchesOrgSelection(groupSite, target), [groupSite])
-
-  return { groupSite, deviceParams, taskParams, onOrgChanged, matchesOrgFilter }
+  return { ...useOrgFilterValues(groupSite), onOrgChanged }
 }

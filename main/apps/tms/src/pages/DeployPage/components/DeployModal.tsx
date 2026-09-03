@@ -1,19 +1,12 @@
-import { SimpleRobotInfo, TaskFlow } from '@/types/taskflow'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import ReactDOM from 'react-dom'
-import { DeployMode } from '../hooks/useDeploy'
+import { DeployMode } from '@/pages/hooks/useDeploy'
 
 export interface DeployTaskFlow {
   name: string
   id: number
   version: number
-}
-
-export interface DeployRequestParam {
-  orgInfo: string[]
-  taskFlowId: number
-  robotList: SimpleRobotInfo[]
 }
 
 interface DeployModalProps {

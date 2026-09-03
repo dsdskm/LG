@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Section } from '@repo/ui'
+import { Button, Modal, Section } from '@repo/ui'
 import {
   StyledPageContent,
   PageHero,
@@ -24,7 +24,7 @@ import {
   WizardButtonWrap,
   ErrorText
 } from './styles'
-import { advanceSetupProgress, SETUP_STEPS } from '@/utils/setupProgress'
+import { completeInitialSetup } from '@/utils/setupProgress'
 
 const TERMS = [
   { id: 'service', title: '(필수) 서비스 이용 약관' },
@@ -37,6 +37,9 @@ const Terms = () => {
   const [detailId, setDetailId] = useState(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  // 완료 전 확인 모달 — 약관 동의가 초기 설정의 마지막이고, 완료하면 초기 설정 메뉴 자체가
+  // 사라져(App.jsx setupCompleted) 되돌릴 수 없으므로 누르기 전에 한 번 알린다.
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
   const allChecked = TERMS.every(({ id }) => checked[id])
   const detail = TERMS.find(({ id }) => id === detailId)
@@ -61,13 +64,15 @@ const Terms = () => {
 
     setBusy(true)
     setErr('')
+    setConfirmOpen(false)
     try {
-      // 약관 동의는 초기 설정(1~6단계)의 마지막이지 셋업 전체의 끝이 아니다.
-      // 그래서 status 는 'draft' 로 두고 작업 중인 단계만 맵 스캔으로 옮긴다 — 'completed' 로 올리면
-      // routes.jsx getSetupProgress 가 잠금을 전부 풀어서 맵 스캔/시맨틱을 건너뛰고 업로드가 열린다.
-      // (전역 완료는 마지막 단계인 업로드에서만 기록한다 — utils/setupProgress.completeSetup)
-      await advanceSetupProgress(SETUP_STEPS.MAP_SCAN)
-      navigate('/map/scan', { replace: true })
+      // 약관 동의가 초기 설정(1~6단계)의 마지막이다 — status 를 'completed' 로 올려 헤더에서
+      // 초기 설정 탭이 사라지게 하고(App.jsx setupCompleted), 작업 단계는 맵 스캔으로 옮긴다.
+      // 같은 값이 단계 순서 잠금도 풀기 때문에 이후에는 맵 스캔·시맨틱을 건너뛰고 업로드로도
+      // 들어갈 수 있다(routes.jsx getSetupProgress).
+      await completeInitialSetup()
+      // '/map' 은 화면이 없는 부모 경로라 맵 설정 첫 화면으로 리다이렉트된다(router/routes.jsx mapIndex).
+      navigate('/map', { replace: true })
       window.location.reload()
     } catch (error) {
       setErr(`초기 설정 완료 처리 실패: ${error.message}`)
@@ -131,7 +136,8 @@ const Terms = () => {
                 <SecondaryActionButton type="button" onClick={() => navigate('/robot-info')} disabled={busy}>
                   이전
                 </SecondaryActionButton>
-                <ActionButton type="button" onClick={handleComplete} disabled={!allChecked || busy}>
+                {/* 완료는 곧바로 처리하지 않고 확인 모달을 먼저 띄운다 — 되돌릴 수 없는 단계다. */}
+                <ActionButton type="button" onClick={() => setConfirmOpen(true)} disabled={!allChecked || busy}>
                   {busy ? '완료 처리 중...' : '완료'}
                 </ActionButton>
               </WizardButtonWrap>
@@ -139,6 +145,48 @@ const Terms = () => {
           )}
         </SetupFormCard>
       </Section>
+
+      {/* 초기 설정 완료 확인 — 완료하면 초기 설정 그룹이 헤더·사이드바·라우트에서 사라지므로
+          (App.jsx setupCompleted) 이 화면으로 돌아와 값을 고칠 수 없다. 그 사실을 누르기 전에
+          알린다. Modal 의 footer 는 renderButtonComponent.props.children.length 로 버튼 폭을
+          계산하므로 실제 버튼만 배열로 넘긴다(SetupOrderModal 과 같은 규약). */}
+      <Modal
+        isOpen={confirmOpen}
+        size="sm"
+        title="초기 설정 완료"
+        onClose={() => setConfirmOpen(false)}
+        renderButtonComponent={
+          <>
+            {[
+              <Button key="cancel" size="lg" theme="secondary" onClick={() => setConfirmOpen(false)} disabled={busy}>
+                취소
+              </Button>,
+              <Button key="confirm" size="lg" onClick={handleComplete} disabled={busy}>
+                {busy ? '완료 처리 중...' : '완료'}
+              </Button>
+            ]}
+          </>
+        }
+      >
+        {/* 본문 레이아웃은 공용 GlobalErrorModal·SetupOrderModal 과 같은 형태로 맞춘다 */}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.8rem',
+            justifyContent: 'center',
+            alignItems: 'center',
+            textAlign: 'center',
+            minHeight: '8rem',
+            lineHeight: 1.5,
+            width: '100%'
+          }}
+        >
+          <div>약관에 동의하고 완료하면 초기 설정은 더 이상 수정할 수 없습니다.</div>
+          <div>(언어 · 사이트 코드 · 설치 위치 · 로봇 정보 · 약관 동의)</div>
+          <div>계속하시겠습니까?</div>
+        </div>
+      </Modal>
     </StyledPageContent>
   )
 }

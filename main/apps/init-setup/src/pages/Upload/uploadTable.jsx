@@ -1,7 +1,16 @@
-import { useState, useEffect, useMemo } from 'react'
-import { Title, TableCard, Button, Section, Dropdown, Modal } from '@repo/ui'
+import { useState, useEffect } from 'react'
+import { Title, TableCard, Button, Section, Modal, Loading } from '@repo/ui'
 import { toast } from 'react-toastify'
-import { StyledUploadPageContent, FilterRow, SummaryHeading, SummaryGroup, IdList, ModalButtons } from './styles'
+import { useTranslation } from 'react-i18next'
+import {
+  StyledUploadPageContent,
+  SummaryHeading,
+  SummaryList,
+  CountList,
+  ModalBody,
+  ModalNote,
+  ProgressBody
+} from './styles'
 
 import * as siteApi from '@/apis/siteApis'
 import * as buildingApi from '@/apis/buildingApis'
@@ -11,52 +20,51 @@ import * as mapApi from '@/apis/mapApis'
 import * as poiApi from '@/apis/mapPoiApis'
 import { buildApplyPoiBatchBody } from '@/utils/poiBatch'
 import { isWorkingMapDir, publishedNameOf, resolveMapDir, visibleMaps } from '@/utils/mapRecord'
+import { useUserStore } from '@repo/stores'
 
 // 다국어 이름 {default, ko-KR, en-US} 에서 표시 문자열을 고른다.
 const nameOf = (n) => n?.default ?? n?.['ko-KR'] ?? n?.['en-US'] ?? '-'
 // id 로 조회하기 위한 맵.
 const indexById = (arr) => Object.fromEntries((arr ?? []).map((x) => [x.id, x]))
-
-const ALL = { name: '전체', value: '' }
-
-// rows 에서 (id, name) 고유 옵션 목록을 만든다(id 없는 행 제외, 앞에 '전체').
-const toOptions = (rows, idKey, nameKey) => {
-  const seen = new Map()
-  rows.forEach((r) => {
-    const id = r[idKey]
-    if (id == null) return
-    if (!seen.has(id)) seen.set(id, r[nameKey])
-  })
-  return [ALL, ...Array.from(seen, ([value, name]) => ({ value, name }))]
-}
-
-// POI 표시 라벨 — poiId 우선, 없으면 DB id.
-const poiLabel = (p) => p.poiId ?? `#${p.id}`
-
 // 행에 딸린 맵 이름 표시 — 맵이 없으면 '-'.
 const mapNames = (row) => (row.maps ?? []).map((m) => nameOf(m.name)).join(', ') || '-'
 
+/**
+ * 시맨틱(POI) 업로드가 가능한 맵 — extMapId 가 있는 맵.
+ *
+ * extMapId 는 맵 파일 업로드가 성공했을 때 맵 서버가 발행한 id 를 BE 가 레코드에 적어 넣은 값이다
+ * (init-setup-be mapUpload.service.uploadMap). POI batch 는 맵 서버가 돌려준 mapId 로 로컬 맵을
+ * 찾아 poiVersion 을 갱신하므로(uploadPoiBatch: where extMapId), 맵이 아직 안 올라간 상태에서
+ * POI 만 올리면 붙일 맵이 없어 실패한다 → 맵 업로드 전에는 시맨틱 업로드를 막는다.
+ */
+const uploadedMaps = (row) => (row?.maps ?? []).filter((m) => m?.extMapId)
+
 const UploadTable = () => {
+  // transfer 네임스페이스는 업로드/다운로드 두 화면이 공유한다(locales/*/transfer.json).
+  const { t } = useTranslation('transfer')
   const [allRows, setAllRows] = useState([])
   const [isLoading, setIsLoading] = useState(true)
-  const [filter, setFilter] = useState({ buildingId: '', floorId: '', areaId: '' })
   // 승격(맵 업로드) 후 목록을 다시 읽기 위한 트리거 — 맵 이름/경로가 바뀌므로 화면도 갱신해야 한다.
   const [reloadKey, setReloadKey] = useState(0)
 
   // 업로드 요약 모달
-  const [summaryOpen, setSummaryOpen] = useState(false)
-  const [summaryLoading, setSummaryLoading] = useState(false)
-  const [summaryRow, setSummaryRow] = useState(null)
-  const [summary, setSummary] = useState(null) // { created, edited, deleted }
+  const [mapUplaodModalOpen, setMapUplaodModalOpen] = useState(false)
+  const [selectMapUploadRow, setSelectMapUploadRow] = useState(false)
+
+  const [poiUploadModalOpen, setPoiUploadModalOpen] = useState(false)
+  const [poiUplaodLoading, setPoiUplaodLoading] = useState(false)
+  const [slectedPoiRow, setSlectedPoiRow] = useState(null)
+  const [poiUploadSummary, setPoiUploadSummary] = useState(null) // { created, edited, deleted }
+
+  // 업로드 진행 모달 — 확인 모달을 닫고 이 모달로 진행 상황을 보여준다(완료/실패 시 null).
+  // { title, message } 형태이며, 여러 단계로 진행되는 맵 업로드는 message 만 갈아 끼운다.
+  const [progress, setProgress] = useState(null)
 
   useEffect(() => {
     let alive = true
     const fetchRows = async () => {
       setIsLoading(true)
       try {
-        // 위치 계층: Area.floorId → Floor.buildingId → Building.siteId → Site
-        // 맵도 함께 받는다 — 행마다 업로드 대상 맵을 붙여야 하고, 구역에 매이지 않은 맵
-        // (건물 정보가 없는 로봇의 Default_working 등)도 목록에 올려야 한다.
         const [sitesRes, buildingsRes, floorsRes, areasRes, mapsRes] = await Promise.all([
           siteApi.list(),
           buildingApi.list(),
@@ -65,16 +73,26 @@ const UploadTable = () => {
           mapApi.list()
         ])
         if (!alive) return
+        // 활성 사이트가 없으면 어느 사이트의 맵을 보여줄지 정할 수 없다 — 빈 목록으로 끝낸다
+        // (로딩 표시는 finally 에서 내려간다).
         const activeStie = sitesRes?.data?.find((e) => e.isActive)
-        if (!activeStie) {
-          setIsLoading(true)
-          return
-        }
+        if (!activeStie) return
         const sites = indexById([activeStie])
+        const buildings = indexById(buildingsRes?.data.filter((e) => e.siteId === activeStie?.id))
 
-        const buildings = indexById(buildingsRes?.data)
-        const floors = indexById(floorsRes?.data)
-        const areas = indexById(areasRes?.data)
+        let floorsResList = []
+        for (const buildingId of Object.keys(buildings)) {
+          const matchRes = floorsRes?.data.filter((el) => el.buildingId === Number(buildingId))
+          floorsResList = floorsResList.concat(matchRes)
+        }
+        const floors = indexById(floorsResList)
+
+        let areaResList = []
+        for (const floorId of Object.keys(floors)) {
+          const matchRes = areasRes?.data.filter((e) => e.floorId === Number(floorId))
+          areaResList = areaResList.concat(matchRes)
+        }
+        const areas = indexById(areaResList)
         // archived(업로드로 대체된 이전 맵)는 업로드 대상이 아니므로 목록에서 뺀다.
         const maps = visibleMaps(mapsRes?.data)
 
@@ -84,41 +102,53 @@ const UploadTable = () => {
           return acc
         }, {})
 
-        const areaRows = (areasRes?.data ?? []).map((area) => {
+        const areaRows = Object.keys(areas).map((areaId) => {
+          const area = areas[areaId]
           const floor = floors[area.floorId]
           const building = floor && buildings[floor.buildingId]
           const site = building && sites[building.siteId]
+
           return {
             id: `area-${area.id}`,
+            siteId: site?.id,
             site: site ? nameOf(site.siteName) : '-',
+            siteExtId: site?.extId,
             buildingId: floor?.buildingId,
             building: building ? nameOf(building.name) : '-',
-            floorId: area.floorId,
-            floor: floor ? nameOf(floor.name) : '-',
-            areaId: area.id,
-            area: nameOf(area.name),
-            maps: mapsByArea[area.id] ?? []
+            buildingExtId: building?.extId,
+            buildingName: building?.name.default,
+            floorId: area?.floorId,
+            floor: floor ? nameOf(floor?.name) : '-',
+            floorExitId: floor?.extId,
+            floorName: floor?.name?.default,
+            areaId: area?.id,
+            area: nameOf(area?.name),
+            areaExitId: area?.extId,
+            areaName: area?.name?.default,
+            maps: mapsByArea[area?.id] ?? []
           }
         })
 
         // 구역에 매이지 않은 맵 — areaId 가 없거나(위치 계층 없이 저장) 가리키는 구역이 사라진 경우.
         // 이 맵들은 구역 행이 없어 지금까지 화면에서 아예 보이지 않았다.
-        const orphanRows = maps
-          .filter((map) => map.areaId == null || !areas[map.areaId])
-          .map((map) => {
-            const site = map.siteId != null ? sites[map.siteId] : null
-            return {
-              id: `map-${map.id}`,
-              site: site ? nameOf(site.siteName) : '-',
-              buildingId: undefined,
-              building: '-',
-              floorId: undefined,
-              floor: '-',
-              areaId: null,
-              area: '-',
-              maps: [map]
-            }
-          })
+        const orphanRows = []
+        // const orphanRows = maps
+        //   .filter((map) => map.areaId == null || !areas[map.areaId])
+        //   .map((map) => {
+        //     const site = map.siteId != null ? sites[map.siteId] : null
+        //     return {
+        //       id: `map-${map.id}`,
+        //       site: site ? nameOf(site.siteName) : '-',
+        //       buildingId: undefined,
+        //       building: '-',
+        //       floorId: undefined,
+        //       floor: '-',
+        //       areaId: null,
+        //       area: '-',
+        //       maps: [map]
+        //     }
+        //   })
+        // console.log(orphanRows)
 
         setAllRows([...areaRows, ...orphanRows])
       } catch (error) {
@@ -137,70 +167,55 @@ const UploadTable = () => {
     }
   }, [reloadKey])
 
-  // 계층 연동 옵션: 층은 선택 빌딩으로, 구역은 선택 빌딩+층으로 좁힌다.
-  const buildingOptions = useMemo(() => toOptions(allRows, 'buildingId', 'building'), [allRows])
-  const floorOptions = useMemo(() => {
-    const scoped = allRows.filter((r) => !filter.buildingId || r.buildingId === filter.buildingId)
-    return toOptions(scoped, 'floorId', 'floor')
-  }, [allRows, filter.buildingId])
-  const areaOptions = useMemo(() => {
-    const scoped = allRows.filter(
-      (r) =>
-        (!filter.buildingId || r.buildingId === filter.buildingId) && (!filter.floorId || r.floorId === filter.floorId)
-    )
-    return toOptions(scoped, 'areaId', 'area')
-  }, [allRows, filter.buildingId, filter.floorId])
-
-  const filteredRows = useMemo(
-    () =>
-      allRows.filter(
-        (r) =>
-          (!filter.buildingId || r.buildingId === filter.buildingId) &&
-          (!filter.floorId || r.floorId === filter.floorId) &&
-          (!filter.areaId || r.areaId === filter.areaId)
-      ),
-    [allRows, filter]
-  )
-
-  // 상위 선택이 바뀌면 하위 선택은 초기화한다(LocationBar 규약).
-  const handleBuildingChange = (v) => setFilter({ buildingId: v, floorId: '', areaId: '' })
-  const handleFloorChange = (v) => setFilter((p) => ({ ...p, floorId: v, areaId: '' }))
-  const handleAreaChange = (v) => setFilter((p) => ({ ...p, areaId: v }))
-
   // 맵 업로드(작업본 → 확정본 승격) 상태. conflict 는 확정본이 이미 있어 교체 확인이 필요한 경우다.
   const [publishing, setPublishing] = useState(false)
-  const [conflict, setConflict] = useState(null) // { row, savePath, publishedName }
+  const [conflict, setConflict] = useState(null) // { row, mapId, publishedName }
 
   /**
-   * 작업본 맵 디렉터리를 확정본으로 승격한다 (POST /robot-hub/save-map/publish).
+   * 작업본 맵을 확정본으로 승격한다 (POST /robot-hub/save-map/publish).
+   *
+   * 경로는 넘기지 않는다 — 맵 레코드 id 만 주고 BE 가 그 레코드의 경로에서 작업본 디렉터리를
+   * 판단한다(init-setup-be map.service.getDirById). 화면은 승격 여부 판정에만 경로를 쓴다.
    *
    * 승격 후 로봇의 정위 맵 경로는 여기서 바꾸지 않는다 — 초기 위치 없이 switch-mode 를 다시 부르면
    * GKR 360° 재정위가 돌아 현재 추정 위치를 잃는다. 정위 전환은 맵 화면에서 사용자가 한다.
    */
-  const publishMapDir = async ({ savePath, overwrite = false }) => {
+  const publishMapDir = async ({ mapId, fallbackName, overwrite = false }) => {
     setPublishing(true)
     try {
-      const res = await mapApi.publishMap({ savePath, overwrite })
+      const res = await mapApi.publishMap({ mapId, overwrite })
       const published = res?.data
-      toast.success(`맵 업로드 완료: ${published?.name ?? savePath}`, { autoClose: 3000 })
+      toast.success(t('upload.map.done', { name: published?.name ?? fallbackName }), { autoClose: 3000 })
       setConflict(null)
       // 레코드의 경로/이름이 확정본으로 바뀌었다 — 목록을 다시 읽어야 '이미 업로드됨' 판정이 맞는다.
       setReloadKey((key) => key + 1)
       return true
     } catch (error) {
       const status = error?.response?.status
-      const detail = error?.response?.data?.message ?? error?.response?.data?.error
-      if (status === 409 && !overwrite) return 'conflict'
-      if (status === 409) {
-        // overwrite 로도 409 면 격자맵 저장이 아직 안 끝난 경우다(BE 가 미완료 승격을 막는다).
-        toast.error('맵 저장이 아직 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.', { autoClose: 4000 })
+      const body = error?.response?.data
+      // 에러 봉투는 { success:false, error:{ message, code? } } 다 — code 로 409 두 종류를 가른다.
+      const detail = body?.error?.message ?? body?.message
+      const code = body?.error?.code
+      if (status === 409 && code === 'GRID_MAP_NOT_READY') {
+        // 격자맵(grid_map.yaml/.png)이 아직 안 떨어진 경우 — 교체 확인으로 이어질 문제가 아니다.
+        toast.error(t('upload.map.notReady'), { autoClose: 4000 })
+      } else if (status === 409 && !overwrite) {
+        return 'conflict'
+      } else if (status === 409) {
+        toast.error(t('upload.map.failed', { message: detail ?? t('upload.map.conflictFallback') }), {
+          autoClose: 4000
+        })
       } else if (status === 404) {
-        toast.error('작업본 맵 폴더를 찾을 수 없습니다. 맵을 다시 저장해 주세요.', { autoClose: 4000 })
+        // 맵 레코드가 없거나(id 가 지워짐) 레코드가 가리키는 작업본 폴더가 없는 경우.
+        toast.error(t('upload.map.notFound'), { autoClose: 4000 })
       } else if (status === 422) {
-        toast.error('로봇의 맵 폴더에 쓸 수 없습니다(마운트 권한 확인 필요).', { autoClose: 4000 })
+        // 맵 루트가 읽기 전용이거나, 레코드에 쓸 수 있는 파일 경로가 없는 경우.
+        toast.error(t('upload.map.folderUnavailable', { message: detail ?? t('upload.map.mountHint') }), {
+          autoClose: 4000
+        })
       } else {
         console.error('[Upload] 맵 승격 실패:', error)
-        toast.error(`맵 업로드 실패: ${detail ?? error.message}`, { autoClose: 4000 })
+        toast.error(t('upload.map.failed', { message: detail ?? error.message }), { autoClose: 4000 })
       }
       return false
     } finally {
@@ -208,42 +223,112 @@ const UploadTable = () => {
     }
   }
 
-  // 맵 업로드 버튼 → 행에 붙은 맵 레코드에서 작업본 디렉터리를 찾아 승격한다.
-  // 행이 이미 대상 맵을 들고 있으므로 areaId 로 다시 조회하지 않는다 — 구역 없는 행(areaId=null)은
-  // areaId 쿼리가 전체 맵을 돌려줘 엉뚱한 맵을 올리게 된다.
   const handleMapUpload = async (row) => {
-    const dirs = Array.from(new Set((row.maps ?? []).map(resolveMapDir).filter(Boolean)))
+    setSelectMapUploadRow(row)
+    setMapUplaodModalOpen(true)
+  }
 
-    if (!dirs.length) {
-      toast.warn('이 항목에 등록된 맵이 없습니다. 맵 스캔 후 저장해 주세요.', { autoClose: 3000 })
+  // 맵 업로드 버튼 → 행에 붙은 맵 레코드에서 업로드/승격할 맵을 골라 그 **id** 만 BE 로 넘긴다.
+  //
+  // 대상 맵은 행이 들고 있는 레코드에서만 고른다 — areaId 로 다시 조회하면 구역 없는 행
+  // (areaId=null)에서 쿼리에 areaId 가 빠져 전체 맵이 내려오고, 엉뚱한 맵을 올리게 된다.
+  //
+  // 경로는 BE 가 레코드에서 판단하므로 요청에 담지 않는다. 화면에서 경로를 보는 것은 판정용뿐이다
+  // — 아직 작업본인지(isWorkingMapDir), 승격되면 어떤 이름이 되는지(publishedNameOf).
+  const handleConfirmMapUpload = async () => {
+    const candidates = (selectMapUploadRow?.maps ?? [])
+      .map((map) => ({ map, dir: resolveMapDir(map) }))
+      .filter(({ dir }) => Boolean(dir))
+
+    if (!candidates.length) {
+      toast.warn(t('upload.map.noMap'), { autoClose: 3000 })
       return
     }
-    const working = dirs.filter(isWorkingMapDir)
+    const working = candidates.filter(({ dir }) => isWorkingMapDir(dir))
     if (!working.length) {
-      toast.info('이미 업로드된 맵입니다.', { autoClose: 3000 })
+      toast.info(t('upload.map.alreadyUploaded'), { autoClose: 3000 })
       return
     }
     // 작업본이 여러 개면 어느 것을 확정할지 판단할 근거가 없다 — 임의로 고르지 않는다.
-    if (working.length > 1) {
-      toast.error(`작업본 맵이 ${working.length}개 있습니다. 불필요한 맵을 먼저 정리해 주세요.`, {
-        autoClose: 5000
-      })
+    // 같은 디렉터리를 가리키는 레코드가 여럿일 수 있으므로 디렉터리 단위로 센다.
+    const workingDirs = Array.from(new Set(working.map(({ dir }) => dir)))
+    if (workingDirs.length > 1) {
+      toast.error(t('upload.map.multipleWorking', { count: workingDirs.length }), { autoClose: 5000 })
       return
     }
 
-    const savePath = working[0]
-    const result = await publishMapDir({ savePath, overwrite: false })
-    if (result === 'conflict') {
-      setConflict({ row, savePath, publishedName: publishedNameOf(savePath) })
+    const { map: targetMap, dir: workingDir } = working[0]
+    const session = useUserStore.getState().session
+    const row = selectMapUploadRow
+
+    // 확인 모달을 닫고 진행 모달로 넘긴다 — 이후 단계는 모두 진행 모달 아래에서 돈다.
+    setMapUplaodModalOpen(false)
+    setProgress({ title: t('upload.map.title'), message: t('common.checkingSite') })
+    try {
+      const siteScopoeRes = await siteApi.retrieveSiteScope({
+        siteId: row.siteExtId,
+        authorization: session?.accessToken
+      })
+      if (!siteScopoeRes.success) {
+        toast.error(t('common.siteLookupFailed'), { autoClose: 3000 })
+        return
+      }
+
+      setProgress({ title: t('upload.map.title'), message: t('upload.map.uploading') })
+      try {
+        await mapApi.uploadMap({
+          groupId: siteScopoeRes?.data.groupId,
+          siteId: row.siteExtId,
+          buildingId: row.buildingExtId,
+          floorId: row.floorExitId,
+          areaId: row.areaExitId,
+          mapType: 'navi',
+          filename: 'navi_map.zip',
+          authorization: session?.accessToken,
+          // zip 대상 경로는 BE 가 이 레코드에서 판단한다(sourceDir 을 보내지 않는다).
+          localMapId: targetMap.id
+        })
+      } catch (error) {
+        console.error('[Upload] 맵 서버 업로드 실패:', error)
+        toast.error(t('upload.map.fileFailed'), { autoClose: 4000 })
+        return
+      }
+
+      // 파일이 올라갔으면 로컬 작업본을 확정본으로 승격한다(폴더의 '_working' 제거 + active 전환).
+      setProgress({ title: t('upload.map.title'), message: t('upload.map.publishing') })
+      const publishedName = publishedNameOf(workingDir)
+      const result = await publishMapDir({ mapId: targetMap.id, fallbackName: publishedName })
+      if (result === 'conflict') {
+        setConflict({ row, mapId: targetMap.id, publishedName })
+      }
+    } catch (error) {
+      // 사이트 정보 조회처럼 위에서 개별 처리하지 않은 실패 — 진행 모달만 닫히면 원인을 알 수 없다.
+      console.error('[Upload] 맵 업로드 실패:', error)
+      toast.error(t('upload.map.failed', { message: error.message }), { autoClose: 4000 })
+    } finally {
+      // 성공/실패/충돌 어느 쪽이든 진행 모달은 닫는다(충돌은 교체 확인 모달로 이어진다).
+      setProgress(null)
+    }
+  }
+
+  // 교체 확인 → 진행 모달로 넘기고 overwrite 로 다시 승격한다.
+  const handleReplaceConfirm = async () => {
+    const { mapId, publishedName } = conflict
+    setConflict(null)
+    setProgress({ title: t('upload.replace.progressTitle'), message: t('upload.replace.progress') })
+    try {
+      await publishMapDir({ mapId, fallbackName: publishedName, overwrite: true })
+    } finally {
+      setProgress(null)
     }
   }
 
   // 업로드 버튼 → 대상 Area 의 맵 POI 를 editStatus 로 분류해 요약 모달을 연다.
   const handleSemanticUpload = async (row) => {
-    setSummaryRow(row)
-    setSummary(null)
-    setSummaryOpen(true)
-    setSummaryLoading(true)
+    setSlectedPoiRow(row)
+    setPoiUploadSummary(null)
+    setPoiUploadModalOpen(true)
+    setPoiUplaodLoading(true)
     try {
       // 행이 들고 있는 맵만 대상으로 한다(areaId 재조회 금지 — 위 handleMapUpload 주석 참고).
       const maps = row.maps ?? []
@@ -254,152 +339,257 @@ const UploadTable = () => {
       const deleted = pois.filter((p) => p.editStatus?.softDelete)
       // 수정 diff 및 basePoiVersionId 구성용 — 원본(editStatus 없는 POI)과 맵 버전을 함께 담는다.
       const originalsByPoiId = Object.fromEntries(pois.filter((p) => !p.editStatus).map((p) => [p.poiId, p]))
-      const basePoiVersionId = maps[0]?.poiVersion ?? null
-      setSummary({ created, edited, deleted, originalsByPoiId, basePoiVersionId })
+      // 버전 기준은 맵 서버에 올라간 맵(extMapId 보유)의 poiVersion 이다 — POI batch 는 그 맵에
+      // 붙으므로, 아직 안 올라간 맵의 값을 기준으로 보내면 서버의 버전과 어긋난다.
+      const basePoiVersionId = (uploadedMaps(row)[0] ?? maps[0])?.poiVersion ?? null
+      setPoiUploadSummary({ created, edited, deleted, originalsByPoiId, basePoiVersionId })
     } catch (error) {
       console.error('[Upload] 업로드 대상 조회 실패:', error)
-      toast.error('업로드 대상을 조회하지 못했습니다.', { autoClose: 3000 })
-      setSummary({ created: [], edited: [], deleted: [] })
+      toast.error(t('upload.semantic.targetFailed'), { autoClose: 3000 })
+      setPoiUploadSummary({ created: [], edited: [], deleted: [] })
     } finally {
-      setSummaryLoading(false)
+      setPoiUplaodLoading(false)
     }
   }
 
-  const closeSummary = () => setSummaryOpen(false)
+  const handleConfirmUpload = async () => {
+    if (!poiUploadSummary) return
 
-  const handleConfirmUpload = () => {
-    if (!summary) return
-    // 관제 applyPoiBatch 요청 body 생성(현재는 콘솔 출력까지).
-    // TODO(user): POST 관제 applyPoiBatch (X-API-Key 인증, 엔드포인트) 연동 + 주행맵 업로드
-    const body = buildApplyPoiBatchBody(summary)
-    console.log('[applyPoiBatch body]', JSON.stringify(body, null, 2))
-    toast.info('업로드 요청 body 생성됨 (콘솔 확인) — 실제 전송은 미연동', { autoClose: 2500 })
-    setSummaryOpen(false)
+    const row = slectedPoiRow
+    const session = useUserStore.getState().session
+
+    // 확인 모달을 닫고 진행 모달로 넘긴다.
+    setPoiUploadModalOpen(false)
+    setProgress({ title: t('upload.semantic.title'), message: t('common.checkingSite') })
+    try {
+      const res = await siteApi.retrieveSiteScope({
+        siteId: row.siteExtId,
+        authorization: session?.accessToken
+      })
+      if (!res?.success) {
+        toast.error(t('common.siteLookupFailed'), { autoClose: 3000 })
+        return
+      }
+
+      const body = buildApplyPoiBatchBody(poiUploadSummary)
+      body.groupId = res?.data.groupId
+      body.siteId = row.siteExtId
+      body.buildingId = row.buildingExtId
+      body.floorId = row.floorExitId
+      body.areaId = row.areaExitId
+      // basePoiVersionId 는 buildApplyPoiBatchBody 가 요약(poiUploadSummary)에서 이미 넣는다 —
+      // 행에는 poiVersion 이 없어 여기서 덮어쓰면 undefined 로 지워진다.
+      body.authorization = session?.accessToken
+
+      setProgress({ title: t('upload.semantic.title'), message: t('upload.semantic.uploading') })
+      await mapApi.uploadPoi(body)
+
+      toast.success(t('upload.semantic.done'), { autoClose: 3000 })
+      // 업로드된 POI 는 editStatus 가 정리되고 맵의 poiVersion 이 올라간다 — 목록을 다시 읽는다.
+      setReloadKey((key) => key + 1)
+    } catch (error) {
+      console.error('[Upload] 시맨틱 업로드 실패:', error)
+      const detail = error?.response?.data?.error?.message ?? error?.response?.data?.message
+      toast.error(t('upload.semantic.failed', { message: detail ?? error.message }), { autoClose: 4000 })
+    } finally {
+      setProgress(null)
+    }
   }
 
+  // 올릴 변경분이 하나라도 있어야 업로드가 의미 있다 — 없으면 버튼을 막고 본문에 이유를 적는다.
+  const hasPoiChanges = Boolean(
+    poiUploadSummary &&
+      (poiUploadSummary.created.length > 0 || poiUploadSummary.edited.length > 0 || poiUploadSummary.deleted.length > 0)
+  )
+
   const columns = [
-    { name: '사이트', selector: (row) => row.site, sortable: 'true' },
-    { name: '빌딩', selector: (row) => row.building, sortable: 'true' },
-    { name: '층', selector: (row) => row.floor, sortable: 'true' },
-    { name: '구역', selector: (row) => row.area, sortable: 'true' },
-    { name: '맵', selector: (row) => mapNames(row), sortable: 'true' },
+    // { name: t('common.site'), selector: (row) => row.site, sortable: 'true' },
+    { name: t('common.building'), selector: (row) => row.building, sortable: 'true' },
+    { name: t('common.floor'), selector: (row) => row.floor, sortable: 'true' },
+    { name: t('common.area'), selector: (row) => row.area, sortable: 'true' },
+    { name: t('common.map'), selector: (row) => mapNames(row), sortable: 'true' },
     {
-      name: '맵 업로드',
-      cell: (row) => (
-        <Button size="sm" onClick={() => handleMapUpload(row)} disabled={publishing}>
-          업로드
-        </Button>
-      )
+      name: t('upload.mapColumn'),
+      // 맵 레코드가 없는 행은 올릴 대상이 없다 — 눌러도 '등록된 맵이 없습니다' 로 끝나므로 막는다.
+      cell: (row) => {
+        const hasMap = (row.maps ?? []).length > 0
+        return (
+          <Button
+            size="sm"
+            onClick={() => handleMapUpload(row)}
+            disabled={!hasMap || publishing || !!progress}
+            title={hasMap ? undefined : t('upload.map.noMap')}
+          >
+            {t('upload.action')}
+          </Button>
+        )
+      }
     },
     {
-      name: '시멘틱 업로드',
-      cell: (row) => (
-        <Button size="sm" onClick={() => handleSemanticUpload(row)}>
-          업로드
-        </Button>
-      )
+      name: t('upload.semanticColumn'),
+      // 맵이 맵 서버에 올라가 extMapId 를 받은 뒤에만 POI 를 올릴 수 있다(uploadedMaps 주석 참고).
+      cell: (row) => {
+        const ready = uploadedMaps(row).length > 0
+        return (
+          <Button
+            size="sm"
+            onClick={() => handleSemanticUpload(row)}
+            disabled={!ready || !!progress}
+            title={ready ? undefined : t('upload.semanticBlocked')}
+          >
+            {t('upload.action')}
+          </Button>
+        )
+      }
     }
   ]
 
   return (
     <Section>
       <StyledUploadPageContent className="column">
-        <Title>업로드</Title>
-        {/* <FilterRow>
-          <Dropdown label="빌딩" size="md" value={filter.buildingId} options={buildingOptions} onChange={handleBuildingChange} />
-          <Dropdown label="층" size="md" value={filter.floorId} options={floorOptions} onChange={handleFloorChange} />
-          <Dropdown label="구역" size="md" value={filter.areaId} options={areaOptions} onChange={handleAreaChange} />
-        </FilterRow> */}
+        <Title>{t('upload.title')}</Title>
         <TableCard
           columns={columns}
-          data={filteredRows}
-          loading={isLoading}
-          noData="업로드할 위치·맵 정보가 없습니다."
+          data={allRows}
+          // 로딩 prop 이름은 isLoading 이다(TableCard/Table) — loading 으로 주면 무시된다.
+          isLoading={isLoading}
+          noData={t('upload.noData')}
           pagination
           paginationRowsPerPageOptions={[10, 30, 50, 100]}
         />
       </StyledUploadPageContent>
 
+      {/* 맵 교체 확인 — Modal footer 는 renderButtonComponent.props.children.length 로 버튼 폭을
+          계산하므로(packages/ui Modal), 실제 버튼만 배열로 넘긴다. */}
       <Modal
         isOpen={!!conflict}
-        title="맵 교체 확인"
+        title={t('upload.replace.title')}
+        closeButton
         onClose={() => setConflict(null)}
         size="sm"
         renderButtonComponent={
-          <ModalButtons>
-            <Button
-              onClick={() => publishMapDir({ savePath: conflict.savePath, overwrite: true })}
-              disabled={publishing}
-            >
-              교체
-            </Button>
-            <Button variant="outline" onClick={() => setConflict(null)} disabled={publishing}>
-              취소
-            </Button>
-          </ModalButtons>
+          <>
+            {[
+              <Button key="cancel" size="lg" theme="secondary" onClick={() => setConflict(null)} disabled={publishing}>
+                {t('common.cancel')}
+              </Button>,
+              <Button key="replace" size="lg" theme="delete" onClick={handleReplaceConfirm} disabled={publishing}>
+                {t('upload.replace.confirm')}
+              </Button>
+            ]}
+          </>
         }
       >
-        <div style={{ padding: '1rem 0' }}>
-          {conflict && (
-            <>
-              <SummaryHeading>
-                {conflict.row.building} / {conflict.row.floor} / {conflict.row.area}
-              </SummaryHeading>
-              <p>&lsquo;{conflict.publishedName}&rsquo; 맵이 이미 업로드되어 있습니다. 이번 작업본으로 교체할까요?</p>
-              <p>기존 맵은 삭제하지 않고 백업(.bak)으로 남습니다.</p>
-            </>
-          )}
-        </div>
+        {conflict && (
+          <ModalBody>
+            <SummaryHeading>
+              {conflict.row.building} / {conflict.row.floor} / {conflict.row.area}
+            </SummaryHeading>
+            <div>{t('upload.replace.description', { name: conflict.publishedName })}</div>
+            <ModalNote>{t('upload.replace.note')}</ModalNote>
+          </ModalBody>
+        )}
       </Modal>
 
+      {/* 맵 업로드 확인 */}
       <Modal
-        isOpen={summaryOpen}
-        title="업로드 요약"
-        onClose={closeSummary}
-        size="md"
+        isOpen={mapUplaodModalOpen}
+        title={t('upload.map.title')}
+        closeButton
+        onClose={() => setMapUplaodModalOpen(false)}
+        size="sm"
         renderButtonComponent={
-          <ModalButtons>
-            <Button onClick={handleConfirmUpload} disabled={summaryLoading}>
-              확인
-            </Button>
-            <Button variant="outline" onClick={closeSummary}>
-              취소
-            </Button>
-          </ModalButtons>
+          <>
+            {[
+              <Button key="cancel" size="lg" theme="secondary" onClick={() => setMapUplaodModalOpen(false)}>
+                {t('common.cancel')}
+              </Button>,
+              <Button key="upload" size="lg" onClick={handleConfirmMapUpload}>
+                {t('upload.map.confirm')}
+              </Button>
+            ]}
+          </>
         }
       >
-        <div style={{ padding: '1rem 0' }}>
-          {summaryRow && (
+        {selectMapUploadRow && (
+          <ModalBody>
+            <div>{t('upload.map.description')}</div>
+            <SummaryList>
+              {/* <dt>{t('common.site')}</dt> */}
+              {/* <dd>{selectMapUploadRow.site}</dd> */}
+              <dt>{t('common.building')}</dt>
+              <dd>{selectMapUploadRow.building}</dd>
+              <dt>{t('common.floor')}</dt>
+              <dd>{selectMapUploadRow.floor}</dd>
+              <dt>{t('common.area')}</dt>
+              <dd>{selectMapUploadRow.area}</dd>
+              {/* <dt>{t('common.map')}</dt>
+              <dd>{mapNames(selectMapUploadRow)}</dd> */}
+            </SummaryList>
+            <ModalNote>{t('upload.map.note')}</ModalNote>
+          </ModalBody>
+        )}
+      </Modal>
+
+      {/* 시맨틱(POI) 업로드 확인 */}
+      <Modal
+        isOpen={poiUploadModalOpen}
+        title={t('upload.semantic.title')}
+        closeButton
+        onClose={() => setPoiUploadModalOpen(false)}
+        size="sm"
+        renderButtonComponent={
+          <>
+            {[
+              <Button key="cancel" size="lg" theme="secondary" onClick={() => setPoiUploadModalOpen(false)}>
+                {t('common.cancel')}
+              </Button>,
+              <Button key="upload" size="lg" onClick={handleConfirmUpload} disabled={poiUplaodLoading || !hasPoiChanges}>
+                {t('upload.semantic.confirm')}
+              </Button>
+            ]}
+          </>
+        }
+      >
+        <ModalBody>
+          {slectedPoiRow && (
             <SummaryHeading>
-              {summaryRow.site} / {summaryRow.building} / {summaryRow.floor} / {summaryRow.area} ({mapNames(summaryRow)}
-              )
+              {slectedPoiRow.building} / {slectedPoiRow.floor} / {slectedPoiRow.area}
             </SummaryHeading>
           )}
-          {summaryLoading || !summary ? (
-            <p>확인 중...</p>
+
+          {poiUplaodLoading || !poiUploadSummary ? (
+            <ProgressBody>
+              <Loading />
+              <div className="hint">{t('upload.semantic.checking')}</div>
+            </ProgressBody>
           ) : (
             <>
-              {[
-                { title: '신규 POI 개수', items: summary.created },
-                { title: '수정 POI 개수', items: summary.edited },
-                { title: '삭제 POI 개수', items: summary.deleted }
-              ].map(({ title, items }) => (
-                <SummaryGroup key={title}>
-                  <div className="title">
-                    {title} ({items.length})
-                  </div>
-                  {/* <IdList>
-                    {items.length ? (
-                      items.map((p) => <li key={p.id}>{poiLabel(p)}</li>)
-                    ) : (
-                      <li className="empty">없음</li>
-                    )}
-                  </IdList> */}
-                </SummaryGroup>
-              ))}
+              <CountList>
+                {[
+                  { key: 'created', items: poiUploadSummary.created },
+                  { key: 'edited', items: poiUploadSummary.edited },
+                  { key: 'deleted', items: poiUploadSummary.deleted }
+                ].map(({ key, items }) => (
+                  <li key={key} className={items.length === 0 ? 'zero' : undefined}>
+                    <span>{t(`upload.semantic.${key}`)}</span>
+                    <span className="count">{t('upload.semantic.count', { count: items.length })}</span>
+                  </li>
+                ))}
+              </CountList>
+              {!hasPoiChanges && <ModalNote>{t('upload.semantic.noChanges')}</ModalNote>}
             </>
           )}
-        </div>
+        </ModalBody>
+      </Modal>
+
+      {/* 업로드 진행 — 버튼 없이 스피너만 두고, 완료/실패 시 호출부가 닫는다. */}
+      <Modal isOpen={!!progress} title={progress?.title} size="sm">
+        <ProgressBody>
+          <Loading size={28} />
+          <div className="message">{progress?.message}</div>
+          <div className="hint">{t('common.keepOpen')}</div>
+        </ProgressBody>
       </Modal>
     </Section>
   )

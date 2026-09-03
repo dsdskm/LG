@@ -19,6 +19,31 @@
 /** 작업 중인(아직 업로드 전) 맵임을 나타내는 저장 이름 접미사. 승격 시 이 접미사를 뗀다. */
 export const WORKING_SUFFIX = 'working'
 
+/** 저장 폴더 이름에 쓰는 난수 토큰 — 길이 8, 소문자+숫자. 경로로 쓰므로 알파넘만 쓴다. */
+const DIR_TOKEN_LENGTH = 8
+const DIR_TOKEN_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789'
+
+/**
+ * 새 작업본 맵 저장 폴더 이름 — '<난수 8자>_working'.
+ *
+ * 폴더 이름을 위치 계층(Building_Floor_Area)에서 만들지 않는다: 같은 구역을 다시 스캔하면 폴더가
+ * 겹쳐 이전 작업본을 덮어쓰고, 위치 이름을 고치면 폴더와 레코드가 어긋나며, 위치 이름에 한글·공백이
+ * 섞이면 경로로 다루기도 번거롭다. 사람이 읽을 이름은 맵 레코드(name.default)가 들고 있으므로
+ * 폴더는 겹치지만 않으면 된다.
+ *
+ * '_working' 접미사는 그대로 둔다 — 업로드 단계의 승격(접미사 제거)과 짝이고, 작업본 판별
+ * (isWorkingMapDir)도 이 접미사만 본다.
+ */
+export const newWorkingMapDirName = () => {
+  const size = DIR_TOKEN_ALPHABET.length
+  // crypto 가 없는 환경(구형 브라우저/테스트)에서도 이름은 나와야 하므로 Math.random 으로 폴백한다.
+  const randomIndexes = globalThis.crypto?.getRandomValues
+    ? Array.from(globalThis.crypto.getRandomValues(new Uint32Array(DIR_TOKEN_LENGTH)), (n) => n % size)
+    : Array.from({ length: DIR_TOKEN_LENGTH }, () => Math.floor(Math.random() * size))
+  const token = randomIndexes.map((index) => DIR_TOKEN_ALPHABET[index]).join('')
+  return `${token}_${WORKING_SUFFIX}`
+}
+
 /**
  * 화면에 노출할 맵만 남긴다 — archived 는 업로드로 대체된 이전 맵이라 목록에서 뺀다.
  *

@@ -100,9 +100,10 @@ const Language = () => {
 
       await i18n.changeLanguage(selected)
       window.localStorage.setItem('i18nextLng', selected)
-      // 이 단계를 끝냈으므로 '작업 중인 단계' 를 다음 화면(네트워크)으로 옮긴다.
-      await advanceSetupProgress(SETUP_STEPS.NETWORK)
-      navigate('/network')
+      // 이 단계를 끝냈으므로 '작업 중인 단계' 를 다음 화면(사이트 코드)으로 옮긴다.
+      // (네트워크 설정은 설치 단계에서 빠져 헤더 Wi-Fi 아이콘으로만 들어간다 — routes.jsx)
+      await advanceSetupProgress(SETUP_STEPS.SITE_CODE)
+      navigate('/site-code')
     } catch (e) {
       setErr(t('language.saveFailed', { message: e.message }))
     } finally {

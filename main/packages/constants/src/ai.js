@@ -43,5 +43,17 @@ export const RULE_KEY = {
   NODE_APPEND_HORIZON: 'node-append-horizon',
   NODE_CREATE_VERTICAL: 'node-create-vertical',
   NODE_APPEND_VERTICAL: 'node-append-vertical',
-  NODE_DELETE: 'node-delete'
+  NODE_DELETE: 'node-delete',
+
+  // robot 앱 화면 이동 명령 (AI Assistant Rule 탭에서 등록, extraJson.navigation 경로로 이동)
+  ROBOT_APP_DASHBOARD: 'robot-app-dashboard',
+  ROBOT_APP_MANAGEMENT_LIST: 'robot-app-management-list',
+  ROBOT_APP_MAP_LIST: 'robot-app-map-list',
+  ROBOT_APP_GROUP_LIST: 'robot-app-group-list',
+  ROBOT_APP_USER_LIST: 'robot-app-user-list',
+  ROBOT_APP_TERM_LIST: 'robot-app-term-list',
+
+  // robot 앱 이름 기반 상세 이동 (기존 로봇/사이트 목록 API로 이름→ID 조회 후 이동)
+  ROBOT_APP_MANAGEMENT_DETAIL: 'robot-app-management-detail',
+  ROBOT_APP_SITE_DETAIL: 'robot-app-site-detail'
 }

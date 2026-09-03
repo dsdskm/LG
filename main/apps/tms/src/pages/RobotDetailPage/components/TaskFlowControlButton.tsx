@@ -1,7 +1,7 @@
 import { TaskFlowRunningStatus } from '@/types/RobotInfo'
 import './TaskFlowControlButton.css'
 
-export type Command = 'start' | 'stop' | 'pause' | 'resume' | 'enable' | 'disable'
+export type Command = 'start' | 'proceed' | 'stop' | 'pause' | 'resume' | 'enable' | 'disable'
 
 export interface Control {
   title: string
@@ -40,6 +40,9 @@ const TaskFlowControlButton = ({
   switch (control.command) {
     case 'start':
       enabled = enabled && taskFlowRunningStatus !== 'PAUSED' && taskFlowRunningStatus !== 'RUNNING'
+      break
+    case 'proceed':
+      enabled = enabled && taskFlowRunningStatus === 'WAITING'
       break
     case 'pause':
       enabled = enabled && taskFlowRunningStatus === 'RUNNING'

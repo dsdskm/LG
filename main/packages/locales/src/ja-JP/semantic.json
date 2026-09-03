@@ -1,3 +1,59 @@
 {
-  "delete": "削除"
+  "delete": "削除",
+  "restore": "削除取消",
+  "create": "作成",
+  "edit": "編集",
+  "tempSave": "一時保存",
+  "goto": "移動",
+  "loading": "読み込み中...",
+  "confirmDeleteContents": "選択したコンテンツを削除しますか？",
+  "filterType": "タイプ",
+  "filterOperation": "区分",
+  "semanticTypes": {
+    "POI": "POI",
+    "FIXED-OBSTACLE": "固定障害物"
+  },
+  "obstacleCreate": "固定障害物を追加",
+  "obstacleShape": "形状",
+  "obstacleShapes": {
+    "RECTANGLE": "四角形",
+    "POLYGON": "ポリゴン"
+  },
+  "obstacleDrawHint": "地図上でドラッグして範囲を指定し、離してください。",
+  "obstaclePolygonHint": "地図をクリックして点を追加し、右クリックまたは Enter（最初の点をクリック）で閉じてください。Esc: やり直し、ドラッグ: 地図移動",
+  "obstacleEditDone": "編集完了",
+  "obstacleEditHint": "地図上で図形の頂点をドラッグして形を修正してください。",
+  "noObstacles": "登録された固定障害物はありません。",
+  "obstacleColumns": {
+    "no": "番号",
+    "shape": "形状",
+    "points": "点の座標 (X, Y)"
+  },
+  "columns": {
+    "inUse": "使用中",
+    "id": "ID",
+    "name": "名前",
+    "type": "タイプ",
+    "position": "座標",
+    "command": "コマンド"
+  },
+  "detailTitle": "POI 詳細",
+  "detailTitleReadOnly": "POI 詳細（読み取り専用）",
+  "basicInfo": "基本情報",
+  "poiType": "タイプ",
+  "nameDefault": "既定の名前",
+  "nameEn": "英語名",
+  "nameKo": "韓国語名",
+  "position": "Position",
+  "useRobotPose": "現在位置に設定",
+  "useRobotPoseUnavailable": "ロボットの現在位置をまだ受信していません",
+  "orientation": "Orientation",
+  "orientationFromYaw": "yaw から自動計算",
+  "etc": "その他",
+  "yawDeg": "yaw deg",
+  "tolerance": "tolerance",
+  "properties": "Properties",
+  "propertiesHint": "キー/値の文字列、最大5個",
+  "propertyKey": "key",
+  "propertyValue": "value"
 }

@@ -574,17 +574,38 @@ function PoiPin({ position, isCharging, label, clickable, onClick, poiData = {} 
                   </span>
                 </div>
               )}
-              {poiData.yawDeg != null && (
+              {poiData.yawDeg != null && Number.isFinite(Number(poiData.yawDeg)) && (
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Yaw:</span>
-                  <span>{poiData.yawDeg.toFixed(1)}°</span>
+                  <span>{Number(poiData.yawDeg).toFixed(1)}°</span>
                 </div>
               )}
               {poiData.tolerance != null && (
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Tolerance:</span>
-                  <span>{poiData.tolerance.toFixed(2)}m</span>
-                </div>
+                typeof poiData.tolerance === 'number' ? (
+                  Number.isFinite(poiData.tolerance) && (
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Tolerance:</span>
+                      <span>{poiData.tolerance.toFixed(2)}m</span>
+                    </div>
+                  )
+                ) : (
+                  typeof poiData.tolerance === 'object' && poiData.tolerance !== null && (
+                    <>
+                      {poiData.tolerance.xy != null && Number.isFinite(Number(poiData.tolerance.xy)) && (
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Tolerance XY:</span>
+                          <span>{Number(poiData.tolerance.xy).toFixed(2)}m</span>
+                        </div>
+                      )}
+                      {poiData.tolerance.yaw_deg != null && Number.isFinite(Number(poiData.tolerance.yaw_deg)) && (
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Tolerance Yaw:</span>
+                          <span>{Number(poiData.tolerance.yaw_deg).toFixed(1)}°</span>
+                        </div>
+                      )}
+                    </>
+                  )
+                )
               )}
               {poiData.properties?.description && (
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -1089,16 +1110,16 @@ const SiteMap3D = ({
     return (multigrid ? Math.hypot(multigrid.matrix[0], multigrid.matrix[1]) : 1) / res
   }, [navi, isSvg, multigrid])
 
-  // Robot marker sizing: 1.5m 기준 높이를 맵 좌표계 단위로 변환.
-  // 맵이 크더라도 span 의 3% 이상으로 유지해 항상 보이도록 보정.
+  // Robot marker sizing: 고정 높이 유지 (span 상대값 제거)
+  // 지도 크기와 무관하게 항상 일정한 크기로 표시
   const { ringRadius, worldHeight } = useMemo(() => {
     const pxPerM = pxPerMeter || 1
-    const targetH = Math.max(ROBOT_ICON_FALLBACK_H * pxPerM, span * 0.03)
+    const targetH = ROBOT_ICON_FALLBACK_H * pxPerM
     return {
-      ringRadius: Math.max(targetH * 0.4, span * 0.02),
+      ringRadius: targetH * 0.4,
       worldHeight: targetH
     }
-  }, [pxPerMeter, span])
+  }, [pxPerMeter])
 
   const content = (
     <Wrapper $fullscreen={fullscreen} $height={height}>

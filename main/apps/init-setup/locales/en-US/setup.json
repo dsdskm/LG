@@ -61,7 +61,7 @@
     "registering": "Registering..."
   },
   "network": {
-    "title": "Initial Network Setup",
+    "title": "Network Setup",
     "description": "Select the Wi‑Fi network for the robot and switch from the setup AP to the regular network.",
     "gate": {
       "title": "Network connection is required before sign-in",

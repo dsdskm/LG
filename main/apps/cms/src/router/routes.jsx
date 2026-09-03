@@ -18,7 +18,6 @@ import ApiDoc from '../pages/Settings/ApiDoc'
 import Admin from '../pages/Admin'
 import TtsTool from '../pages/TtsTool'
 
-// ������ ��� on/off: enabled(Set<featureKey>) �� �ش� �޴� �׷��� hide ���� (�⺻ OFF)
 export const getAppRoutes = (enabled) => {
   const has = (key) => !!(enabled && typeof enabled.has === 'function' && enabled.has(key))
   return [
@@ -45,7 +44,7 @@ export const getAppRoutes = (enabled) => {
       path: '/cms/tts',
       prefix: 'cms',
       icon: 'music',
-      hide: !has('TTS_TOOL'),
+      hide: false,
       element: <TtsTool />
     },
     {
@@ -127,7 +126,7 @@ export const getAppRoutes = (enabled) => {
       name: 'lab',
       prefix: 'cms',
       icon: 'robot',
-      hide: false,
+      hide: !has('LAB'),
       depth: [
         {
           name: 'agentChat',
@@ -188,7 +187,6 @@ export const getAppRoutes = (enabled) => {
         }
       ]
     },
-    // ���� ������ ������ ? �޴� �̳���, /cms/admin URL �θ� ���� (������ ���ο��� level3 + ��й�ȣ ����)
     {
       name: 'admin',
       hide: true,

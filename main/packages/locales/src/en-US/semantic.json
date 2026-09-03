@@ -1,3 +1,59 @@
 {
-  "delete": "Delete"
+  "delete": "Delete",
+  "restore": "Undo delete",
+  "create": "Create",
+  "edit": "Edit",
+  "tempSave": "Save draft",
+  "goto": "Move",
+  "loading": "Loading...",
+  "confirmDeleteContents": "Delete the selected contents?",
+  "filterType": "Type",
+  "filterOperation": "Operation",
+  "semanticTypes": {
+    "POI": "POI",
+    "FIXED-OBSTACLE": "Fixed obstacle"
+  },
+  "obstacleCreate": "Add fixed obstacle",
+  "obstacleShape": "Shape",
+  "obstacleShapes": {
+    "RECTANGLE": "Rectangle",
+    "POLYGON": "Polygon"
+  },
+  "obstacleDrawHint": "Press and drag on the map to mark the area, then release.",
+  "obstaclePolygonHint": "Click the map to add points, then right-click or press Enter (or click the first point) to close. Esc: start over, drag: pan the map",
+  "obstacleEditDone": "Done",
+  "obstacleEditHint": "Drag a vertex of the shape on the map to reshape it.",
+  "noObstacles": "No fixed obstacles yet.",
+  "obstacleColumns": {
+    "no": "No.",
+    "shape": "Shape",
+    "points": "Points (X, Y)"
+  },
+  "columns": {
+    "inUse": "In use",
+    "id": "ID",
+    "name": "Name",
+    "type": "Type",
+    "position": "Position",
+    "command": "Command"
+  },
+  "detailTitle": "POI detail",
+  "detailTitleReadOnly": "POI detail (read-only)",
+  "basicInfo": "Basic info",
+  "poiType": "Type",
+  "nameDefault": "Default name",
+  "nameEn": "English name",
+  "nameKo": "Korean name",
+  "position": "Position",
+  "useRobotPose": "Use current position",
+  "useRobotPoseUnavailable": "The robot's current position has not been received yet",
+  "orientation": "Orientation",
+  "orientationFromYaw": "Derived from yaw",
+  "etc": "Others",
+  "yawDeg": "yaw deg",
+  "tolerance": "tolerance",
+  "properties": "Properties",
+  "propertiesHint": "Key/value strings, up to 5",
+  "propertyKey": "key",
+  "propertyValue": "value"
 }

@@ -1,24 +1,23 @@
-import { useState, useEffect, useMemo } from 'react'
-import { Title, TableCard, Button, Section, Dropdown, Modal } from '@repo/ui'
+import { useState, useEffect } from 'react'
+import { Title, TableCard, Button, Section, Modal } from '@repo/ui'
 import { toast } from 'react-toastify'
-import { StyledUploadPageContent, FilterRow, SummaryHeading, SummaryGroup, IdList, ModalButtons } from './styles'
+import { useTranslation } from 'react-i18next'
+import { StyledUploadPageContent, SummaryHeading, ModalButtons } from './styles'
 
 import * as siteApi from '@/apis/siteApis'
 import * as buildingApi from '@/apis/buildingApis'
 import * as floorApi from '@/apis/floorApis'
 import * as areaApi from '@/apis/areaApis'
 import * as mapApi from '@/apis/mapApis'
-import * as poiApi from '@/apis/mapPoiApis'
-import { buildApplyPoiBatchBody } from '@/utils/poiBatch'
-import { isWorkingMapDir, publishedNameOf, resolveMapDir } from '@/utils/mapRecord'
 
 const nameOf = (n) => n?.default ?? n?.['ko-KR'] ?? n?.['en-US'] ?? '-'
 const indexById = (arr) => Object.fromEntries((arr ?? []).map((x) => [x.id, x]))
 
 const DownloadTable = () => {
+  // transfer 네임스페이스는 업로드/다운로드 두 화면이 공유한다(locales/*/transfer.json).
+  const { t } = useTranslation('transfer')
   const [allRows, setAllRows] = useState([])
   const [isLoading, setIsLoading] = useState(true)
-  const [filter, setFilter] = useState({ buildingId: '', floorId: '', areaId: '' })
 
   const [downloadModalOpen, setDownloadModalOpen] = useState(false)
   const [selectedRow, setSelectedRow] = useState(null)
@@ -37,24 +36,36 @@ const DownloadTable = () => {
         ])
         if (!alive) return
 
+        // 활성 사이트가 없으면 어느 사이트의 맵을 보여줄지 정할 수 없다 — 빈 목록으로 끝낸다
+        // (로딩 표시는 finally 에서 내려간다).
         const activeStie = sitesRes?.data?.find((e) => e.isActive)
-        if (!activeStie) {
-          setIsLoading(true)
-          return
-        }
+        if (!activeStie) return
         const sites = indexById([activeStie])
-        const buildings = indexById(buildingsRes?.data)
-        const floors = indexById(floorsRes?.data)
-        const areas = indexById(areasRes?.data)
-        const maps = mapsRes?.data ?? []
+        const buildings = indexById(buildingsRes?.data.filter((e) => e.siteId === activeStie?.id))
 
+        let floorsResList = []
+        for (const buildingId of Object.keys(buildings)) {
+          const matchRes = floorsRes?.data.filter((el) => el.buildingId === Number(buildingId))
+          floorsResList = floorsResList.concat(matchRes)
+        }
+        const floors = indexById(floorsResList)
+
+        let areaResList = []
+        for (const floorId of Object.keys(floors)) {
+          const matchRes = areasRes?.data.filter((e) => e.floorId === Number(floorId))
+          areaResList = areaResList.concat(matchRes)
+        }
+        const areas = indexById(areaResList)
+
+        const maps = mapsRes?.data ?? []
         const mapsByArea = maps.reduce((acc, map) => {
           if (map.areaId == null) return acc
           ;(acc[map.areaId] ??= []).push(map)
           return acc
         }, {})
 
-        const areaRows = (areasRes?.data ?? []).map((area) => {
+        const areaRows = Object.keys(areas).map((areaId) => {
+          const area = areas[areaId]
           const floor = floors[area.floorId]
           const building = floor && buildings[floor.buildingId]
           const site = building && sites[building.siteId]
@@ -73,29 +84,29 @@ const DownloadTable = () => {
 
         // 구역에 매이지 않은 맵 — areaId 가 없거나(위치 계층 없이 저장) 가리키는 구역이 사라진 경우.
         // 이 맵들은 구역 행이 없어 지금까지 화면에서 아예 보이지 않았다.
-        const orphanRows = maps
-          .filter((map) => map.areaId == null || !areas[map.areaId])
-          .map((map) => {
-            const site = map.siteId != null ? sites[map.siteId] : null
-            return {
-              id: `map-${map.id}`,
-              site: site ? nameOf(site.siteName) : '-',
-              buildingId: undefined,
-              building: '-',
-              floorId: undefined,
-              floor: '-',
-              areaId: null,
-              area: '-',
-              maps: [map]
-            }
-          })
-
+        const orphanRows = []
+        // const orphanRows = maps
+        //   .filter((map) => map.areaId == null || !areas[map.areaId])
+        //   .map((map) => {
+        //     const site = map.siteId != null ? sites[map.siteId] : null
+        //     return {
+        //       id: `map-${map.id}`,
+        //       site: site ? nameOf(site.siteName) : '-',
+        //       buildingId: undefined,
+        //       building: '-',
+        //       floorId: undefined,
+        //       floor: '-',
+        //       areaId: null,
+        //       area: '-',
+        //       maps: [map]
+        //     }
+        //   })
         setAllRows([...areaRows, ...orphanRows])
       } catch (error) {
-        console.error('[Upload] 위치/맵 정보 조회 실패:', error)
+        console.error('[Download] 위치/맵 정보 조회 실패:', error)
         if (alive) {
           setAllRows([])
-          toast.error('위치·맵 정보를 불러오지 못했습니다.', { autoClose: 3000 })
+          toast.error(t('common.loadFailed'), { autoClose: 3000 })
         }
       } finally {
         if (alive) setIsLoading(false)
@@ -105,7 +116,7 @@ const DownloadTable = () => {
     return () => {
       alive = false
     }
-  }, [])
+  }, [t])
 
   const handleMapDownload = async (row) => {
     // 선택한 위치(building/floor/area)와 대상 맵 정보를 모달로 보여준다.
@@ -117,21 +128,20 @@ const DownloadTable = () => {
 
   const handleConfirmDownload = () => {
     // TODO: 선택한 맵(주행맵 + POI) 다운로드 연동
-    console.log('confirm download', selectedRow)
-    toast.info('다운로드 (미구현)', { autoClose: 2000 })
+    toast.info(t('download.notImplemented'), { autoClose: 2000 })
     setDownloadModalOpen(false)
   }
 
   const columns = [
-    { name: '사이트', selector: (row) => row.site, sortable: 'true' },
-    { name: '빌딩', selector: (row) => row.building, sortable: 'true' },
-    { name: '층', selector: (row) => row.floor, sortable: 'true' },
-    { name: '구역', selector: (row) => row.area, sortable: 'true' },
+    // { name: t('common.site'), selector: (row) => row.site, sortable: 'true' },
+    { name: t('common.building'), selector: (row) => row.building, sortable: 'true' },
+    { name: t('common.floor'), selector: (row) => row.floor, sortable: 'true' },
+    { name: t('common.area'), selector: (row) => row.area, sortable: 'true' },
     {
-      name: '다운로드',
+      name: t('download.column'),
       cell: (row) => (
         <Button size="sm" onClick={() => handleMapDownload(row)}>
-          다운로드
+          {t('download.action')}
         </Button>
       )
     }
@@ -140,12 +150,13 @@ const DownloadTable = () => {
   return (
     <Section>
       <StyledUploadPageContent className="column">
-        <Title>다운로드</Title>
+        <Title>{t('download.title')}</Title>
         <TableCard
           columns={columns}
           data={allRows}
-          loading={isLoading}
-          noData="다운로드할 맵 정보가 없습니다."
+          // 로딩 prop 이름은 isLoading 이다(TableCard/Table) — loading 으로 주면 무시된다.
+          isLoading={isLoading}
+          noData={t('download.noData')}
           pagination
           paginationRowsPerPageOptions={[10, 30, 50, 100]}
         />
@@ -153,14 +164,15 @@ const DownloadTable = () => {
 
       <Modal
         isOpen={downloadModalOpen}
-        title="맵 다운로드"
+        title={t('download.modalTitle')}
         onClose={closeDownlaodModal}
         size="md"
         renderButtonComponent={
           <ModalButtons>
-            <Button onClick={handleConfirmDownload}>다운로드</Button>
-            <Button variant="outline" onClick={closeDownlaodModal}>
-              취소
+            <Button onClick={handleConfirmDownload}>{t('download.confirm')}</Button>
+            {/* Button 은 variant 를 받지 않는다 — 보조 버튼은 theme 로 지정한다. */}
+            <Button theme="secondary" onClick={closeDownlaodModal}>
+              {t('common.cancel')}
             </Button>
           </ModalButtons>
         }
@@ -168,7 +180,7 @@ const DownloadTable = () => {
         {selectedRow && (
           <div style={{ padding: '1rem 0' }}>
             <SummaryHeading>
-              {selectedRow.site} / {selectedRow.building} / {selectedRow.floor} / {selectedRow.area}
+              {selectedRow.building} / {selectedRow.floor} / {selectedRow.area}
             </SummaryHeading>
           </div>
         )}

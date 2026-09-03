@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import {
+  EMERGENCY_TOPICS,
   FOOTPRINT_TOPICS,
   MAP_TOPICS,
   NAV_STATUS_TOPICS,
@@ -41,6 +42,9 @@ export function useTelemetry(wsUrl, throttleFps = 10) {
   const [topics, setTopics] = useState([])
   const [subscribedTopics, setSubscribedTopics] = useState([])
   const [customTopicsData, setCustomTopicsData] = useState({})
+  // 토픽별 마지막 수신 시각(ms). 하트비트로 같은 값을 반복 발행하는 토픽은 값만으로는 "지금도
+  // 살아 있는지" 를 알 수 없어서(정지한 발행자의 마지막 값이 그대로 남는다) 함께 내보낸다.
+  const [customTopicsUpdatedAt, setCustomTopicsUpdatedAt] = useState({})
 
   const workerRef = useRef(null)
   const subMapRef = useRef({})
@@ -52,6 +56,7 @@ export function useTelemetry(wsUrl, throttleFps = 10) {
   const odomDataRef = useRef(null)
   const scanDataRef = useRef(null)
   const customTopicsDataRef = useRef({})
+  const customTopicsUpdatedAtRef = useRef({})
   const tfTreeRef = useRef({})
   const hasNewDataRef = useRef(false)
 
@@ -82,7 +87,9 @@ export function useTelemetry(wsUrl, throttleFps = 10) {
         break
       default:
         delete customTopicsDataRef.current[topicName]
+        delete customTopicsUpdatedAtRef.current[topicName]
         setCustomTopicsData({ ...customTopicsDataRef.current })
+        setCustomTopicsUpdatedAt({ ...customTopicsUpdatedAtRef.current })
         break
     }
   }, [])
@@ -99,6 +106,7 @@ export function useTelemetry(wsUrl, throttleFps = 10) {
         setOdomData(odomDataRef.current)
         setScanData(scanDataRef.current)
         setCustomTopicsData({ ...customTopicsDataRef.current })
+        setCustomTopicsUpdatedAt({ ...customTopicsUpdatedAtRef.current })
         // TF 트리는 IMU rate 로 들어오므로 pose 합성도 렌더 주기에 맞춰 한 번만 한다.
         setRobotPose(resolveRobotPose(tfTreeRef.current))
         setFrameCorrections(resolveFrameCorrections(tfTreeRef.current))
@@ -151,6 +159,8 @@ export function useTelemetry(wsUrl, throttleFps = 10) {
             resolveTopic(STATUS_TOPICS, allTopicsList),
             resolveTopic(NAV_STATUS_TOPICS, allTopicsList),
             resolveTopic(SPIN_STATUS_TOPICS, allTopicsList),
+            // 비상정지 버튼 상태 — power-on-micom 이 없는 구성(시뮬레이터 등)에서는 안 온다.
+            resolveTopic(EMERGENCY_TOPICS, allTopicsList),
             // 로봇 외형 폴리곤 — nav2 가 떠 있을 때만 존재한다(없으면 MapCanvas 가 상수 폴백).
             resolveTopic(FOOTPRINT_TOPICS, allTopicsList),
             ...TF_TOPICS.filter((topicName) => allTopicsList.includes(topicName))
@@ -232,6 +242,10 @@ export function useTelemetry(wsUrl, throttleFps = 10) {
                   ...customTopicsDataRef.current,
                   [topic]: parsed
                 }
+                customTopicsUpdatedAtRef.current = {
+                  ...customTopicsUpdatedAtRef.current,
+                  [topic]: Date.now()
+                }
                 break
             }
           }
@@ -260,6 +274,7 @@ export function useTelemetry(wsUrl, throttleFps = 10) {
     setTopics([])
     setSubscribedTopics([])
     setCustomTopicsData({})
+    setCustomTopicsUpdatedAt({})
     subMapRef.current = {}
     nextSubIdRef.current = 1
     channelsRef.current = []
@@ -268,6 +283,7 @@ export function useTelemetry(wsUrl, throttleFps = 10) {
     odomDataRef.current = null
     scanDataRef.current = null
     customTopicsDataRef.current = {}
+    customTopicsUpdatedAtRef.current = {}
     tfTreeRef.current = {}
     hasNewDataRef.current = false
 
@@ -292,10 +308,12 @@ export function useTelemetry(wsUrl, throttleFps = 10) {
     setRobotPose(null)
     setFrameCorrections({})
     setCustomTopicsData({})
+    setCustomTopicsUpdatedAt({})
     mapDataRef.current = null
     odomDataRef.current = null
     scanDataRef.current = null
     customTopicsDataRef.current = {}
+    customTopicsUpdatedAtRef.current = {}
     tfTreeRef.current = {}
     hasNewDataRef.current = false
   }, [])
@@ -424,6 +442,7 @@ export function useTelemetry(wsUrl, throttleFps = 10) {
     topics,
     subscribedTopics,
     customTopicsData,
+    customTopicsUpdatedAt, // { '/토픽': ms } — 하트비트 토픽의 stale 판정용(값이 아니라 수신 시각)
     toggleSubscribe,
     subscribeTopics,
     unsubscribeTopics,

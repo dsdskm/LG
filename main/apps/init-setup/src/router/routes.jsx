@@ -15,6 +15,9 @@ import Version from '@/pages/Version'
 import RootGuard from '@/components/RootGuard'
 import AdminGuard from '@/components/AdminGuard'
 import NetworkGuard from '@/components/NetworkGuard'
+// 공용 아이콘 세트(@repo/ui Icon)에 wifi 가 없어 앱 자산을 컴포넌트로 넘긴다 — GnbButton 은
+// 문자열(공용 세트 조회) 과 컴포넌트를 모두 받는다. 헤더의 Wi-Fi 아이콘과 같은 자산을 쓴다.
+import SvgWifi from '@/assets/wifi.svg'
 import { USER_ROLE_LEVEL } from '@repo/constants'
 
 // 사이드바 메뉴는 세 그룹으로 나뉘고, 헤더 탭이 그룹을 전환한다.
@@ -25,15 +28,22 @@ import { USER_ROLE_LEVEL } from '@repo/constants'
 // robotSetup.status === 'completed'(= 마지막 단계인 업로드까지 끝낸 전역 완료)이면 initialSetup 그룹은
 // 탭/사이드바/라우트에서 모두 제거되고(App.jsx) 단계 순서 잠금도 풀린다.
 // 그 전에는 currentStep(작업 중인 단계)까지만 열린다 — 아래 getSetupProgress.
+//
+// network 는 설치 단계가 아니라 '언제든 열 수 있는 Wi-Fi 설정' 이라 위 세 그룹 밖의 전용 그룹이다
+// (헤더 탭이 없는 그룹 — CustomHeader · 로그인 화면의 Wi-Fi 아이콘으로 들어온다).
 export const SETUP_GROUP = {
   INITIAL: 'initialSetup',
   MAP: 'mapSetup',
-  ADMIN: 'admin'
+  ADMIN: 'admin',
+  NETWORK: 'network'
 }
+
+/** 맵 설정 그룹의 첫 화면. 헤더 탭과 '/map' 리다이렉트가 같은 곳을 가리키도록 한 곳에서 정한다. */
+const MAP_GROUP_LANDING = '/download'
 
 export const HEADER_GNB = [
   { name: SETUP_GROUP.INITIAL, path: '/language', prefix: '', group: SETUP_GROUP.INITIAL },
-  { name: SETUP_GROUP.MAP, path: '/download', prefix: '', group: SETUP_GROUP.MAP },
+  { name: SETUP_GROUP.MAP, path: MAP_GROUP_LANDING, prefix: '', group: SETUP_GROUP.MAP },
   // admin 탭은 SYSTEM_MANAGER 이상만 본다 (라우트 접근 제한은 AdminGuard 가 담당).
   {
     name: SETUP_GROUP.ADMIN,
@@ -54,11 +64,17 @@ export const appRoutes = [
     element: <Language />
   },
   {
+    // Wi-Fi 설정. 설치 단계(초기 설정 그룹)에서 빼고 헤더 · 로그인 화면의 Wi-Fi 아이콘으로 들어온다.
+    // group 을 SETUP_GROUP.NETWORK(헤더 탭이 없는 전용 그룹)로 둔 이유:
+    // - 초기 설정 그룹에 넣으면 단계 번호(currentStep)에 끼어들고, 셋업 완료 시 그룹째로 라우트에서
+    //   제거돼(App.jsx) Wi-Fi 를 다시 바꿀 수 없다.
+    // - 사이드바는 현재 화면이 속한 그룹만 보여주므로(Router LayoutShell) 이 화면에서는 이 항목
+    //   하나만 뜨고, 다른 화면의 사이드바에는 나타나지 않는다.
     name: 'network',
     path: '/network',
     prefix: '',
-    icon: 'link',
-    group: SETUP_GROUP.INITIAL,
+    icon: SvgWifi,
+    group: SETUP_GROUP.NETWORK,
     element: <Network />
   },
   {
@@ -122,6 +138,21 @@ export const appRoutes = [
         element: <Semantic />
       }
     ]
+  },
+  {
+    // '/map' 자체는 화면이 없는 부모 메뉴다(위 depth 만 라우트를 갖는다) — 직접 진입하면 '*' 로
+    // 떨어져 진행 중인 단계로 튕기므로, 맵 설정 그룹의 첫 화면인 다운로드로 보낸다.
+    //
+    // 이 항목은 맵 설정 그룹(SETUP_GROUP.MAP)에 넣지 않는다 — group 이 붙으면 설치 단계 목록
+    // (SETUP_STEP_ROUTES)에 끼어 단계 번호(currentStep)가 한 칸씩 밀린다.
+    // 순서도 '/map' 하위 라우트들 뒤여야 한다 — getRouteGroup 은 앞에서부터 접두사 일치로 찾으므로
+    // 앞에 두면 '/map/scan' 의 그룹까지 이 항목이 가로채 헤더 탭·사이드바가 비어 보인다.
+    name: 'mapIndex',
+    path: '/map',
+    prefix: '',
+    hide: true,
+    hideLayout: true,
+    element: <Navigate to={MAP_GROUP_LANDING} replace />
   },
   {
     name: 'login',

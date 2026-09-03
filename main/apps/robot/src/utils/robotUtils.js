@@ -189,6 +189,23 @@ export function getTaskFlowControlState(taskFlows) {
 }
 
 /**
+ * state.information[].infoReferences[] 배열에서 referenceKey에 해당하는 referenceValue를 조회
+ * (예: GKR_STATE / TOFU_STATE / ZEROGAIN_STATE)
+ * @param {object} state - device.state (raw, 즉 data.state)
+ * @param {string} referenceKey
+ * @returns {string|undefined} 찾지 못하면 undefined ("정보없음"으로 처리)
+ */
+export function getInfoReferenceValue(state, referenceKey) {
+  const infoList = Array.isArray(state?.information) ? state.information : []
+  for (const info of infoList) {
+    const refs = Array.isArray(info?.infoReferences) ? info.infoReferences : []
+    const found = refs.find((r) => r?.referenceKey === referenceKey)
+    if (found) return found.referenceValue
+  }
+  return undefined
+}
+
+/**
  * hwComponents 배열에서 WiFi Module을 찾아 rxPower 기준으로 3단계 상태를 반환
  * @param {object} state - device.state (raw, 즉 data.state)
  * @returns {{ label: string, level: 'good'|'weak'|'disconnected'|'unknown', warn: boolean }}

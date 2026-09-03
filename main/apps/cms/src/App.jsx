@@ -17,7 +17,6 @@ const App = () => {
   const { t: layoutT } = useTranslation('layout')
   const { t: appT } = useTranslation('route')
 
-  // 조직별 기능 on/off: 현재 선택된 org 의 활성 feature 집합 (기본 OFF)
   const { selectedOrgs, allOrgs } = useOrganizationStore()
   const [enabledFeatures, setEnabledFeatures] = useState(() => new Set())
 
@@ -25,7 +24,6 @@ const App = () => {
     let active = true
     const fetchEnabled = async () => {
       const { groupId, siteId } = resolveOrgIds(selectedOrgs, allOrgs)
-      // groupId 없어도 호출 → BE가 기능별 기본값(defaultEnabled) 반영 (기본 ON 기능은 org 미선택에도 노출)
       try {
         const params = {}
         if (groupId != null) params.groupId = groupId

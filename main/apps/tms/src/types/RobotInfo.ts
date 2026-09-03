@@ -1,5 +1,13 @@
 export type RobotStatus = 'POWEROFF' | 'OFFLINE' | 'ERROR' | 'CHARGE' | 'STANDBY' | 'OPERATION'
-export type TaskFlowRunningStatus = 'READY' | 'RUNNING' | 'PAUSED' | 'CANCELED' | 'STOPPED' | 'FAILURE' | 'SUCCESS'
+export type TaskFlowRunningStatus =
+  | 'READY'
+  | 'RUNNING'
+  | 'WAITING'
+  | 'PAUSED'
+  | 'CANCELED'
+  | 'STOPPED'
+  | 'FAILURE'
+  | 'SUCCESS'
 export type TaskStatus = 'IDLE' | 'SUCCESS' | 'FAILURE' | 'SKIPPED' | 'RUNNING'
 export type SkillType = 'NAVIGATION' | 'MANIPULATION' | 'PERCEPTION' | 'DISPLAY' | 'VOICE'
 export type DeployStatusType = 'QUEUED'
@@ -11,6 +19,9 @@ export interface RobotInfo {
   site: string
   groupId: string
   siteId: string
+  buildingName?: string
+  floorName?: string
+  areaName?: string
   status: RobotStatus
   batteryLevel: number
   skills: SkillType[]

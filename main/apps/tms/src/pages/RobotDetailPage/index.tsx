@@ -16,7 +16,7 @@ import { RobotTaskFlow } from '@/types/api/device'
 import { Battery, Activity } from 'lucide-react'
 import DeployModal, { DeployTaskFlow } from '../DeployPage/components/DeployModal'
 import { TaskFlow } from '@/types/taskflow'
-import useDeploy from '../DeployPage/hooks/useDeploy'
+import useDeploy from '@/pages/hooks/useDeploy'
 import { useGetLatestDeployments } from '@/api/robotDeployApis'
 
 const normalizeNullableValue = (value: unknown): string | null => {
@@ -49,7 +49,7 @@ const RobotDetailPage = () => {
    * 마지막 요청만 반영한다. 여러 건을 돌리면 앞쪽이 실패해도 마지막이 성공하면 성공으로
    * 보이므로, 모달 상태는 이 집계값으로 판단한다.
    */
-  const [undeployBatch, setUndeployBatch] = useState<{
+  const [deploysResult, setDeploysResult] = useState<{
     total: number
     done: number
     failedIds: number[]
@@ -164,14 +164,14 @@ const RobotDetailPage = () => {
 
   const dismissPopup = () => {
     setPopup(false)
-    if (undeployBatch && undeployBatch.done === undeployBatch.total) {
+    if (deploysResult && deploysResult.done === deploysResult.total) {
       // 실패한 건은 재시도할 수 있게 선택을 남기고, 전부 성공했을 때만 비운다.
-      setCheckedItems(undeployBatch.failedIds)
-      if (undeployBatch.failedIds.length === 0) {
+      setCheckedItems(deploysResult.failedIds)
+      if (deploysResult.failedIds.length === 0) {
         setCheckAll(false)
       }
     }
-    setUndeployBatch(null)
+    setDeploysResult(null)
     deployActionReset()
   }
 
@@ -202,11 +202,6 @@ const RobotDetailPage = () => {
   console.log('changed task', changedTasks?.changedTasks)
   console.log('active task', finalValue)
 
-  const resolvedGroupId =
-    normalizeNullableValue(robotData?.provision?.groupId) ?? normalizeNullableValue(selectedOrgs?.[0])
-  const resolvedSiteId =
-    normalizeNullableValue(robotData?.provision?.siteId) ?? normalizeNullableValue(selectedOrgs?.[1])
-
   const taskFlowList = robotData?.tms?.taskFlowState?.taskFlows ?? []
 
   const charge = robotData?.state?.batteryState?.batteryCharge
@@ -224,14 +219,14 @@ const RobotDetailPage = () => {
 
   // 여러 건을 순차로 보내므로 공유 mutation 상태(getDeployActionStatus) 대신 집계값으로 판단한다.
   // 한 건이라도 실패하면 FAILURE 다.
-  const undeployStatus = (): 'READY' | 'WORKING' | 'SUCCESS' | 'FAILURE' => {
-    if (!undeployBatch) return 'READY'
-    if (undeployBatch.done < undeployBatch.total) return 'WORKING'
-    return undeployBatch.failedIds.length > 0 ? 'FAILURE' : 'SUCCESS'
+  const deployStatus = (): 'READY' | 'WORKING' | 'SUCCESS' | 'FAILURE' => {
+    if (!deploysResult) return 'READY'
+    if (deploysResult.done < deploysResult.total) return 'WORKING'
+    return deploysResult.failedIds.length > 0 ? 'FAILURE' : 'SUCCESS'
   }
 
   const mainDesc = () => {
-    switch (undeployStatus()) {
+    switch (deployStatus()) {
       case 'READY':
         return (
           t('deploy.modal.selectedPrefix') +
@@ -241,8 +236,8 @@ const RobotDetailPage = () => {
 
       case 'WORKING':
         // 순차 처리라 몇 번째를 보내고 있는지 알려준다.
-        return undeployBatch && undeployBatch.total > 1
-          ? `${t('deploy.modal.undeploying')} (${undeployBatch.done}/${undeployBatch.total})`
+        return deploysResult && deploysResult.total > 1
+          ? `${t('deploy.modal.undeploying')} (${deploysResult.done}/${deploysResult.total})`
           : t('deploy.modal.undeploying')
 
       case 'SUCCESS':
@@ -250,18 +245,18 @@ const RobotDetailPage = () => {
 
       case 'FAILURE':
         return t('deploy.modal.undeployPartialFailed', {
-          failed: undeployBatch?.failedIds.length ?? 0,
-          total: undeployBatch?.total ?? 0
+          failed: deploysResult?.failedIds.length ?? 0,
+          total: deploysResult?.total ?? 0
         })
     }
   }
 
   const subDesc = () => {
-    if (undeployStatus() === 'READY') {
+    if (deployStatus() === 'READY') {
       return t('deploy.modal.irreversible')
     }
     // 실패한 건은 선택이 남아 있으므로 다시 시도할 수 있다.
-    if (undeployStatus() === 'FAILURE') {
+    if (deployStatus() === 'FAILURE') {
       return t('deploy.modal.undeployRetryHint')
     }
   }
@@ -274,16 +269,16 @@ const RobotDetailPage = () => {
           desc={mainDesc()}
           subDesc={subDesc()}
           mode={'DELETE_DEPLOY'}
-          status={undeployStatus()}
+          status={deployStatus()}
           onClose={dismissPopup}
           onDeploy={async () => {
             if (!group || !site || !robotData?.deviceId || taskFlows.length === 0) return
             // 진행 중 재클릭 방지(모달 버튼도 WORKING 이면 비활성이지만 첫 렌더 전 클릭을 막는다).
-            if (undeployBatch) return
+            if (deploysResult) return
 
             const deviceId = robotData.deviceId
             const targets = taskFlows
-            setUndeployBatch({ total: targets.length, done: 0, failedIds: [] })
+            setDeploysResult({ total: targets.length, done: 0, failedIds: [] })
 
             // mutation 인스턴스를 하나 공유하므로 병렬로 쏘면 상태와 콜백이 서로를 덮어쓴다.
             // 한 건씩 보내고 결과를 모은다.
@@ -296,7 +291,7 @@ const RobotDetailPage = () => {
               })
 
               if (!result.ok) failedIds.push(task.id)
-              setUndeployBatch((prev) => (prev ? { ...prev, done: prev.done + 1, failedIds: [...failedIds] } : prev))
+              setDeploysResult((prev) => (prev ? { ...prev, done: prev.done + 1, failedIds: [...failedIds] } : prev))
             }
 
             if (failedIds.length > 0) {
@@ -314,33 +309,30 @@ const RobotDetailPage = () => {
         <div
           style={{
             textAlign: 'start',
-            border: '1px solid #ebedf0',
+            border: '2px solid #ebedf0',
             borderRadius: '8px',
-            backgroundColor: '#ffffff',
+            backgroundColor: 'white',
             marginBottom: '24px',
-            padding: '20px 24px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
-            fontSize: '14px',
-            lineHeight: '1.5',
-            color: '#374151'
+            padding: '24px',
+            display: 'flex', // 추가
+            flexDirection: 'column', // 추가
+            gap: '8px' // 추가 — 줄 간격
           }}
         >
-          <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', lineHeight: '1.5' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <span>상태 : </span>
             <Activity size={14} color={isStandby ? '#16a34a' : '#9ca3af'} />
             <span style={{ color: isStandby ? '#16a34a' : '#9ca3af' }}>{robotData?.deviceState}</span>
           </span>
 
           {charge != null && (
-            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', lineHeight: '1.5' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <span>배터리 레벨 : </span>
               <Battery size={14} color={batteryColor} />
               <span style={{ color: batteryColor }}>{charge}%</span>
             </span>
           )}
-          <div style={{ display: 'flex', gap: '4px', fontSize: '14px', lineHeight: '1.5' }}>
+          <div style={{ display: 'flex', gap: '2px' }}>
             <span>{t('robots.installedCount')}:</span>
             <span style={{ color: '#9ca3af' }}>{robotData?.tms?.taskFlowState?.taskFlows?.length ?? 0}</span>
           </div>
@@ -386,6 +378,12 @@ const RobotDetailPage = () => {
                   {
                     title: t('robotDetail.control.start'),
                     command: 'start',
+                    onRequest: !isPending,
+                    execute: onCommandClick
+                  },
+                  {
+                    title: t('robotDetail.control.proceed'),
+                    command: 'proceed',
                     onRequest: !isPending,
                     execute: onCommandClick
                   },

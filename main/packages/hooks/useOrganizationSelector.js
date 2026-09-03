@@ -58,14 +58,59 @@ export const useOrganizationSelector = (email) => {
   }
 
   // CMS
-  const makeCmsOrgList = (orgList) => {
-    return orgList.map((org) => {
-      if (org.siteCode) {
-        const parentOrg = orgList.find((item) => item.groupCode === org.groupCode)
-        return standardizeOrganization(org, 'CMS_SITE', parentOrg)
+  const makeCmsOrgList = (dmSites, cmsOrgs) => {
+    const groupIds = []
+    const groupResults = []
+
+    dmSites.forEach((dmSite) => {
+      const cmsOrg = cmsOrgs.find((e) => e.siteCode === dmSite.siteId)
+
+      if (!groupIds.includes(dmSite.groupId)) {
+        groupIds.push(dmSite.groupId)
+        groupResults.push({
+          code: dmSite.groupId,
+          displayName: dmSite.groupName,
+          id: cmsOrg?.groupId || null,
+          originalType: 'CMS_GROUP',
+          parentCode: null,
+          parentDisplayName: null
+        })
       }
-      return standardizeOrganization(org, 'CMS_GROUP')
     })
+
+    const siteResults = dmSites.map((dmSite) => {
+      const cmsOrg = cmsOrgs.find((e) => e.siteCode === dmSite.siteId)
+      return {
+        code: dmSite.siteId,
+        displayName: dmSite.siteName,
+        id: cmsOrg?.siteId || null,
+        originalType: 'CMS_SITE',
+        parentCode: dmSite.groupId,
+        parentDisplayName: dmSite.groupName
+      }
+    })
+
+    // 계층형 정렬 알고리즘 적용
+    const sortedResults = [...groupResults, ...siteResults].sort((a, b) => {
+      const aGroupId = a.originalType === 'CMS_GROUP' ? a.code : a.parentCode
+      const bGroupId = b.originalType === 'CMS_GROUP' ? b.code : b.parentCode
+
+      // 1순위: 소속된 그룹이 서로 다르면, 그룹 이름을 기준으로 가나다순 정렬
+      if (aGroupId !== bGroupId) {
+        const aGroupName = a.originalType === 'CMS_GROUP' ? a.displayName : a.parentDisplayName
+        const bGroupName = b.originalType === 'CMS_GROUP' ? b.displayName : b.parentDisplayName
+        return (aGroupName || '').localeCompare(bGroupName || '')
+      }
+
+      // 2순위: 소속된 그룹이 같다면, 그룹 객체가 사이트 객체보다 무조건 위(앞)에 오도록 정렬
+      if (a.originalType !== b.originalType) {
+        return a.originalType === 'CMS_GROUP' ? -1 : 1
+      }
+
+      // 3순위: 소속 그룹도 같고 종류(사이트 vs 사이트)도 같다면, 사이트 이름 기준으로 가나다순 정렬
+      return (a.displayName || '').localeCompare(b.displayName || '')
+    })
+    return sortedResults
   }
 
   const makeCmsTree = (orgList) => {
@@ -125,27 +170,40 @@ export const useOrganizationSelector = (email) => {
   }
 
   const fetchOrganizationsCms = async () => {
-    const organizations = allOrgs.map((org) => {
-      if (org.parentCode) {
-        return {
-          groupCode: org.parentCode,
-          groupDisplayName: org.parentDisplayName,
-          siteCode: org.code,
-          siteDisplayName: org.displayName
+    Promise.all([siteApis.getSites(), organizationCmsApis.listOrganization()])
+      .then(async ([siteResponse, cmsOrgsResponse]) => {
+        const dmSites = siteResponse.content || []
+        const dmSiteIds = dmSites.map((e) => e.siteId)
+
+        const cmsOrgs = cmsOrgsResponse.results || []
+        const cmsSiteCodes = cmsOrgs.map((e) => e.siteCode)
+
+        const insertOrgs = []
+        for (const dmSiteId of dmSiteIds) {
+          if (!cmsSiteCodes.includes(dmSiteId)) {
+            const dmsSite = dmSites.find((e) => e.siteId === dmSiteId)
+            insertOrgs.push({
+              groupDisplayName: dmsSite.groupName,
+              groupCode: dmsSite.groupId,
+              siteDisplayName: dmsSite.siteName,
+              siteCode: dmsSite.siteId
+            })
+          }
         }
-      }
-      return { groupCode: org.code, groupDisplayName: org.displayName }
-    })
-    Promise.all([organizationCmsApis.registerOrganization({ organizations })])
-      .then(([orgResponse]) => {
-        const standardizedOrgs = makeCmsOrgList(orgResponse.results || [])
-        setStoreDefaultOrg(null)
-        const sortedResults = standardizedOrgs
-          .filter((org) => org.parentCode !== undefined)
-          .sort((a, b) => (b.displayName || '').localeCompare(a.displayName || ''))
-        setAllOrgs(sortedResults)
+
+        let insertRes = null
+        let allCmsOrgs = []
+        if (insertOrgs?.length > 0) {
+          const insertRes = await organizationCmsApis.registerOrganization({ organizations: insertOrgs })
+          cmsOrgs.concat(insertRes.results)
+          allCmsOrgs = allCmsOrgs.concat(insertRes.results)
+        }
+        allCmsOrgs = allCmsOrgs.concat(cmsOrgs)
+        const sortedResults = makeCmsOrgList(dmSites, allCmsOrgs)
         const editedOrgTree = makeCmsTree(sortedResults)
 
+        setStoreDefaultOrg(null)
+        setAllOrgs(sortedResults)
         setOrganizations(editedOrgTree)
         setCompany(null)
         setStoreCompany(null)

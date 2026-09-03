@@ -4,6 +4,7 @@ import { MainLayout } from '@repo/ui'
 import { useSideBarStore } from '@repo/stores'
 import CustomHeader from '@/components/CustomHeader'
 import SetupOrderModal from '@/components/SetupOrderModal'
+import SessionGuard from '@/components/SessionGuard'
 import { getRouteGroup } from './routes'
 
 /**
@@ -51,7 +52,11 @@ const LayoutShell = ({ allRoutes, appPrefix, processedAppRoutes, headerRoutes, g
       // 켜두면 사이드바가 매 항목을 '다른 앱' 으로 보고 <a href> 로 브라우저 전체 리로드를 한다.
       crossAppLinks={false}
     >
-      <Outlet />
+      {/* 레이아웃 안의 모든 화면은 진입할 때 세션을 확인한다(네트워크 설정만 예외 — SessionGuard).
+          레이아웃 밖(hideLayout)인 로그인 · '/' 가드 · /version 은 각자의 규칙을 따른다. */}
+      <SessionGuard>
+        <Outlet />
+      </SessionGuard>
     </MainLayout>
   )
 }

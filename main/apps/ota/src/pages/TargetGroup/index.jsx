@@ -137,6 +137,7 @@ const TargetGroup = () => {
               createdAt: item.createdAt ? convertDateToString(item.createdAt) : '-'
             }
           })
+          .sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''))
         setProcessedData(responseData)
         const uniqueModes = Array.from(new Set(responseData.map((item) => item.mode).filter(Boolean)))
         setModeOptions([

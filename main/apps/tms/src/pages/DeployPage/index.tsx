@@ -1,25 +1,24 @@
-import { useMemo, useState, version } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import RobotList from '@/pages/components/robot/RobotList'
-import { toRobotInfo } from '@/pages/components/robot/toRobotInfo'
-import { Navigation, Hand, Mic, Smile, Eye } from 'lucide-react'
-import type { DeployStatusType, RobotInfo } from '../../types/RobotInfo'
+import { makeBuildingInfo, toRobotInfo } from '@/pages/components/robot/toRobotInfo'
+import type { RobotInfo } from '../../types/RobotInfo'
 import { useDeviceList } from '../../api/deviceApis'
-import DeployModal, { DeployTaskFlow } from './components/DeployModal'
+import DeployModal from './components/DeployModal'
 import { useParams } from 'react-router-dom'
 
 import { StyledPageContent, Title, Tabs, Tab, Dropdown, Search, HeaderTitleGroup, Checkbox, Button } from '@repo/ui'
-import { useDeployTaskFlowAction, useGetTaskFlow } from '@/api/taskFlowApis'
-import { useDeployTaskFlow } from '@/api/deployApis'
-import { DeployActionRequest, TaskFlow } from '@/types/taskflow'
-import { DeviceParams, DeviceResponse } from '@/types/api/device'
+import { useGetTaskFlow } from '@/api/taskFlowApis'
+import { TaskFlow } from '@/types/taskflow'
+import { DeviceResponse } from '@/types/api/device'
 import useSelectInfo from './hooks/useSelectInfo'
 import { useGetLatestDeployments } from '@/api/robotDeployApis'
-import { Content } from '@/types/api/deviceDeployment'
 import { useOrganizationStore } from '@repo/stores'
 import { DeployContent, DeploySearchContainer } from './styles'
-import useDeploy, { DeployMode } from './hooks/useDeploy'
+import useDeploy, { DeployMode } from '@/pages/hooks/useDeploy'
 import SkillIndicator from '../components/SkillIndicator'
+import { useOrgFilterValues } from '../hooks/useOrgFilter'
+import { useSite } from '@/api/siteApi'
 
 const operationStatusOptions = [
   { value: 'all', name: 'all' },
@@ -82,7 +81,10 @@ const DeployPage = () => {
   const deploy = useSelectInfo()
   const undeploy = useSelectInfo()
   const active = deployMode === 'DEPLOY' ? deploy : undeploy
-  const { selectedOrgs, defaultOrg } = useOrganizationStore()
+  const { selectedOrgs } = useOrganizationStore()
+  // 이 화면은 조직 셀렉터를 직접 렌더하지 않고 전역 선택(selectedOrgs)을 그대로 따르므로
+  // 상태를 갖지 않는 파생 버전을 쓴다.
+  const { deviceParams, matchesOrgFilter } = useOrgFilterValues(selectedOrgs)
 
   const {
     data: taskFlowData,
@@ -91,42 +93,17 @@ const DeployPage = () => {
     isSuccess: tfSuccess
   } = useGetTaskFlow(numericFlowId)
 
-  const deviceRequest = useMemo(() => {
-    let nextParams: DeviceParams | undefined = undefined
-
-    console.log('selectedOrgs', selectedOrgs)
-    console.log('default Orgs', defaultOrg) // 값 없음 확인 필요
-    const [selectedGroupId, selectedSiteId] = selectedOrgs
-
-    if (selectedGroupId !== 'all' || selectedSiteId !== 'all') {
-      nextParams = {}
-    }
-
-    if (selectedGroupId !== 'all' && selectedGroupId !== 'none') {
-      nextParams = {
-        ...nextParams,
-        groupId: [selectedGroupId ?? 'none']
-      }
-    }
-
-    if (selectedSiteId !== 'all' && selectedSiteId !== 'none') {
-      nextParams = {
-        ...nextParams,
-        siteId: [selectedSiteId ?? 'none']
-      }
-    }
-
-    return nextParams
-  }, [selectedOrgs])
-
   const {
     data: devicesData,
     error: devicesError,
     isLoading: devicesLoading,
     isSuccess: dlSuccess
-  } = useDeviceList(deviceRequest, tfSuccess)
+  } = useDeviceList(deviceParams, tfSuccess)
+
+  const { data: siteInfo } = useSite(selectedOrgs[1])
 
   const deployInfoRequest = useMemo(() => {
+    console.log('taskflow 확인 ', taskFlowData)
     if (!taskFlowData || !devicesData?.content) {
       return undefined
     }
@@ -153,6 +130,8 @@ const DeployPage = () => {
     makeDeployableInfo
   } = useDeploy()
 
+  const buildingInfo = useMemo(() => makeBuildingInfo(siteInfo?.buildings), [siteInfo])
+
   const robotList: RobotInfo[] = useMemo(() => {
     const targetRobots = getRobotForMode(deployMode, devicesData?.content, taskFlowData)
     const buckets: Record<
@@ -165,10 +144,17 @@ const DeployPage = () => {
     for (const device of targetRobots) {
       const deployStatus = makeDeployState(device.deviceId, deployInfo?.content ?? [])
       const deployable = makeDeployableInfo(deployMode, device, taskFlowData)
+      console.log('taskflow info', taskFlowData)
       robot = {
-        ...toRobotInfo(device),
+        ...toRobotInfo(device, buildingInfo),
         deployable: deployable,
         deployStatus: deployStatus
+      }
+      // console.log('device info', device)
+      // console.log('robot info', robot)
+
+      if (!matchesOrgFilter(robot)) {
+        continue
       }
 
       const groupName = robot.group ?? t('deploy.unassignedGroup')
@@ -220,7 +206,19 @@ const DeployPage = () => {
     console.log('after result', result)
 
     return result
-  }, [devicesData, deployMode, deployInfo, taskFlowData, active.deployStatusFilter, active.operationStatusFilter, t])
+    // matchesOrgFilter 를 dep 에 넣어야 한다: 조직 선택이 바뀌어도 조회 파라미터가 같을 수 있어
+    // (예: 그룹 none→all 인데 사이트가 none 이면 서버 파라미터는 그대로 {}) devicesData 만 보면
+    // 목록이 갱신되지 않는다. 파생 hook 이 참조를 안정화하므로 dep 에 넣어도 재계산이 늘지 않는다.
+  }, [
+    devicesData,
+    deployMode,
+    deployInfo,
+    taskFlowData,
+    active.deployStatusFilter,
+    active.operationStatusFilter,
+    matchesOrgFilter,
+    buildingInfo
+  ])
 
   if (taskFlowLoading || devicesLoading) return <p>Loading...</p>
   if (taskFlowError) return <p>error: {taskFlowError.message}</p>
@@ -283,8 +281,12 @@ const DeployPage = () => {
       case 'READY':
         let desc =
           deployMode === 'DEPLOY'
-            ? t('deploy.modal.selectedPrefix') + t('deploy.unit', { count: 1 }) + t('deploy.modal.deploySuffix')
-            : t('deploy.modal.selectedPrefix') + t('deploy.unit', { count: 2 }) + t('deploy.modal.undeploySuffix')
+            ? t('deploy.modal.selectedPrefix') +
+              t('deploy.unit', { count: active.selectedRobotList.length }) +
+              t('deploy.modal.deploySuffix')
+            : t('deploy.modal.selectedPrefix') +
+              t('deploy.unit', { count: active.selectedRobotList.length }) +
+              t('deploy.modal.undeploySuffix')
         return desc
 
       case 'WORKING':

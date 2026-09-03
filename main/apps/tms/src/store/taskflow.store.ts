@@ -85,8 +85,15 @@ function withDraftStatusIfEdited(current: TaskFlow | undefined, patch: Partial<T
   return { ...patch, status: TaskFlowStatus.DRAFT }
 }
 
+// 같은 밀리초에 여러 개를 발급하면 값이 겹쳐 노드/엣지가 같은 id 를 갖게 되므로
+// 마지막 발급값을 기억해 항상 증가시킨다.
+let lastIssuedFlowNodeId = 0
+
 function makeFreshFlowNodeId(): string {
-  return String(Date.now())
+  const now = Date.now()
+  lastIssuedFlowNodeId = now > lastIssuedFlowNodeId ? now : lastIssuedFlowNodeId + 1
+
+  return String(lastIssuedFlowNodeId)
 }
 
 export function cloneFlowWithFreshNodeIds<T extends Record<string, any>>(definition: T | null | undefined): T {
@@ -100,6 +107,9 @@ export function cloneFlowWithFreshNodeIds<T extends Record<string, any>>(definit
   const nodeIdMap = new Map<string, string>()
 
   const nodes = Array.isArray(clone.nodes) ? clone.nodes : []
+
+  // 1단계: 모든 노드에 새 id 를 먼저 발급한다.
+  // (참조 remap 을 같은 루프에서 하면 뒤쪽 노드를 가리키는 참조가 매핑되지 않는다)
   nodes.forEach((node: any) => {
     if (!node || typeof node !== 'object') return
 
@@ -112,12 +122,27 @@ export function cloneFlowWithFreshNodeIds<T extends Record<string, any>>(definit
     const nextId = makeFreshFlowNodeId()
     nodeIdMap.set(String(oldId), nextId)
     node.id = nextId
+  })
+
+  const remapId = (value: unknown) => {
+    const mapped = nodeIdMap.get(String(value))
+    return mapped ?? value
+  }
+
+  // 2단계: 노드가 갖고 있는 다른 노드 참조를 새 id 로 바꾼다.
+  nodes.forEach((node: any) => {
+    if (!node || typeof node !== 'object') return
+
+    if (node.parentId != null) node.parentId = remapId(node.parentId)
+    if (node.parentNode != null) node.parentNode = remapId(node.parentNode)
+
+    const mainNodes = node.data?.properties?.main_nodes
+    if (Array.isArray(mainNodes)) {
+      node.data.properties.main_nodes = mainNodes.map(remapId)
+    }
 
     if (Array.isArray(node.data?.mainNodes)) {
-      node.data.mainNodes = node.data.mainNodes.map((mainNodeId: unknown) => {
-        const mapped = nodeIdMap.get(String(mainNodeId))
-        return mapped ?? mainNodeId
-      })
+      node.data.mainNodes = node.data.mainNodes.map(remapId)
     }
   })
 
@@ -221,7 +246,7 @@ export const useTaskFlowStore = create<TaskFlowState>()((set, get) => ({
         robotSkillIds: [],
         robotSkillInfos: [],
         behaviorTree: '',
-        isPublished:false
+        isPublished: false
       }
 
       const created = await createTaskFlow(data)

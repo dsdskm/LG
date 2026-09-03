@@ -72,10 +72,12 @@ const Module = () => {
   }
 
   const filteredData = useMemo(() => {
-    return modules.filter((item) => {
-      const matchesSearch = item.displayName.toLowerCase().includes(searchQuery.toLowerCase())
-      return matchesSearch
-    })
+    return modules
+      .filter((item) => {
+        const matchesSearch = item.displayName.toLowerCase().includes(searchQuery.toLowerCase())
+        return matchesSearch
+      })
+      .sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''))
   }, [modules, searchQuery])
 
   useEffect(() => {

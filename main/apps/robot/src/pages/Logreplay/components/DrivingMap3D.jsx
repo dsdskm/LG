@@ -608,9 +608,7 @@ function PlannedPathLine({ plannedPathPoints }) {
       pts.push(new THREE.Vector3(p.x, 0.04, -p.y))
     }
     if (pts.length < 2) return null
-    const g = new THREE.BufferGeometry().setFromPoints(pts)
-    g.computeLineDistances()
-    return g
+    return new THREE.BufferGeometry().setFromPoints(pts)
   }, [plannedPathPoints])
 
   useEffect(() => {
@@ -621,7 +619,7 @@ function PlannedPathLine({ plannedPathPoints }) {
 
   if (!geometry) return null
   return (
-    <line geometry={geometry}>
+    <line geometry={geometry} ref={(ref) => ref?.computeLineDistances()}>
       <lineDashedMaterial color="#00A0FF" dashSize={0.3} gapSize={0.3} linewidth={1.5} />
     </line>
   )
