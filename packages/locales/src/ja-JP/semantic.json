@@ -9,6 +9,26 @@
   "confirmDeleteContents": "選択したコンテンツを削除しますか？",
   "filterType": "タイプ",
   "filterOperation": "区分",
+  "semanticTypes": {
+    "POI": "POI",
+    "FIXED-OBSTACLE": "固定障害物"
+  },
+  "obstacleCreate": "固定障害物を追加",
+  "obstacleShape": "形状",
+  "obstacleShapes": {
+    "RECTANGLE": "四角形",
+    "POLYGON": "ポリゴン"
+  },
+  "obstacleDrawHint": "地図上でドラッグして範囲を指定し、離してください。",
+  "obstaclePolygonHint": "地図をクリックして点を追加し、右クリックまたは Enter（最初の点をクリック）で閉じてください。Esc: やり直し、ドラッグ: 地図移動",
+  "obstacleEditDone": "編集完了",
+  "obstacleEditHint": "地図上で図形の頂点をドラッグして形を修正してください。",
+  "noObstacles": "登録された固定障害物はありません。",
+  "obstacleColumns": {
+    "no": "番号",
+    "shape": "形状",
+    "points": "点の座標 (X, Y)"
+  },
   "columns": {
     "inUse": "使用中",
     "id": "ID",

@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Section } from '@repo/ui'
+import { Button, Modal, Section } from '@repo/ui'
 import {
   StyledPageContent,
   PageHero,
@@ -37,6 +37,9 @@ const Terms = () => {
   const [detailId, setDetailId] = useState(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  // 완료 전 확인 모달 — 약관 동의가 초기 설정의 마지막이고, 완료하면 초기 설정 메뉴 자체가
+  // 사라져(App.jsx setupCompleted) 되돌릴 수 없으므로 누르기 전에 한 번 알린다.
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
   const allChecked = TERMS.every(({ id }) => checked[id])
   const detail = TERMS.find(({ id }) => id === detailId)
@@ -61,6 +64,7 @@ const Terms = () => {
 
     setBusy(true)
     setErr('')
+    setConfirmOpen(false)
     try {
       // 약관 동의가 초기 설정(1~6단계)의 마지막이다 — status 를 'completed' 로 올려 헤더에서
       // 초기 설정 탭이 사라지게 하고(App.jsx setupCompleted), 작업 단계는 맵 스캔으로 옮긴다.
@@ -132,7 +136,8 @@ const Terms = () => {
                 <SecondaryActionButton type="button" onClick={() => navigate('/robot-info')} disabled={busy}>
                   이전
                 </SecondaryActionButton>
-                <ActionButton type="button" onClick={handleComplete} disabled={!allChecked || busy}>
+                {/* 완료는 곧바로 처리하지 않고 확인 모달을 먼저 띄운다 — 되돌릴 수 없는 단계다. */}
+                <ActionButton type="button" onClick={() => setConfirmOpen(true)} disabled={!allChecked || busy}>
                   {busy ? '완료 처리 중...' : '완료'}
                 </ActionButton>
               </WizardButtonWrap>
@@ -140,6 +145,48 @@ const Terms = () => {
           )}
         </SetupFormCard>
       </Section>
+
+      {/* 초기 설정 완료 확인 — 완료하면 초기 설정 그룹이 헤더·사이드바·라우트에서 사라지므로
+          (App.jsx setupCompleted) 이 화면으로 돌아와 값을 고칠 수 없다. 그 사실을 누르기 전에
+          알린다. Modal 의 footer 는 renderButtonComponent.props.children.length 로 버튼 폭을
+          계산하므로 실제 버튼만 배열로 넘긴다(SetupOrderModal 과 같은 규약). */}
+      <Modal
+        isOpen={confirmOpen}
+        size="sm"
+        title="초기 설정 완료"
+        onClose={() => setConfirmOpen(false)}
+        renderButtonComponent={
+          <>
+            {[
+              <Button key="cancel" size="lg" theme="secondary" onClick={() => setConfirmOpen(false)} disabled={busy}>
+                취소
+              </Button>,
+              <Button key="confirm" size="lg" onClick={handleComplete} disabled={busy}>
+                {busy ? '완료 처리 중...' : '완료'}
+              </Button>
+            ]}
+          </>
+        }
+      >
+        {/* 본문 레이아웃은 공용 GlobalErrorModal·SetupOrderModal 과 같은 형태로 맞춘다 */}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.8rem',
+            justifyContent: 'center',
+            alignItems: 'center',
+            textAlign: 'center',
+            minHeight: '8rem',
+            lineHeight: 1.5,
+            width: '100%'
+          }}
+        >
+          <div>약관에 동의하고 완료하면 초기 설정은 더 이상 수정할 수 없습니다.</div>
+          <div>(언어 · 사이트 코드 · 설치 위치 · 로봇 정보 · 약관 동의)</div>
+          <div>계속하시겠습니까?</div>
+        </div>
+      </Modal>
     </StyledPageContent>
   )
 }

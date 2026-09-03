@@ -1,0 +1,72 @@
+{
+  "common": {
+    "site": "사이트",
+    "building": "빌딩",
+    "floor": "층",
+    "area": "구역",
+    "map": "맵",
+    "cancel": "취소",
+    "loadFailed": "위치·맵 정보를 불러오지 못했습니다.",
+    "checkingSite": "사이트 정보를 확인하는 중입니다.",
+    "siteLookupFailed": "사이트 정보를 조회하지 못했습니다.",
+    "keepOpen": "완료될 때까지 창을 닫지 마세요."
+  },
+  "upload": {
+    "title": "업로드",
+    "noData": "업로드할 위치·맵 정보가 없습니다.",
+    "mapColumn": "맵 업로드",
+    "semanticColumn": "시맨틱 업로드",
+    "action": "업로드",
+    "semanticBlocked": "맵 업로드를 먼저 완료해 주세요.",
+    "map": {
+      "title": "맵 업로드",
+      "description": "아래 위치의 맵을 맵 서버로 업로드합니다.",
+      "note": "업로드가 끝나면 작업본 맵이 확정본으로 반영됩니다.",
+      "confirm": "업로드",
+      "uploading": "맵 파일을 맵 서버로 올리는 중입니다.",
+      "publishing": "로컬 맵을 확정본으로 반영하는 중입니다.",
+      "done": "맵 업로드 완료: {{name}}",
+      "noMap": "이 항목에 등록된 맵이 없습니다. 맵 스캔 후 저장해 주세요.",
+      "alreadyUploaded": "이미 업로드된 맵입니다.",
+      "multipleWorking": "작업본 맵이 {{count}}개 있습니다. 불필요한 맵을 먼저 정리해 주세요.",
+      "fileFailed": "맵 파일 업로드에 실패했습니다.",
+      "notReady": "맵 저장이 아직 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.",
+      "notFound": "작업본 맵을 찾을 수 없습니다. 맵을 다시 저장해 주세요.",
+      "folderUnavailable": "맵 폴더를 사용할 수 없습니다: {{message}}",
+      "mountHint": "마운트 권한 확인 필요",
+      "conflictFallback": "확정본 충돌",
+      "failed": "맵 업로드 실패: {{message}}"
+    },
+    "replace": {
+      "title": "맵 교체 확인",
+      "confirm": "교체",
+      "description": "‘{{name}}’ 맵이 이미 업로드되어 있습니다. 이번 작업본으로 교체할까요?",
+      "note": "기존 맵은 삭제하지 않고 백업(.bak)으로 남습니다.",
+      "progressTitle": "맵 교체",
+      "progress": "기존 맵을 백업하고 새 맵으로 교체하는 중입니다."
+    },
+    "semantic": {
+      "title": "시맨틱 업로드",
+      "confirm": "업로드",
+      "checking": "업로드 대상을 확인하는 중입니다.",
+      "targetFailed": "업로드 대상을 조회하지 못했습니다.",
+      "created": "신규 POI",
+      "edited": "수정 POI",
+      "deleted": "삭제 POI",
+      "count": "{{count}}개",
+      "noChanges": "업로드할 POI 변경분이 없습니다.",
+      "uploading": "POI 변경분을 맵 서버로 올리는 중입니다.",
+      "done": "시맨틱 업로드 완료",
+      "failed": "시맨틱 업로드 실패: {{message}}"
+    }
+  },
+  "download": {
+    "title": "다운로드",
+    "noData": "다운로드할 맵 정보가 없습니다.",
+    "column": "다운로드",
+    "action": "다운로드",
+    "modalTitle": "맵 다운로드",
+    "confirm": "다운로드",
+    "notImplemented": "다운로드 (미구현)"
+  }
+}

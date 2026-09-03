@@ -142,14 +142,12 @@ const CiCd = () => {
 
   const filteredData = useMemo(() => {
     const dockerTypeModules = data.filter((item) => item.PackageType.code === '0000')
-    if (moduleSearch) {
-      return (
-        dockerTypeModules?.filter((item) =>
+    const searchedModules = moduleSearch
+      ? dockerTypeModules?.filter((item) =>
           (item.displayName || '').toLowerCase().includes(moduleSearch.toLowerCase())
         ) || []
-      )
-    }
-    return dockerTypeModules
+      : dockerTypeModules
+    return [...searchedModules].sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''))
   }, [data, moduleSearch])
 
   return (

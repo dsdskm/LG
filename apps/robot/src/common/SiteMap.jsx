@@ -856,11 +856,32 @@ const SiteMap = ({
                     <span>{Number(poi.yawDeg).toFixed(1)}°</span>
                   </div>
                 )}
-                {poi.tolerance != null && Number.isFinite(Number(poi.tolerance)) && (
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Tolerance:</span>
-                    <span>{Number(poi.tolerance).toFixed(2)}m</span>
-                  </div>
+                {poi.tolerance != null && (
+                  typeof poi.tolerance === 'number' ? (
+                    Number.isFinite(poi.tolerance) && (
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Tolerance:</span>
+                        <span>{poi.tolerance.toFixed(2)}m</span>
+                      </div>
+                    )
+                  ) : (
+                    typeof poi.tolerance === 'object' && poi.tolerance !== null && (
+                      <>
+                        {poi.tolerance.xy != null && Number.isFinite(Number(poi.tolerance.xy)) && (
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Tolerance XY:</span>
+                            <span>{Number(poi.tolerance.xy).toFixed(2)}m</span>
+                          </div>
+                        )}
+                        {poi.tolerance.yaw_deg != null && Number.isFinite(Number(poi.tolerance.yaw_deg)) && (
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Tolerance Yaw:</span>
+                            <span>{Number(poi.tolerance.yaw_deg).toFixed(1)}°</span>
+                          </div>
+                        )}
+                      </>
+                    )
+                  )
                 )}
                 {poi.properties?.description && (
                   <div style={{ display: 'flex', gap: '8px' }}>

@@ -9,6 +9,26 @@
   "confirmDeleteContents": "Delete the selected contents?",
   "filterType": "Type",
   "filterOperation": "Operation",
+  "semanticTypes": {
+    "POI": "POI",
+    "FIXED-OBSTACLE": "Fixed obstacle"
+  },
+  "obstacleCreate": "Add fixed obstacle",
+  "obstacleShape": "Shape",
+  "obstacleShapes": {
+    "RECTANGLE": "Rectangle",
+    "POLYGON": "Polygon"
+  },
+  "obstacleDrawHint": "Press and drag on the map to mark the area, then release.",
+  "obstaclePolygonHint": "Click the map to add points, then right-click or press Enter (or click the first point) to close. Esc: start over, drag: pan the map",
+  "obstacleEditDone": "Done",
+  "obstacleEditHint": "Drag a vertex of the shape on the map to reshape it.",
+  "noObstacles": "No fixed obstacles yet.",
+  "obstacleColumns": {
+    "no": "No.",
+    "shape": "Shape",
+    "points": "Points (X, Y)"
+  },
   "columns": {
     "inUse": "In use",
     "id": "ID",

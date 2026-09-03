@@ -44,6 +44,8 @@ const FAILED_DEPLOYMENT_STATUS = [DEPLOYMENT_STATUS.FAILED, DEPLOYMENT_STATUS.RE
 
 const formatDate = (value) => (value ? convertDateToString(value) : '-')
 
+const sortByName = (options) => [...options].sort((a, b) => String(a.name).localeCompare(String(b.name)))
+
 const CampaignDetail = () => {
   const { id } = useParams()
   const { t } = useTranslation('campaign')
@@ -149,12 +151,14 @@ const CampaignDetail = () => {
   const handlePackageTypeChange = (value) => {
     setSelectedPackageTypeId(value)
     setModuleOptions(
-      allModules
-        .filter((module) => module.PackageType.id === Number(value))
-        .map((item) => ({
-          name: item.displayName,
-          value: item.id
-        }))
+      sortByName(
+        allModules
+          .filter((module) => module.PackageType.id === Number(value))
+          .map((item) => ({
+            name: item.displayName,
+            value: item.id
+          }))
+      )
     )
   }
 
@@ -178,19 +182,21 @@ const CampaignDetail = () => {
     setSelectedPolicyId(value)
   }
 
-  const filteredArtifactData = processedArtifactData.filter((item) => {
-    const matchesSearch = item.displayName?.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesOrg =
-      !selectedOrganizationId ||
-      selectedOrganizationId === 'all' ||
-      Number(item.Organization.id) === Number(selectedOrganizationId)
-    const matchesModule =
-      !selectedModuleId || selectedModuleId === 'all' || Number(item.Module?.id) === Number(selectedModuleId)
-    const completed = item.status === ARTIFACT_STATUS.SUCCESS
-    const matchesPackageType = item.Module.packageTypeId === Number(selectedPackageTypeId)
+  const filteredArtifactData = processedArtifactData
+    .filter((item) => {
+      const matchesSearch = item.displayName?.toLowerCase().includes(searchQuery.toLowerCase())
+      const matchesOrg =
+        !selectedOrganizationId ||
+        selectedOrganizationId === 'all' ||
+        Number(item.Organization.id) === Number(selectedOrganizationId)
+      const matchesModule =
+        !selectedModuleId || selectedModuleId === 'all' || Number(item.Module?.id) === Number(selectedModuleId)
+      const completed = item.status === ARTIFACT_STATUS.SUCCESS
+      const matchesPackageType = item.Module.packageTypeId === Number(selectedPackageTypeId)
 
-    return matchesSearch && matchesOrg && matchesModule && completed && matchesPackageType
-  })
+      return matchesSearch && matchesOrg && matchesModule && completed && matchesPackageType
+    })
+    .sort((a, b) => String(a.displayName).localeCompare(String(b.displayName)))
 
   const selectedTargetGroup = targetGroupOptions.find(
     (option) => Number(option.value) === Number(selectedTargetGroupId)
@@ -317,13 +323,15 @@ const CampaignDetail = () => {
         }))
         setPackageTypeOptions(ptOptions)
 
-        const groupOptions = groupRes.results
-          .filter((item) => item.campaignType === 'update')
-          .map((item) => ({
-            name: item.displayName,
-            value: item.id,
-            origin: item
-          }))
+        const groupOptions = sortByName(
+          groupRes.results
+            .filter((item) => item.campaignType === 'update')
+            .map((item) => ({
+              name: item.displayName,
+              value: item.id,
+              origin: item
+            }))
+        )
         setTargetGroupOptions(groupOptions)
 
         const policyOptionsFetched = policyRes.results.map((item) => ({
@@ -352,18 +360,22 @@ const CampaignDetail = () => {
 
         setAllModules(moduleRes.results)
 
-        const mOptions = moduleRes.results.map((item) => ({
-          name: item.displayName,
-          value: item.id
-        }))
+        const mOptions = sortByName(
+          moduleRes.results.map((item) => ({
+            name: item.displayName,
+            value: item.id
+          }))
+        )
         setModuleOptions(mOptions.length > 0 ? [{ name: t('all'), value: 'all' }, ...mOptions] : [])
 
         setOrganizationOptions([
           { name: t('all'), value: 'all' },
-          ...allOrgs.map((item) => ({
-            name: item.displayName,
-            value: item.id
-          }))
+          ...sortByName(
+            allOrgs.map((item) => ({
+              name: item.displayName,
+              value: item.id
+            }))
+          )
         ])
 
         if (id) {

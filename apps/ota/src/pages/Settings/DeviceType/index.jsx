@@ -80,12 +80,14 @@ const DeviceType = () => {
       setIsLoading(true)
       try {
         const response = await deviceTypeApis.retrieveDeviceTypes(company.id)
-        const responseData = response.results.map((item) => {
-          return {
-            ...item,
-            createdAt: item.createdAt ? convertDateToString(item.createdAt) : '-'
-          }
-        })
+        const responseData = response.results
+          .map((item) => {
+            return {
+              ...item,
+              createdAt: item.createdAt ? convertDateToString(item.createdAt) : '-'
+            }
+          })
+          .sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''))
         setProcessedData(responseData)
       } catch (error) {
         console.error(error)

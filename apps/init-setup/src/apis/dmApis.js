@@ -41,12 +41,20 @@ const loginViaRobot = async (userEmail, userPassword) => {
  * 401 로 오면 공용 axios 인터셉터가 먼저 강제 로그아웃을 돌려 화면 쪽에서 '갱신 → 실패 시 안내'
  * 순서를 제어할 수 없다.
  *
+ * 토큰은 헤더와 쿼리 양쪽으로 보낸다. 관제(로봇 웹 콘솔) 진입은 이 앱을 robot-proxy 오리진의
+ * iframe 으로 띄우는데, 그 터널을 지나온 요청에는 Authorization 헤더가 남지 않아 BE 가
+ * accessToken 누락으로 400 을 낸다. 반면 쿼리는 확실히 통과한다 — 진입 URL 자체가
+ * ?accessToken=... 로 오기 때문이다. BE 는 헤더가 있으면 헤더를 우선한다
+ * (init-setup-be routes/auth.routes.js). 프록시가 헤더를 살리면 쿼리 쪽은 지운다.
+ *
  * @param {string} userId
  * @param {string} accessToken
  * @returns {Promise<{ valid: boolean, userInfo: object|null, cloudStatus: number }>}
  */
 const validateSessionViaRobot = async (userId, accessToken) => {
-  return await requestViaRobot(`/api/auth/session?userId=${encodeURIComponent(userId)}`, {
+  const query = `userId=${encodeURIComponent(userId)}&accessToken=${encodeURIComponent(accessToken)}`
+
+  return await requestViaRobot(`/api/auth/session?${query}`, {
     method: 'GET',
     headers: { authorization: `Bearer ${accessToken}` }
   })
@@ -62,6 +70,9 @@ const validateSessionViaRobot = async (userId, accessToken) => {
  * (@repo/apis 의 client.js 인터셉터도 같은 엔드포인트에 Bearer 를 붙인다). BE 는 이 헤더를 읽어
  * 클라우드 요청에 그대로 전달한다(init-setup-be routes/auth.routes.js).
  *
+ * 헤더가 유실되는 경로(validateSessionViaRobot 주석 참고)를 대비해 본문에도 함께 담는다.
+ * 이쪽은 POST 라 쿼리가 아닌 본문을 쓰므로 URL 에 토큰이 남지 않는다.
+ *
  * @param {string} userId
  * @param {string} refreshToken
  * @param {string} [accessToken] 만료된 accessToken (있으면 Authorization 으로 전달)
@@ -74,7 +85,7 @@ const refreshSessionViaRobot = async (userId, refreshToken, accessToken) => {
       'Content-Type': 'application/json',
       ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {})
     },
-    body: JSON.stringify({ userId, refreshToken })
+    body: JSON.stringify({ userId, refreshToken, ...(accessToken ? { accessToken } : {}) })
   })
 }
 

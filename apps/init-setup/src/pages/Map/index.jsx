@@ -279,7 +279,7 @@ export default function Map() {
         </Section>
 
         {/* 정보 패널 — 토픽 정보 / 토픽 목록 / 범례를 각각 Section 으로 쌓는다 */}
-        <StatusPanel
+        {/* <StatusPanel
           status={status}
           wsUrl={wsUrl}
           mapData={mapData}
@@ -292,7 +292,7 @@ export default function Map() {
           subscribeTopics={subscribeTopics}
           unsubscribeTopics={unsubscribeTopics}
           t={t}
-        />
+        /> */}
       </MapWorkspace>
     </StyledMapPageContent>
   )

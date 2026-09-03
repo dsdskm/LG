@@ -101,14 +101,14 @@ const WebConsole = ({ t, deviceId, i18n }) => {
   const cardTypes = {
     READONLY: {},
     CONTROL: {
-      RAAT: {
-        name: 'RAAT',
+      robotProvisioning: {
+        name: 'Robot Provisioning',
         path: '/',
         port: 3002,
         icon: '🛠️'
       },
       initialSetup: {
-        name: 'initialSetup',
+        name: 'Initial Setup',
         path: '/',
         port: 18080,
         icon: '⚙️'
@@ -155,8 +155,8 @@ const WebConsole = ({ t, deviceId, i18n }) => {
       const defaultCards = [
         {
           cardId: '1',
-          cardKey: 'RAAT',
-          cardName: 'RAAT',
+          cardKey: 'robotProvisioning',
+          cardName: 'Robot Provisioning',
           path: '/',
           port: 3002,
           icon: '🛠️',
@@ -253,12 +253,7 @@ const WebConsole = ({ t, deviceId, i18n }) => {
             <CardsGridWrapper>
               <CardsGrid $cols={getColCount(cards.length)}>
                 {cards.map((card) => (
-                  <ConsoleCard
-                    key={card.cardId}
-                    robotId={deviceId}
-                    card={card}
-                    onExpand={handleCardExpand}
-                  />
+                  <ConsoleCard key={card.cardId} robotId={deviceId} card={card} onExpand={handleCardExpand} />
                 ))}
               </CardsGrid>
             </CardsGridWrapper>

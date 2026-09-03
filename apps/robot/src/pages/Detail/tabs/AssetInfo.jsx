@@ -9,8 +9,7 @@ import {
   getLocalizedName,
   getWifiStatus,
   getTaskFlowControlState,
-  filterActiveTaskFlows,
-  getInfoReferenceValue
+  filterActiveTaskFlows
 } from '@/utils/robotUtils'
 import { EditButton, PlayButton, StopButton, LiveSpan, NoUnderlineExpandable } from '@/utils/style'
 import { SectionList } from '../styles'
@@ -618,13 +617,13 @@ const AssetInfo = ({ t, deviceId }) => {
       }
 
       // PartsStatusPanel/GKR·TOFU·ZeroGain 상태 배지용 robotState는 hw/sen/sw 타임스탬프 또는
-      // GKR_STATE/TOFU_STATE/ZEROGAIN_STATE 값이 바뀐 경우에만 갱신
+      // gkrState/tofuState/zerogainState 값이 바뀐 경우에만 갱신
       const hwTs = data.state?.hwComponentsUpdatedAt ?? null
       const senTs = data.state?.sensorsUpdatedAt ?? null
       const swTs = data.state?.sWmodulesUpdatedAt ?? null
-      const gkr = getInfoReferenceValue(data.state, 'GKR_STATE') ?? null
-      const tofu = getInfoReferenceValue(data.state, 'TOFU_STATE') ?? null
-      const zeroGain = getInfoReferenceValue(data.state, 'ZEROGAIN_STATE') ?? null
+      const gkr = data.state?.gkrState ?? null
+      const tofu = data.state?.tofuState ?? null
+      const zeroGain = data.state?.zerogainState ?? null
       if (
         hwTs !== c.hwTs ||
         senTs !== c.senTs ||
@@ -962,9 +961,9 @@ const AssetInfo = ({ t, deviceId }) => {
               onManualMove={handleManualMove}
               onMotion={handleMotion}
               onMoveLocation={MoveLocationModal.onOpen}
-              gkrState={getInfoReferenceValue(robotState, 'GKR_STATE')}
-              tofuState={getInfoReferenceValue(robotState, 'TOFU_STATE')}
-              zeroGainState={getInfoReferenceValue(robotState, 'ZEROGAIN_STATE')}
+              gkrState={robotState?.gkrState}
+              tofuState={robotState?.tofuState}
+              zeroGainState={robotState?.zerogainState}
             />
           </div>
         </Section>

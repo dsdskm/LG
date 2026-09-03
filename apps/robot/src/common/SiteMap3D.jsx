@@ -580,11 +580,32 @@ function PoiPin({ position, isCharging, label, clickable, onClick, poiData = {} 
                   <span>{Number(poiData.yawDeg).toFixed(1)}°</span>
                 </div>
               )}
-              {poiData.tolerance != null && Number.isFinite(Number(poiData.tolerance)) && (
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Tolerance:</span>
-                  <span>{Number(poiData.tolerance).toFixed(2)}m</span>
-                </div>
+              {poiData.tolerance != null && (
+                typeof poiData.tolerance === 'number' ? (
+                  Number.isFinite(poiData.tolerance) && (
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Tolerance:</span>
+                      <span>{poiData.tolerance.toFixed(2)}m</span>
+                    </div>
+                  )
+                ) : (
+                  typeof poiData.tolerance === 'object' && poiData.tolerance !== null && (
+                    <>
+                      {poiData.tolerance.xy != null && Number.isFinite(Number(poiData.tolerance.xy)) && (
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Tolerance XY:</span>
+                          <span>{Number(poiData.tolerance.xy).toFixed(2)}m</span>
+                        </div>
+                      )}
+                      {poiData.tolerance.yaw_deg != null && Number.isFinite(Number(poiData.tolerance.yaw_deg)) && (
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <span style={{ color: '#b0b0b0', minWidth: '80px' }}>Tolerance Yaw:</span>
+                          <span>{Number(poiData.tolerance.yaw_deg).toFixed(1)}°</span>
+                        </div>
+                      )}
+                    </>
+                  )
+                )
               )}
               {poiData.properties?.description && (
                 <div style={{ display: 'flex', gap: '8px' }}>

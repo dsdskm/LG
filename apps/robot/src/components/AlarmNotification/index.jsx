@@ -257,7 +257,7 @@ const AlarmNotification = () => {
 
     const fetchNotifications = async () => {
       try {
-        const res = await deviceApis.getDeviceNotifications({ onlyActiveFault: true })
+        const res = await deviceApis.getDeviceNotifications({ onlyActiveFault: true, size: '100' })
         const list = res?.content ?? res?.data?.content ?? []
         if (cancelled) return
 

@@ -46,8 +46,12 @@ const markValid = (accessToken) => {
 const isInconclusiveFailure = (error) => {
   const status = error?.response?.status
   // 응답 자체가 없다 = fetch 실패(로봇 BE 다운/네트워크 단절).
+  // 400 = BE 가 userId/accessToken 을 못 받았다는 뜻(필수 파라미터 누락, utils/ApiError.js).
+  //       원격 콘솔(robot-proxy) 경유 진입에서 Authorization 헤더가 BE 까지 닿지 않는 경우가 여기다.
+  //       만료된 토큰은 BE 가 200 { valid:false } 로 답하므로 400 은 절대 만료 신호가 아니다 —
+  //       전달 문제로 사용자를 로그아웃시키지 않는다.
   // 503 = init-setup-be 가 '클라우드에 못 닿음/설정 누락' 에만 쓰는 코드 (services/cloudHttp.js).
-  return status === undefined || status === 503
+  return status === undefined || status === 400 || status === 503
 }
 
 /**

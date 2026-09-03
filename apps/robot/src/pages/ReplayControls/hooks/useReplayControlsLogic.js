@@ -1036,14 +1036,23 @@ export default function useReplayControlsLogic({ deviceId, currentTime = 0, isPl
 
       const seq = ++jointWindowSeqRef.current
 
+      // MCAP Statistics(channelMessageCounts)에서 얻은 실측 평균 Hz로 cap을 동적으로 잡는다.
+      // - 스캔에서 제외된 /joint_states도 baseline(파일 전체 평균)으로 채워져 있음(buildBaselineStatsFromStatistics).
+      // - 실측값이 없으면(Phase 2 완료 전 등) 기존 하드코딩값(300Hz 가정치)으로 폴백.
+      // - 안전마진(1.5배)만큼 여유를 둬 평균 대비 지역적 버스트에도 잘리지 않게 함.
+      const jsHz = Number(mcapTopicStats?.['/joint_states']?.hz)
+      const HZ_SAFETY = 1.5
+      const FALLBACK_MAX_MESSAGES = 1800 // 6초 × ~300Hz 헤드룸(실측 Hz 없을 때만 사용)
+      const dynamicMaxMessages = Number.isFinite(jsHz) && jsHz > 0
+        ? Math.max(200, Math.ceil((BACK + FWD) * jsHz * HZ_SAFETY))
+        : FALLBACK_MAX_MESSAGES
+
       try {
         const jointWindow = await loadJointStatesWindowFromUrl(downloadUrl, {
           topic: '/joint_states',
           startSec,
           endSec,
-          // 6초 창(BACK+FWD) × ~300Hz 헤드룸. 초과 시 로더가 뒤(최신)쪽을 버리므로,
-          // 현재 시점 근처가 잘리지 않도록 창 폭 확대에 맞춰 상향.
-          maxMessages: 1800,
+          maxMessages: dynamicMaxMessages,
           timeDownsampleMs: 0,
           baseAbsStartSec: tr?.absStartSec ?? 0
         })
@@ -1104,7 +1113,7 @@ export default function useReplayControlsLogic({ deviceId, currentTime = 0, isPl
       cancelled = true
       clearTimeout(timer)
     }
-  }, [currentTime, mcapTimeRange, isParsingMcap, mcapRobotDescription])
+  }, [currentTime, mcapTimeRange, isParsingMcap, mcapRobotDescription, mcapTopicStats])
 
   // interval 로더가 최신 값을 읽도록 props/state를 ref로 미러링(React 렌더와 디커플링)
   useEffect(() => {

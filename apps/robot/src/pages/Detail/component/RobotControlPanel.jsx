@@ -336,9 +336,9 @@ const MOTIONS = [
  * @param {Function} props.onManualMove - 수동 이동 명령 전송 (direction: 'forward'|'backward', distance: number(m))
  * @param {Function} props.onMotion - 모션 명령 전송 ({ actionType, blockingType, actionParameters }, 표시명)
  * @param {Function} props.onMoveLocation - 장소 이동 모달 오픈
- * @param {string|undefined} props.gkrState - state.information[].infoReferences[GKR_STATE] (없으면 undefined)
- * @param {string|undefined} props.tofuState - state.information[].infoReferences[TOFU_STATE] (없으면 undefined)
- * @param {string|undefined} props.zeroGainState - state.information[].infoReferences[ZEROGAIN_STATE] (없으면 undefined)
+ * @param {string|undefined} props.gkrState - state.gkrState (없으면 undefined)
+ * @param {string|undefined} props.tofuState - state.tofuState (없으면 undefined)
+ * @param {string|undefined} props.zeroGainState - state.zerogainState (없으면 undefined)
  */
 const RobotControlPanel = ({
   t,

@@ -215,6 +215,15 @@ const Semantic = () => {
     setNavTarget(null)
   }, [mapId])
 
+  // TODO(격자맵 재로드): lio_load_grid_map 핸들러가 로봇에 반영되기 전까지 호출을 막아 둔다.
+  // 반영되면 이 refs / handleLoadMap 의 무장 / 아래 effect 주석을 함께 해제한다.
+  //
+  // 맵 로드가 성공하면 무장되고, 그 로드가 측위 완료(ready)에 이르렀을 때 격자맵 재로드를 한 번 건다.
+  // 대상 경로는 무장 시점의 맵 디렉터리를 들고 간다 — 측위가 끝나기 전에 맵 선택을 바꿔도
+  // 방금 로드한 맵의 격자맵을 로드해야 한다.
+  // const gridLoadArmedRef = useRef(false)
+  // const gridLoadTargetRef = useRef(null)
+
   /**
    * 선택한 맵을 로봇에 로드한다(측위 모드 전환).
    * 응답은 3D 맵 로드까지만 보장하므로 이후 진행은 /lio_node/status 배지로 확인한다.
@@ -232,9 +241,13 @@ const Semantic = () => {
       setIsLoadingMap(true)
       // 이전 로드의 무장은 버린다 — 이 로드로 시작되는 재정위만 자동 회전 대상이다.
       autoSpinArmedRef.current = false
+      // gridLoadArmedRef.current = false
       try {
         const response = await mapApi.loadMapForLocalization({ mapPath: mapDir })
         toast.success(response?.data?.message || t('mapLoadRequested'), { autoClose: 2000 })
+        // 측위가 끝나면(ready) 이 맵의 2D 격자맵을 한 번 다시 로드한다(아래 effect).
+        // gridLoadArmedRef.current = true
+        // gridLoadTargetRef.current = mapDir
         // 이 요청으로 시작된 재정위에서는 회전을 자동으로 걸어준다(아래 effect).
         // 지금 이미 재정위 중이면 그 재정위는 이전 맵의 것이므로, 상태가 한 번 풀릴 때까지 기다린다.
         if (armAutoSpin) {
@@ -272,6 +285,33 @@ const Semantic = () => {
     if (mode !== 'mapping') return
     handleLoadMap({ armAutoSpin: false })
   }, [mapDir, lioStatus, isLoadingMap, handleLoadMap])
+
+  // 맵 로드가 측위 완료(ready)까지 갔으면 그 맵의 2D 격자맵을 다시 로드한다
+  // (POST /robot-hub/load-grid-map → lio_load_grid_map).
+  //
+  // lio_node 도 재정위 성공 직후 스스로 한 번 로드하지만(status: loading_grid_map → ready),
+  // grid_map_node 가 늦게 떠서 서비스가 준비되지 않았으면 경고만 남기고 ready 로 넘어간다
+  // (lio_node.cpp requestGridMapLoad). 그러면 지도 칸이 비어 있고 POI 를 얹을 기준이 없으므로,
+  // 로드에 성공한 맵에 대해서는 한 번 더 확실히 건다. 이미 올라와 있으면 같은 격자맵이
+  // /lio/grid_map 으로 다시 발행될 뿐이라 재로드가 화면을 흐트러뜨리지 않는다.
+  //
+  // status 는 1Hz 하트비트로 같은 값이 계속 오므로, 무장을 먼저 풀어 정확히 1회만 호출한다.
+  //
+  // TODO(격자맵 재로드): lio_load_grid_map 핸들러 반영 전이라 아직 호출하지 않는다.
+  // API(apis/mapApis.loadGridMap)와 BE(POST /robot-hub/load-grid-map)는 이미 연결돼 있으므로
+  // 로봇에 핸들러가 올라가면 위 refs/무장과 함께 이 블록만 해제하면 된다.
+  // useEffect(() => {
+  //   if (!gridLoadArmedRef.current || lioStatus !== 'ready') return
+  //   const savePath = gridLoadTargetRef.current
+  //   gridLoadArmedRef.current = false
+  //   gridLoadTargetRef.current = null
+  //   if (!savePath) return
+  //   mapApi.loadGridMap({ savePath }).catch((error) => {
+  //     // 격자맵 재로드 실패는 측위 실패가 아니다 — 화면은 그대로 두고 토스트로만 알린다.
+  //     const message = error?.response?.data?.error?.message || error?.message || 'Request failed'
+  //     toast.error(message, { autoClose: 3000 })
+  //   })
+  // }, [lioStatus])
 
   // 지도 클릭 → 그 지점의 월드 좌표를 말풍선으로 띄운다(아직 이동하지 않는다).
   // 기존 POI 마커를 눌렀으면 MapCanvas 가 그 POI 를 함께 넘겨준다 — 말풍선이 POI 이름을 보여주고
@@ -641,7 +681,18 @@ const Semantic = () => {
           gotoLabel={t('moveHere')}
           // 지도에는 목록에 보이는 POI 를 그린다 — SemanticPage 가 표시 중인 목록(IN-USE/WORKING)을
           // 넘겨주므로 아직 저장하지 않은 작업본 POI 도 지도에서 확인할 수 있다.
-          mapSlot={({ pois: visiblePois }) => (
+          // 지도 칸은 POI 와 고정장애물을 함께 그린다 — 고정장애물 편집 중에도 POI 가 어디 있는지
+          // 보여야 영역을 어디에 잡을지 판단할 수 있다.
+          mapSlot={({
+            pois: visiblePois,
+            obstacles,
+            drawObstacleShape,
+            onObstacleDrawn,
+            selectedObstacleId,
+            editingObstacleId,
+            onObstacleResize,
+            onObstacleVertexMove
+          }) => (
             <MapClickArea>
               <MapCanvas
                 mapData={mapData}
@@ -652,6 +703,13 @@ const Semantic = () => {
                 customTopicsData={customTopicsData}
                 frameCorrections={frameCorrections}
                 pois={visiblePois}
+                obstacles={obstacles}
+                drawObstacleShape={drawObstacleShape}
+                onObstacleDrawn={onObstacleDrawn}
+                selectedObstacleId={selectedObstacleId}
+                editingObstacleId={editingObstacleId}
+                onObstacleResize={onObstacleResize}
+                onObstacleVertexMove={onObstacleVertexMove}
                 // POI 편집 화면이라 실시간 라이다 점군은 지도를 가리기만 한다
                 showScan={false}
                 onMapClick={handleMapClick}
@@ -659,8 +717,10 @@ const Semantic = () => {
                 t={t}
               />
 
-              {/* 클릭 지점 말풍선 — 좌표 표시 + 이동 */}
-              {navTarget && (
+              {/* 클릭 지점 말풍선 — 좌표 표시 + 이동.
+                  고정장애물 영역을 그리는 중에는 감춘다 — 그때는 지도 클릭이 이동 목표가 아니라
+                  사각형 그리기이므로, 남아 있는 말풍선은 지금 무엇을 하는 중인지 흐리게 만든다. */}
+              {navTarget && !drawObstacleShape && (
                 <NavBubble $x={navTarget.canvasX} $y={navTarget.canvasY}>
                   {/* POI 마커를 집었으면 어느 POI 인지 먼저 보여준다 — 좌표만으로는 확인이 안 된다 */}
                   {navTarget.poi && <strong className="poiName typographyBody5">{poiLabel(navTarget.poi)}</strong>}

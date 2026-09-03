@@ -449,13 +449,6 @@ const Network = () => {
     navigate('/')
   }
 
-  // 로그인 전 게이트로 들어온 사용자를 위한 탈출구. 로봇이 유선으로 인터넷에 연결된 경우처럼
-  // Wi-Fi 상태만으로는 미연결로 보이지만 실제로는 로그인이 되는 구성이 있다.
-  const handleSkipToLogin = () => {
-    bypassNetworkGate()
-    navigate('/login')
-  }
-
   const handleSwitchWifiMode = async (mode) => {
     if (connecting || modeChanging) return
 
@@ -541,6 +534,39 @@ const Network = () => {
             <SummaryHint>{t('network.access.hint')}</SummaryHint>
           </SummaryCard>
         </SummaryGrid>
+
+        <ConnectPanel>
+          <ConnectPanelTop>
+            <div>
+              <h3>{t('network.mode.title')}</h3>
+              <p>
+                {t('network.mode.current')}{' '}
+                <b>{wifiModeStatus?.label || wifiModeStatus?.mode || t('network.mode.checking')}</b> · STA:{' '}
+                {wifiModeStatus?.sta_iface || 'wlan0'} · AP: {wifiModeStatus?.ap_iface || 'wlan1'}
+              </p>
+              <p>{t('network.mode.description')}</p>
+            </div>
+            <StatusBadge
+              tone={
+                wifiModeStatus?.mode === 'concurrent' ? 'green' : wifiModeStatus?.mode === 'single_ap' ? 'blue' : 'gray'
+              }
+            >
+              {wifiModeStatus?.mode || 'mode'}
+            </StatusBadge>
+          </ConnectPanelTop>
+          <ButtonWrap>
+            <ActionButton onClick={() => handleSwitchWifiMode('concurrent')} disabled={connecting || modeChanging}>
+              {t('network.mode.concurrentButton')}
+            </ActionButton>
+            <ActionButton onClick={() => handleSwitchWifiMode('single')} disabled={connecting || modeChanging}>
+              {t('network.mode.singleButton')}
+            </ActionButton>
+            <ActionButton onClick={refreshAccessInfo} disabled={connecting || modeChanging}>
+              {t('network.mode.refresh')}
+            </ActionButton>
+          </ButtonWrap>
+          {modeMessage && <SmallNote style={{ marginTop: '1.2rem' }}>{modeMessage}</SmallNote>}
+        </ConnectPanel>
 
         <SectionCard>
           <SectionHeader>
@@ -656,39 +682,6 @@ const Network = () => {
             </ButtonWrap>
           </ConnectPanel>
         )}
-
-        <ConnectPanel>
-          <ConnectPanelTop>
-            <div>
-              <h3>{t('network.mode.title')}</h3>
-              <p>
-                {t('network.mode.current')}{' '}
-                <b>{wifiModeStatus?.label || wifiModeStatus?.mode || t('network.mode.checking')}</b> · STA:{' '}
-                {wifiModeStatus?.sta_iface || 'wlan0'} · AP: {wifiModeStatus?.ap_iface || 'wlan1'}
-              </p>
-              <p>{t('network.mode.description')}</p>
-            </div>
-            <StatusBadge
-              tone={
-                wifiModeStatus?.mode === 'concurrent' ? 'green' : wifiModeStatus?.mode === 'single_ap' ? 'blue' : 'gray'
-              }
-            >
-              {wifiModeStatus?.mode || 'mode'}
-            </StatusBadge>
-          </ConnectPanelTop>
-          <ButtonWrap>
-            <ActionButton onClick={() => handleSwitchWifiMode('concurrent')} disabled={connecting || modeChanging}>
-              {t('network.mode.concurrentButton')}
-            </ActionButton>
-            <ActionButton onClick={() => handleSwitchWifiMode('single')} disabled={connecting || modeChanging}>
-              {t('network.mode.singleButton')}
-            </ActionButton>
-            <ActionButton onClick={refreshAccessInfo} disabled={connecting || modeChanging}>
-              {t('network.mode.refresh')}
-            </ActionButton>
-          </ButtonWrap>
-          {modeMessage && <SmallNote style={{ marginTop: '1.2rem' }}>{modeMessage}</SmallNote>}
-        </ConnectPanel>
 
         {!connecting && (
           <ConnectPanel>

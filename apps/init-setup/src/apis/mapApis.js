@@ -3,6 +3,17 @@ import { axiosApi, axiosHealthApi, createCrud } from './crudFactory'
 // 맵 리소스 CRUD (init-setup-be: /api/v1/maps)
 export const { create, list, getById, update, remove } = createCrud('maps')
 
+/**
+ * 맵 파일을 외부 맵 서버로 업로드 (POST /maps/upload).
+ *
+ * zip 대상 경로는 넘기지 않는다 — localMapId(맵 레코드 id)만 주면 BE 가 그 레코드의 경로에서
+ * 맵 디렉터리를 판단한다(init-setup-be map.service.getDirById). 저장 폴더 규약
+ * ('<난수 8자>_working' → 승격 시 접미사 제거)을 FE 가 경로로 조립하지 않아야
+ * 규약이 한쪽으로만 남고, extMapId 를 기록할 레코드와 zip 대상이 어긋나지 않는다.
+ *
+ * @param {{groupId: string, siteId: string, buildingId?: string, floorId?: string, areaId?: string,
+ *   mapType: string, filename: string, authorization?: string, localMapId: number}} body
+ */
 export const uploadMap = async (body) => {
   return await axiosApi.post('/maps/upload', body)
 }
@@ -16,15 +27,16 @@ export const uploadPoi = async (body) => {
  *
  * init-setup-be 가 REST 를 받아 robot-hub gRPC(SendCommand)로 중계한다.
  * 맵 리소스 CRUD(/maps)와 달리 DB 를 건드리지 않는 로봇 명령이므로 경로가 /robot-hub 다.
- *   POST /robot-hub/mapping/start → lio_switch_mode(mode=mapping)
- *   POST /robot-hub/save-map      → lio_save_map(save_path)
+ *   POST /robot-hub/mapping/start  → lio_switch_mode(mode=mapping)
+ *   POST /robot-hub/save-map       → lio_save_map(save_path)
+ *   POST /robot-hub/load-grid-map  → lio_load_grid_map(save_path)
  * 예외로 POST /robot-hub/save-map/publish 는 로봇 명령이 아니라 BE 의 파일 작업이다
  * (작업본 디렉터리 rename + 맵 레코드 경로 갱신). 경로만 같은 그룹에 있다.
  *
- * 시작 / 재시작(reset) / 취소(cancel)는 lio_node 입장에서 모두 같은 호출
- * (switch_mode mode=mapping)이다 — mapping 진입 시 lio_node 가 백엔드를 재생성하고
- * 프론트엔드 상태/격자맵을 초기화하므로 저장하지 않은 데이터는 폐기된다.
- * 그래서 세 동작 모두 /robot-hub/mapping/start 를 호출하고, 의도 구분은 UI 쪽에만 있다.
+ * 시작과 재시작(reset)은 lio_node 입장에서 같은 호출(switch_mode mode=mapping)이다 —
+ * mapping 진입 시 lio_node 가 백엔드를 재생성하고 프론트엔드 상태/격자맵을 초기화하므로
+ * 저장하지 않은 데이터는 폐기된다. 그래서 둘 다 /robot-hub/mapping/start 를 호출하고,
+ * 의도 구분은 UI 쪽에만 있다(세션 폐기용 전용 취소 API 도 이 호출로 대신할 수 있다).
  *
  * 진행 상태는 이 API 로 폴링하지 않는다 — 텔레메트리 릴레이로 /lio_node/status 를
  * 직접 구독한다(useTelemetry + STATUS_TOPICS).
@@ -148,6 +160,61 @@ export const waitForGridMap = async (name, { timeoutMs = 20000, intervalMs = 100
 }
 
 /**
+ * 저장된 2D 격자맵 로드 (POST /robot-hub/load-grid-map).
+ *
+ * 평소에는 lio_node 가 재정위에 성공한 직후 스스로 로드한다(status: loading_grid_map → ready).
+ * 이 호출은 그 자동 로드가 없었거나 실패했을 때(grid_map_node 가 늦게 떠서 서비스가 준비되지
+ * 않았던 경우 등) 다시 걸기 위한 것이다 — 3D 맵/재정위 상태는 그대로 두고 /lio/grid_map 만 채운다.
+ *
+ * 넘기는 값은 맵 디렉터리(name 또는 savePath)다 — ROS2 서비스가 받는 '<맵 디렉터리>/grid_map'
+ * 조립은 BE 가 한다.
+ *
+ * 전역 에러 팝업을 끈다(skipErrorPopup) — 409(GRID_MAP_NOT_READY, 격자맵 파일이 아직 없음)는
+ * 잠시 후 재시도로 이어져야 하고, 나머지도 화면에서 상황별 토스트로 안내하는 편이 낫다.
+ *
+ * @param {{name?: string, savePath?: string}} payload 맵 디렉터리 이름 또는 경로(하나는 필수)
+ * @returns {Promise<{success: boolean, data: {name: string, savePath: string, gridMapPath: string,
+ *   message: string}}>}
+ */
+export const loadGridMap = async ({ name, savePath } = {}) => {
+  if (!name && !savePath) throw new Error('name or savePath is required to load a grid map')
+  return await axiosApi.post(
+    '/robot-hub/load-grid-map',
+    {
+      ...(name ? { name } : {}),
+      ...(savePath ? { save_path: savePath } : {})
+    },
+    { skipErrorPopup: true }
+  )
+}
+
+/**
+ * 작업본 저장 폴더 폐기 (DELETE /robot-hub/save-map).
+ *
+ * save_map 은 파일만 만들고 레코드는 FE 가 따로 등록한다(POST /maps). 등록이 막히면
+ * (필수값 resolution 을 못 구한 경우) 그 폴더는 어디서도 참조되지 않는 채 맵 루트에 남고,
+ * 업로드 단계는 작업본이 둘 이상이면 승격을 막으므로 다음 스캔까지 막힌다 → 등록 실패한 저장은
+ * 폴더까지 되돌린다.
+ *
+ * BE 가 '_working' 폴더이고 가리키는 레코드가 없을 때만 지운다(확정본은 400, 레코드가 있으면 409) —
+ * FE 는 이번 저장으로 새로 만든 폴더만 넘기면 된다.
+ *
+ * 전역 에러 팝업을 끈다(skipErrorPopup) — 폐기 실패는 저장 흐름을 막을 문제가 아니라
+ * 화면에서 토스트로만 알릴 문제다(맵 파일은 이미 저장돼 있다).
+ *
+ * @param {{name?: string, savePath?: string}} payload 지울 작업본 폴더 이름 또는 경로(하나는 필수)
+ * @returns {Promise<{success: boolean, data: {name: string, savePath: string, removed: boolean}}>}
+ *   removed: 실제로 지웠는지(이미 없었으면 false — 실패는 아니다)
+ */
+export const discardMapDir = async ({ name, savePath } = {}) => {
+  if (!name && !savePath) throw new Error('name or savePath is required to discard a map directory')
+  return await axiosApi.delete('/robot-hub/save-map', {
+    params: { ...(name ? { name } : {}), ...(savePath ? { save_path: savePath } : {}) },
+    skipErrorPopup: true
+  })
+}
+
+/**
  * 작업본 맵을 확정본으로 승격 (POST /robot-hub/save-map/publish).
  *
  * 매핑 저장은 '<난수 8자>_working' 디렉터리에 떨어진다(utils/mapRecord.newWorkingMapDirName —
@@ -155,20 +222,32 @@ export const waitForGridMap = async (name, { timeoutMs = 20000, intervalMs = 100
  * 접미사를 뗀 디렉터리로 rename 하고, 그 디렉터리를 가리키던 맵 레코드의 경로/이름도 BE 가 함께
  * 갱신한다. 파일 이동이라 robot-hub 를 거치지 않는다(로봇 명령이 아니다).
  *
- * 전역 에러 팝업을 끈다(skipErrorPopup) — 409(이미 확정본 존재)는 덮어쓰기 확인으로 이어져야 하고
- * 나머지도 화면에서 상황별 토스트로 안내하는 편이 낫다.
+ * 경로 대신 mapId 를 넘긴다 — BE 가 그 레코드의 경로에서 작업본 디렉터리를 판단한다
+ * (init-setup-be map.service.getDirById). name/savePath 는 레코드 없이 save_map 만 쓴 맵을
+ * 다룰 때를 위해 남아 있다.
  *
- * @param {{name?: string, savePath?: string, overwrite?: boolean}} payload
- *   name: 작업본 맵 이름, savePath: 작업본 디렉터리 절대 경로(둘 중 하나 필수).
+ * 전역 에러 팝업을 끈다(skipErrorPopup) — 409(이미 확정본 존재)는 덮어쓰기 확인으로 이어져야 하고
+ * 나머지도 화면에서 상황별 토스트로 안내하는 편이 낫다. 409 는 error.code 로 구분한다
+ * (ALREADY_PUBLISHED / GRID_MAP_NOT_READY).
+ *
+ * @param {{mapId?: number|string, name?: string, savePath?: string, overwrite?: boolean}} payload
+ *   mapId: 승격할 맵 레코드 id (권장). name/savePath: 경로를 직접 지정할 때. 셋 중 하나 필수.
  *   overwrite: 같은 이름의 확정본이 있을 때 교체 여부(기존 확정본은 .bak-<ts> 로 보존).
  * @returns {Promise<{success: boolean, data: {name: string, savePath: string, previousPath: string,
  *   backupPath: string|null, maps: number[]}}>}
  */
-export const publishMap = async ({ name, savePath, overwrite = false } = {}) => {
-  if (!name && !savePath) throw new Error('name or savePath is required to publish a map')
+export const publishMap = async ({ mapId, name, savePath, overwrite = false } = {}) => {
+  if (mapId == null && !name && !savePath) {
+    throw new Error('mapId, name or savePath is required to publish a map')
+  }
   return await axiosApi.post(
     '/robot-hub/save-map/publish',
-    { ...(name ? { name } : {}), ...(savePath ? { save_path: savePath } : {}), overwrite },
+    {
+      ...(mapId != null ? { map_id: mapId } : {}),
+      ...(name ? { name } : {}),
+      ...(savePath ? { save_path: savePath } : {}),
+      overwrite
+    },
     { skipErrorPopup: true }
   )
 }
@@ -178,14 +257,5 @@ export const publishMap = async ({ name, savePath, overwrite = false } = {}) => 
  * @returns {Promise<{success: boolean, data: {message: string}}>}
  */
 export const resetMapping = async () => {
-  return await axiosApi.post('/robot-hub/mapping/start', {})
-}
-
-/**
- * 매핑 취소 (POST /robot-hub/mapping/start). 저장하지 않고 매핑 세션을 폐기한다.
- * (전용 cancel 서비스가 없어 mapping 재진입으로 폐기한다 — reset 과 같은 호출이다.)
- * @returns {Promise<{success: boolean, data: {message: string}}>}
- */
-export const cancelMapping = async () => {
   return await axiosApi.post('/robot-hub/mapping/start', {})
 }

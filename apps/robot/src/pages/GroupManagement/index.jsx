@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 import { groupApis, siteApis, locationApis } from '@/apis'
-import { ManageActions, EditButton, AddButton } from '@/utils/style'
+import { ManageActions, EditButton, AddButton, DeleteButton } from '@/utils/style'
 import {
   StyledPageContent,
   Title,
@@ -12,7 +12,8 @@ import {
   HeaderTitleGroup,
   Table,
   Button,
-  Modal
+  Modal,
+  ModalButton
 } from '@repo/ui'
 import { useModalState } from '@repo/hooks'
 import { useNavigate } from 'react-router-dom'
@@ -292,6 +293,14 @@ const GroupManagement = () => {
               >
                 {t('roleCode')}
               </EditButton>
+              <DeleteButton
+                type="button"
+                style={{ paddingLeft: '8px', paddingRight: '8px' }}
+                disabled={site.isDefaultSite}
+                onClick={() => openModalDeleteSite(site)}
+              >
+                {t('delete')}
+              </DeleteButton>
             </ManageActions>
           </SiteItem>
         ))}
@@ -349,6 +358,35 @@ const GroupManagement = () => {
       : locations.find((l) => l.groupId === _groupId && l.siteName === '*')
     setRoleCodeValue(location?.locationId ?? '')
     RoleCodeModal.onOpen()
+  }
+
+  const DeleteSiteModal = useModalState()
+  const [siteToDelete, setSiteToDelete] = useState(null)
+  const [isDeletingSite, setIsDeletingSite] = useState(false)
+
+  const openModalDeleteSite = (site) => {
+    setSiteToDelete(site)
+    DeleteSiteModal.onOpen()
+  }
+
+  const handleDeleteSite = async () => {
+    if (!siteToDelete) return
+    setIsDeletingSite(true)
+    try {
+      await siteApis.deleteSites(siteToDelete.siteId)
+      setConfirmMessage(t('siteDeleteSuccess'))
+    } catch (err) {
+      if (err?.response?.data?.errorCode === 'SITE_40902') {
+        setConfirmMessage(t('siteDeleteBlockedRobotAssigned'))
+      } else {
+        console.error('Error deleteSites:', err)
+        setConfirmMessage(t('errorReport'))
+      }
+    } finally {
+      setIsDeletingSite(false)
+      DeleteSiteModal.onClose()
+      setIsConfirmModalOpen(true)
+    }
   }
 
   return (
@@ -422,6 +460,25 @@ const GroupManagement = () => {
           siteInfo={siteInfo}
         />
         <ModalRoleCode isOpen={RoleCodeModal.isOpen} onClose={RoleCodeModal.onClose} t={t} locationId={roleCodeValue} />
+        <Modal
+          isOpen={DeleteSiteModal.isOpen}
+          size="xs"
+          onClose={DeleteSiteModal.onClose}
+          renderButtonComponent={
+            <>
+              <ModalButton onClick={DeleteSiteModal.onClose}>{t('cancel')}</ModalButton>
+              <ModalButton onClick={handleDeleteSite} theme="primary" disabled={isDeletingSite}>
+                {t('delete')}
+              </ModalButton>
+            </>
+          }
+        >
+          <div style={{ textAlign: 'center', padding: '20px 0' }}>
+            <p className="typographyBody2" style={{ whiteSpace: 'pre-wrap', textAlign: 'center' }}>
+              {t('siteDeleteConfirm', { siteName: siteToDelete?.siteName })}
+            </p>
+          </div>
+        </Modal>
         <Modal
           isOpen={isConfirmModalOpen}
           size="xs"

@@ -1,0 +1,72 @@
+{
+  "common": {
+    "site": "Site",
+    "building": "Building",
+    "floor": "Floor",
+    "area": "Area",
+    "map": "Map",
+    "cancel": "Cancel",
+    "loadFailed": "Failed to load location and map information.",
+    "checkingSite": "Checking site information...",
+    "siteLookupFailed": "Failed to look up site information.",
+    "keepOpen": "Do not close this window until it finishes."
+  },
+  "upload": {
+    "title": "Upload",
+    "noData": "No location or map to upload.",
+    "mapColumn": "Map upload",
+    "semanticColumn": "Semantic upload",
+    "action": "Upload",
+    "semanticBlocked": "Upload the map first.",
+    "map": {
+      "title": "Map upload",
+      "description": "Upload the map for the location below to the map server.",
+      "note": "Once the upload finishes, the working map is published.",
+      "confirm": "Upload",
+      "uploading": "Uploading the map files to the map server...",
+      "publishing": "Publishing the local map...",
+      "done": "Map upload complete: {{name}}",
+      "noMap": "No map is registered for this item. Scan and save a map first.",
+      "alreadyUploaded": "This map is already uploaded.",
+      "multipleWorking": "There are {{count}} working maps. Clean up the unnecessary ones first.",
+      "fileFailed": "Failed to upload the map files.",
+      "notReady": "The map is still being saved. Please try again in a moment.",
+      "notFound": "Working map not found. Please save the map again.",
+      "folderUnavailable": "The map folder is not available: {{message}}",
+      "mountHint": "check the mount permissions",
+      "conflictFallback": "published map conflict",
+      "failed": "Map upload failed: {{message}}"
+    },
+    "replace": {
+      "title": "Replace map",
+      "confirm": "Replace",
+      "description": "The map \"{{name}}\" is already uploaded. Replace it with this working map?",
+      "note": "The existing map is kept as a backup (.bak) instead of being deleted.",
+      "progressTitle": "Replacing map",
+      "progress": "Backing up the existing map and replacing it..."
+    },
+    "semantic": {
+      "title": "Semantic upload",
+      "confirm": "Upload",
+      "checking": "Checking what will be uploaded...",
+      "targetFailed": "Failed to look up what will be uploaded.",
+      "created": "New POIs",
+      "edited": "Edited POIs",
+      "deleted": "Deleted POIs",
+      "count": "{{count}}",
+      "noChanges": "There are no POI changes to upload.",
+      "uploading": "Uploading the POI changes to the map server...",
+      "done": "Semantic upload complete",
+      "failed": "Semantic upload failed: {{message}}"
+    }
+  },
+  "download": {
+    "title": "Download",
+    "noData": "No map to download.",
+    "column": "Download",
+    "action": "Download",
+    "modalTitle": "Map download",
+    "confirm": "Download",
+    "notImplemented": "Download (not implemented)"
+  }
+}

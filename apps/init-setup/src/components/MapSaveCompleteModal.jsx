@@ -31,6 +31,16 @@ const MapSaveCompleteModal = ({ isOpen, mapName, gridMapState = 'checking', onCl
     unknown: t('saveComplete.gridUnknown')
   }
 
+  // 격자맵 확인 중에는 화면 이동만 막는다.
+  //
+  // 이동하면 ConnectionBar 가 언마운트되어 폴링 결과를 못 받고(aliveRef), 맵 레코드 등록도 등록
+  // 실패 시의 폴더 폐기도 실행되지 않는다 — 저장 폴더만 남고 시맨틱 화면은 그 구역 맵을 못 찾는다.
+  // 확인은 최대 20초에서 끝난다(mapApis.waitForGridMap) — ready/pending/unknown 중 무엇이 되든 풀린다.
+  //
+  // 닫기는 막지 않는다 — 모달을 닫아도 폴링과 등록은 그대로 진행되고 결과는 토스트로 온다. 확인 중
+  // 다시 저장하는 것만 문제인데, 그건 툴바의 저장 버튼에서 막는다(ConnectionBar).
+  const isChecking = gridMapState === 'checking'
+
   // Modal 의 footer 는 renderButtonComponent.props.children.length 로 버튼 폭을 계산한다.
   // 조건부 렌더가 섞이면 개수가 틀어지므로 실제 버튼만 배열로 넘긴다.
   const buttons = [
@@ -40,6 +50,7 @@ const MapSaveCompleteModal = ({ isOpen, mapName, gridMapState = 'checking', onCl
     <Button
       key="semantic"
       size="lg"
+      disabled={isChecking}
       onClick={() => {
         navigate(SEMANTIC_PATH)
         onClose()

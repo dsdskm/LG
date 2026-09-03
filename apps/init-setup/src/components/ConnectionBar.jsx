@@ -6,6 +6,7 @@ import {
   createMapping,
   resetMapping,
   waitForGridMap,
+  discardMapDir,
   create as createMapRecord,
   update as updateMapRecord,
   list as listMapRecords
@@ -162,7 +163,10 @@ export default function ConnectionBar({
   const [isSaveLocationOpen, setSaveLocationOpen] = useState(false)
   // 덮어쓰기 확인 대기 중인 저장 대상 — 작업 중인 맵이 있을 때만 채워진다(있으면 확인 모달이 열린다).
   const [pendingOverwrite, setPendingOverwrite] = useState(null)
-  const [gridMapState, setGridMapState] = useState('checking')
+  // 2D 격자맵 산출물 확인 상태. 'checking' 은 저장 직후 폴링 중이라는 뜻이고 저장 버튼을 잠그므로
+  // (아래 mappingContainer), 저장 전 초기값은 'unknown' 이어야 한다 — 'checking' 으로 두면 화면에
+  // 들어오는 것만으로 첫 저장이 막힌다. 저장 시점에 saveMapTo 가 'checking' 으로 바꾼다.
+  const [gridMapState, setGridMapState] = useState('unknown')
   // grid_map 폴링이 끝나기 전에 화면을 떠날 수 있으므로 언마운트 후 setState 를 막는다.
   const aliveRef = useRef(true)
   useEffect(
@@ -323,7 +327,14 @@ export default function ConnectionBar({
         waitForGridMap(savedDir).then(({ state, artifacts }) => {
           if (!aliveRef.current) return
           setGridMapState(state)
-          registerMapRecord({ savePath: savedPath, name: displayName || savedDir, artifacts, recordId })
+          registerMapRecord({
+            savePath: savedPath,
+            name: displayName || savedDir,
+            artifacts,
+            recordId,
+            dirName: savedDir,
+            gridMapState: state
+          })
         })
       },
       successMessage: 'Map saved'
@@ -352,6 +363,28 @@ export default function ConnectionBar({
   }
 
   /**
+   * 맵 레코드를 만들지 못한 저장 폴더를 지운다(DELETE /robot-hub/save-map).
+   *
+   * 레코드가 없는 폴더는 어디서도 참조되지 않는 채 맵 루트에 남고, 업로드 단계는 작업본이 둘 이상이면
+   * 승격을 막으므로(pages/Upload) 다음 스캔까지 방해한다.
+   *
+   * 호출 조건은 registerMapRecord 쪽에 있다 — 이번 저장으로 만든 새 폴더이고 격자맵이 다 떨어진
+   * (ready) 경우만이다. 이미 있던 작업본을 덮어쓴 경우(recordId)에는 레코드가 살아 있으므로 BE 가
+   * 409 로 거부하고, pending/unknown 은 lio_node 가 아직 쓰는 중일 수 있어 건드리지 않는다.
+   */
+  const discardSavedDir = async (dirName) => {
+    if (!dirName) return false
+    try {
+      const response = await discardMapDir({ name: dirName })
+      return response?.data?.removed === true
+    } catch (error) {
+      const message = error?.response?.data?.error?.message || error?.message || 'Request failed'
+      toast.warn(`${t('mapDirDiscardFailed')}: ${message}`, { autoClose: 4000 })
+      return false
+    }
+  }
+
+  /**
    * 저장된 맵을 DB 에 등록한다(POST /maps). 실패해도 파일 저장 자체는 이미 끝난 상태이므로
    * 매핑 흐름을 막지 않고 토스트로만 알린다.
    *
@@ -360,8 +393,18 @@ export default function ConnectionBar({
    *   경우이므로 레코드도 하나만 있어야 한다(업로드 단계가 작업본 1건을 전제로 한다).
    *   확정본(접미사 없는 폴더 · active 레코드)에는 절대 채워지지 않는다(resolveSaveTarget) —
    *   확정된 맵 레코드는 승격 시점에 BE 만 갱신한다.
+   * @param {string} [dirName] 이번에 저장한 폴더 이름 — 등록이 막혔을 때 폐기 대상이다.
+   * @param {'ready'|'pending'|'unknown'} [gridMapState] 격자맵 산출물 판정 결과.
+   *   폐기는 ready 일 때만 한다(위 discardSavedDir).
    */
-  const registerMapRecord = async ({ savePath, name, artifacts, recordId = null }) => {
+  const registerMapRecord = async ({
+    savePath,
+    name,
+    artifacts,
+    recordId = null,
+    dirName = '',
+    gridMapState: gridState = 'unknown'
+  }) => {
     const { body, missing } = buildMapRecordBody({
       savePath,
       name,
@@ -374,7 +417,12 @@ export default function ConnectionBar({
 
     if (!body) {
       // resolution 을 못 구한 경우 — BE 가 400 으로 거부하므로 보내지 않는다.
-      toast.warn(t('mapRecordSkipped', { fields: missing.join(', ') }), { autoClose: 4000 })
+      // 레코드가 없으면 이 폴더는 참조 없이 남으므로, 이번 저장으로 만든 새 폴더는 되돌린다.
+      // 격자맵이 다 떨어진(ready) 경우만 지운다 — pending/unknown 은 lio_node 가 아직 쓰는 중일 수
+      // 있고(save_grid_map 은 저장 응답 뒤 비동기), 맵 루트를 못 읽는 환경이면 판정 자체가 불가다.
+      const discarded = !recordId && gridState === 'ready' && (await discardSavedDir(dirName))
+      const key = discarded ? 'mapRecordSkippedDiscarded' : 'mapRecordSkipped'
+      toast.warn(t(key, { fields: missing.join(', ') }), { autoClose: 4000 })
       return
     }
     try {
@@ -389,7 +437,18 @@ export default function ConnectionBar({
     }
   }
 
+  /**
+   * 재시작 — 수집 중인 데이터를 버리고 새 매핑 세션을 시작한다(switch_mode mode=mapping).
+   *
+   * 시작과 같은 호출이므로 같은 전제를 둔다: 비상정지 버튼이 눌려 있으면 보내지 않는다.
+   * 보내면 이전 데이터만 사라지고 로봇은 못 움직여 빈 지도로 '매핑 중' 이 되는데, 화면만 보면
+   * 원인을 알 수 없다. 버튼은 그대로 열어 두고 눌렀을 때 이유를 알려 준다(handleStart 와 동일).
+   */
   const handleReset = async () => {
+    if (emergencyLocked) {
+      toast.error(t('emergencyKeyBlockedReset'), { autoClose: 4000 })
+      return
+    }
     await runMappingAction(resetMapping, { successMessage: 'Mapping reset' })
   }
 
@@ -452,8 +511,16 @@ export default function ConnectionBar({
           {inMappingSession ? (
             <>
               {/* 저장 중(mode === 'saving')에는 중복 호출을 막는다 — lio_node 가 블로킹으로 처리한다.
-                  저장 위치는 이 버튼으로 열리는 모달에서 고른다. */}
-              <Button size="md" onClick={() => setSaveLocationOpen(true)} disabled={isBusy || mode === 'saving'}>
+                  저장 위치는 이 버튼으로 열리는 모달에서 고른다.
+                  격자맵 확인 중(gridMapState === 'checking')에도 막는다 — 직전 저장의 맵 레코드가 아직
+                  등록되지 않은 시점이라 resolveSaveTarget 이 그 작업본 폴더를 못 찾고(레코드로 조회한다)
+                  새 난수 폴더를 또 만든다. 그러면 작업본이 2개가 되어 업로드 단계가 승격을 막는다. */}
+              <Button
+                size="md"
+                onClick={() => setSaveLocationOpen(true)}
+                disabled={isBusy || mode === 'saving' || gridMapState === 'checking'}
+                title={(gridMapState === 'checking' && t('waitGridMapCheck')) || undefined}
+              >
                 {t('save')}
               </Button>
               <Button size="md" theme="tertiary" onClick={handleReset} disabled={isBusy}>

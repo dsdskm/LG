@@ -5,6 +5,7 @@ import { getUserInfo } from '@repo/apis'
 import useNetworkGate, { NETWORK_SETUP_PATH } from '@/hooks/useNetworkGate'
 import { LOG_TAG } from '@/utils/networkStatus'
 import { ensureSession, clearSessionForLogin, SESSION_STATE } from '@/utils/session'
+import { validateSessionViaRobot } from '@/apis/dmApis'
 
 // 세션 검증 후 착지할 경로. App 이 robotSetup.currentStep 으로 계산해 내려준다
 // (초기 설정이 끝난 로봇은 '초기 설정' 메뉴가 없어 맵 설정 첫 화면이 된다).
@@ -48,6 +49,32 @@ function getUserLevel(userRole) {
   return returnLevel
 }
 
+/**
+ * 콘솔에서 넘겨받은 accessToken 의 사용자 정보를 가져온다.
+ *
+ * 1차는 로봇 BE 대행 라우트(/api/auth/session) — 노트북/폰이 로봇 setup AP 에 붙어 있으면
+ * 브라우저는 클라우드로 직접 나갈 수 없다(apis/dmApis.js 주석 참고). /session 은 유효성 판정과
+ * userInfo 를 함께 돌려주므로 별도 사용자 조회가 필요 없다.
+ *
+ * 2차는 클라우드 직통 폴백. 원격 콘솔(robot-proxy) 경유 진입에서는 Authorization 헤더가 BE 까지
+ * 닿지 않아 /session 이 400(accessToken 누락)으로 떨어진다 — 이 진입 경로는 브라우저가 이미
+ * 인터넷에 붙어 있으므로 직통이 성공한다. 프록시/BE 가 헤더를 살리면 이 폴백은 지워도 된다.
+ *
+ * 단, /session 이 valid:false 로 명확히 거절한 경우(토큰 만료 등)는 폴백하지 않는다 —
+ * 판정이 이미 났으므로 로그인 화면으로 보내는 것이 맞다.
+ */
+const resolveUserInfo = async (userId, accessToken) => {
+  try {
+    const { valid, userInfo } = await validateSessionViaRobot(userId, accessToken)
+    if (valid && userInfo) return userInfo
+    if (valid === false) return null
+  } catch (error) {
+    console.warn('[RootGuard] session lookup via robot BE failed — falling back to cloud:', error.message)
+  }
+
+  return await getUserInfo(userId, accessToken)
+}
+
 const RootGuard = ({ landingPath }) => {
   const navigate = useNavigate()
   const resolvedLandingPath = landingPath || FALLBACK_LANDING_PATH
@@ -72,7 +99,7 @@ const RootGuard = ({ landingPath }) => {
             return
           }
 
-          const userInfo = await getUserInfo(userId, accessToken)
+          const userInfo = await resolveUserInfo(userId, accessToken)
           if (userInfo) {
             // Save to useUserStore
             useUserStore.getState().login({
