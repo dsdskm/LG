@@ -15,6 +15,8 @@ import { ScreenGuidanceEntity } from './features/chat/db/chat-guidance.entity';
 import { ChatRuleEntity } from './features/chat-settings/db/chat-rule.entity';
 import { ChatRuleService } from './features/chat-settings/db/chat-rule.service';
 import { PromptStoreService } from './features/chat/service/prompt-store.service';
+import { PropertyTmsEntity } from './features/taskflow/db/property-tms.entity';
+import { PropertyTmsStoreService } from './features/taskflow/service/property-tms-store.service';
 
 @Module({
   imports: [
@@ -30,6 +32,7 @@ import { PromptStoreService } from './features/chat/service/prompt-store.service
         Screen,
         ScreenGuidanceEntity,
         ChatRuleEntity,
+        PropertyTmsEntity,
       ],
       synchronize: true,
       logging: false,
@@ -43,9 +46,10 @@ import { PromptStoreService } from './features/chat/service/prompt-store.service
       Screen,
       ScreenGuidanceEntity,
       ChatRuleEntity,
+      PropertyTmsEntity,
     ]),
   ],
   controllers: [ChatController, HealthController, ChatSettingController, ChatGuidanceController, ChatPromptController, ChatRagController, ChatRuleController],
-  providers: [ChatService, HealthService, ChatLogService, ChatSettingService, PromptStoreService, ChatRuleService],
+  providers: [ChatService, HealthService, ChatLogService, ChatSettingService, PromptStoreService, ChatRuleService, PropertyTmsStoreService],
 })
 export class AppModule { }

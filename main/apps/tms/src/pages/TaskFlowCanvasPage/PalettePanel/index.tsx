@@ -49,7 +49,9 @@ function parseContentValue(raw: string): unknown {
   }
 }
 
-function getContentLabels(content: ContentApiPayload): Array<{ displayName: string; isDefault?: boolean; isUnique?: boolean }> {
+function getContentLabels(
+  content: ContentApiPayload
+): Array<{ displayName: string; isDefault?: boolean; isUnique?: boolean }> {
   const rawValue = content?.contentValue
   if (rawValue == null) return []
 
@@ -255,7 +257,7 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
       observer.disconnect()
     }
   }, [])
-
+  console.log(`tasks`, tasks)
   const controlTasks = useMemo(() => sortByNameAsc(tasks.filter((t) => t.taskType === TASK_TYPE_CONTROL)), [tasks])
 
   const otherTasks = useMemo(() => tasks.filter((t) => t.taskType !== TASK_TYPE_CONTROL), [tasks])
@@ -290,7 +292,10 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
     let cancelled = false
 
     const loadMoveToGroups = async () => {
-      const groupedEntries: Record<number, Array<{ key: string; title: string; contents: ContentApiPayload[]; isNoLabel: boolean }>> = {}
+      const groupedEntries: Record<
+        number,
+        Array<{ key: string; title: string; contents: ContentApiPayload[]; isNoLabel: boolean }>
+      > = {}
 
       for (const task of expandableTasks) {
         const normalizedName = String(task.name ?? '').toLowerCase()
@@ -473,16 +478,14 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
               {expandableTasks.map((task) => {
                 const contents = sortByNameAsc(task.contents ?? [])
                 const open = openMap[task.id] ?? false
-                const taskGroups =
-                  moveToGroupsByTask[task.id] ??
-                  [
-                    {
-                      key: `${task.id}-default`,
-                      title: String(task.name ?? 'MoveTo'),
-                      contents,
-                      isNoLabel: false
-                    }
-                  ]
+                const taskGroups = moveToGroupsByTask[task.id] ?? [
+                  {
+                    key: `${task.id}-default`,
+                    title: String(task.name ?? 'MoveTo'),
+                    contents,
+                    isNoLabel: false
+                  }
+                ]
                 return (
                   <div key={task.id}>
                     <TaskToggleButton
@@ -496,7 +499,6 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
 
                     {open ? (
                       <ContentBlock>
-
                         {taskGroups.map((group) => (
                           <div key={group.key}>
                             {group.isNoLabel ? (
@@ -512,8 +514,7 @@ export default function PalettePanel({ groupId, siteId }: { groupId: string | nu
                                   task={task}
                                   content={content}
                                   selected={
-                                    selectedPalette?.taskId === task.id &&
-                                    selectedPalette?.contentId === content.id
+                                    selectedPalette?.taskId === task.id && selectedPalette?.contentId === content.id
                                   }
                                   onSelect={selectPalette}
                                   onDoubleAdd={() =>

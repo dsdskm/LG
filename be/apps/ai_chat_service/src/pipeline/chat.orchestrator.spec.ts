@@ -460,7 +460,7 @@ describe('ChatOrchestrator taskflow routing guard', () => {
       'req-3',
     )
 
-    expect(result.reply?.text).toBe('아래처럼 요청해보세요.\n첫 번째 요청\n두 번째 요청')
+    expect(result.reply?.text).toBe('요청하신 작업을 확인하지 못했습니다. 어떤 항목을 어떻게 바꿀지 다시 한 번 구체적으로 말씀해 주세요.')
     expect(result.meta).toMatchObject({ pipelineIntent: 'action', fallbackTextUsed: true })
   })
 

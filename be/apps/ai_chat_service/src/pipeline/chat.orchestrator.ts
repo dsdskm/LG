@@ -27,11 +27,14 @@ import {
 } from './taskflow-language-rules'
 import { ToolAgent, type ExecutedCall } from './agent/tool-agent'
 import { getScreenConfig, type ScreenConfig } from './screen-registry'
+import { readCurrentGraphFromContext, readTaskContentsFromContext, toMatchKey } from './tools/taskflow-palette'
+import { getPropertyTmsStore } from '../features/taskflow/service/property-tms-store.service'
 import type { ChatIntent, ChatReply, ChatTurn, RagScoreEntry } from './pipeline.types'
 import type { ChatPipelineConfig } from './pipeline.config'
 import { getPromptStore } from '../features/chat/service/prompt-store.service'
 import { CHAT_PROMPT_TYPE } from '../features/chat/prompt-types'
 import { getChatSettingService } from '../features/chat-settings/service/chat-setting.service'
+import { renderPromptTemplate } from './prompt-template.util'
 import { logLlmPromptMeta } from '../utils/utils'
 import { buildToolContextFromBody } from './tool-context.util'
 
@@ -77,6 +80,34 @@ const DEFAULT_FALLBACK_ACTION_KEYWORDS = [
 
 const DEFAULT_FALLBACK_ACTION_SCREEN_TASKS: ScreenTask[] = ['create', 'update', 'delete', 'run_action', 'recommend_action']
 const TASKFLOW_RULE_FIRST_INTENT_CONFIDENCE = 0.97
+
+const DEFAULT_CLASSIFIER_RULES = {
+  explanationBlockKeywords: ['설명', '어떻게 쓰는지', '예시', '사용법'],
+  nodeEditDeletePrefixes: ['삭제', '제거', '지우기', 'remove', 'delete'],
+  arrowChainSeparators: ['->', '→', '=>', 'then', 'then->', 'and'],
+  composeMoveHintKeywords: ['구성', '생성', '추가', '연결', '배치', '배열', '정렬', '다음', '이동', '연결해', '설계', '틀', '노드'],
+  editSubjectKeywords: ['노드', 'taskflow', '태스크플로', '태스크 플로우', '플로우', '경로', '워크플로', '워크 플로우', 'flow'],
+  editVerbKeywords: ['구성', '생성', '추가', '수정', '변경', '삭제', '제거', '연결', '배치', '정렬', '설정', '편집', '만들', '고치', '바꾸', '바꿔', '교체', '지워', '없애', '넣어', '빼줘', '빼고', '붙여', '이어'],
+  arrowSequenceEnabled: false,
+  explanationKeywords: ['설명', '예시', '사용법', '어떻게', '가이드'],
+  composeRequestKeywords: ['구성해', '구성해줘', '만들어', '만들어줘', '작성해', '작성해줘', '설계해', '설계해줘', '추가해', '추가해줘', '연결해', '연결해줘'],
+  explanationImageMinScore: 0,
+  explanationImageMinScoreAlways: 0,
+} as TaskflowClassifierRules
+
+// 설정 로더가 빈 배열을 주면 비교 대상이 사라져 분류가 전부 false 가 된다. 항목별로 기본값을 채운다.
+function mergeClassifierRules(rules?: TaskflowClassifierRules): TaskflowClassifierRules {
+  if (!rules) return DEFAULT_CLASSIFIER_RULES
+
+  const merged = { ...DEFAULT_CLASSIFIER_RULES, ...rules } as Record<string, unknown>
+  for (const [key, value] of Object.entries(DEFAULT_CLASSIFIER_RULES)) {
+    if (Array.isArray(value) && (!Array.isArray(merged[key]) || (merged[key] as unknown[]).length === 0)) {
+      merged[key] = value
+    }
+  }
+
+  return merged as TaskflowClassifierRules
+}
 
 export class ChatOrchestrator {
   /**
@@ -464,12 +495,14 @@ export class ChatOrchestrator {
         ? (body.previousFilters as Record<string, unknown>)
         : undefined
     this.stageLog('2-2단계:이전필터_입력', reqId, `status=checked reason=previousFilters=${Boolean(previousFilters)}`)
+    const canvasNodeNames = this.readCanvasNodeNames(body)
     const ruleFirstIntentResult = this.resolveRuleFirstIntent(
       screen,
       effectiveMessage,
       screenTask,
       taskflowClassifierRules,
       taskflowOrchestratorRules,
+      canvasNodeNames,
     )
 
     const pipelineIntentResult = ruleFirstIntentResult ?? await this.classifier.classify(
@@ -522,7 +555,8 @@ export class ChatOrchestrator {
       (tool) => tool?.declaration?.name === 'compose_linear_taskflow',
     )
     const shouldForceTaskflowAction =
-      hasComposeTaskflowTool && this.looksLikeTaskflowEditMessage(effectiveMessage, taskflowClassifierRules)
+      hasComposeTaskflowTool &&
+      this.looksLikeTaskflowEditMessage(effectiveMessage, taskflowClassifierRules, canvasNodeNames)
 
     if (shouldForceTaskflowAction && pipelineIntent !== 'action') {
       pipelineIntent = 'action'
@@ -554,7 +588,8 @@ export class ChatOrchestrator {
 
     const settings = getChatSettingService()
     const actionRagHasMatch = this.retrieveActionRagContext(actionRagCollections, effectiveMessage).usedChunks.length > 0
-    if (pipelineIntent === 'action' && !actionRagHasMatch) {
+    // 캔버스 편집은 RAG 문서가 아니라 도구가 처리한다. 도구가 실패하면 그때 RAG 로 되돌린다.
+    if (pipelineIntent === 'action' && !actionRagHasMatch && !hasComposeTaskflowTool) {
       pipelineIntent = 'info'
       this.stageLog(
         '2-6-4단계:액션RAG_미매칭_정보폴백',
@@ -595,6 +630,26 @@ export class ChatOrchestrator {
           actionRagCollections,
           reqId,
         )
+
+        // 캔버스에서 taskflow 구성/수정을 아무것도 못 만들었으면 정적 안내 대신 RAG 답변으로 되돌린다.
+        // 단, 편집 요청 자체는 RAG 문서가 "추가했습니다" 로 답해버려 안 한 일을 한 것처럼 보이므로 제외한다.
+        if (hasComposeTaskflowTool && output.meta?.fallbackTextUsed === true && !shouldForceTaskflowAction) {
+          this.stageLog(
+            '3-3단계:태스크플로우_RAG폴백',
+            reqId,
+            'status=fallBack reason=taskflow 도구가 캔버스를 바꾸지 못해 info(RAG) 응답으로 대체',
+          )
+          output = await this.handleInfo(
+            screen,
+            effectiveMessage,
+            taskflowOrchestratorRules,
+            pipelineIntentResult,
+            history,
+            screenTask,
+            infoRagCollections,
+            reqId,
+          )
+        }
         break
 
       case 'info':
@@ -760,23 +815,15 @@ export class ChatOrchestrator {
     }
   }
 
-  private looksLikeTaskflowEditMessage(message: string, rules?: TaskflowClassifierRules): boolean {
+  private looksLikeTaskflowEditMessage(
+    message: string,
+    rules?: TaskflowClassifierRules,
+    canvasNodeNames: string[] = [],
+  ): boolean {
     const text = String(message ?? '').trim()
     if (!text) return false
 
-    const safeRules = rules ?? {
-      explanationBlockKeywords: ['설명', '어떻게 쓰는지', '예시', '사용법'],
-      nodeEditDeletePrefixes: ['삭제', '제거', '지우기', 'remove', 'delete'],
-      arrowChainSeparators: ['->', '→', '=>', 'then', 'then->', 'and'],
-      composeMoveHintKeywords: ['구성', '생성', '추가', '연결', '배치', '배열', '정렬', '다음', '이동', '연결해', '설계', '틀', '노드'],
-      editSubjectKeywords: ['노드', 'taskflow', '태스크플로', '태스크 플로우', '플로우', '경로', '워크플로', '워크 플로우', 'flow'],
-      editVerbKeywords: ['구성', '생성', '추가', '수정', '변경', '삭제', '제거', '연결', '배치', '정렬', '설정', '편집', '만들', '고치', '바꾸'],
-      arrowSequenceEnabled: false,
-      explanationKeywords: ['설명', '예시', '사용법', '어떻게', '가이드'],
-      composeRequestKeywords: ['구성해', '구성해줘', '만들어', '만들어줘', '작성해', '작성해줘', '설계해', '설계해줘', '추가해', '추가해줘', '연결해', '연결해줘'],
-      explanationImageMinScore: 0,
-      explanationImageMinScoreAlways: 0,
-    } as TaskflowClassifierRules
+    const safeRules = mergeClassifierRules(rules)
 
     if (this.hasClassifierPhrase(text, safeRules.explanationBlockKeywords ?? [])) {
       return false
@@ -806,9 +853,35 @@ export class ChatOrchestrator {
       && this.hasClassifierPhrase(text, safeRules.composeMoveHintKeywords ?? [])
     if (hasArrowSequenceByRule) return true
 
-    if (!this.hasClassifierPhrase(text, safeRules.editSubjectKeywords ?? [])) return false
+    if (!this.hasClassifierPhrase(text, safeRules.editSubjectKeywords ?? [])) {
+      // "PlaySound 지워줘" 처럼 캔버스에 있는 노드 이름을 직접 부르면 그 이름이 곳 대상이다.
+      if (!this.mentionsCanvasNode(text, canvasNodeNames)) return false
+    }
 
     return this.hasClassifierPhrase(text, safeRules.editVerbKeywords ?? [])
+  }
+
+  private mentionsCanvasNode(message: string, canvasNodeNames: string[]): boolean {
+    const key = toMatchKey(message)
+    if (!key) return false
+
+    return canvasNodeNames.some((name) => {
+      const nameKey = toMatchKey(name)
+      return nameKey.length >= 2 && key.includes(nameKey)
+    })
+  }
+
+  /** 사용자가 노드를 부를 때 쓰는 말. 캔버스 노드 + 팔레트 콘텐츠 + Task 이름/표현. */
+  private readCanvasNodeNames(body: any): string[] {
+    const graph = readCurrentGraphFromContext(body?.context)
+    const contents = readTaskContentsFromContext(body?.context)
+    const tasks = getPropertyTmsStore()?.list() ?? []
+
+    return [
+      ...graph.nodes.flatMap((node) => [node.label, node.taskName, node.contentName]),
+      ...contents.map((row) => row.contentName),
+      ...tasks.flatMap((task) => [task.taskName, ...task.triggerPhrases]),
+    ].filter((name): name is string => Boolean(name))
   }
 
   private resolveRuleFirstIntent(
@@ -817,6 +890,7 @@ export class ChatOrchestrator {
     screenTask: ScreenTask,
     classifierRules: TaskflowClassifierRules,
     orchestratorRules: TaskflowOrchestratorRules,
+    canvasNodeNames: string[] = [],
   ): { intent: ChatIntent; confidence: number; reason: string } | null {
     const text = String(message ?? '').trim()
     if (!text) return null
@@ -834,7 +908,7 @@ export class ChatOrchestrator {
       }
     }
 
-    if (this.looksLikeTaskflowEditMessage(text, classifierRules)) {
+    if (this.looksLikeTaskflowEditMessage(text, classifierRules, canvasNodeNames)) {
       return {
         intent: 'action',
         confidence: TASKFLOW_RULE_FIRST_INTENT_CONFIDENCE,
@@ -1074,10 +1148,11 @@ export class ChatOrchestrator {
     reqId = '-',
   ): Promise<OrchestrationOutput> {
     const executionTools = this.resolveExecutionTools(screen)
-    const actionToolNames = new Set([
+    const mutatingActionTools = [
       ...screen.actionTools,
       ...(Array.isArray(screen.commonActionTools) ? screen.commonActionTools : []),
-    ].map((tool) => tool.declaration.name))
+    ].filter((tool) => !tool.readOnly)
+    const actionToolNames = new Set(mutatingActionTools.map((tool) => tool.declaration.name))
     const hasExecutionTool = executionTools.length > 0
     const actionRag = this.retrieveActionRagContext(actionRagCollections, message)
 
@@ -1182,7 +1257,7 @@ export class ChatOrchestrator {
 
       const ran = executionCalls.find((c) => c.name === 'run_action')
       const navigation = this.findNavigationResult(executionCalls) ?? inferredNavigation
-      const actionParam = deterministicTaskflowParam ?? this.buildActionParam(executionCalls, ran)
+      const actionParam = deterministicTaskflowParam ?? this.buildActionParam(executionCalls, ran, actionToolNames)
       const clarificationText = this.extractActionClarification(actionParam)
       const assistantToolText = this.extractActionAssistantText(actionParam)
       const successfulActionCall = [...executionCalls].reverse().find((call) => !call.error && actionToolNames.has(call.name))
@@ -1190,17 +1265,27 @@ export class ChatOrchestrator {
 
       const resolvedFilters = pickResolvedFilters(executionCalls)
       const fallbackReason = this.resolveExecutionFallbackReason(executionCalls)
-      const fallbackText = this.buildScreenGuidanceReply(screen)
+      const fallbackText = this.buildActionUnresolvedReply(fallbackReason)
 
       if (noExecution && !navigation) {
         this.stageLog('3-2단계:ACTION_폴백텍스트', reqId, `status=fallback reason=${fallbackReason} source=${source}`)
+      }
+
+      // 조회 tool 만 돌고 끝나면 모델이 "추가했습니다" 처럼 하지 않은 일을 말한다. 그 문장은 버린다.
+      const claimedWithoutAction = !hasSiteAction && !resolvedFilters && executionCalls.length > 0
+      if (claimedWithoutAction) {
+        this.stageLog(
+          '3-2단계:ACTION_미실행응답차단',
+          reqId,
+          `status=blocked reason=변경 tool 미실행(calls=${executionCalls.map((call) => call.name).join(',') || '-'}) source=${source}`,
+        )
       }
 
       const finalText =
         clarificationText ||
         assistantToolText ||
         (navigation ? `${navigation.screenName ?? navigation.path} 화면으로 이동하겠습니다.` : '') ||
-        (noExecution ? fallbackText : '') ||
+        (noExecution || claimedWithoutAction ? fallbackText : '') ||
         executionText?.trim() ||
         (hasSiteAction ? '요청을 처리했습니다.' : '조회 결과를 확인했습니다.')
 
@@ -1232,7 +1317,9 @@ export class ChatOrchestrator {
           ragScores: actionRag.ragScores,
           actionAttemptSource: source,
           fallbackReason: noExecution && !navigation ? fallbackReason : undefined,
-          fallbackTextUsed: Boolean(noExecution && !navigation),
+          fallbackTextUsed: Boolean((noExecution || claimedWithoutAction) && !navigation),
+          // 가이드 문구로 덮어쓴 모델 답변. 왜 tool 을 안 불렀는지 추적할 단서다.
+          discardedText: (noExecution || claimedWithoutAction) ? executionText?.trim() || undefined : undefined,
         },
       } satisfies OrchestrationOutput
     }
@@ -1283,6 +1370,21 @@ export class ChatOrchestrator {
     }
 
     return String(screen.fallbackText ?? '').trim() || '실행 가능한 가이드 문구가 없습니다.'
+  }
+
+  /** tool 이 안 불렸거나 실패했을 때 쓰는 답변. 화면과 무관한 예시 문구로 덮어쓰지 않는다. */
+  private buildActionUnresolvedReply(reason: ReturnType<ChatOrchestrator['resolveExecutionFallbackReason']>): string {
+    switch (reason) {
+      case 'missing-params':
+        return '요청을 처리하기에 정보가 부족합니다. 대상과 변경 내용을 더 구체적으로 말씀해 주세요.'
+      case 'permission-denied':
+        return '권한이 없어 요청을 처리하지 못했습니다.'
+      case 'tool-execution-failed':
+        return '요청을 처리하는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'
+      case 'tool-not-selected':
+      default:
+        return '요청하신 작업을 확인하지 못했습니다. 어떤 항목을 어떻게 바꿀지 다시 한 번 구체적으로 말씀해 주세요.'
+    }
   }
 
   private retrieveActionRagContext(
@@ -1368,6 +1470,22 @@ export class ChatOrchestrator {
     const basePrompt = [screen.dataSystemPrompt, screen.actionSystemPrompt].filter(Boolean).join('\n\n')
     const promptBlocks: string[] = [basePrompt]
 
+    const mutatingToolNames = screen.actionTools.filter((tool) => !tool.readOnly).map((tool) => tool.declaration.name)
+    if (mutatingToolNames.length > 0) {
+      // intent-classifier 와 같은 common -> app -> screen 병합 규칙을 따른다.
+      const policyBlocks = this.uniqueCollections([COMMON_COLLECTION, screen.appKey, screen.key])
+        .map((scopeKey) =>
+          renderPromptTemplate(scopeKey, CHAT_PROMPT_TYPE.actionToolPolicy, {
+            mutatingTools: mutatingToolNames.join(', '),
+          }),
+        )
+        .filter(Boolean)
+
+      if (policyBlocks.length > 0) {
+        promptBlocks.push(policyBlocks.join('\n\n'))
+      }
+    }
+
     if (String(actionRagContext ?? '').trim()) {
       const commonRagPrompt = getPromptStore()?.getPromptContent('common', CHAT_PROMPT_TYPE.ragAction) ?? ''
       promptBlocks.push([
@@ -1391,8 +1509,12 @@ export class ChatOrchestrator {
   private buildActionParam(
     executed: ExecutedCall[],
     ran?: ExecutedCall,
+    mutatingToolNames?: Set<string>,
   ): Record<string, unknown> | undefined {
-    const successCall = [...executed].reverse().find((call) => !call.error)
+    const succeeded = [...executed].reverse().filter((call) => !call.error)
+    // 조회 tool 이 마지막에 불려도 화면에 넣을 값은 변경 tool 의 결과다.
+    const successCall =
+      (mutatingToolNames ? succeeded.find((call) => mutatingToolNames.has(call.name)) : undefined) ?? succeeded[0]
 
     if (!successCall) {
       return ran ? { executed: ran.result } : undefined

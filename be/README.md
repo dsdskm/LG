@@ -63,3 +63,13 @@ docker exec -it ai-chat-service-pg psql -U root -d ai_chat_service_db -c "\dt"
 
 ## full_log query
 ALTER TABLE events ADD COLUMN IF NOT EXISTS full_log JSONB;
+
+## testcase - taskflow
+도슨트 대기로 이동하면서, 이동 음악 재생하고, Joy 얼굴 표시되게 해줘
+pause 노드를 추가 해줘
+인트로 tts, bouquet_hand_present 모션, Love 얼굴을 동시에 수행하는 parallel을 만들고 Pause에 연결 해줘
+2번째 parallel 이후에 pause 추가해줘
+2번째 parallel 이후에 첫번째 parallel과 유사한 
+도슨트 대기 노드 지워줘
+도슨트 대기를 도슨트 작별로 바꿔줘
+전체 복제해서 연결해줘

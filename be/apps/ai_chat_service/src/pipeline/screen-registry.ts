@@ -1,6 +1,10 @@
 import type { ToolDefinition } from './tool.type'
 import { getPromptStore } from '../features/chat/service/prompt-store.service'
 import { CHAT_PROMPT_TYPE } from '../features/chat/prompt-types'
+import { createComposeTaskflowTool } from './tools/compose-taskflow-tree.tool'
+import { createEditTaskflowTool } from './tools/edit-taskflow.tool'
+import { createReadTaskflowGraphTool } from './tools/read-taskflow-graph.tool'
+import { TASKFLOW_CANVAS_SCREEN_KEY } from './tools/taskflow-palette'
 
 export type ScreenConfig = {
   /** currentApp::currentPath. handleXxx 의 routeKey 와 동일. */
@@ -135,6 +139,23 @@ export function getScreenConfig(routeKey: string, reqId?: string): ScreenConfig 
   const actionTools: ToolDefinition[] = []
 
   const commonActionTools: ToolDefinition[] = []
+
+  if (effectiveRouteKey === TASKFLOW_CANVAS_SCREEN_KEY) {
+    const composeTool = createComposeTaskflowTool()
+    if (composeTool) {
+      actionTools.push(composeTool)
+    }
+
+    const editTool = createEditTaskflowTool()
+    if (editTool) {
+      actionTools.push(createReadTaskflowGraphTool(), editTool)
+    }
+
+    // 설명 prompt 행이 없으면 tool 이 조용히 빠져 캔버스 편집이 통째로 안 된다.
+    console.log(
+      `[taskflow-tools] route=${effectiveRouteKey} compose=${Boolean(composeTool)} edit=${Boolean(editTool)} registered=${actionTools.map((tool) => tool.declaration.name).join(',') || '-'}`,
+    )
+  }
 
   const baseAction = toChatAction(effectiveRouteKey)
   return {

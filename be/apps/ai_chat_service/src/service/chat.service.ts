@@ -78,6 +78,9 @@ type ChatLogDebugMeta = {
   actionRagChunks?: string[]
   ragScores?: unknown[]
   executed?: unknown[]
+  fallbackReason?: string
+  /** 가이드 문구로 덮어쓴 모델 답변. tool 을 왜 안 불렀는지 추적하는 단서다. */
+  discardedText?: string
   loginUser?: {
     userId?: string
     userName?: string
@@ -2063,6 +2066,8 @@ export class ChatService {
       actionRagChunks: usedChunks.length > 0 ? usedChunks : undefined,
       ragScores: ragScores.length > 0 ? ragScores : undefined,
       executed: executed.length > 0 ? executed : undefined,
+      fallbackReason: String(meta?.fallbackReason ?? '').trim() || undefined,
+      discardedText: String(meta?.discardedText ?? '').trim() || undefined,
       loginUser,
       source,
       matchedRule,

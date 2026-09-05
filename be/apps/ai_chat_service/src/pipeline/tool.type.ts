@@ -47,4 +47,6 @@ export type ToolContext = {
 export type ToolDefinition = {
   declaration: FunctionDeclaration
   execute: (args: Record<string, any>, ctx: ToolContext) => Promise<unknown>
+  /** 조회만 하는 tool. 이것만 불렸다면 화면에 바뀜 게 없으므로 성공으로 치지 않는다. */
+  readOnly?: boolean
 }

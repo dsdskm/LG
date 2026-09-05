@@ -258,6 +258,11 @@ export const StyledAiAssistantMessageBubble = styled.div`
   word-break: break-word;
 `
 
+export const StyledAiAssistantEmphasis = styled.strong`
+  font-size: 1.45rem;
+  font-weight: 700;
+`
+
 export const StyledAiCommandTip = styled.aside`
   width: 90%;
   margin-top: 0.4rem;

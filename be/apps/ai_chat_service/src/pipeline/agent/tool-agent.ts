@@ -113,7 +113,9 @@ export class ToolAgent {
 
         let resultContent: string
         if (!def) {
-          const error = `unknown tool: ${call.function.name}`
+          // 남은 turn 에서 스스로 고쳐 부를 수 있도록 실제 tool 이름을 함께 돌려준다.
+          const error = `unknown tool: ${call.function.name} (available: ${[...byName.keys()].join(', ')})`
+          this.logger.error(`[agent] ${error}`)
           executed.push({ name: call.function.name, args, result: null, error })
           resultContent = JSON.stringify({ error })
         } else {

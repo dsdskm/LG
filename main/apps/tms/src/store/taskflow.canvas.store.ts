@@ -538,6 +538,12 @@ function buildPaletteAndCatalog(tasks: TaskApiPayload[]) {
     }
 
     const contents = task.contents ?? []
+    // Pause 처럼 대상 콘텐츠가 없는 ACTION 은 Task 이름 자체가 노드다. 빼면 팔레트에서도 AI 로도 못 만든다.
+    if (contents.length === 0) {
+      palette.push({ kind: 'controlTaskNode', task, label: task.name })
+      continue
+    }
+
     for (const content of contents) {
       palette.push({
         kind: 'contentNode',
@@ -1886,4 +1892,4 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
   }
 }))
 
-export { buildDefaultProperties, generateNodeId, buildNodeDataFromPaletteItem }
+export { buildDefaultProperties, generateNodeId, buildNodeDataFromPaletteItem, isIfThenElseTaskNode, syncIfThenElseBranchRoles }

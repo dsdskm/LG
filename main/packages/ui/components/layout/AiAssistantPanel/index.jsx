@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAiAssistantStore, useUserStore, useOrganizationStore, useAiLogEventStore } from '@repo/stores'
 import { getAppPrefix } from '@repo/utils'
+import { AI_TASKFLOW_CANVAS_CLARIFY_EVENT, AI_TASKFLOW_CANVAS_DRAFT_EVENT, AI_TASKFLOW_CANVAS_RESULT_EVENT } from '@repo/constants'
 import {
   getChatHistory,
   getChatSettings,
@@ -17,6 +18,7 @@ import {
   StyledAiAssistantDockBody,
   StyledAiAssistantDockHeader,
   StyledAiAssistantDockToggle,
+  StyledAiAssistantEmphasis,
   StyledAiAssistantLoadingBubble,
   StyledAiAssistantLoadingDots,
   StyledAiAssistantLoadingRow,
@@ -448,6 +450,86 @@ const extractAssistantText = (result) => {
 }
 
 const STORAGE_KEY = 'ai-assistant-trigger-y'
+
+// 답변 안의 **노드 이름** 을 강조해 보여준다. 타이핑 중 닫히지 않은 마지막 ** 도 강조로 이어간다.
+const renderAssistantContent = (text) => {
+  const parts = String(text ?? '').split('**')
+  if (parts.length < 2) return text
+
+  return parts.map((part, index) =>
+    index % 2 === 1 ? (
+      <StyledAiAssistantEmphasis key={index}>{part}</StyledAiAssistantEmphasis>
+    ) : (
+      <Fragment key={index}>{part}</Fragment>
+    )
+  )
+}
+
+// TaskFlowCanvasPage 가 window 에 올려둔 팔레트 스냅샷. 서버가 콘텐츠 이름으로 Task 를 역추적하는 데 쓴다.
+const readTaskflowContext = () => {
+  const source = typeof window === 'undefined' ? null : window.__AI_TASKFLOW_CONTEXT__
+  if (!source || !Array.isArray(source.taskContents)) return {}
+
+  return {
+    taskflow: {
+      taskFlowId: source.taskFlowId,
+      taskContents: source.taskContents,
+      currentGraph: source.currentGraph
+    }
+  }
+}
+
+// CustomEvent 는 동기 실행이라 캔버스 적용 결과를 그 자리에서 회수할 수 있다.
+const dispatchServerCanvasDraft = (result, originalMessage) => {
+  const payload = result?.data ?? result ?? null
+  const actionParam = payload?.chat_action_param
+  if (!actionParam || typeof actionParam !== 'object') return ''
+
+  let rejected = []
+  let clarification = ''
+  let didApply = false
+  let resultMessage = ''
+
+  const onResult = (event) => {
+    didApply = Boolean(event.detail?.didApply)
+    resultMessage = String(event.detail?.message ?? '').trim()
+    if (Array.isArray(event.detail?.rejectedLabels)) rejected = event.detail.rejectedLabels
+  }
+  const onClarify = (event) => {
+    clarification = String(event.detail?.message ?? '').trim()
+  }
+
+  window.addEventListener(AI_TASKFLOW_CANVAS_RESULT_EVENT, onResult)
+  window.addEventListener(AI_TASKFLOW_CANVAS_CLARIFY_EVENT, onClarify)
+  window.dispatchEvent(
+    new CustomEvent(AI_TASKFLOW_CANVAS_DRAFT_EVENT, {
+      detail: { ...actionParam, message: String(originalMessage || '') }
+    })
+  )
+  window.removeEventListener(AI_TASKFLOW_CANVAS_RESULT_EVENT, onResult)
+  window.removeEventListener(AI_TASKFLOW_CANVAS_CLARIFY_EVENT, onClarify)
+
+  console.log('[AI_TASKFLOW][DISPATCH_DRAFT]', {
+    message: String(originalMessage || ''),
+    hasCanvasDraft: Boolean(actionParam?.canvasDraft || actionParam?.toolResult?.canvasDraft),
+    didApply,
+    clarification,
+    resultMessage,
+    rejected
+  })
+
+  // 캔버스가 못 반영한 경우를 그대로 삼키면 "했습니다" 문구만 남아 사용자가 속는다.
+  if (clarification) return `\n\n${clarification}`
+
+  const names = rejected.filter(Boolean)
+  if (names.length > 0) {
+    return `\n\n일부 노드는 찾을 수 없어 구성하지 않았습니다: ${names.map((name) => `**${name}**`).join(', ')}`
+  }
+
+  if (!didApply) return `\n\n${resultMessage}`
+
+  return ''
+}
 
 const getInitialY = () => {
   try {
@@ -1104,17 +1186,19 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
         author: session?.email || undefined,
         groupId: selectedOrgs?.[0],
         siteId: selectedOrgs?.[1],
-        context: { ...routeContext },
+        context: { ...routeContext, ...readTaskflowContext() },
         signal: controller.signal
       })
       if (activeRequestIdRef.current !== requestId || controller.signal.aborted) return
 
       const assistantText = extractAssistantText(result)
 
+      const canvasNotice = dispatchServerCanvasDraft(result, content)
+
       setSendingStage(SENDING_STAGE.ASSEMBLING)
       await sleep(220)
       if (activeRequestIdRef.current !== requestId || controller.signal.aborted) return
-      showAssistantReply(assistantText, context)
+      showAssistantReply(assistantText + canvasNotice, context)
     } catch (error) {
       if (activeRequestIdRef.current === requestId && error?.name !== 'AbortError') {
         setSendingStage(SENDING_STAGE.COMPLETED)
@@ -1357,7 +1441,7 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
                             ))}
                           </StyledAiHelpContent>
                         ) : (
-                          displayedContent
+                          renderAssistantContent(displayedContent)
                         )}
                       </StyledAiAssistantMessageBubble>
                       {showNodeCommandTip && (
