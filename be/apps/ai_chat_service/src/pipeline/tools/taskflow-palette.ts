@@ -230,7 +230,7 @@ export function describeGraphNode(node: GraphNodeRef): string {
 
 /** 채팅 사용자에게 보이는 문구용. 화면에 번호 배지가 없으니 "#N" 을 붙이지 않는다. */
 export function describeGraphNodeForUser(node: GraphNodeRef): string {
-  return node.contentName && node.taskName ? `${node.taskName}(${node.contentName})` : node.label
+  return node.contentName && node.taskName ? `${node.contentName}(${node.taskName})` : node.label
 }
 
 /** LLM 이 읽을 현재 캔버스 구조. 실행 흐름과 자식 분기를 구분해 적는다. */

@@ -77,7 +77,7 @@ function buildDescription(catalogText: string, tasks: TaskSemantics[]): string {
 function buildAssistantText(roots: TaskflowTreeNode[], notes: ComposeNotes): string {
   const labels: string[] = []
   const collect = (node: TaskflowTreeNode) => {
-    labels.push(node.contentName ? `${node.taskName}(${node.contentName})` : node.taskName)
+    labels.push(node.contentName ? `${node.contentName}(${node.taskName})` : node.taskName)
     node.children.forEach(collect)
   }
   roots.forEach(collect)
