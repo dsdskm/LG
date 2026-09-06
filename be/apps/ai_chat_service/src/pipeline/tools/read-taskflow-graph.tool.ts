@@ -1,19 +1,21 @@
 import type { ToolContext, ToolDefinition } from '../tool.type'
+import { CHAT_PROMPT_TYPE } from '../../features/chat/prompt-types'
+import { renderPromptTemplate } from '../prompt-template.util'
 import { describeGraph, describeGraphNode, readCurrentGraph } from './taskflow-palette'
+import { TASKFLOW_CANVAS_SCREEN_KEY } from './taskflow-message'
 
 const TOOL_NAME = 'read_taskflow_graph'
 
-export function createReadTaskflowGraphTool(): ToolDefinition {
+// 설명은 prompt 테이블에서 온다. 행이 없으면 tool 을 등록하지 않아 설정 누락이 드러나게 한다.
+export function createReadTaskflowGraphTool(): ToolDefinition | null {
+  const description = renderPromptTemplate(TASKFLOW_CANVAS_SCREEN_KEY, CHAT_PROMPT_TYPE.toolReadTaskflowGraph)
+  if (!description) return null
+
   return {
     readOnly: true,
     declaration: {
       name: TOOL_NAME,
-      description: [
-        '현재 캔버스에 놓여 있는 TaskFlow 구조를 읽는다.',
-        '기존 노드를 추가/교체/삭제하기 전에 먼저 호출해 실제 노드 이름을 확인한다.',
-        '플로우를 평가하거나 개선을 제안할 때도 먼저 호출한다.',
-        '이름이 겹치는 노드에는 " #번호" 가 붙어 나온다. 이 번호는 사용자 화면의 노드 배지와 같은 값이므로 지목할 때 그대로 쓴다.',
-      ].join('\n'),
+      description,
       parameters: { type: 'object', properties: {} },
     },
 

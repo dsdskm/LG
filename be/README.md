@@ -66,10 +66,11 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS full_log JSONB;
 
 ## testcase - taskflow
 도슨트 대기로 이동하면서, 이동 음악 재생하고, Joy 얼굴 표시되게 해줘
-pause 노드를 추가 해줘
-인트로 tts, bouquet_hand_present 모션, Love 얼굴을 동시에 수행하는 parallel을 만들고 Pause에 연결 해줘
-2번째 parallel 이후에 pause 추가해줘
-2번째 parallel 이후에 첫번째 parallel과 유사한 
-도슨트 대기 노드 지워줘
-도슨트 대기를 도슨트 작별로 바꿔줘
-전체 복제해서 연결해줘
+pause 노드를 parallel 노드 우측에 연결해줘
+인트로 tts, bouquet_hand_present 모션, Love 얼굴을 동시에 수행하는 parallel을 만들고 Pause 노드 우측에 연결 해줘
+parallel 노드 우측에 pause 추가해
+두번째 parallel
+thumb_up 모션 성공하면 Love 얼굴, 실패하면 Idle 얼굴 보이게 하는 ifThenElse 노드를 만들고 두번쨰 Pause 노드 우측에 연결해줘
+첫번쨰 parallel 노드와 유사한 노드를 만들어서 IfThenElse 노드 우측에 연결해줘
+두번째 도슨트 대기를 도슨트 도착으로 바꿔줘
+1 논드를 을 도슨트 작별 노드로 바꿔줘

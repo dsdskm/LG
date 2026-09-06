@@ -17,6 +17,7 @@ import {
   type GraphNodeRef,
   type TaskContentRef,
 } from './taskflow-palette'
+import { taskflowMessage, TASKFLOW_MESSAGE_KEY } from './taskflow-message'
 
 const TOOL_NAME = 'edit_taskflow'
 
@@ -49,6 +50,19 @@ function buildDescription(catalogText: string): string {
   return renderPromptTemplate(TASKFLOW_CANVAS_SCREEN_KEY, CHAT_PROMPT_TYPE.toolEditTaskflow, {
     catalog: catalogText,
   })
+}
+
+function appendedMessage(branch: boolean, anchor: string, label: string): string {
+  const key = branch ? TASKFLOW_MESSAGE_KEY.editAppliedAppendBranch : TASKFLOW_MESSAGE_KEY.editAppliedAppendAfter
+  return taskflowMessage(key, { anchor, label })
+}
+
+function ambiguousEntry(name: string, options: string[]): string {
+  return taskflowMessage(TASKFLOW_MESSAGE_KEY.editAmbiguousEntry, { name, options: options.join(', ') })
+}
+
+function emphasize(values: string[]): string {
+  return values.map((value) => `**${value}**`).join(', ')
 }
 
 function toEditOperations(value: unknown): EditOperationArg[] {
@@ -154,18 +168,18 @@ export function createEditTaskflowTool(): ToolDefinition | null {
         properties: {
           operations: {
             type: 'array',
-            description: '요청한 순서대로 나열한 수정 작업',
+            description: taskflowMessage(TASKFLOW_MESSAGE_KEY.editParamOperations),
             items: {
               type: 'object',
               properties: {
-                action: { type: 'string', description: "insert, replace, remove, clone_all 중 하나" },
-                target: { type: 'string', description: 'replace/remove 대상이 되는 기존 노드 이름. 번호가 있으면 "Joy #2" 처럼 적는다' },
-                after: { type: 'string', description: 'insert 할 때 기준이 되는 기존 노드 이름. 번호가 있으면 "Parallel #1" 처럼 적는다' },
-                taskName: { type: 'string', description: '새로 넣을 Task 이름. 모르면 빈 문자열' },
-                contentName: { type: 'string', description: '새로 넣을 대상 이름(POI/TTS/모션/표정 등)' },
-                branch: { type: 'boolean', description: 'true 면 기준 노드의 자식으로 넣는다' },
-                all: { type: 'boolean', description: 'true 면 이름이 같은 모든 노드에 적용한다' },
-                refId: { type: 'string', description: '이 operation 이 만드는 노드의 별칭. 뒤 operation 의 after 에 이 별칭을 적으면 바로 그 노드를 가리킨다' },
+                action: { type: 'string', description: taskflowMessage(TASKFLOW_MESSAGE_KEY.editParamAction) },
+                target: { type: 'string', description: taskflowMessage(TASKFLOW_MESSAGE_KEY.editParamTarget) },
+                after: { type: 'string', description: taskflowMessage(TASKFLOW_MESSAGE_KEY.editParamAfter) },
+                taskName: { type: 'string', description: taskflowMessage(TASKFLOW_MESSAGE_KEY.editParamTaskName) },
+                contentName: { type: 'string', description: taskflowMessage(TASKFLOW_MESSAGE_KEY.editParamContentName) },
+                branch: { type: 'boolean', description: taskflowMessage(TASKFLOW_MESSAGE_KEY.editParamBranch) },
+                all: { type: 'boolean', description: taskflowMessage(TASKFLOW_MESSAGE_KEY.editParamAll) },
+                refId: { type: 'string', description: taskflowMessage(TASKFLOW_MESSAGE_KEY.editParamRefId) },
               },
               required: ['action'],
             },
@@ -184,7 +198,7 @@ export function createEditTaskflowTool(): ToolDefinition | null {
         `[${TOOL_NAME}] ops=${JSON.stringify(operations)} graphNodes=${graph.nodes.map(describeGraphNode).join(' | ') || '-'}`,
       )
       if (graph.nodes.length === 0) {
-        return { clarification: '캔버스에 수정할 노드가 없습니다. 먼저 태스크플로우를 구성해 주세요.', suggestions: [] }
+        return { clarification: taskflowMessage(TASKFLOW_MESSAGE_KEY.editEmptyCanvas), suggestions: [] }
       }
 
       const contents = readTaskContents(ctx).filter((row) => Boolean(store.get(row.taskName)))
@@ -231,7 +245,7 @@ export function createEditTaskflowTool(): ToolDefinition | null {
           // 다른 노드 안에서 오지 않는 노드(= start 바로 다음)가 복제된 흐름의 시작점이다.
           const roots = graph.nodes.filter((node) => (incomingCount.get(node.id) ?? 0) === 0).map((node) => node.id)
           if (roots.length === 0) {
-            missing.push('복제할 노드')
+            missing.push(taskflowMessage(TASKFLOW_MESSAGE_KEY.editCloneTargetMissing))
             continue
           }
 
@@ -277,7 +291,7 @@ export function createEditTaskflowTool(): ToolDefinition | null {
             }
 
             insertIndexByRefId.set(refId, insertAfter.length - 1)
-            applied.push(`${describeGraphNodeForUser(original)} 복제`)
+            applied.push(taskflowMessage(TASKFLOW_MESSAGE_KEY.editAppliedClone, { node: describeGraphNodeForUser(original) }))
             return true
           }
 
@@ -286,7 +300,7 @@ export function createEditTaskflowTool(): ToolDefinition | null {
             continue
           }
           if (tailIsExplicit(operation) && rootAnchorResolved?.kind === 'ambiguous') {
-            ambiguous.push(`${parseNodeTarget(operation.after).name} (${rootAnchorResolved.options.join(', ')})`)
+            ambiguous.push(ambiguousEntry(parseNodeTarget(operation.after).name, rootAnchorResolved.options))
             continue
           }
 
@@ -321,13 +335,13 @@ export function createEditTaskflowTool(): ToolDefinition | null {
             continue
           }
           if (resolved.kind === 'ambiguous') {
-            ambiguous.push(`${parseNodeTarget(operation.target).name} (${resolved.options.join(', ')})`)
+            ambiguous.push(ambiguousEntry(parseNodeTarget(operation.target).name, resolved.options))
             continue
           }
 
           for (const node of resolved.nodes) {
             removeByName.push(formatNodeTarget(node))
-            applied.push(`${describeGraphNodeForUser(node)} 삭제`)
+            applied.push(taskflowMessage(TASKFLOW_MESSAGE_KEY.editAppliedRemove, { node: describeGraphNodeForUser(node) }))
           }
           continue
         }
@@ -338,7 +352,7 @@ export function createEditTaskflowTool(): ToolDefinition | null {
           continue
         }
         if (step.placeholderFor) {
-          placeholders.push(`${step.placeholderFor} → ${step.label}`)
+          placeholders.push(taskflowMessage(TASKFLOW_MESSAGE_KEY.editPlaceholderPair, { requested: step.placeholderFor, label: step.label }))
         }
 
         if (operation.action === 'replace') {
@@ -348,13 +362,13 @@ export function createEditTaskflowTool(): ToolDefinition | null {
             continue
           }
           if (resolved.kind === 'ambiguous') {
-            ambiguous.push(`${parseNodeTarget(operation.target).name} (${resolved.options.join(', ')})`)
+            ambiguous.push(ambiguousEntry(parseNodeTarget(operation.target).name, resolved.options))
             continue
           }
 
           for (const node of resolved.nodes) {
             replaceByName.push({ target: formatNodeTarget(node), step })
-            applied.push(`${describeGraphNodeForUser(node)} → ${step.label} 교체`)
+            applied.push(taskflowMessage(TASKFLOW_MESSAGE_KEY.editAppliedReplace, { node: describeGraphNodeForUser(node), label: step.label }))
           }
           continue
         }
@@ -367,7 +381,7 @@ export function createEditTaskflowTool(): ToolDefinition | null {
             sourceHandle: operation.branch ? 'left' : 'right',
             targetHandle: 'left',
           })
-          applied.push(`${step.label} 추가`)
+          applied.push(taskflowMessage(TASKFLOW_MESSAGE_KEY.editAppliedAppend, { label: step.label }))
           createdLabels.push(step.label)
           if (operation.refId) insertIndexByRefId.set(operation.refId, insertAfter.length - 1)
           continue
@@ -385,11 +399,7 @@ export function createEditTaskflowTool(): ToolDefinition | null {
             targetHandle: 'left',
           })
           const anchorLabel = insertAfter[refIndex]?.step.label ?? operation.after
-          applied.push(
-            operation.branch
-              ? `${anchorLabel} 아래에 ${step.label} 추가`
-              : `${anchorLabel} 뒤에 ${step.label} 추가`,
-          )
+          applied.push(appendedMessage(operation.branch, anchorLabel, step.label))
           createdLabels.push(step.label)
           if (operation.refId) insertIndexByRefId.set(operation.refId, insertAfter.length - 1)
           continue
@@ -405,11 +415,7 @@ export function createEditTaskflowTool(): ToolDefinition | null {
             sourceHandle: operation.branch ? 'left' : 'right',
             targetHandle: 'left',
           })
-          applied.push(
-            operation.branch
-              ? `${pendingAnchor} 아래에 ${step.label} 추가`
-              : `${pendingAnchor} 뒤에 ${step.label} 추가`,
-          )
+          applied.push(appendedMessage(operation.branch, pendingAnchor, step.label))
           createdLabels.push(step.label)
           if (operation.refId) insertIndexByRefId.set(operation.refId, insertAfter.length - 1)
           continue
@@ -421,7 +427,7 @@ export function createEditTaskflowTool(): ToolDefinition | null {
           continue
         }
         if (resolved.kind === 'ambiguous') {
-          ambiguous.push(`${parseNodeTarget(operation.after).name} (${resolved.options.join(', ')})`)
+          ambiguous.push(ambiguousEntry(parseNodeTarget(operation.after).name, resolved.options))
           continue
         }
 
@@ -434,11 +440,7 @@ export function createEditTaskflowTool(): ToolDefinition | null {
             sourceHandle: operation.branch ? 'left' : 'right',
             targetHandle: 'left',
           })
-          applied.push(
-            operation.branch
-              ? `${describeGraphNodeForUser(anchor)} 아래에 ${step.label} 추가`
-              : `${describeGraphNodeForUser(anchor)} 뒤에 ${step.label} 추가`,
-          )
+          applied.push(appendedMessage(operation.branch, describeGraphNodeForUser(anchor), step.label))
         }
         createdLabels.push(step.label)
         if (operation.refId) insertIndexByRefId.set(operation.refId, insertAfter.length - 1)
@@ -446,14 +448,14 @@ export function createEditTaskflowTool(): ToolDefinition | null {
 
       if (ambiguous.length > 0 && applied.length === 0) {
         return {
-          clarification: `같은 이름의 노드가 여러 개입니다. 몇 번째인지 말씀해 주시거나 "모든"이라고 말씀해 주세요: ${ambiguous.join(' / ')}`,
+          clarification: taskflowMessage(TASKFLOW_MESSAGE_KEY.editAmbiguousClarification, { options: ambiguous.join(' / ') }),
           suggestions: [],
         }
       }
 
       if (applied.length === 0) {
         return {
-          clarification: `요청하신 노드를 캔버스에서 찾지 못했습니다: ${missing.join(', ')}`,
+          clarification: taskflowMessage(TASKFLOW_MESSAGE_KEY.editNotFound, { names: missing.join(', ') }),
           suggestions: [],
         }
       }
@@ -462,15 +464,15 @@ export function createEditTaskflowTool(): ToolDefinition | null {
         `[${TOOL_NAME}] applied=${applied.length} remove=${removeByName.length} replace=${replaceByName.length} insert=${insertAfter.length} missing=${missing.length} ambiguous=${ambiguous.length} placeholders=${placeholders.length}`,
       )
 
-      const lines = [`${applied.map((row) => `**${row}**`).join(', ')} 했습니다.`]
+      const lines = [taskflowMessage(TASKFLOW_MESSAGE_KEY.editDone, { applied: emphasize(applied) })]
       if (placeholders.length > 0) {
-        lines.push(`⚠️ 대상을 찾지 못해 임시로 채웠습니다. 노드에서 직접 바꿔 주세요: ${placeholders.map((row) => `**${row}**`).join(', ')}`)
+        lines.push(taskflowMessage(TASKFLOW_MESSAGE_KEY.editPlaceholders, { pairs: emphasize(placeholders) }))
       }
       if (missing.length > 0) {
-        lines.push(`일부 노드는 찾을 수 없어 반영하지 않았습니다: ${missing.map((name) => `**${name}**`).join(', ')}`)
+        lines.push(taskflowMessage(TASKFLOW_MESSAGE_KEY.editMissing, { names: emphasize(missing) }))
       }
       if (ambiguous.length > 0) {
-        lines.push(`어느 노드인지 알 수 없어 반영하지 않았습니다: ${ambiguous.map((name) => `**${name}**`).join(', ')}`)
+        lines.push(taskflowMessage(TASKFLOW_MESSAGE_KEY.editAmbiguous, { names: emphasize(ambiguous) }))
       }
 
       const canvasDraft: Record<string, unknown> = { mode: 'edit' }
@@ -483,7 +485,7 @@ export function createEditTaskflowTool(): ToolDefinition | null {
 
       return {
         canvasDraft,
-        assistantText: lines.join('\n'),
+        assistantText: lines.filter(Boolean).join('\n'),
       }
     },
   }

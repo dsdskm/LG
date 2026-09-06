@@ -1,8 +1,8 @@
 import type { ToolContext } from '../tool.type'
 import type { TaskSemantics } from '../../features/taskflow/service/property-tms-store.service'
+import { taskflowMessage, TASKFLOW_MESSAGE_KEY } from './taskflow-message'
 
-/** taskflow 도구와 prompt 조회가 같이 쓰는 캔버스 화면 키. */
-export const TASKFLOW_CANVAS_SCREEN_KEY = 'tms/taskflows/:taskFlowId/canvas'
+export { TASKFLOW_CANVAS_SCREEN_KEY } from './taskflow-message'
 
 /** 프론트가 보낸 현재 팔레트의 task-content 쌍. */
 export type TaskContentRef = {
@@ -230,12 +230,19 @@ export function describeGraphNode(node: GraphNodeRef): string {
 
 /** 채팅 사용자에게 보이는 문구용. 화면에 번호 배지가 없으니 "#N" 을 붙이지 않는다. */
 export function describeGraphNodeForUser(node: GraphNodeRef): string {
-  return node.contentName && node.taskName ? `${node.contentName}(${node.taskName})` : node.label
+  return formatNodeLabel(node.taskName, node.contentName) || node.label
+}
+
+/** 노드를 사람이 읽는 한 줄로 옮긴다. 표기 순서는 prompt 의 node.label 템플릿이 정한다. */
+export function formatNodeLabel(taskName?: string, contentName?: string): string {
+  if (!taskName || !contentName) return ''
+
+  return taskflowMessage(TASKFLOW_MESSAGE_KEY.nodeLabel, { taskName, contentName })
 }
 
 /** LLM 이 읽을 현재 캔버스 구조. 실행 흐름과 자식 분기를 구분해 적는다. */
 export function describeGraph(graph: CurrentGraph): string {
-  if (graph.nodes.length === 0) return '캔버스가 비어 있습니다.'
+  if (graph.nodes.length === 0) return taskflowMessage(TASKFLOW_MESSAGE_KEY.graphEmpty)
 
   const byId = new Map(graph.nodes.map((node) => [node.id, node]))
 
@@ -252,8 +259,12 @@ export function describeGraph(graph: CurrentGraph): string {
         .filter((row): row is GraphNodeRef => Boolean(row))
 
       const parts = [`- ${describeGraphNode(node)}`]
-      if (children.length > 0) parts.push(`자식: ${children.map(describeGraphNode).join(', ')}`)
-      if (next.length > 0) parts.push(`다음: ${next.map(describeGraphNode).join(', ')}`)
+      if (children.length > 0) {
+        parts.push(taskflowMessage(TASKFLOW_MESSAGE_KEY.graphChildren, { nodes: children.map(describeGraphNode).join(', ') }))
+      }
+      if (next.length > 0) {
+        parts.push(taskflowMessage(TASKFLOW_MESSAGE_KEY.graphNext, { nodes: next.map(describeGraphNode).join(', ') }))
+      }
       return parts.join(' | ')
     })
     .join('\n')

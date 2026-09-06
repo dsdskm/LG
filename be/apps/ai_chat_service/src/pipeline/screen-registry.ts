@@ -146,14 +146,15 @@ export function getScreenConfig(routeKey: string, reqId?: string): ScreenConfig 
       actionTools.push(composeTool)
     }
 
+    const readTool = createReadTaskflowGraphTool()
     const editTool = createEditTaskflowTool()
-    if (editTool) {
-      actionTools.push(createReadTaskflowGraphTool(), editTool)
+    if (readTool && editTool) {
+      actionTools.push(readTool, editTool)
     }
 
     // 설명 prompt 행이 없으면 tool 이 조용히 빠져 캔버스 편집이 통째로 안 된다.
     console.log(
-      `[taskflow-tools] route=${effectiveRouteKey} compose=${Boolean(composeTool)} edit=${Boolean(editTool)} registered=${actionTools.map((tool) => tool.declaration.name).join(',') || '-'}`,
+      `[taskflow-tools] route=${effectiveRouteKey} compose=${Boolean(composeTool)} read=${Boolean(readTool)} edit=${Boolean(editTool)} registered=${actionTools.map((tool) => tool.declaration.name).join(',') || '-'}`,
     )
   }
 

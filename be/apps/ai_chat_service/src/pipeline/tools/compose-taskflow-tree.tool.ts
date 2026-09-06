@@ -1,16 +1,18 @@
 import type { ToolContext, ToolDefinition } from '../tool.type'
-import { getPropertyTmsStore, type TaskSemantics } from '../../features/taskflow/service/property-tms-store.service'
+import { getPropertyTmsStore, TASK_TYPE, type TaskSemantics } from '../../features/taskflow/service/property-tms-store.service'
 import { CHAT_PROMPT_TYPE } from '../../features/chat/prompt-types'
 import { renderPromptTemplate } from '../prompt-template.util'
 import {
   findContentRef,
   findSuggestions,
+  formatNodeLabel,
   readCurrentGraph,
   readTaskContents,
   toMatchKey,
   TASKFLOW_CANVAS_SCREEN_KEY,
   type TaskContentRef,
 } from './taskflow-palette'
+import { taskflowMessage, taskflowMessageNumber, TASKFLOW_MESSAGE_KEY } from './taskflow-message'
 
 /** LLM 이 내려주는 노드. 트리는 preorder + depth 로 표현해 id/좌표 환각을 원천 차단한다. */
 type ComposeNodeArg = {
@@ -49,59 +51,51 @@ function findTaskNamesByIntent(tasks: TaskSemantics[], intent: string): string[]
 
 // 제어 노드 이름을 하드코딩하지 않는다. 카탈로그에 없는 이름을 안내하면 LLM 이 그대로 쓰고 거부된다.
 function buildDescription(catalogText: string, tasks: TaskSemantics[]): string {
-  const concurrent = findTaskNamesByIntent(tasks, 'concurrent')
-  const alternative = findTaskNamesByIntent(tasks, 'alternative')
-
-  const lines = [
-    '자연어 요청을 TaskFlow 로 구성한다. 노드를 preorder 순서로 나열하고 depth 로 부모-자식 관계를 표현한다.',
-    '이 도구는 캔버스를 전부 새로 그린다. 기존 노드를 일부만 추가/교체/삭제하려면 edit_taskflow 를 쓴다.',
-    'depth 0 노드는 여러 개 나열할 수 있고, 나열한 순서가 곧 실행 순서다. 순차 실행을 위해 별도의 Task 로 묶지 않는다.',
-    '자식은 부모보다 depth 가 정확히 1 커야 한다.',
-    '사용자가 지목한 대상(POI/TTS/모션/표정 이름)은 contentName 에 그대로 적는다.',
-    '사용자가 말한 대로만 적고 "장소", "지점", "노드" 같은 말을 임의로 붙이거나 빼지 않는다. 이름이 한 글자라도 다르면 서버가 못 찾는다.',
-    '어떤 Task 인지 모르고 대상 이름만 알면 taskName 을 빈 문자열로 두고 contentName 만 채운다. 서버가 Task 를 찾아준다.',
-    'taskName 을 쓸 때는 반드시 아래 목록의 이름을 그대로 사용한다.',
-  ]
-
-  if (concurrent.length > 0) {
-    lines.push(`"~하면서", "동시에" 처럼 같이 실행하는 동작은 ${concurrent.join(' 또는 ')} 의 자식으로 묶는다.`)
-  }
-  if (alternative.length > 0) {
-    lines.push(`"성공하면 A 실패하면 B" 처럼 대안이 있는 경우는 ${alternative.join(' 또는 ')} 의 자식으로 묶는다.`)
+  const joiner = taskflowMessage(TASKFLOW_MESSAGE_KEY.composeTaskJoiner)
+  const buildRule = (intent: string, key: string) => {
+    const names = findTaskNamesByIntent(tasks, intent)
+    if (names.length === 0) return ''
+    return taskflowMessage(key, { tasks: names.join(joiner) })
   }
 
-  return [...lines, '', '[사용 가능한 Task]', catalogText].join('\n')
+  return renderPromptTemplate(TASKFLOW_CANVAS_SCREEN_KEY, CHAT_PROMPT_TYPE.toolComposeTaskflow, {
+    catalog: catalogText,
+    concurrentRule: buildRule('concurrent', TASKFLOW_MESSAGE_KEY.composeConcurrentRule),
+    alternativeRule: buildRule('alternative', TASKFLOW_MESSAGE_KEY.composeAlternativeRule),
+  })
+}
+
+function emphasize(values: string[]): string {
+  return values.map((value) => `**${value}**`).join(', ')
 }
 
 /** 채팅에 그대로 노출되는 문장. 노드 이름은 ** 로 감싸 프론트가 강조하게 한다. */
 function buildAssistantText(roots: TaskflowTreeNode[], notes: ComposeNotes): string {
   const labels: string[] = []
   const collect = (node: TaskflowTreeNode) => {
-    labels.push(node.contentName ? `${node.contentName}(${node.taskName})` : node.taskName)
+    labels.push(formatNodeLabel(node.taskName, node.contentName) || node.taskName)
     node.children.forEach(collect)
   }
   roots.forEach(collect)
 
-  const lines = [`${labels.map((label) => `**${label}**`).join(', ')} 로 태스크플로우를 구성했습니다.`]
+  const lines = [taskflowMessage(TASKFLOW_MESSAGE_KEY.composeDone, { nodes: emphasize(labels) })]
 
   if (notes.substituted.length > 0) {
     const pairs = notes.substituted.map((row) => `**${row.requested}** → **${row.resolved}**`).join(', ')
-    lines.push(`가장 가까운 항목으로 대체했습니다: ${pairs}`)
+    lines.push(taskflowMessage(TASKFLOW_MESSAGE_KEY.composeSubstituted, { pairs }))
   }
   if (notes.placeholders.length > 0) {
     const pairs = notes.placeholders.map((row) => `**${row.requested}** → **${row.placedWith}**`).join(', ')
-    lines.push(`⚠️ 대상을 찾지 못해 임시로 채웠습니다. 노드에서 직접 바꿔 주세요: ${pairs}`)
+    lines.push(taskflowMessage(TASKFLOW_MESSAGE_KEY.composePlaceholders, { pairs }))
   }
   if (notes.missing.length > 0) {
-    const names = notes.missing.map((name) => `**${name}**`).join(', ')
-    lines.push(`일부 노드는 찾을 수 없어 구성하지 않았습니다: ${names}`)
+    lines.push(taskflowMessage(TASKFLOW_MESSAGE_KEY.composeMissing, { names: emphasize(notes.missing) }))
   }
   if (notes.unresolved.length > 0) {
-    const names = notes.unresolved.map((name) => `**${name}**`).join(', ')
-    lines.push(`대상을 확인하지 못해 빈 노드로 두었습니다: ${names}`)
+    lines.push(taskflowMessage(TASKFLOW_MESSAGE_KEY.composeUnresolved, { names: emphasize(notes.unresolved) }))
   }
 
-  return lines.join('\n')
+  return lines.filter(Boolean).join('\n')
 }
 
 function toComposeNodes(value: unknown): ComposeNodeArg[] {
@@ -126,7 +120,7 @@ function buildForest(
   notes: ComposeNotes,
 ): TaskflowTreeNode[] | ComposeFailure {
   if (nodes[0].depth !== 0) {
-    return { clarification: '첫 노드는 최상위여야 합니다. 요청을 조금 더 구체적으로 말씀해 주세요.', suggestions: [] }
+    return { clarification: taskflowMessage(TASKFLOW_MESSAGE_KEY.composeRootRequired), suggestions: [] }
   }
 
   const stack: TaskflowTreeNode[] = []
@@ -136,7 +130,7 @@ function buildForest(
 
   for (const [index, node] of nodes.entries()) {
     if (index > 0 && node.depth > nodes[index - 1].depth + 1) {
-      return { clarification: '노드 계층이 건너뛰었습니다. 요청을 다시 말씀해 주세요.', suggestions: [] }
+      return { clarification: taskflowMessage(TASKFLOW_MESSAGE_KEY.composeDepthSkipped), suggestions: [] }
     }
 
     if (skipDepth !== null) {
@@ -199,7 +193,7 @@ function buildForest(
 
     const parent = stack[node.depth - 1]
     if (!parent) {
-      return { clarification: '노드 계층을 해석하지 못했습니다. 요청을 다시 말씀해 주세요.', suggestions: [] }
+      return { clarification: taskflowMessage(TASKFLOW_MESSAGE_KEY.composeParentMissing), suggestions: [] }
     }
 
     parent.children.push(treeNode)
@@ -209,8 +203,10 @@ function buildForest(
 
   if (roots.length === 0) {
     return {
-      clarification: '요청하신 동작을 사용할 수 있는 Task 에서 찾지 못했습니다.',
-      suggestions: notes.missing.flatMap((name) => findSuggestions(name, store.list())).slice(0, 3),
+      clarification: taskflowMessage(TASKFLOW_MESSAGE_KEY.composeTaskNotFound),
+      suggestions: notes.missing
+        .flatMap((name) => findSuggestions(name, store.list()))
+        .slice(0, taskflowMessageNumber(TASKFLOW_MESSAGE_KEY.composeSuggestionLimit)),
     }
   }
 
@@ -219,7 +215,7 @@ function buildForest(
 
 /** CONTROL 인데 자식이 없는 노드 이름을 모은다. 자식 개수 상한 같은 세부 규칙은 tms 앱이 검증한다. */
 function collectEmptyControls(node: TaskflowTreeNode, found: string[]): string[] {
-  if (node.taskType === 'CONTROL' && node.children.length === 0) {
+  if (node.taskType === TASK_TYPE.control && node.children.length === 0) {
     found.push(node.taskName)
   }
 
@@ -306,13 +302,13 @@ export function createComposeTaskflowTool(): ToolDefinition | null {
         properties: {
           nodes: {
             type: 'array',
-            description: 'preorder 로 나열한 노드 목록',
+            description: taskflowMessage(TASKFLOW_MESSAGE_KEY.composeParamNodes),
             items: {
               type: 'object',
               properties: {
-                depth: { type: 'integer', description: '최상위는 0, 자식은 부모 depth + 1' },
-                taskName: { type: 'string', description: '카탈로그에 있는 Task 이름. 모를 때는 빈 문자열' },
-                contentName: { type: 'string', description: '사용자가 지목한 콘텐츠 이름(POI/TTS/모션/표정 등)' },
+                depth: { type: 'integer', description: taskflowMessage(TASKFLOW_MESSAGE_KEY.composeParamDepth) },
+                taskName: { type: 'string', description: taskflowMessage(TASKFLOW_MESSAGE_KEY.composeParamTaskName) },
+                contentName: { type: 'string', description: taskflowMessage(TASKFLOW_MESSAGE_KEY.composeParamContentName) },
               },
               required: ['depth'],
             },
@@ -342,7 +338,7 @@ export function createComposeTaskflowTool(): ToolDefinition | null {
       const emptyControls = result.flatMap((root) => collectEmptyControls(root, []))
       if (emptyControls.length > 0) {
         return {
-          clarification: `${emptyControls.join(', ')} 아래에 실행할 동작이 없습니다.`,
+          clarification: taskflowMessage(TASKFLOW_MESSAGE_KEY.composeEmptyControl, { names: emptyControls.join(', ') }),
           suggestions: [],
         }
       }

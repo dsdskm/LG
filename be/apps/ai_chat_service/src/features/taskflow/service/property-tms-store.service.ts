@@ -14,6 +14,13 @@ export type TaskSemantics = {
   composeHint: Record<string, unknown>
 }
 
+/** property_tms.task_type 이 갖는 값. */
+export const TASK_TYPE = {
+  root: 'ROOT',
+  control: 'CONTROL',
+  action: 'ACTION',
+} as const
+
 // screen-registry 같은 플레인 모듈에서 접근하기 위한 싱글턴 참조. prompt-store 와 동일한 패턴.
 let activeStore: PropertyTmsStoreService | null = null
 export function getPropertyTmsStore(): PropertyTmsStoreService | null {
