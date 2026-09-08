@@ -77,6 +77,16 @@ export const ruleCheck = async (appKey, screenKey, message, navigate, context = 
   if (rule) {
     console.log(`rule`,rule)
     const ruleKey = rule.ruleKey
+
+    // 캔버스 draft 를 만드는 룰(ruleType=taskflow-graph)은 백엔드가 노드 이름/순번을 해석해 draft 까지 만든다.
+    // 여기서 replyText 만 보여 주면 문구의 {{anchor}} 자리가 그대로 남고 캔버스도 바뀌지 않는다.
+    if (String(rule?.extraJson?.ruleType ?? '').trim() === 'taskflow-graph') {
+      return {
+        ok: false,
+        replyText: ''
+      }
+    }
+
     let replyText = rule.replyText
     switch (ruleKey) {
       case RULE_KEY.TMS_HELP:

@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OPCON 서비스 사용 가이드</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    body { font-family: 'Inter', 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; background-color: #eae8e2; }
+    .display-serif { font-family: Georgia, 'Times New Roman', serif; font-weight: 400; letter-spacing: -0.5px; }
+    .gradient-bg {
+      background: linear-gradient(135deg, #8c8678 0%, #7d776a 50%, #736e63 100%);
+    }
+    .card-hover { transition: all 0.2s ease; }
+    .card-hover:hover { transform: translateY(-4px); box-shadow: 0 0.5rem 1.5rem 0 rgba(0, 0, 0, 0.05); }
+    .btn-primary { background: #736e63; color: #ffffff; transition: all 0.15s ease; }
+    .btn-primary:hover { background: #6b655a; }
+    .btn-primary:active { background: #59544b; }
+    .btn-secondary { background: #eae8e2; color: #111111; border: 1px solid rgba(140, 134, 120, 0.22); transition: all 0.15s ease; }
+    .btn-secondary:hover { background: #f4f3f0; }
+    .badge-pill { background: #f4f3f0; color: #111111; border-radius: 9999px; padding: 4px 12px; font-size: 13px; font-weight: 500; }
+    .badge-accent { background: #b91c4c; color: #ffffff; border-radius: 9999px; padding: 4px 12px; font-size: 12px; font-weight: 500; letter-spacing: 1.5px; text-transform: uppercase; }
+    .hairline-border { border: 1px solid rgba(140, 134, 120, 0.22); }
+  </style>
+</head>
+<body class="min-h-screen">
+  <!-- Hero Section -->
+  <div class="gradient-bg text-white">
+    <div class="max-w-7xl mx-auto px-6 py-20">
+      <div class="flex items-center gap-3 mb-6">
+        <div class="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center">
+          <i data-lucide="bot" class="w-7 h-7 text-[#cd7b94]"></i>
+        </div>
+        <div>
+          <h1 class="text-3xl display-serif">OPCON</h1>
+          <p class="text-white/70 text-sm">LG Electronics Robot Operations Console</p>
+        </div>
+      </div>
+      <h2 class="text-4xl md:text-5xl display-serif mb-4">로봇 운영 콘솔<br />사용 가이드</h2>
+      <p class="text-white/80 text-lg max-w-2xl mb-8">
+        로봇 관리부터 태스크플로우 설계, 콘텐츠 관리, 원격 업데이트까지.
+        OPCON의 모든 기능을 쉽고 빠르게 익힐 수 있는 사용자 가이드입니다.
+      </p>
+      <div class="flex gap-3">
+        <a href="getting-started.html" class="bg-white text-[#736e63] hover:bg-[#f4f3f0] px-6 py-3 rounded-lg font-medium inline-flex items-center gap-2 transition">
+          <i data-lucide="rocket" class="w-5 h-5"></i> 시작하기
+        </a>
+        <a href="#services" class="bg-white/10 hover:bg-white/20 text-white px-6 py-3 rounded-lg font-medium inline-flex items-center gap-2 transition">
+          <i data-lucide="grid" class="w-5 h-5"></i> 서비스 둘러보기
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Services Section -->
+  <div id="services" class="max-w-7xl mx-auto px-6 py-16">
+    <h3 class="text-2xl display-serif text-[#111111] mb-2">서비스 둘러보기</h3>
+    <p class="text-[#757575] mb-8">5개의 핵심 서비스와 공통 기능에 대한 가이드를 제공합니다.</p>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <!-- Robot -->
+      <a href="robot-dashboard.html" class="card-hover bg-[#f4f3f0] rounded-xl hairline-border p-6">
+        <div class="w-12 h-12 bg-[#eae8e2] rounded-lg flex items-center justify-center mb-4">
+          <i data-lucide="bot" class="w-6 h-6 text-[#736e63]"></i>
+        </div>
+        <h4 class="text-lg font-semibold text-[#111111] mb-2">Robot · 로봇 관리</h4>
+        <p class="text-[#555555] text-sm mb-4">로봇 상태 모니터링, 그룹/사이트 관리, 로봇 상세 제어, 로그 재생</p>
+        <div class="flex flex-wrap gap-2">
+          <span class="badge-pill">대시보드</span>
+          <span class="badge-pill">로봇 관리</span>
+          <span class="badge-pill">상세 제어</span>
+        </div>
+      </a>
+
+      <!-- OTA -->
+      <a href="ota-campaign.html" class="card-hover bg-[#f4f3f0] rounded-xl hairline-border p-6">
+        <div class="w-12 h-12 bg-[#eae8e2] rounded-lg flex items-center justify-center mb-4">
+          <i data-lucide="cloud-upload" class="w-6 h-6 text-[#736e63]"></i>
+        </div>
+        <h4 class="text-lg font-semibold text-[#111111] mb-2">OTA · 원격 업데이트</h4>
+        <p class="text-[#555555] text-sm mb-4">캠페인 생성, 정책 관리, 타겟 그룹 설정, 아티팩트 배포</p>
+        <div class="flex flex-wrap gap-2">
+          <span class="badge-pill">캠페인</span>
+          <span class="badge-pill">정책</span>
+          <span class="badge-pill">타겟 그룹</span>
+        </div>
+      </a>
+
+      <!-- CMS -->
+      <a href="cms-content.html" class="card-hover bg-[#f4f3f0] rounded-xl hairline-border p-6">
+        <div class="w-12 h-12 bg-[#eae8e2] rounded-lg flex items-center justify-center mb-4">
+          <i data-lucide="file-text" class="w-6 h-6 text-[#736e63]"></i>
+        </div>
+        <h4 class="text-lg font-semibold text-[#111111] mb-2">CMS · 콘텐츠 관리</h4>
+        <p class="text-[#555555] text-sm mb-4">콘텐츠 등록/관리, 카테고리, 콘텐츠 타입, 임베딩, TTS</p>
+        <div class="flex flex-wrap gap-2">
+          <span class="badge-pill">콘텐츠</span>
+          <span class="badge-pill">임베딩</span>
+          <span class="badge-pill">TTS</span>
+        </div>
+      </a>
+
+      <!-- TMS -->
+      <a href="tms-taskflow-list.html" class="card-hover bg-[#f4f3f0] rounded-xl hairline-border p-6">
+        <div class="w-12 h-12 bg-[#eae8e2] rounded-lg flex items-center justify-center mb-4">
+          <i data-lucide="workflow" class="w-6 h-6 text-[#736e63]"></i>
+        </div>
+        <h4 class="text-lg font-semibold text-[#111111] mb-2">TMS · 태스크플로우</h4>
+        <p class="text-[#555555] text-sm mb-4">태스크플로우 설계, 캔버스 에디터, 로봇 배포/제어</p>
+        <div class="flex flex-wrap gap-2">
+          <span class="badge-pill">목록</span>
+          <span class="badge-pill">캔버스</span>
+          <span class="badge-pill">배포</span>
+        </div>
+      </a>
+
+      <!-- Learn -->
+      <a href="learn-overview.html" class="card-hover bg-[#f4f3f0] rounded-xl hairline-border p-6">
+        <div class="w-12 h-12 bg-[#eae8e2] rounded-lg flex items-center justify-center mb-4">
+          <i data-lucide="graduation-cap" class="w-6 h-6 text-[#736e63]"></i>
+        </div>
+        <h4 class="text-lg font-semibold text-[#111111] mb-2">Learn · 러닝</h4>
+        <p class="text-[#555555] text-sm mb-4">학습 현황, 데이터 준비, 업로드, 학습 실행, 원격 조종</p>
+        <div class="flex flex-wrap gap-2">
+          <span class="badge-pill">학습</span>
+          <span class="badge-pill">데이터</span>
+          <span class="badge-pill">원격 조종</span>
+        </div>
+      </a>
+
+      <!-- AI Assistant -->
+      <a href="ai-assistant.html" class="card-hover bg-[#f4f3f0] rounded-xl hairline-border p-6">
+        <div class="w-12 h-12 bg-[#eae8e2] rounded-lg flex items-center justify-center mb-4">
+          <i data-lucide="sparkles" class="w-6 h-6 text-[#b91c4c]"></i>
+        </div>
+        <h4 class="text-lg font-semibold text-[#111111] mb-2">AI 어시스턴트</h4>
+        <p class="text-[#555555] text-sm mb-4">채팅 기반 태스크플로우 제어, 화면 안내, 명령어 가이드</p>
+        <div class="flex flex-wrap gap-2">
+          <span class="badge-accent">AI</span>
+          <span class="badge-pill">채팅</span>
+          <span class="badge-pill">명령어</span>
+          <span class="badge-pill">자동화</span>
+        </div>
+      </a>
+    </div>
+  </div>
+
+  <!-- Getting Started CTA -->
+  <div class="max-w-7xl mx-auto px-6 pb-16">
+    <div class="bg-[#736e63] rounded-xl p-8 flex flex-col md:flex-row items-center justify-between gap-6">
+      <div>
+        <h4 class="text-xl display-serif text-white mb-2">아직 계정이 없으신가요?</h4>
+        <p class="text-white/80">회원가입부터 로그인, 비밀번호 재설정까지 단계별로 안내해 드립니다.</p>
+      </div>
+      <a href="getting-started.html" class="bg-white text-[#736e63] hover:bg-[#f4f3f0] px-6 py-3 rounded-lg font-medium inline-flex items-center gap-2 whitespace-nowrap transition">
+        <i data-lucide="arrow-right" class="w-5 h-5"></i> 시작하기 가이드 보기
+      </a>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="border-t hairline-border bg-[#d3cfc4]">
+    <div class="max-w-7xl mx-auto px-6 py-8">
+      <div class="flex flex-col md:flex-row items-center justify-between gap-4">
+        <div class="flex items-center gap-2">
+          <i data-lucide="bot" class="w-5 h-5 text-[#736e63]"></i>
+          <span class="font-semibold text-[#111111]">OPCON</span>
+          <span class="text-[#757575] text-sm">· LG Electronics Robot Operations Console</span>
+        </div>
+        <p class="text-[#757575] text-sm">Copyright © 2026 LG Electronics. All rights reserved.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    lucide.createIcons();
+  </script>
+</body>
+</html>

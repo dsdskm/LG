@@ -48,3 +48,16 @@ yarn-error.log*
 # Claude
 .claude
 /.claude
+/apps/robot/public
+/apps/robot/public
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Generated Documents
+*.doc
+*.docx

@@ -13,6 +13,9 @@
   "LanguageSelect": {
     "button": "언어"
   },
+  "Header": {
+    "myProfile": "내 프로필"
+  },
   "ThemeToggle": {
     "title": "화면 스타일 전환 (Forge 영역 제외)",
     "modernNeutral": "모던 뉴트럴",

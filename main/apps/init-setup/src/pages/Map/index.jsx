@@ -11,7 +11,7 @@ import { list as listBuildings } from '@/apis/buildingApis'
 import { list as listFloors } from '@/apis/floorApis'
 import { list as listAreas } from '@/apis/areaApis'
 import { STATUS_TOPICS } from '@/constants/topics'
-import { resolveMappingMode } from '@/utils/lioStatus'
+import { resolveMappingMode, resolveStatusLabel } from '@/utils/lioStatus'
 import { syncLevelSelection } from '@/utils/location'
 import { useLocationStore } from '@/stores/useLocationStore'
 import { resolveWsUrl } from '@/utils/wsUrl'
@@ -21,7 +21,7 @@ import { StyledMapPageContent, BadgeRow, MapWorkspace, LocationRow, MappingStatu
  * Map
  *
  * 메인 페이지.
- * - wsUrl 상태 관리
+ * - wsUrl 계산 (현재 페이지 기준, 화면에서 수정하지 않는다)
  * - useTelemetry 훅으로 데이터 수신 (진입 시 바로 연결한다 — 아래 autoConnectedRef 참고)
  * - 위치 계층(Building/Floor/Area) 목록 조회 및 선택 상태 관리 (LocationBar 는 표현만 담당)
  * - ConnectionBar + MapCanvas + StatusPanel 조합
@@ -81,7 +81,9 @@ const resolveMapName = ({ buildings, floors, areas, location, language }) => {
 
 export default function Map() {
   const { t, i18n } = useTranslation('map')
-  const [wsUrl, setWsUrl] = useState(resolveWsUrl)
+  // WebSocket 주소는 현재 페이지 기준으로 한 번 계산해 그대로 쓴다 — 화면에서 고치지 않으므로
+  // 상태로 들고 있을 이유가 없다(툴바에 주소 입력창을 두지 않는다, components/ConnectionBar).
+  const wsUrl = useMemo(resolveWsUrl, [])
   const [fps, setFps] = useState(10) // 기본 10 FPS 업데이트 주기
   // 위치 선택은 스토어가 들고 있다 — 맵 스캔/시맨틱이 같은 작업 위치를 공유하고 새로고침에도 유지된다.
   // zustand v5 는 객체를 만들어 돌려주는 셀렉터가 매 렌더 새 참조를 내므로 필드 단위로 구독한다.
@@ -197,8 +199,7 @@ export default function Map() {
   // 모두 텔레메트리로 오므로, 시작 버튼을 누를 때까지 기다리면 그때까지 아무 것도 알 수 없다.
   // 연결만 하고 아무 명령도 보내지 않으므로 로봇이 움직이지는 않는다(시맨틱 화면과 같은 방식).
   //
-  // 진입 시 한 번만 건다. connect 는 wsUrl 에 매여 있어 의존성으로 걸면 주소를 손으로 고치는 동안
-  // (연결이 끊긴 상태에서만 입력할 수 있다) 글자마다 재연결이 걸린다 — 이후 연결/해제는 툴바 버튼이 맡는다.
+  // 진입 시 한 번만 건다 — 이후 연결/해제는 툴바 버튼이 맡는다.
   const autoConnectedRef = useRef(false)
   useEffect(() => {
     if (autoConnectedRef.current) return
@@ -241,7 +242,7 @@ export default function Map() {
           {/* 매핑 진행 상태 (/lio_node/status) */}
           <MappingStatusBadge $active={isMapping}>
             <span className="label typographyBody5">{t('status')}</span>
-            <strong className="value typographyBody5">{mappingStatus || t('waitingForData')}</strong>
+            <strong className="value typographyBody5">{resolveStatusLabel(mappingStatus, t)}</strong>
           </MappingStatusBadge>
         </BadgeRow>
       </LocationRow>
@@ -250,8 +251,6 @@ export default function Map() {
         {/* 지도 Section — 연결·매핑 툴바 + 지도/라이다 캔버스 */}
         <Section gap="1.2rem">
           <ConnectionBar
-            url={wsUrl}
-            onUrlChange={setWsUrl}
             status={status}
             onConnect={connect}
             onDisconnect={disconnect}

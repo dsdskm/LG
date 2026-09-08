@@ -13,6 +13,9 @@
   "LanguageSelect": {
     "button": "Language"
   },
+  "Header": {
+    "myProfile": "My Profile"
+  },
   "ThemeToggle": {
     "title": "Switch screen style (excludes Forge area)",
     "modernNeutral": "Modern Neutral",

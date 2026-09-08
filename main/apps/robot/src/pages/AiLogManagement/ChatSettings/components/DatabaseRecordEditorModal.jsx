@@ -61,7 +61,7 @@ const FORM_CONFIG = {
                 options: ['instruction', 'intent-classifier', 'rag-info', 'rag-action'],
                 defaultValue: 'instruction',
             },
-            { key: 'prompt', label: '프롬프트', type: 'textarea', rows: 14 },
+            { key: 'prompt', label: '프롬프트', type: 'messageBundle', rows: 14 },
             { key: 'enabled', label: '활성', type: 'checkbox', defaultValue: true },
         ],
     },
@@ -107,6 +107,112 @@ const createDraft = (fields, record) => Object.fromEntries(fields.map((field) =>
     const value = sourceValue === undefined ? field.defaultValue ?? '' : sourceValue
     return [field.key, field.type === 'json' ? JSON.stringify(value, null, 2) : value]
 }))
+
+/** action-tools 처럼 여러 문구를 JSON 한 덩어리로 담아 둔 프롬프트를 키별로 나눠 편집한다.
+ * 저장 값은 그대로 JSON 문자열이라 서버/DB 구조는 바뀌지 않는다.
+ */
+const parseMessageBundle = (value) => {
+    const text = String(value ?? '').trim()
+    if (!text.startsWith('{')) return null
+    try {
+        const parsed = JSON.parse(text)
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+        if (Object.values(parsed).some((row) => typeof row === 'object' && row !== null)) return null
+        return parsed
+    } catch {
+        return null
+    }
+}
+
+const MessageBundleEditor = ({ value, onChange }) => {
+    const bundle = parseMessageBundle(value)
+    const [rawMode, setRawMode] = React.useState(false)
+    const [filter, setFilter] = React.useState('')
+    const [newKey, setNewKey] = React.useState('')
+
+    if (!bundle) {
+        return (
+            <FormTextarea rows={18} value={String(value ?? '')} onChange={(event) => onChange(event.target.value)} />
+        )
+    }
+
+    const write = (next) => onChange(JSON.stringify(next, null, 2))
+    const keys = Object.keys(bundle)
+    const needle = filter.trim().toLowerCase()
+    // 접두어(tool./edit./compose.)끼리 붙여 보여 줘야 찾기 쉽다.
+    const visibleKeys = keys
+        .filter((key) => !needle || key.toLowerCase().includes(needle) || String(bundle[key]).toLowerCase().includes(needle))
+        .sort((a, b) => a.localeCompare(b))
+
+    return (
+        <BundleWrap>
+            <BundleToolbar>
+                <FormInput
+                    placeholder="키 또는 내용 검색"
+                    value={filter}
+                    onChange={(event) => setFilter(event.target.value)}
+                />
+                <BundleCount>{visibleKeys.length}/{keys.length} 항목</BundleCount>
+                <BundleGhostButton type="button" onClick={() => setRawMode((prev) => !prev)}>
+                    {rawMode ? '항목별 보기' : '원문 JSON 보기'}
+                </BundleGhostButton>
+            </BundleToolbar>
+
+            {rawMode ? (
+                <FormTextarea rows={24} value={String(value ?? '')} onChange={(event) => onChange(event.target.value)} />
+            ) : (
+                <>
+                    {visibleKeys.map((key) => {
+                        const text = String(bundle[key] ?? '')
+                        const rows = Math.min(20, Math.max(2, text.split('\n').length + 1))
+                        return (
+                            <BundleRow key={key}>
+                                <BundleRowHead>
+                                    <BundleKey>{key}</BundleKey>
+                                    <BundleMeta>{text.length}자</BundleMeta>
+                                    <BundleGhostButton
+                                        type="button"
+                                        onClick={() => {
+                                            const next = { ...bundle }
+                                            delete next[key]
+                                            write(next)
+                                        }}
+                                    >
+                                        삭제
+                                    </BundleGhostButton>
+                                </BundleRowHead>
+                                <FormTextarea
+                                    rows={rows}
+                                    value={text}
+                                    onChange={(event) => write({ ...bundle, [key]: event.target.value })}
+                                />
+                            </BundleRow>
+                        )
+                    })}
+
+                    <BundleToolbar>
+                        <FormInput
+                            placeholder="새 키 (예: edit.locationRequired)"
+                            value={newKey}
+                            onChange={(event) => setNewKey(event.target.value)}
+                        />
+                        <BundleGhostButton
+                            type="button"
+                            onClick={() => {
+                                const key = newKey.trim()
+                                if (!key || bundle[key] !== undefined) return
+                                write({ ...bundle, [key]: '' })
+                                setNewKey('')
+                            }}
+                        >
+                            항목 추가
+                        </BundleGhostButton>
+                    </BundleToolbar>
+                </>
+            )}
+        </BundleWrap>
+    )
+}
 
 const BodyLengthMeter = ({ value, maxChars = 700 }) => {
     const text = typeof value === 'string' ? value : ''
@@ -333,7 +439,7 @@ export const DatabaseRecordEditorModal = ({
 
                         return (
                             <React.Fragment key={field.key}>
-                                <FormField $wide={isPatternRegexField || field.type === 'textarea' || field.type === 'json'}>
+                                <FormField $wide={isPatternRegexField || field.type === 'textarea' || field.type === 'json' || field.type === 'messageBundle'}>
                                     <FormLabel htmlFor={`${kind}-${field.key}`}>
                                         {field.label}{field.required ? ' *' : ''}
                                     </FormLabel>
@@ -388,6 +494,11 @@ export const DatabaseRecordEditorModal = ({
                                                 return <option key={value} value={value}>{label}</option>
                                             })}
                                         </FormSelect>
+                                    ) : field.type === 'messageBundle' ? (
+                                        <MessageBundleEditor
+                                            value={draft[field.key]}
+                                            onChange={(next) => setField(field.key, next)}
+                                        />
                                     ) : field.type === 'textarea' || field.type === 'json' ? (
                                         <>
                                             <FormTextarea
@@ -508,6 +619,57 @@ const FormTextarea = styled.textarea`
     padding: 10px;
     line-height: 1.55;
     resize: vertical;
+`
+const BundleWrap = styled.div`
+    display: grid;
+    gap: 10px;
+`
+const BundleToolbar = styled.div`
+    display: flex;
+    align-items: center;
+    gap: 8px;
+`
+const BundleCount = styled.span`
+    color: #64748b;
+    font-size: 12px;
+    white-space: nowrap;
+`
+const BundleRow = styled.div`
+    display: grid;
+    gap: 6px;
+    padding: 10px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #f8fafc;
+`
+const BundleRowHead = styled.div`
+    display: flex;
+    align-items: center;
+    gap: 8px;
+`
+const BundleKey = styled.code`
+    flex: 1;
+    color: #1e293b;
+    font-size: 12px;
+    font-weight: 600;
+`
+const BundleMeta = styled.span`
+    color: #94a3b8;
+    font-size: 11px;
+    white-space: nowrap;
+`
+const BundleGhostButton = styled.button`
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 6px 10px;
+    background: #fff;
+    color: #334155;
+    font-size: 12px;
+    cursor: pointer;
+
+    &:hover {
+        background: #f1f5f9;
+    }
 `
 const CheckboxLabel = styled.label`
     display: flex;

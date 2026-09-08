@@ -41,6 +41,14 @@ export type ToolContext = {
   }
 }
 
+/** 프론트에서 실행할 약속된 함수. 이름은 prompt(action-tools)의 clientAction.* 키에서 온다.
+ * 프론트는 이름으로 핸들러를 찾아 args 를 넘긴다.
+ */
+export type ClientAction = {
+  name: string
+  args?: Record<string, unknown>
+}
+
 /**
  * 선언 + 실행기를 묶은 tool 정의.
  */

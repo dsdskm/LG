@@ -1,0 +1,68 @@
+{
+  "title": "My Profile",
+  "close": "Close",
+  "empty": "-",
+  "basicInfo": {
+    "title": "Basic Information",
+    "email": "Email",
+    "nickname": "Nickname",
+    "nicknamePlaceholder": "Enter a nickname",
+    "nicknameSaved": "Nickname saved"
+  },
+  "roleInfo": {
+    "title": "Role & Affiliation",
+    "role": "Role",
+    "guide": "Contact an administrator to change your role",
+    "group": "Managed Group",
+    "site": "Managed Site"
+  },
+  "password": {
+    "title": "Change Password",
+    "guide": "Enter a combination of 3 or more types (uppercase, lowercase, numbers, special characters) with 8 or more characters, or 2 types with 10 or more characters.",
+    "change": "Change",
+    "current": "Current Password",
+    "currentPlaceholder": "Enter current password",
+    "new": "New Password",
+    "newPlaceholder": "Enter new password (8+ characters)",
+    "confirm": "Confirm New Password",
+    "confirmPlaceholder": "Re-enter new password",
+    "cancel": "Cancel",
+    "submit": "Change",
+    "changeSuccess": "Password changed successfully",
+    "currentPasswordInvalid": "Current password is incorrect",
+    "changeFailed": "Failed to change password",
+    "invalid": "Check password requirements",
+    "sameAsCurrentPassword": "Cannot be the same as current password"
+  },
+  "accountManagement": {
+    "title": "Account Management",
+    "logout": "Logout",
+    "withdraw": "Delete Account",
+    "withdrawConfirmTitle": "Delete Account",
+    "withdrawConfirmMessage1": "Are you sure you want to delete your account?",
+    "withdrawConfirmMessage2": "This will permanently delete your account information and cannot be undone.",
+    "withdrawConfirmButton": "Delete",
+    "withdrawDoneTitle": "Account Deleted",
+    "withdrawDoneMessage": "Your account has been deleted. You will be logged out.",
+    "withdrawDoneButton": "OK"
+  },
+  "accountStatus": {
+    "title": "Account Status",
+    "status": "Status",
+    "active": "Active",
+    "createdAt": "Joined"
+  },
+  "help": {
+    "title": "Help",
+    "tip1": "Your nickname can be changed at any time",
+    "tip2": "Your email cannot be changed",
+    "tip3": "Contact an administrator to change your role"
+  },
+  "role": {
+    "SYSTEM_ADMIN": "System Admin",
+    "SYSTEM_MANAGER": "System Manager",
+    "GROUP_MANAGER": "Group Manager",
+    "SITE_MANAGER": "Site Manager",
+    "TERM_MANAGER": "Term Manager"
+  }
+}

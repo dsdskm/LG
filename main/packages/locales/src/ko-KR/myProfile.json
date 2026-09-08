@@ -1,0 +1,68 @@
+{
+  "title": "내 프로필",
+  "close": "닫기",
+  "empty": "-",
+  "basicInfo": {
+    "title": "기본 정보",
+    "email": "이메일",
+    "nickname": "닉네임",
+    "nicknamePlaceholder": "닉네임을 입력하세요",
+    "nicknameSaved": "닉네임이 저장되었습니다"
+  },
+  "roleInfo": {
+    "title": "역할 및 소속",
+    "role": "역할",
+    "guide": "역할 변경은 관리자에게 문의하세요",
+    "group": "관리 그룹",
+    "site": "관리 사이트"
+  },
+  "password": {
+    "title": "비밀번호 변경",
+    "guide": "영문 대/소, 숫자, 특수문자 중 3가지 조합으로 8자 이상 또는 2가지 조합으로 10자 이상 입력하세요.",
+    "change": "변경하기",
+    "current": "현재 비밀번호",
+    "currentPlaceholder": "현재 비밀번호 입력",
+    "new": "새 비밀번호",
+    "newPlaceholder": "새 비밀번호 입력 (8자 이상)",
+    "confirm": "새 비밀번호 확인",
+    "confirmPlaceholder": "새 비밀번호 재입력",
+    "cancel": "취소",
+    "submit": "변경",
+    "changeSuccess": "비밀번호가 변경되었습니다",
+    "currentPasswordInvalid": "현재 비밀번호가 올바르지 않습니다",
+    "changeFailed": "비밀번호 변경에 실패했습니다",
+    "invalid": "비밀번호 규칙을 확인하세요",
+    "sameAsCurrentPassword": "현재 비밀번호와 같을 수 없습니다"
+  },
+  "accountManagement": {
+    "title": "계정 관리",
+    "logout": "로그아웃",
+    "withdraw": "회원 탈퇴",
+    "withdrawConfirmTitle": "회원 탈퇴",
+    "withdrawConfirmMessage1": "정말 탈퇴하시겠습니까?",
+    "withdrawConfirmMessage2": "탈퇴 시 계정 정보가 영구적으로 삭제되며 복구할 수 없습니다.",
+    "withdrawConfirmButton": "탈퇴",
+    "withdrawDoneTitle": "탈퇴 완료",
+    "withdrawDoneMessage": "회원 탈퇴가 완료되었습니다. 로그아웃됩니다.",
+    "withdrawDoneButton": "확인"
+  },
+  "accountStatus": {
+    "title": "계정 상태",
+    "status": "상태",
+    "active": "활성",
+    "createdAt": "가입일"
+  },
+  "help": {
+    "title": "도움말",
+    "tip1": "닉네임은 언제든지 변경할 수 있습니다",
+    "tip2": "이메일은 변경할 수 없습니다",
+    "tip3": "역할 변경은 관리자에게 문의하세요"
+  },
+  "role": {
+    "SYSTEM_ADMIN": "시스템 관리자",
+    "SYSTEM_MANAGER": "시스템 매니저",
+    "GROUP_MANAGER": "그룹 관리자",
+    "SITE_MANAGER": "사이트 관리자",
+    "TERM_MANAGER": "약관 관리자"
+  }
+}

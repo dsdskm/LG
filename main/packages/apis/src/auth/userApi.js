@@ -148,6 +148,49 @@ export const getUserInfo = async (userId, token) => {
   }
 }
 
+export const patchUserInfo = async (userId, token, params) => {
+  let _commonHeaders = commonHeaders()
+  _commonHeaders.authorization = `Bearer ${token}`
+
+  try {
+    const response = await axiosAuth.patch(ENDPOINTS.ROBOT.USERS + '/' + userId, params, {
+      headers: _commonHeaders
+    })
+    return response
+  } catch (error) {
+    throw error
+  }
+}
+
+export const postUserPassword = async (userId, token, params) => {
+  let _commonHeaders = commonHeaders()
+  _commonHeaders.authorization = `Bearer ${token}`
+
+  try {
+    const response = await axiosAuth.post(ENDPOINTS.ROBOT.USERS + '/' + userId + '/password', params, {
+      headers: _commonHeaders,
+      skipErrorPopup: true
+    })
+    return response
+  } catch (error) {
+    throw error
+  }
+}
+
+export const deleteUser = async (userId, token) => {
+  let _commonHeaders = commonHeaders()
+  _commonHeaders.authorization = `Bearer ${token}`
+
+  try {
+    const response = await axiosAuth.delete(ENDPOINTS.ROBOT.USERS + '/' + userId, {
+      headers: _commonHeaders
+    })
+    return response
+  } catch (error) {
+    throw error
+  }
+}
+
 export const invitationTokensValidate = async (invitationToken) => {
   try {
     const response = await axiosAuth.get(ENDPOINTS.INVITATION.TOKEN_VALIDATE, {

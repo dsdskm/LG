@@ -7,6 +7,9 @@ import { listChatPromptTypes } from '@repo/apis/ai/chatSettings'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50]
 
+// 구현체가 코드에 있어야 동작하는 표는 화면에서 고치지 않는다. 조회만 허용한다.
+const READ_ONLY_KINDS = ['actionTool']
+
 const TABLE_CONFIG = {
     screen: {
         title: '화면 설정',
@@ -64,6 +67,22 @@ const TABLE_CONFIG = {
             { key: 'enabled', label: '상태', width: '90px' },
         ],
     },
+    actionTool: {
+        title: 'Action Tool 설정',
+        description:
+            '앱·화면별로 LLM 에게 열어 줄 action tool 목록입니다. LLM 함수와 프론트 함수가 한 쌍이며, 두 함수의 구현이 코드에 있어야 하므로 조회만 가능합니다. tool key 로 프롬프트(action-tools)의 설명을 쓰고, 프론트 함수 이름으로 client-actions 핸들러를 구현합니다.',
+        typeLabel: '',
+        typeValue: () => '',
+        columns: [
+            { key: 'appKey', label: '앱', width: '100px' },
+            { key: 'screenKey', label: '화면', width: '220px' },
+            { key: 'toolKey', label: 'Tool Key', width: '140px' },
+            { key: 'llmFunction', label: 'LLM 함수', width: '200px' },
+            { key: 'clientFunction', label: '프론트 함수', width: 'minmax(220px, 1fr)' },
+            { key: 'sortOrder', label: '순서', width: '70px' },
+            { key: 'enabled', label: '상태', width: '90px' },
+        ],
+    },
     rule: {
         title: 'Rule 설정',
         description: '명령어 매칭과 프론트 액션 실행에 사용하는 Rule을 조회합니다.',
@@ -85,6 +104,10 @@ const getValue = (item, key) => {
     if (key === 'screenKey') return item?.screenKey ?? item?.screen_key ?? item?.key ?? ''
     if (key === 'chunkKey') return item?.chunkKey ?? item?.chunk_key ?? ''
     if (key === 'ruleKey') return item?.ruleKey ?? item?.rule_key ?? ''
+    if (key === 'toolKey') return item?.toolKey ?? item?.tool_key ?? ''
+    if (key === 'llmFunction') return item?.llmFunction ?? item?.llm_function ?? ''
+    if (key === 'clientFunction') return item?.clientFunction ?? item?.client_function ?? ''
+    if (key === 'sortOrder') return item?.sortOrder ?? item?.sort_order ?? 0
     if (key === 'patternRegex') return item?.patternRegex ?? item?.pattern_regex ?? ''
     if (key === 'intentType') return item?.intentType ?? item?.intent_type ?? ''
     if (key === 'prompt') return item?.prompt ?? item?.content ?? ''
@@ -121,6 +144,7 @@ export const DatabaseTableSettingsTab = ({
     maxChunksPerApp = 3,
 }) => {
     const config = TABLE_CONFIG[kind] ?? TABLE_CONFIG.guidance
+    const readOnly = READ_ONLY_KINDS.includes(kind)
     const rows = Array.isArray(items) ? items : []
     const [search, setSearch] = useState('')
     const [appFilter, setAppFilter] = useState('')
@@ -198,15 +222,19 @@ export const DatabaseTableSettingsTab = ({
                 </div>
                 <HeaderActions>
                     <CountBadge>{filteredRows.length.toLocaleString()}건</CountBadge>
-                    <PrimaryButton
-                        type="button"
-                        onClick={() => {
-                            setSelectedItem(null)
-                            setEditorOpen(true)
-                        }}
-                    >
-                        추가
-                    </PrimaryButton>
+                    {readOnly ? (
+                        <ReadOnlyBadge>조회 전용</ReadOnlyBadge>
+                    ) : (
+                        <PrimaryButton
+                            type="button"
+                            onClick={() => {
+                                setSelectedItem(null)
+                                setEditorOpen(true)
+                            }}
+                        >
+                            추가
+                        </PrimaryButton>
+                    )}
                 </HeaderActions>
             </TableHeader>
 
@@ -244,10 +272,10 @@ export const DatabaseTableSettingsTab = ({
                     </TableRow>
                     {visibleRows.length > 0 ? visibleRows.map((item, index) => (
                         <TableRow
-                            as="button"
-                            type="button"
+                            as={readOnly ? 'div' : 'button'}
+                            type={readOnly ? undefined : 'button'}
                             key={String(item?.id ?? `${kind}-${index}`)}
-                            onClick={() => {
+                            onClick={readOnly ? undefined : () => {
                                 setSelectedItem(item)
                                 setEditorOpen(true)
                             }}
@@ -279,7 +307,7 @@ export const DatabaseTableSettingsTab = ({
                 </PaginationControls>
             </PaginationBar>
 
-            {editorOpen ? (
+            {editorOpen && !readOnly ? (
                 <DatabaseRecordEditorModal
                     kind={kind}
                     item={selectedItem}
@@ -295,6 +323,15 @@ export const DatabaseTableSettingsTab = ({
         </TableSection>
     )
 }
+
+const ReadOnlyBadge = styled.span`
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 600;
+`
 
 const TableSection = styled.section`
     display: grid;

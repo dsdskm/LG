@@ -85,6 +85,11 @@ const StatusBadge = styled.span`
     background: #f8d7da;
     color: #721c24;
   }
+
+  &.status-unverified {
+    background: #fff3cd;
+    color: #856404;
+  }
 `
 
 const LiveBadge = styled.span`
@@ -254,7 +259,7 @@ const ConsoleCard = forwardRef(({ robotId, card, onExpand, onControlOpen }, ref)
   const safeCard = {
     cardName: card?.cardName || 'Unknown',
     targetPath: card?.targetPath || '/',
-    targetPort: String(card?.targetPort || '3000'),
+    targetPort: String(card?.targetPort || card?.port || '3002'),
     icon: card?.icon || '📱',
     cardType: card?.cardType || 'READONLY',
     isRealtime: card?.isRealtime || false,
@@ -567,15 +572,18 @@ const ConsoleCard = forwardRef(({ robotId, card, onExpand, onControlOpen }, ref)
   const iframeUrl = buildIframeUrl()
 
   const handleIframeLoad = () => {
-    setConnectionStatus('connected')
-    setLastUpdate(new Date())
-    setIframeError(null)
     try {
+      // iframe 콘텐츠 접근 시도 — 오프라인이면 여기서 CORS 에러 발생
       if (iframeRef.current?.contentWindow) {
         iframeRef.current.contentWindow.postMessage({ type: 'PARENT_READY', robotId, readOnly: true }, '*')
+        setConnectionStatus('connected')
+        setLastUpdate(new Date())
+        setIframeError(null)
       }
-    } catch (_) {
-      /* CORS */
+    } catch (err) {
+      // CORS, 오프라인, 또는 콘텐츠 접근 불가 — 상태 대기
+      console.warn('[IFRAME] Load event but content inaccessible:', err?.message)
+      setConnectionStatus('standby')
     }
   }
 

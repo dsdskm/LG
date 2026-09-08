@@ -23,7 +23,6 @@
     "add:app": "node scripts/add-app.js"
   },
   "devDependencies": {
-    "@types/node": "^26.2.0",
     "prettier": "^3.7.4",
     "turbo": "^2.8.1"
   },

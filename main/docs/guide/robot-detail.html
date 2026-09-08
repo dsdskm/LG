@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>로봇 상세 · OPCON 사용 가이드</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    body { font-family: 'Inter', 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; background-color: #eae8e2; }
+    .display-serif { font-family: Georgia, 'Times New Roman', serif; font-weight: 400; letter-spacing: -0.5px; }
+    .btn-primary { background: #736e63; color: #ffffff; transition: all 0.15s ease; }
+    .btn-primary:hover { background: #6b655a; }
+    .btn-primary:active { background: #59544b; }
+    .badge-pill { background: #f4f3f0; color: #111111; border-radius: 9999px; padding: 4px 12px; font-size: 13px; font-weight: 500; }
+    .badge-accent { background: #b91c4c; color: #ffffff; border-radius: 9999px; padding: 4px 12px; font-size: 12px; font-weight: 500; letter-spacing: 1.5px; text-transform: uppercase; }
+    .hairline-border { border: 1px solid rgba(140, 134, 120, 0.22); }
+    .sidebar-link { transition: all 0.15s ease; }
+    .sidebar-link:hover { background: rgba(255, 255, 255, 0.5); }
+    .sidebar-link.active { background: #f4f3f0; color: #111111; font-weight: 600; }
+    .browser-dots span { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+  </style>
+</head>
+<body class="min-h-screen">
+  <div class="flex min-h-screen">
+    <!-- Sidebar -->
+    <aside class="w-64 bg-[#d3cfc4] border-r hairline-border fixed h-screen overflow-y-auto">
+      <div class="p-4 border-b hairline-border">
+        <a href="index.html" class="flex items-center gap-2">
+          <i data-lucide="bot" class="w-6 h-6 text-[#736e63]"></i>
+          <span class="font-bold text-[#111111]">OPCON 가이드</span>
+        </a>
+      </div>
+      <nav class="p-3 space-y-1">
+        <p class="px-3 pt-3 pb-1 text-xs font-semibold text-[#757575] uppercase">시작하기</p>
+        <a href="getting-started.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="rocket" class="w-4 h-4"></i> 시작하기
+        </a>
+        <a href="ai-assistant.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="sparkles" class="w-4 h-4"></i> AI 어시스턴트
+        </a>
+
+        <p class="px-3 pt-4 pb-1 text-xs font-semibold text-[#757575] uppercase">Robot</p>
+        <a href="robot-dashboard.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="bot" class="w-4 h-4"></i> 로봇 대시보드
+        </a>
+        <a href="robot-management.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="settings" class="w-4 h-4"></i> 로봇 관리
+        </a>
+        <a href="robot-detail.html" class="sidebar-link active flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="info" class="w-4 h-4"></i> 로봇 상세
+        </a>
+
+        <p class="px-3 pt-4 pb-1 text-xs font-semibold text-[#757575] uppercase">OTA</p>
+        <a href="ota-campaign.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="cloud-upload" class="w-4 h-4"></i> OTA 캠페인
+        </a>
+
+        <p class="px-3 pt-4 pb-1 text-xs font-semibold text-[#757575] uppercase">CMS</p>
+        <a href="cms-content.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="file-text" class="w-4 h-4"></i> 콘텐츠 관리
+        </a>
+
+        <p class="px-3 pt-4 pb-1 text-xs font-semibold text-[#757575] uppercase">TMS</p>
+        <a href="tms-taskflow-list.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="workflow" class="w-4 h-4"></i> 태스크플로우 목록
+        </a>
+        <a href="tms-canvas.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="pen-tool" class="w-4 h-4"></i> 캔버스 에디터
+        </a>
+        <a href="tms-robots.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="cpu" class="w-4 h-4"></i> TMS 로봇 관리
+        </a>
+
+        <p class="px-3 pt-4 pb-1 text-xs font-semibold text-[#757575] uppercase">Learn</p>
+        <a href="learn-overview.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="graduation-cap" class="w-4 h-4"></i> 러닝 개요
+        </a>
+      </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 ml-64">
+      <!-- Header -->
+      <header class="bg-[#8c8678] sticky top-0 z-10">
+        <div class="px-8 py-4 flex items-center justify-between">
+          <div>
+            <h1 class="text-xl display-serif text-white">로봇 상세</h1>
+            <p class="text-sm text-white/70">로봇 상태 확인 및 태스크플로우 제어</p>
+          </div>
+          <div class="flex items-center gap-2 text-sm text-white/70">
+            <i data-lucide="home" class="w-4 h-4"></i>
+            <span>/</span>
+            <span>Robot</span>
+            <span>/</span>
+            <span>로봇 상세</span>
+          </div>
+        </div>
+      </header>
+
+      <div class="px-8 py-8 max-w-5xl">
+        <!-- Overview -->
+        <section class="mb-10">
+          <h2 class="text-2xl display-serif text-[#111111] mb-4">로봇 상세 개요</h2>
+          <p class="text-[#555555] mb-6">
+            로봇 상세 페이지에서는 선택한 로봇의 상태, 배터리, 위치, 태스크플로우 실행 상태를 확인하고
+            태스크플로우를 실행, 일시정지, 재개, 중지할 수 있습니다.
+          </p>
+
+          <!-- UI Mockup -->
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border overflow-hidden mb-6">
+            <div class="bg-[#d3cfc4] px-4 py-2 flex items-center gap-2 border-b hairline-border">
+              <div class="browser-dots">
+                <span class="bg-red-400"></span>
+                <span class="bg-yellow-400"></span>
+                <span class="bg-green-400"></span>
+              </div>
+              <div class="flex-1 bg-white rounded-md px-3 py-1 text-xs text-[#8f8f8f] mx-4">https://hcrsp.com/...</div>
+            </div>
+            <div class="p-6">
+              <!-- Robot Header -->
+              <div class="flex items-center justify-between mb-6">
+                <div class="flex items-center gap-4">
+                  <div class="w-12 h-12 bg-[#f4f3f0] rounded-xl flex items-center justify-center">
+                    <i data-lucide="bot" class="w-6 h-6 text-[#736e63]"></i>
+                  </div>
+                  <div>
+                    <h3 class="font-bold text-[#111111]">Robot-01</h3>
+                    <p class="text-sm text-[#757575]">SN-2024-001 · 1층 로비</p>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="bg-[#f4f3f0] text-[#736e63] text-xs px-3 py-1.5 rounded-full">온라인</span>
+                  <span class="bg-[#f4f3f0] text-[#736e63] text-xs px-3 py-1.5 rounded-full">작업 중</span>
+                </div>
+              </div>
+
+              <!-- Status Grid -->
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-[#eae8e2] rounded-xl p-4 border hairline-border">
+                  <div class="flex items-center gap-2 mb-2">
+                    <i data-lucide="battery-charging" class="w-4 h-4 text-[#736e63]"></i>
+                    <span class="text-xs text-[#757575]">배터리</span>
+                  </div>
+                  <p class="text-2xl display-serif text-[#111111]">85%</p>
+                  <div class="mt-2 h-2 bg-[#d3cfc4] rounded-full overflow-hidden">
+                    <div class="h-full bg-[#736e63] rounded-full" style="width: 85%"></div>
+                  </div>
+                </div>
+                <div class="bg-[#eae8e2] rounded-xl p-4 border hairline-border">
+                  <div class="flex items-center gap-2 mb-2">
+                    <i data-lucide="map-pin" class="w-4 h-4 text-[#736e63]"></i>
+                    <span class="text-xs text-[#757575]">위치</span>
+                  </div>
+                  <p class="text-lg display-serif text-[#111111]">1층 로비</p>
+                  <p class="text-xs text-[#757575]">좌표: (12.5, 34.2)</p>
+                </div>
+                <div class="bg-[#eae8e2] rounded-xl p-4 border hairline-border">
+                  <div class="flex items-center gap-2 mb-2">
+                    <i data-lucide="activity" class="w-4 h-4 text-[#736e63]"></i>
+                    <span class="text-xs text-[#757575]">현재 태스크</span>
+                  </div>
+                  <p class="text-lg display-serif text-[#111111]">순찰 태스크</p>
+                  <p class="text-xs text-[#757575]">진행률 45%</p>
+                </div>
+                <div class="bg-[#eae8e2] rounded-xl p-4 border hairline-border">
+                  <div class="flex items-center gap-2 mb-2">
+                    <i data-lucide="alert-triangle" class="w-4 h-4 text-[#dc6803]"></i>
+                    <span class="text-xs text-[#757575]">알람</span>
+                  </div>
+                  <p class="text-2xl display-serif text-[#111111]">0</p>
+                  <p class="text-xs text-[#736e63]">정상</p>
+                </div>
+              </div>
+
+              <!-- Taskflow Control -->
+              <div class="border hairline-border rounded-xl p-4">
+                <h4 class="font-semibold text-[#111111] text-sm mb-3">태스크플로우 제어</h4>
+                <div class="flex flex-wrap gap-2">
+                  <button class="bg-[#736e63] text-white text-sm px-4 py-2 rounded-lg flex items-center gap-1">
+                    <i data-lucide="play" class="w-4 h-4"></i> 실행
+                  </button>
+                  <button class="bg-[#dc6803] text-white text-sm px-4 py-2 rounded-lg flex items-center gap-1">
+                    <i data-lucide="pause" class="w-4 h-4"></i> 일시정지
+                  </button>
+                  <button class="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg flex items-center gap-1">
+                    <i data-lucide="rotate-ccw" class="w-4 h-4"></i> 재개
+                  </button>
+                  <button class="bg-red-600 text-white text-sm px-4 py-2 rounded-lg flex items-center gap-1">
+                    <i data-lucide="square" class="w-4 h-4"></i> 중지
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Taskflow Control -->
+        <section class="mb-12">
+          <h2 class="text-2xl display-serif text-[#111111] mb-4">태스크플로우 제어</h2>
+          <p class="text-[#555555] mb-6">로봇에 배포된 태스크플로우를 실행, 일시정지, 재개, 중지할 수 있습니다.</p>
+
+          <h3 class="text-lg font-semibold text-[#111111] mb-3">제어 기능</h3>
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border overflow-hidden mb-6">
+            <table class="w-full text-sm">
+              <thead class="bg-[#eae8e2] text-[#757575]">
+                <tr>
+                  <th class="text-left px-4 py-3 font-medium">기능</th>
+                  <th class="text-left px-4 py-3 font-medium">설명</th>
+                  <th class="text-left px-4 py-3 font-medium">사용 조건</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[rgba(140,134,120,0.12)]">
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">실행</td>
+                  <td class="px-4 py-3 text-[#757575]">배포된 태스크플로우를 실행합니다.</td>
+                  <td class="px-4 py-3 text-[#757575]">로봇이 온라인이고 태스크플로우가 배포된 상태</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">일시정지</td>
+                  <td class="px-4 py-3 text-[#757575]">실행 중인 태스크플로우를 일시정지합니다.</td>
+                  <td class="px-4 py-3 text-[#757575]">태스크플로우가 실행 중인 상태</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">재개</td>
+                  <td class="px-4 py-3 text-[#757575]">일시정지된 태스크플로우를 재개합니다.</td>
+                  <td class="px-4 py-3 text-[#757575]">태스크플로우가 일시정지된 상태</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">중지</td>
+                  <td class="px-4 py-3 text-[#757575]">실행 중인 태스크플로우를 중지합니다.</td>
+                  <td class="px-4 py-3 text-[#757575]">태스크플로우가 실행 중인 상태</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 class="text-lg font-semibold text-[#111111] mb-3">태스크플로우 실행 절차</h3>
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border p-6">
+            <ol class="space-y-4">
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">1</div>
+                <div>
+                  <p class="font-medium text-[#111111]">로봇 선택</p>
+                  <p class="text-sm text-[#757575]">대시보드 또는 로봇 목록에서 로봇을 선택합니다.</p>
+                </div>
+              </li>
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">2</div>
+                <div>
+                  <p class="font-medium text-[#111111]">태스크플로우 확인</p>
+                  <p class="text-sm text-[#757575]">로봇에 배포된 태스크플로우가 있는지 확인합니다.</p>
+                </div>
+              </li>
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">3</div>
+                <div>
+                  <p class="font-medium text-[#111111]">실행 버튼 클릭</p>
+                  <p class="text-sm text-[#757575]">"실행" 버튼을 클릭하여 태스크플로우를 실행합니다.</p>
+                </div>
+              </li>
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">4</div>
+                <div>
+                  <p class="font-medium text-[#111111]">상태 확인</p>
+                  <p class="text-sm text-[#757575]">실행 상태와 진행률을 확인합니다.</p>
+                </div>
+              </li>
+            </ol>
+          </div>
+        </section>
+
+        <!-- Log Replay -->
+        <section class="mb-12">
+          <h2 class="text-2xl display-serif text-[#111111] mb-4">로그 리플레이</h2>
+          <p class="text-[#555555] mb-6">로봇의 과거 이동 경로와 행동을 리플레이하여 분석할 수 있습니다.</p>
+
+          <h3 class="text-lg font-semibold text-[#111111] mb-3">로그 리플레이 절차</h3>
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border p-6 mb-6">
+            <ol class="space-y-4">
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">1</div>
+                <div>
+                  <p class="font-medium text-[#111111]">로그 리플레이 메뉴 선택</p>
+                  <p class="text-sm text-[#757575]">로봇 상세 페이지에서 "로그 리플레이" 메뉴를 선택합니다.</p>
+                </div>
+              </li>
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">2</div>
+                <div>
+                  <p class="font-medium text-[#111111]">기간 선택</p>
+                  <p class="text-sm text-[#757575]">리플레이할 기간을 선택합니다.</p>
+                </div>
+              </li>
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">3</div>
+                <div>
+                  <p class="font-medium text-[#111111]">리플레이 실행</p>
+                  <p class="text-sm text-[#757575]">리플레이를 실행하여 로봇의 이동 경로를 확인합니다.</p>
+                </div>
+              </li>
+            </ol>
+          </div>
+
+          <h3 class="text-lg font-semibold text-[#111111] mb-3">리플레이 컨트롤</h3>
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border overflow-hidden">
+            <table class="w-full text-sm">
+              <thead class="bg-[#eae8e2] text-[#757575]">
+                <tr>
+                  <th class="text-left px-4 py-3 font-medium">컨트롤</th>
+                  <th class="text-left px-4 py-3 font-medium">설명</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[rgba(140,134,120,0.12)]">
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">재생/일시정지</td>
+                  <td class="px-4 py-3 text-[#757575]">리플레이를 재생하거나 일시정지합니다.</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">속도 조절</td>
+                  <td class="px-4 py-3 text-[#757575]">리플레이 속도를 0.5x, 1x, 2x 등으로 조절합니다.</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">타임라인</td>
+                  <td class="px-4 py-3 text-[#757575]">특정 시점으로 이동하여 로봇의 상태를 확인합니다.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Troubleshooting -->
+        <section class="mb-12">
+          <h2 class="text-2xl display-serif text-[#111111] mb-4">문제 해결</h2>
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border overflow-hidden">
+            <table class="w-full text-sm">
+              <thead class="bg-[#eae8e2] text-[#757575]">
+                <tr>
+                  <th class="text-left px-4 py-3 font-medium">문제</th>
+                  <th class="text-left px-4 py-3 font-medium">원인</th>
+                  <th class="text-left px-4 py-3 font-medium">해결 방법</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[rgba(140,134,120,0.12)]">
+                <tr>
+                  <td class="px-4 py-3 text-[#333333]">태스크플로우 실행 불가</td>
+                  <td class="px-4 py-3 text-[#757575]">로봇이 오프라인 또는 태스크플로우 미배포</td>
+                  <td class="px-4 py-3 text-[#757575]">로봇 연결 상태 및 배포 상태 확인</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 text-[#333333]">일시정지 버튼 비활성화</td>
+                  <td class="px-4 py-3 text-[#757575]">태스크플로우가 실행 중이 아님</td>
+                  <td class="px-4 py-3 text-[#757575]">태스크플로우 실행 상태 확인</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 text-[#333333]">로그 리플레이 데이터 없음</td>
+                  <td class="px-4 py-3 text-[#757575]">선택한 기간에 로그가 없음</td>
+                  <td class="px-4 py-3 text-[#757575]">다른 기간을 선택하여 확인</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    lucide.createIcons();
+  </script>
+</body>
+</html>

@@ -1,6 +1,31 @@
 import React from 'react'
 import { Checkbox, Section, SectionTitle } from '@repo/ui'
 import { SPATIAL_TOPICS, subscribedTopicOf } from '@/constants/topics'
+import {
+  CategoryHeader,
+  CategoryTitle,
+  EmptyText,
+  FixedBlock,
+  GrowBlock,
+  InfoBlockTitle,
+  InfoBlockWrap,
+  JsonWrap,
+  LegendLabel,
+  LegendRow,
+  LegendSwatch,
+  Panel,
+  RowLabel,
+  RowValue,
+  RowWrap,
+  ScrollArea,
+  TopicContainer,
+  TopicLabel,
+  TopicName,
+  TopicRow,
+  TransformFrame,
+  TransformItem,
+  TransformList
+} from './styles'
 
 /**
  * StatusPanel
@@ -62,12 +87,12 @@ function StatusPanel({
   }
 
   return (
-    <div style={styles.panel}>
+    <Panel>
       {/* ── 토픽 정보 Section ─────────────────────────────────── */}
-      <div style={styles.growBlock}>
+      <GrowBlock>
         <Section>
           <SectionTitle title={t('topicInfo')} />
-          <div style={styles.scrollArea}>
+          <ScrollArea>
             {/* ── 기하 정보 요약 카드 ────────────────────────────────── */}
 
             {/* 1) 지도 정보 (OccupancyGrid) */}
@@ -206,23 +231,18 @@ function StatusPanel({
                     return <Empty text={t('waitingForData')} />
                   }
                   return (
-                    <div style={{ maxHeight: 150, overflowY: 'auto' }}>
+                    <TransformList>
                       {tfData.transforms.map((t, idx) => {
                         const trans = t.transform?.translation ?? { x: 0, y: 0, z: 0 }
                         const child = t.child_frame_id ?? `frame_${idx}`
                         return (
-                          <div
-                            key={idx}
-                            style={{ borderBottom: '1px solid #f2f2f2', paddingBottom: 4, marginBottom: 4 }}
-                          >
-                            <div style={{ fontSize: 10, fontWeight: 'bold', color: '#555', fontFamily: 'monospace' }}>
-                              {child}
-                            </div>
+                          <TransformItem key={idx}>
+                            <TransformFrame>{child}</TransformFrame>
                             <Row label="Offset (X/Y)" value={`${trans.x.toFixed(2)} / ${trans.y.toFixed(2)} m`} />
-                          </div>
+                          </TransformItem>
                         )
                       })}
-                    </div>
+                    </TransformList>
                   )
                 })()}
               </InfoBlock>
@@ -236,23 +256,18 @@ function StatusPanel({
                     return <Empty text={t('waitingForData')} />
                   }
                   return (
-                    <div style={{ maxHeight: 150, overflowY: 'auto' }}>
+                    <TransformList>
                       {tfData.transforms.map((t, idx) => {
                         const trans = t.transform?.translation ?? { x: 0, y: 0, z: 0 }
                         const child = t.child_frame_id ?? `frame_${idx}`
                         return (
-                          <div
-                            key={idx}
-                            style={{ borderBottom: '1px solid #f2f2f2', paddingBottom: 4, marginBottom: 4 }}
-                          >
-                            <div style={{ fontSize: 10, fontWeight: 'bold', color: '#555', fontFamily: 'monospace' }}>
-                              {child}
-                            </div>
+                          <TransformItem key={idx}>
+                            <TransformFrame>{child}</TransformFrame>
                             <Row label="Offset (X/Y)" value={`${trans.x.toFixed(2)} / ${trans.y.toFixed(2)} m`} />
-                          </div>
+                          </TransformItem>
                         )
                       })}
-                    </div>
+                    </TransformList>
                   )
                 })()}
               </InfoBlock>
@@ -277,85 +292,73 @@ function StatusPanel({
                 return (
                   <InfoBlock key={topic} title={topic}>
                     {data ? (
-                      <div style={styles.jsonWrap}>
-                        <pre style={styles.jsonPre}>{JSON.stringify(data, null, 2)}</pre>
-                      </div>
+                      <JsonWrap>
+                        <pre>{JSON.stringify(data, null, 2)}</pre>
+                      </JsonWrap>
                     ) : (
                       <Empty text={t('waitingForData')} />
                     )}
                   </InfoBlock>
                 )
               })}
-          </div>
+          </ScrollArea>
         </Section>
-      </div>
+      </GrowBlock>
 
       {/* ── 토픽 목록 Section ─────────────────────────────────── */}
-      <div style={styles.growBlock}>
+      <GrowBlock>
         <Section>
           <SectionTitle title={t('topicList')} />
-          <div style={styles.scrollArea}>
+          <ScrollArea>
             {topics && topics.length > 0 ? (
               <div>
                 {/* 기하 정보 카테고리 */}
-                <label style={styles.categoryHeaderLabel}>
-                  <Checkbox checked={isAllSpatialSubscribed} onChange={handleToggleSpatial} style={styles.checkbox} />
-                  <span style={styles.categoryTitle}>{t('spatialInfo')}</span>
-                </label>
-                <div style={{ ...styles.topicContainer, marginBottom: 12 }}>
+                <CategoryHeader>
+                  <Checkbox checked={isAllSpatialSubscribed} onChange={handleToggleSpatial} />
+                  <CategoryTitle>{t('spatialInfo')}</CategoryTitle>
+                </CategoryHeader>
+                <TopicContainer $spaced>
                   {availableSpatial.map((topic) => {
                     const isSubscribed = subscribedTopics.includes(topic)
                     return (
-                      <div key={topic} style={styles.topicRow}>
-                        <label style={styles.topicLabel}>
-                          <Checkbox
-                            checked={isSubscribed}
-                            onChange={() => toggleSubscribe(topic)}
-                            style={styles.checkbox}
-                          />
-                          <span style={styles.topicName} title={topic}>
-                            {topic}
-                          </span>
-                        </label>
-                      </div>
+                      <TopicRow key={topic}>
+                        <TopicLabel>
+                          <Checkbox checked={isSubscribed} onChange={() => toggleSubscribe(topic)} />
+                          <TopicName title={topic}>{topic}</TopicName>
+                        </TopicLabel>
+                      </TopicRow>
                     )
                   })}
-                </div>
+                </TopicContainer>
 
                 {/* 텍스트 정보 카테고리 */}
-                <label style={styles.categoryHeaderLabel}>
-                  <Checkbox checked={isAllTextSubscribed} onChange={handleToggleText} style={styles.checkbox} />
-                  <span style={styles.categoryTitle}>{t('textInfo')}</span>
-                </label>
-                <div style={styles.topicContainer}>
+                <CategoryHeader>
+                  <Checkbox checked={isAllTextSubscribed} onChange={handleToggleText} />
+                  <CategoryTitle>{t('textInfo')}</CategoryTitle>
+                </CategoryHeader>
+                <TopicContainer>
                   {availableText.map((topic) => {
                     const isSubscribed = subscribedTopics.includes(topic)
                     return (
-                      <div key={topic} style={styles.topicRow}>
-                        <label style={styles.topicLabel}>
-                          <Checkbox
-                            checked={isSubscribed}
-                            onChange={() => toggleSubscribe(topic)}
-                            style={styles.checkbox}
-                          />
-                          <span style={styles.topicName} title={topic}>
-                            {topic}
-                          </span>
-                        </label>
-                      </div>
+                      <TopicRow key={topic}>
+                        <TopicLabel>
+                          <Checkbox checked={isSubscribed} onChange={() => toggleSubscribe(topic)} />
+                          <TopicName title={topic}>{topic}</TopicName>
+                        </TopicLabel>
+                      </TopicRow>
                     )
                   })}
-                </div>
+                </TopicContainer>
               </div>
             ) : (
               <Empty text={t('waitingForData')} />
             )}
-          </div>
+          </ScrollArea>
         </Section>
-      </div>
+      </GrowBlock>
 
       {/* ── 범례 Section (내용 높이로 고정) ────────────────────── */}
-      <div style={styles.fixedBlock}>
+      <FixedBlock>
         <Section>
           <SectionTitle title={t('legend')} />
           <Legend color="#cccccc" label={t('unknown')} />
@@ -364,196 +367,45 @@ function StatusPanel({
           <Legend color="rgba(231,76,60,0.7)" label={`${t('laserPoint')}`} />
           <Legend color="rgba(41,128,185,0.85)" label={t('robotCurrentPosition')} />
         </Section>
-      </div>
-    </div>
+      </FixedBlock>
+    </Panel>
   )
 }
 
 // ── 서브 컴포넌트들 ──────────────────────────────────────────────────────────
 
-function InfoBlock({ title, children, style }) {
+function InfoBlock({ title, children }) {
   return (
-    <div style={{ ...sectionStyle.wrap, ...style }}>
-      <div style={sectionStyle.title}>{title}</div>
-      <div style={sectionStyle.body}>{children}</div>
-    </div>
+    <InfoBlockWrap>
+      <InfoBlockTitle>{title}</InfoBlockTitle>
+      <div>{children}</div>
+    </InfoBlockWrap>
   )
 }
 
-// ... (나머지 헬퍼 함수들 및 스타일 객체)
 function Row({ label, value, mono, highlight }) {
-  const valueColor =
-    highlight === 'green' ? '#27ae60' : highlight === 'red' ? '#e74c3c' : highlight === 'gray' ? '#888' : '#222'
-
   return (
-    <div style={rowStyle.row}>
-      <span style={rowStyle.label}>{label}</span>
-      <span style={{ ...rowStyle.value, color: valueColor, fontFamily: mono ? 'monospace' : 'inherit' }}>{value}</span>
-    </div>
+    <RowWrap>
+      <RowLabel>{label}</RowLabel>
+      {/* 값 색은 강조 종류로만 정한다(styles.js ROW_VALUE_COLOR) */}
+      <RowValue $highlight={highlight} $mono={mono}>
+        {value}
+      </RowValue>
+    </RowWrap>
   )
 }
 
 function Empty({ text }) {
-  return <div style={{ color: '#aaa', fontSize: 12, padding: '4px 0' }}>{text}</div>
+  return <EmptyText>{text}</EmptyText>
 }
 
 function Legend({ color, label, border }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-      <div
-        style={{
-          width: 16,
-          height: 16,
-          borderRadius: 3,
-          background: color,
-          border: border ? '1px solid #ccc' : 'none',
-          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.15), inset 0 0 0 1px rgba(0, 0, 0, 0.1)',
-          flexShrink: 0
-        }}
-      />
-      <span style={{ fontSize: 12 }}>{label}</span>
-    </div>
+    <LegendRow>
+      <LegendSwatch $color={color} $bordered={border} />
+      <LegendLabel>{label}</LegendLabel>
+    </LegendRow>
   )
-}
-
-// ── 스타일 ───────────────────────────────────────────────────────────────────
-
-const styles = {
-  // 카드 3개를 세로로 쌓는 우측 열. 배경/보더는 각 Section 이 갖는다.
-  // Section 은 className/style prop 을 받지 않아서 높이 배분은 래퍼 div 로 준다.
-  panel: {
-    width: 320,
-    flexShrink: 0,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 16,
-    height: '100%',
-    boxSizing: 'border-box'
-  },
-  // 남는 높이를 나눠 갖고 내부에서 스크롤하는 카드(토픽 정보 / 토픽 목록)
-  growBlock: {
-    display: 'flex',
-    flex: 1,
-    minHeight: 0
-  },
-  // 내용 높이로 고정되는 카드(범례)
-  fixedBlock: {
-    display: 'flex',
-    flexShrink: 0
-  },
-  scrollArea: {
-    flex: 1,
-    overflowY: 'auto',
-    minHeight: 0
-  },
-  actionRow: {
-    display: 'flex',
-    gap: 8,
-    marginBottom: 10
-  },
-  actionBtn: {
-    flex: 1,
-    padding: '5px 8px',
-    fontSize: '11px',
-    fontWeight: 'bold',
-    color: '#4a5568',
-    background: '#edf2f7',
-    border: '1px solid #cbd5e0',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    textAlign: 'center',
-    transition: 'all 0.2s',
-    outline: 'none'
-  },
-  topicContainer: {
-    maxHeight: '240px',
-    overflowY: 'auto',
-    border: '1px solid #eee',
-    borderRadius: 4,
-    padding: '4px 6px',
-    background: '#fafafa'
-  },
-  categoryHeaderLabel: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    cursor: 'pointer',
-    userSelect: 'none',
-    marginTop: 6,
-    marginBottom: 4
-  },
-  categoryTitle: {
-    fontSize: 9,
-    fontWeight: 'bold',
-    color: '#7f8c8d',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5
-  },
-  topicRow: {
-    display: 'flex',
-    alignItems: 'center',
-    padding: '3px 0',
-    borderBottom: '1px solid #f2f2f2'
-  },
-  topicLabel: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    width: '100%',
-    cursor: 'pointer',
-    userSelect: 'none'
-  },
-  checkbox: {
-    cursor: 'pointer',
-    width: 14,
-    height: 14,
-    margin: 0,
-    accentColor: '#2ecc71'
-  },
-  topicName: {
-    fontSize: 11,
-    fontFamily: 'monospace',
-    color: '#333',
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    flex: 1
-  },
-  jsonWrap: {
-    maxHeight: 150,
-    overflowY: 'auto',
-    background: '#2d3748',
-    color: '#a0aec0',
-    padding: 8,
-    borderRadius: 4,
-    border: '1px solid #4a5568'
-  },
-  jsonPre: {
-    margin: 0,
-    fontSize: 10,
-    fontFamily: 'monospace',
-    whiteSpace: 'pre-wrap',
-    wordBreak: 'break-all'
-  }
-}
-
-const sectionStyle = {
-  wrap: { padding: '8px 12px', borderBottom: '1px solid #eee' },
-  title: {
-    fontSize: 11,
-    fontWeight: 'bold',
-    color: '#2980b9',
-    textTransform: 'uppercase',
-    marginBottom: 6,
-    letterSpacing: 0.5
-  },
-  body: {}
-}
-
-const rowStyle = {
-  row: { display: 'flex', justifyContent: 'space-between', marginBottom: 3, gap: 4 },
-  label: { fontSize: 12, color: '#666', flexShrink: 0 },
-  value: { fontSize: 12, textAlign: 'right', wordBreak: 'break-all' }
 }
 
 const MemoizedStatusPanel = React.memo(StatusPanel, (prevProps, nextProps) => {

@@ -44,6 +44,11 @@ AI Chat Service의 룰은 DB(`ai_chat_service` DB의 `taskflow_rule` 테이블)�
 | `connectIntentPhrases` | string[] | 노드 연결 의도 문구 (예: "연결해줘", "이어줘") |
 | `connectPairSeparatorPhrases` | string[] | 연결 쌍 구분자 (예: "->", "→") |
 | `connectLeftPairSeparatorPhrases` | string[] | 왼쪽 방향 연결 구분자 (예: "=>") |
+| `nodeTargetOrdinalWords` | object \| string[] | 말로 센 순번 표기 → 숫자. `{"첫":1,"두":2}` 또는 `["첫=1","두=2"]` |
+| `nodeTargetOrdinalSuffixPhrases` | string[] | 순번 뒤에 붙는 말 (예: "번째", "째") |
+| `nodeTargetNounPhrases` | string[] | 노드 이름 뒤 군더더기 (예: "노드", "node") |
+
+> 위 세 값이 채워지면 "두번째 Love를 Joy로 바꿔줘" 처럼 말로 센 지목을 `Love #2` 로 좁힌다. 비어 있으면 `#N` 표기만 인식한다.
 
 ---
 

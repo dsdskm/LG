@@ -1,3 +1,5 @@
+import { getRuleReader } from './rule-registry'
+
 export type TaskflowLanguageRules = {
   composeNoisePhrases: string[]
   requestTailPhrases: string[]
@@ -25,6 +27,12 @@ export type TaskflowLanguageRules = {
   connectIntentPhrases: string[]
   connectPairSeparatorPhrases: string[]
   connectLeftPairSeparatorPhrases: string[]
+  /** "두" -> 2 처럼 순번을 세는 말. 언어별 표기를 코드에 두지 않으려 rule 에서 읽는다. */
+  nodeTargetOrdinalWords: Record<string, number>
+  /** 순번 뒤에 붙는 말. 예: "번째" */
+  nodeTargetOrdinalSuffixPhrases: string[]
+  /** 노드 이름 뒤에 붙는 군더더기. 예: "노드" */
+  nodeTargetNounPhrases: string[]
 }
 
 export type TaskflowClassifierRules = {
@@ -39,6 +47,10 @@ export type TaskflowClassifierRules = {
   explanationImageMinScoreAlways: number
   nodeEditDeletePrefixes: string[]
   arrowChainSeparators: string[]
+  /** "~하면서", "동시에" 처럼 동작을 같이 실행하라는 말. Parallel 구성 요청 신호다. */
+  concurrentHintKeywords: string[]
+  /** "재생해줘", "표시되게" 처럼 동작 자체를 시키는 말. editVerb 가 없어도 편집 요청으로 본다. */
+  actionRequestKeywords: string[]
 }
 
 export type TaskflowOrchestratorRules = {
@@ -149,11 +161,6 @@ function keyFor(routeKey: string): string {
   return String(routeKey ?? '').trim() || '__common__'
 }
 
-function normalizeScopeKey(value: unknown): string {
-  const normalized = String(value ?? '').trim()
-  return normalized || 'common'
-}
-
 function scopeForRules(routeKey: string): string {
   return String(routeKey ?? '').trim()
 }
@@ -177,30 +184,83 @@ function toStringValue(value: unknown, fallback = ''): string {
   return normalized || fallback
 }
 
-function buildScopeRuleMaps(routeScope: string, rows: Array<{ scopeKey: string; ruleKey: string; extraJson?: unknown }>): ScopeRuleMaps {
+const COMMON_RULE_SCOPE = 'common'
+
+/** rule.extra_json 에 담긴 값. {"value": [...]} 형태와 값 자체를 그대로 넣은 형태를 모두 받는다. */
+function readRuleValue(row: { extraJson?: unknown; example?: string[] | null }): unknown {
+  const extra = row?.extraJson
+  if (extra !== null && extra !== undefined && !Array.isArray(extra) && typeof extra === 'object') {
+    const holder = extra as Record<string, unknown>
+    if (holder.value !== undefined) return holder.value
+    if (Object.keys(holder).length === 0) return row?.example ?? undefined
+    return undefined
+  }
+  if (extra !== null && extra !== undefined) return extra
+  return row?.example ?? undefined
+}
+
+function routeAppKey(routeKey: string): string {
+  const normalized = String(routeKey ?? '').trim().replace(/^\/+/, '')
+  return normalized.split('/').filter(Boolean)[0] || COMMON_RULE_SCOPE
+}
+
+/** 화면 -> 앱 -> common 순으로 먼저 찾은 값을 쓴다. 코드에 기본값을 두지 않고 전부 rule 테이블에서 읽는다. */
+async function readScopeRuleMaps(routeKey: string): Promise<ScopeRuleMaps> {
+  const service = getRuleReader()
+  if (!service) {
+    console.warn('[taskflow-rules] rule service unavailable. taskflow 규칙을 읽지 못했다.')
+    return { scoped: {} }
+  }
+
+  const screenKey = scopeForRules(routeKey)
+  const appKey = routeAppKey(screenKey)
+
+  const [scopedRows, commonRows] = await Promise.all([
+    service.listByAppAndScreen(appKey, screenKey),
+    appKey === COMMON_RULE_SCOPE
+      ? Promise.resolve([])
+      : service.listByAppAndScreen(COMMON_RULE_SCOPE, COMMON_RULE_SCOPE),
+  ])
+
   const scoped: Record<string, unknown> = {}
+  for (const row of [...scopedRows, ...commonRows]) {
+    if (row?.enabled === false) continue
 
-  for (const row of rows) {
     const key = String(row?.ruleKey ?? '').trim()
-    if (!key) continue
+    if (!key || scoped[key] !== undefined) continue
 
-    const scopeKey = String(row?.scopeKey ?? '').trim() || 'common'
-    if (scopeKey === routeScope) {
-      if (scoped[key] === undefined) {
-        scoped[key] = row.extraJson
-      }
-    }
+    const value = readRuleValue(row)
+    if (value === undefined) continue
+    scoped[key] = value
   }
 
   return { scoped }
 }
 
-async function readScopeRuleMaps(_routeKey: string): Promise<ScopeRuleMaps> {
-  return { scoped: {} }
-}
-
 function readMergedList(ruleMaps: ScopeRuleMaps, ruleName: string): string[] {
   return normalizePhraseList(ruleMaps.scoped[ruleName])
+}
+
+/** {"두": 2} 또는 ["두=2"] 두 표기를 모두 받는다. 값이 없으면 빈 맵이라 기능이 그냥 꺼진다. */
+function readMergedNumberMap(ruleMaps: ScopeRuleMaps, ruleName: string): Record<string, number> {
+  const raw = ruleMaps.scoped[ruleName]
+  const entries: Array<[string, unknown]> = Array.isArray(raw)
+    ? raw.map((item) => {
+        const [word = '', value = ''] = String(item ?? '').split(/[=:]/)
+        return [word.trim(), value.trim()] as [string, unknown]
+      })
+    : raw && typeof raw === 'object'
+      ? Object.entries(raw as Record<string, unknown>)
+      : []
+
+  const map: Record<string, number> = {}
+  for (const [word, value] of entries) {
+    const key = String(word ?? '').trim()
+    const ordinal = Number(value)
+    if (!key || !Number.isInteger(ordinal) || ordinal <= 0) continue
+    map[key] = ordinal
+  }
+  return map
 }
 
 function readMergedString(ruleMaps: ScopeRuleMaps, ruleName: string, fallback = ''): string {
@@ -245,6 +305,9 @@ async function readRules(routeKey: string): Promise<TaskflowLanguageRules> {
     connectIntentPhrases: readMergedList(ruleMaps, 'connectIntentPhrases'),
     connectPairSeparatorPhrases: readMergedList(ruleMaps, 'connectPairSeparatorPhrases'),
     connectLeftPairSeparatorPhrases: readMergedList(ruleMaps, 'connectLeftPairSeparatorPhrases'),
+    nodeTargetOrdinalWords: readMergedNumberMap(ruleMaps, 'nodeTargetOrdinalWords'),
+    nodeTargetOrdinalSuffixPhrases: readMergedList(ruleMaps, 'nodeTargetOrdinalSuffixPhrases'),
+    nodeTargetNounPhrases: readMergedList(ruleMaps, 'nodeTargetNounPhrases'),
   }
 }
 
@@ -275,6 +338,8 @@ async function readClassifierRules(routeKey: string): Promise<TaskflowClassifier
     explanationImageMinScoreAlways: readMergedNumber(ruleMaps, 'explanationImageMinScoreAlways', 0),
     nodeEditDeletePrefixes: readMergedList(ruleMaps, 'nodeEditDeletePrefixes'),
     arrowChainSeparators: readMergedList(ruleMaps, 'arrowChainSeparators'),
+    concurrentHintKeywords: readMergedList(ruleMaps, 'concurrentHintKeywords'),
+    actionRequestKeywords: readMergedList(ruleMaps, 'actionRequestKeywords'),
   }
 }
 

@@ -6,7 +6,9 @@ import { ChatLogEntity } from './features/chat-settings/db/chat-log.entity';
 import { ChatLogService } from './features/chat-settings/db/chat-log.service';
 import { ChatSettingEntity } from './features/chat-settings/db/chat-setting.entity';
 import { ChatSettingService } from './features/chat-settings/service/chat-setting.service';
-import { ChatSettingController, ChatGuidanceController, ChatPromptController, ChatRagController, ChatRuleController } from './features/chat-settings';
+import { ChatSettingController, ChatGuidanceController, ChatPromptController, ChatRagController, ChatRuleController, ActionToolController, RuntimeController } from './features/chat-settings';
+import { ActionToolEntity } from './features/chat-settings/db/action-tool.entity';
+import { ActionToolService } from './features/chat-settings/db/action-tool.service';
 import { Prompt } from './features/chat/db/chat-prompt.entity';
 import { PromptType } from './features/chat/db/chat-prompt-type.entity';
 import { Rag } from './features/chat/db/chat-rag-doc.entity';
@@ -32,6 +34,7 @@ import { PropertyTmsStoreService } from './features/taskflow/service/property-tm
         Screen,
         ScreenGuidanceEntity,
         ChatRuleEntity,
+        ActionToolEntity,
         PropertyTmsEntity,
       ],
       synchronize: true,
@@ -46,10 +49,11 @@ import { PropertyTmsStoreService } from './features/taskflow/service/property-tm
       Screen,
       ScreenGuidanceEntity,
       ChatRuleEntity,
+      ActionToolEntity,
       PropertyTmsEntity,
     ]),
   ],
-  controllers: [ChatController, HealthController, ChatSettingController, ChatGuidanceController, ChatPromptController, ChatRagController, ChatRuleController],
-  providers: [ChatService, HealthService, ChatLogService, ChatSettingService, PromptStoreService, ChatRuleService, PropertyTmsStoreService],
+  controllers: [ChatController, HealthController, ChatSettingController, ChatGuidanceController, ChatPromptController, ChatRagController, ChatRuleController, ActionToolController, RuntimeController],
+  providers: [ChatService, HealthService, ChatLogService, ChatSettingService, PromptStoreService, ChatRuleService, ActionToolService, PropertyTmsStoreService],
 })
 export class AppModule { }

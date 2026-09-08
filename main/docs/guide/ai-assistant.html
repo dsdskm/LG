@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI 어시스턴트 · OPCON 사용 가이드</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    body { font-family: 'Inter', 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; background-color: #eae8e2; }
+    .display-serif { font-family: Georgia, 'Times New Roman', serif; font-weight: 400; letter-spacing: -0.5px; }
+    .btn-primary { background: #736e63; color: #ffffff; transition: all 0.15s ease; }
+    .btn-primary:hover { background: #6b655a; }
+    .btn-primary:active { background: #59544b; }
+    .badge-pill { background: #f4f3f0; color: #111111; border-radius: 9999px; padding: 4px 12px; font-size: 13px; font-weight: 500; }
+    .badge-accent { background: #b91c4c; color: #ffffff; border-radius: 9999px; padding: 4px 12px; font-size: 12px; font-weight: 500; letter-spacing: 1.5px; text-transform: uppercase; }
+    .hairline-border { border: 1px solid rgba(140, 134, 120, 0.22); }
+    .sidebar-link { transition: all 0.15s ease; }
+    .sidebar-link:hover { background: rgba(255, 255, 255, 0.5); }
+    .sidebar-link.active { background: #f4f3f0; color: #111111; font-weight: 600; }
+    .browser-dots span { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+  </style>
+</head>
+<body class="min-h-screen">
+  <div class="flex min-h-screen">
+    <!-- Sidebar -->
+    <aside class="w-64 bg-[#d3cfc4] border-r hairline-border fixed h-screen overflow-y-auto">
+      <div class="p-4 border-b hairline-border">
+        <a href="index.html" class="flex items-center gap-2">
+          <i data-lucide="bot" class="w-6 h-6 text-[#736e63]"></i>
+          <span class="font-bold text-[#111111]">OPCON 가이드</span>
+        </a>
+      </div>
+      <nav class="p-3 space-y-1">
+        <p class="px-3 pt-3 pb-1 text-xs font-semibold text-[#757575] uppercase">시작하기</p>
+        <a href="getting-started.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="rocket" class="w-4 h-4"></i> 시작하기
+        </a>
+        <a href="ai-assistant.html" class="sidebar-link active flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="sparkles" class="w-4 h-4"></i> AI 어시스턴트
+        </a>
+
+        <p class="px-3 pt-4 pb-1 text-xs font-semibold text-[#757575] uppercase">Robot</p>
+        <a href="robot-dashboard.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="bot" class="w-4 h-4"></i> 로봇 대시보드
+        </a>
+        <a href="robot-management.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="settings" class="w-4 h-4"></i> 로봇 관리
+        </a>
+        <a href="robot-detail.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="info" class="w-4 h-4"></i> 로봇 상세
+        </a>
+
+        <p class="px-3 pt-4 pb-1 text-xs font-semibold text-[#757575] uppercase">OTA</p>
+        <a href="ota-campaign.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="cloud-upload" class="w-4 h-4"></i> OTA 캠페인
+        </a>
+
+        <p class="px-3 pt-4 pb-1 text-xs font-semibold text-[#757575] uppercase">CMS</p>
+        <a href="cms-content.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="file-text" class="w-4 h-4"></i> 콘텐츠 관리
+        </a>
+
+        <p class="px-3 pt-4 pb-1 text-xs font-semibold text-[#757575] uppercase">TMS</p>
+        <a href="tms-taskflow-list.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="workflow" class="w-4 h-4"></i> 태스크플로우 목록
+        </a>
+        <a href="tms-canvas.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="pen-tool" class="w-4 h-4"></i> 캔버스 에디터
+        </a>
+        <a href="tms-robots.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="cpu" class="w-4 h-4"></i> TMS 로봇 관리
+        </a>
+
+        <p class="px-3 pt-4 pb-1 text-xs font-semibold text-[#757575] uppercase">Learn</p>
+        <a href="learn-overview.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="graduation-cap" class="w-4 h-4"></i> 러닝 개요
+        </a>
+      </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 ml-64">
+      <!-- Header -->
+      <header class="bg-[#8c8678] sticky top-0 z-10">
+        <div class="px-8 py-4 flex items-center justify-between">
+          <div>
+            <h1 class="text-xl display-serif text-white">AI 어시스턴트</h1>
+            <p class="text-sm text-white/70">채팅 기반 로봇 및 태스크플로우 제어</p>
+          </div>
+          <div class="flex items-center gap-2 text-sm text-white/70">
+            <i data-lucide="home" class="w-4 h-4"></i>
+            <span>/</span>
+            <span>시작하기</span>
+            <span>/</span>
+            <span>AI 어시스턴트</span>
+          </div>
+        </div>
+      </header>
+
+      <div class="px-8 py-8 max-w-5xl">
+        <!-- Overview -->
+        <section class="mb-10">
+          <h2 class="text-2xl display-serif text-[#111111] mb-4">AI 어시스턴트 개요</h2>
+          <p class="text-[#555555] mb-6">
+            AI 어시스턴트는 화면 우측 하단의 채팅 패널로, 자연어 명령을 통해 로봇과 태스크플로우를 제어할 수 있는 기능입니다.
+            태스크플로우 실행, 일시정지, 재개, 중지, 삭제, 복사 등 다양한 작업을 채팅으로 수행할 수 있습니다.
+          </p>
+
+          <!-- UI Mockup -->
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border overflow-hidden mb-6">
+            <div class="bg-[#d3cfc4] px-4 py-2 flex items-center gap-2 border-b hairline-border">
+              <div class="browser-dots">
+                <span class="bg-red-400"></span>
+                <span class="bg-yellow-400"></span>
+                <span class="bg-green-400"></span>
+              </div>
+              <div class="flex-1 bg-white rounded-md px-3 py-1 text-xs text-[#8f8f8f] mx-4">https://hcrsp.com/...</div>
+            </div>
+            <div class="p-6 flex justify-end">
+              <!-- Chat Panel -->
+              <div class="w-80 bg-white border hairline-border rounded-xl shadow-lg overflow-hidden">
+                <div class="bg-[#736e63] text-white px-4 py-3 flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <i data-lucide="sparkles" class="w-4 h-4 text-[#cd7b94]"></i>
+                    <span class="text-sm font-medium">AI 어시스턴트</span>
+                  </div>
+                  <i data-lucide="x" class="w-4 h-4 text-[#8f8f8f]"></i>
+                </div>
+                <div class="p-4 space-y-3 h-64 overflow-y-auto">
+                  <div class="bg-[#d3cfc4] rounded-lg rounded-tl-none px-3 py-2 text-xs text-[#333333] max-w-[85%]">
+                    안녕하세요! 무엇을 도와드릴까요?
+                  </div>
+                  <div class="bg-[#736e63] text-white rounded-lg rounded-tr-none px-3 py-2 text-xs max-w-[85%] ml-auto">
+                    순찰 태스크를 실행해줘
+                  </div>
+                  <div class="bg-[#d3cfc4] rounded-lg rounded-tl-none px-3 py-2 text-xs text-[#333333] max-w-[85%]">
+                    순찰 태스크를 실행했습니다. 로봇 Robot-01에서 태스크가 시작되었습니다.
+                  </div>
+                </div>
+                <div class="border-t hairline-border p-3">
+                  <div class="flex items-center gap-2">
+                    <div class="flex-1 bg-[#d3cfc4] rounded-lg px-3 py-2 text-xs text-[#8f8f8f]">명령을 입력하세요...</div>
+                    <div class="bg-[#736e63] text-white rounded-lg px-3 py-2">
+                      <i data-lucide="send" class="w-3 h-3"></i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- How to Use -->
+        <section class="mb-12">
+          <h2 class="text-2xl display-serif text-[#111111] mb-4">사용 방법</h2>
+          <p class="text-[#555555] mb-6">AI 어시스턴트를 사용하여 로봇과 태스크플로우를 제어합니다.</p>
+
+          <h3 class="text-lg font-semibold text-[#111111] mb-3">AI 어시스턴트 사용 절차</h3>
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border p-6 mb-6">
+            <ol class="space-y-4">
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">1</div>
+                <div>
+                  <p class="font-medium text-[#111111]">AI 어시스턴트 패널 열기</p>
+                  <p class="text-sm text-[#757575]">화면 우측 하단의 AI 어시스턴트 아이콘을 클릭합니다.</p>
+                </div>
+              </li>
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">2</div>
+                <div>
+                  <p class="font-medium text-[#111111]">명령 입력</p>
+                  <p class="text-sm text-[#757575]">자연어로 원하는 작업을 입력합니다.</p>
+                </div>
+              </li>
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">3</div>
+                <div>
+                  <p class="font-medium text-[#111111]">명령 실행</p>
+                  <p class="text-sm text-[#757575]">AI가 명령을 해석하여 작업을 실행합니다.</p>
+                </div>
+              </li>
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">4</div>
+                <div>
+                  <p class="font-medium text-[#111111]">결과 확인</p>
+                  <p class="text-sm text-[#757575]">실행 결과를 채팅으로 확인합니다.</p>
+                </div>
+              </li>
+            </ol>
+          </div>
+        </section>
+
+        <!-- Commands -->
+        <section class="mb-12">
+          <h2 class="text-2xl display-serif text-[#111111] mb-4">지원 명령</h2>
+          <p class="text-[#555555] mb-6">AI 어시스턴트에서 사용할 수 있는 주요 명령을 소개합니다.</p>
+
+          <h3 class="text-lg font-semibold text-[#111111] mb-3">태스크플로우 제어 명령</h3>
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border overflow-hidden mb-6">
+            <table class="w-full text-sm">
+              <thead class="bg-[#eae8e2] text-[#757575]">
+                <tr>
+                  <th class="text-left px-4 py-3 font-medium">명령</th>
+                  <th class="text-left px-4 py-3 font-medium">설명</th>
+                  <th class="text-left px-4 py-3 font-medium">예시</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[rgba(140,134,120,0.12)]">
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">실행</td>
+                  <td class="px-4 py-3 text-[#757575]">태스크플로우를 실행합니다.</td>
+                  <td class="px-4 py-3 text-[#757575]">"순찰 태스크를 실행해줘"</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">일시정지</td>
+                  <td class="px-4 py-3 text-[#757575]">실행 중인 태스크플로우를 일시정지합니다.</td>
+                  <td class="px-4 py-3 text-[#757575]">"순찰 태스크를 일시정지해줘"</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">재개</td>
+                  <td class="px-4 py-3 text-[#757575]">일시정지된 태스크플로우를 재개합니다.</td>
+                  <td class="px-4 py-3 text-[#757575]">"순찰 태스크를 재개해줘"</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">중지</td>
+                  <td class="px-4 py-3 text-[#757575]">실행 중인 태스크플로우를 중지합니다.</td>
+                  <td class="px-4 py-3 text-[#757575]">"순찰 태스크를 중지해줘"</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">삭제</td>
+                  <td class="px-4 py-3 text-[#757575]">태스크플로우를 삭제합니다.</td>
+                  <td class="px-4 py-3 text-[#757575]">"순찰 태스크를 삭제해줘"</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">복사</td>
+                  <td class="px-4 py-3 text-[#757575]">태스크플로우를 복사합니다.</td>
+                  <td class="px-4 py-3 text-[#757575]">"순찰 태스크를 복사해줘"</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 class="text-lg font-semibold text-[#111111] mb-3">기타 명령</h3>
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border overflow-hidden">
+            <table class="w-full text-sm">
+              <thead class="bg-[#eae8e2] text-[#757575]">
+                <tr>
+                  <th class="text-left px-4 py-3 font-medium">명령</th>
+                  <th class="text-left px-4 py-3 font-medium">설명</th>
+                  <th class="text-left px-4 py-3 font-medium">예시</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[rgba(140,134,120,0.12)]">
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">도움말</td>
+                  <td class="px-4 py-3 text-[#757575]">사용 가능한 명령 목록을 표시합니다.</td>
+                  <td class="px-4 py-3 text-[#757575]">"도움말" 또는 "help"</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">노드 초기화</td>
+                  <td class="px-4 py-3 text-[#757575]">캔버스의 모든 노드를 초기화합니다.</td>
+                  <td class="px-4 py-3 text-[#757575]">"노드를 초기화해줘"</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">노드 삭제</td>
+                  <td class="px-4 py-3 text-[#757575]">선택한 노드를 삭제합니다.</td>
+                  <td class="px-4 py-3 text-[#757575]">"선택한 노드를 삭제해줘"</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">실행 취소</td>
+                  <td class="px-4 py-3 text-[#757575]">마지막 작업을 되돌립니다.</td>
+                  <td class="px-4 py-3 text-[#757575]">"실행 취소해줘"</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">재실행</td>
+                  <td class="px-4 py-3 text-[#757575]">취소한 작업을 다시 실행합니다.</td>
+                  <td class="px-4 py-3 text-[#757575]">"재실행해줘"</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Command Examples -->
+        <section class="mb-12">
+          <h2 class="text-2xl display-serif text-[#111111] mb-4">명령 예시</h2>
+          <p class="text-[#555555] mb-6">실제 사용할 수 있는 명령 예시를 확인합니다.</p>
+
+          <div class="space-y-4">
+            <div class="bg-[#f4f3f0] rounded-xl hairline-border p-4">
+              <div class="flex items-start gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] rounded-full flex items-center justify-center shrink-0">
+                  <i data-lucide="user" class="w-4 h-4 text-[#736e63]"></i>
+                </div>
+                <div>
+                  <p class="text-sm font-medium text-[#111111] mb-1">"Robot-01에 순찰 태스크를 실행해줘"</p>
+                  <p class="text-sm text-[#757575]">Robot-01에 배포된 순찰 태스크를 실행합니다.</p>
+                </div>
+              </div>
+            </div>
+            <div class="bg-[#f4f3f0] rounded-xl hairline-border p-4">
+              <div class="flex items-start gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] rounded-full flex items-center justify-center shrink-0">
+                  <i data-lucide="user" class="w-4 h-4 text-[#736e63]"></i>
+                </div>
+                <div>
+                  <p class="text-sm font-medium text-[#111111] mb-1">"모든 로봇의 태스크를 중지해줘"</p>
+                  <p class="text-sm text-[#757575]">모든 로봇에서 실행 중인 태스크플로우를 중지합니다.</p>
+                </div>
+              </div>
+            </div>
+            <div class="bg-[#f4f3f0] rounded-xl hairline-border p-4">
+              <div class="flex items-start gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] rounded-full flex items-center justify-center shrink-0">
+                  <i data-lucide="user" class="w-4 h-4 text-[#736e63]"></i>
+                </div>
+                <div>
+                  <p class="text-sm font-medium text-[#111111] mb-1">"배송 태스크를 복사해서 새로 만들어줘"</p>
+                  <p class="text-sm text-[#757575]">배송 태스크를 복사하여 새 태스크플로우를 생성합니다.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Troubleshooting -->
+        <section class="mb-12">
+          <h2 class="text-2xl display-serif text-[#111111] mb-4">문제 해결</h2>
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border overflow-hidden">
+            <table class="w-full text-sm">
+              <thead class="bg-[#eae8e2] text-[#757575]">
+                <tr>
+                  <th class="text-left px-4 py-3 font-medium">문제</th>
+                  <th class="text-left px-4 py-3 font-medium">원인</th>
+                  <th class="text-left px-4 py-3 font-medium">해결 방법</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[rgba(140,134,120,0.12)]">
+                <tr>
+                  <td class="px-4 py-3 text-[#333333]">명령을 이해하지 못함</td>
+                  <td class="px-4 py-3 text-[#757575]">지원하지 않는 명령 형식</td>
+                  <td class="px-4 py-3 text-[#757575]">"도움말"을 입력하여 지원 명령 확인</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 text-[#333333]">태스크플로우 실행 실패</td>
+                  <td class="px-4 py-3 text-[#757575]">로봇이 오프라인 또는 태스크 미배포</td>
+                  <td class="px-4 py-3 text-[#757575]">로봇 상태 및 배포 상태 확인</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 text-[#333333]">명령 실행 지연</td>
+                  <td class="px-4 py-3 text-[#757575]">네트워크 지연 또는 시스템 부하</td>
+                  <td class="px-4 py-3 text-[#757575]">잠시 후 다시 시도</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    lucide.createIcons();
+  </script>
+</body>
+</html>

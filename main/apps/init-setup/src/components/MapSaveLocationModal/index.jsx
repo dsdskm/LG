@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { Button, Modal } from '@repo/ui'
+import { ModalBody, NamePreview, PreviewLabel, PreviewValue } from './styles'
 
 /**
  * 맵 저장 위치 선택 모달.
@@ -50,46 +51,20 @@ const MapSaveLocationModal = ({ isOpen, children, mapName = '', busy = false, on
       onClose={onClose}
       renderButtonComponent={<>{buttons}</>}
     >
-      <div style={styles.body}>
+      <ModalBody>
         <div>{t('saveLocation.description')}</div>
 
         {/* Building > Floor > Area 드롭다운 */}
         {children}
 
         {/* 확정될 맵 이름 미리보기 — 선택이 덜 끝나면 안내 문구를 대신 보여준다. */}
-        <div style={styles.preview}>
-          <span style={styles.previewLabel}>{t('saveLocation.nameLabel')}</span>
-          <strong style={styles.previewValue}>{mapName || t('saveLocation.selectAll')}</strong>
-        </div>
-      </div>
+        <NamePreview>
+          <PreviewLabel>{t('saveLocation.nameLabel')}</PreviewLabel>
+          <PreviewValue>{mapName || t('saveLocation.selectAll')}</PreviewValue>
+        </NamePreview>
+      </ModalBody>
     </Modal>
   )
-}
-
-const styles = {
-  body: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1.2rem',
-    lineHeight: 1.5,
-    width: '100%'
-  },
-  preview: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.8rem',
-    flexWrap: 'wrap'
-  },
-  previewLabel: {
-    fontSize: 'var(--font-size-body-5)',
-    color: 'var(--color-neutral-60)'
-  },
-  previewValue: {
-    fontSize: 'var(--font-size-body-5)',
-    fontWeight: 700,
-    color: 'var(--color-neutral-80)',
-    wordBreak: 'break-all'
-  }
 }
 
 export default MapSaveLocationModal

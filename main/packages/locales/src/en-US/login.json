@@ -73,5 +73,7 @@
   "newPassword": "New password",
   "required": "Required field.",
   "passwordConfirm": "Confirm password",
-  "passwordSetComplete": "Password set complete"
+  "passwordSetComplete": "Password set complete",
+  "passwordGuide": "Enter a password with 3 types of combinations (uppercase, lowercase, numbers, special characters) 8 characters or more, or 2 types of combinations 10 characters or more.",
+  "passwordInvalidFormat": "Check password requirements"
 }

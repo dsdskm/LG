@@ -38,11 +38,47 @@ describe('ChatOrchestrator taskflow routing guard', () => {
     intentMinConfidence: 0.5,
   } as any
 
+  // 규칙은 rule 테이블에서 온다. sql/20260907_1400_taskflow_rules_to_db.sql 의 값과 같게 둔다.
+  const classifierRules = {
+    explanationBlockKeywords: ['설명', '어떻게 쓰는지', '예시', '사용법'],
+    nodeEditDeletePrefixes: ['삭제', '제거', '지우기', 'remove', 'delete'],
+    arrowChainSeparators: ['->', '→', '=>', 'then', 'then->', 'and'],
+    composeMoveHintKeywords: ['구성', '생성', '추가', '연결', '배치', '배열', '정렬', '다음', '이동', '연결해', '설계', '틀', '노드'],
+    editSubjectKeywords: ['노드', 'taskflow', '태스크플로', '태스크 플로우', '플로우', '경로', '워크플로', '워크 플로우', 'flow'],
+    editVerbKeywords: ['구성', '생성', '추가', '수정', '변경', '삭제', '제거', '연결', '배치', '정렬', '설정', '편집', '만들', '고치', '바꾸', '바꿔', '교체', '지워', '없애', '넣어', '빼줘', '빼고', '붙여', '이어'],
+    arrowSequenceEnabled: false,
+    explanationKeywords: ['설명', '예시', '사용법', '어떻게', '가이드'],
+    composeRequestKeywords: ['구성해', '구성해줘', '만들어', '만들어줘', '작성해', '작성해줘', '설계해', '설계해줘', '추가해', '추가해줘', '연결해', '연결해줘'],
+    explanationImageMinScore: 0,
+    explanationImageMinScoreAlways: 0,
+    concurrentHintKeywords: ['하면서', '하며', '동시에', '동시', '함께', '같이', '병렬', 'parallel'],
+    actionRequestKeywords: [
+      '해줘', '해 줘', '해주세요', '하게', '되게', '되도록', '하도록', '시켜', '시작해',
+      '이동', '재생', '표시', '실행', '수행', '출력', '말해', '동작',
+    ],
+  } as any
+
   it('does not treat a Parallel usage question as a taskflow edit request', () => {
     const orchestrator = new ChatOrchestrator(client, 1024, pipeline, { log: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any)
 
-    expect((orchestrator as any).looksLikeTaskflowEditMessage('Parallel 노드는 어떻게 써?')).toBe(false)
-    expect((orchestrator as any).looksLikeTaskflowEditMessage('Parallel 노드 구성해줘')).toBe(true)
+    expect((orchestrator as any).looksLikeTaskflowEditMessage('Parallel 노드는 어떻게 써?', classifierRules)).toBe(false)
+    expect((orchestrator as any).looksLikeTaskflowEditMessage('Parallel 노드 구성해줘', classifierRules)).toBe(true)
+  })
+
+  it('treats concurrent action phrasing without an edit verb as a taskflow edit request', () => {
+    const orchestrator = new ChatOrchestrator(client, 1024, pipeline, { log: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any)
+
+    expect((orchestrator as any).looksLikeTaskflowEditMessage(
+      '도슨트 대기로 이동하면서, 이동 음악 재생하고, Joy 얼굴 표시되게 해줘',
+      classifierRules,
+      ['도슨트 대기', 'Joy'],
+    )).toBe(true)
+  })
+
+  it('matches nothing when the rule table has no phrases for the screen', () => {
+    const orchestrator = new ChatOrchestrator(client, 1024, pipeline, { log: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any)
+
+    expect((orchestrator as any).looksLikeTaskflowEditMessage('Parallel 노드 구성해줘')).toBe(false)
   })
 
   it('classifies only info or action and coerces legacy data to action', async () => {
@@ -163,40 +199,6 @@ describe('ChatOrchestrator taskflow routing guard', () => {
 
     expect(result.reply.text).toBe('등록된 안내에서 답변을 찾지 못했습니다.')
     expect(result.meta.finalFallbackTextUsed).toBe(true)
-  })
-
-  it('strips developer-format intent json before sending the message to chat users', async () => {
-    const service = buildChatService()
-
-    const result = await (service as any).ensureUserFacingReply({
-      chat_action: 'info',
-      text: '{"intent":"info","confidence":1.0,"reason":"TaskFlow 배포 방법을 설명합니다."}',
-    })
-
-    expect(result.text).toBe('입력 내용을 정확히 이해하지 못했어요. 원하시는 작업이나 질문을 조금 더 구체적으로 알려주세요.')
-  })
-
-  it('converts raw RAG debug output into natural user-facing text', async () => {
-    const service = buildChatService()
-
-    const result = await (service as any).ensureUserFacingReply({
-      chat_action: 'info',
-      text: 'matchScore=0.91 adjustedScore=1.02 thresholdScore=0.00 selected=common selectedChunks=[chunk-1] comparison=common(0.91) screen(abc)=0.82',
-    })
-
-    expect(result.text).toBe('질문과 관련된 내용을 확인해서 답변을 정리해봤어요.')
-  })
-
-  it('keeps natural Korean wording without forcing a polite conversion', async () => {
-    const service = buildChatService()
-
-    const result = await (service as any).ensureUserFacingReply({
-      chat_action: 'info',
-      text: '운영 관제는 로봇 관리, SOTA, CMS, TMS, 학습 기능 등을 제공한다.',
-    })
-
-    expect(result.text).not.toContain('해요')
-    expect(result.text).toBe('운영 관제는 로봇 관리, SOTA, CMS, TMS, 학습 기능 등을 제공한다.')
   })
 
   it('skips the default LLM fallback when RAG has no usable answer', async () => {

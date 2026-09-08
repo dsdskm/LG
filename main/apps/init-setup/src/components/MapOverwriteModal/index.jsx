@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { Button, Modal } from '@repo/ui'
+import { ModalBody, PoiWarning, TargetDir } from './styles'
 
 /**
  * 작업본 맵 덮어쓰기 확인 모달.
@@ -39,34 +40,14 @@ const MapOverwriteModal = ({ isOpen, mapName = '', dirName = '', busy = false, o
       onClose={onClose}
       renderButtonComponent={<>{buttons}</>}
     >
-      <div style={styles.body}>
+      <ModalBody>
         <div>{t('overwriteMap.description', { name: mapName || dirName })}</div>
         {/* 기준 맵이 새로 그려지므로 그 맵에 달린 POI 도 함께 지워진다 — 되돌릴 수 없어 미리 알린다. */}
-        <div style={styles.warning}>{t('overwriteMap.poiWarning')}</div>
-        {dirName && <div style={styles.target}>{dirName}</div>}
-      </div>
+        <PoiWarning>{t('overwriteMap.poiWarning')}</PoiWarning>
+        {dirName && <TargetDir>{dirName}</TargetDir>}
+      </ModalBody>
     </Modal>
   )
-}
-
-const styles = {
-  body: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.8rem',
-    lineHeight: 1.5,
-    width: '100%'
-  },
-  warning: {
-    fontSize: 'var(--font-size-body-5)',
-    color: 'var(--color-error-60)',
-    fontWeight: 700
-  },
-  target: {
-    fontSize: 'var(--font-size-body-5)',
-    color: 'var(--color-neutral-60)',
-    wordBreak: 'break-all'
-  }
 }
 
 export default MapOverwriteModal

@@ -258,6 +258,11 @@ test_assume_role:
 build_image:
   stage: build
   rules:
+    # dist 퍼블리시 전용 브랜치에서는 ECS 이미지를 만들지 않는다
+    # (publish_init_setup_dist 주석 참고). 이 브랜치로 들어오는 MR 도 같다 —
+    # MR 파이프라인의 CI_COMMIT_REF_NAME 은 소스 브랜치라 대상 브랜치를 함께 본다.
+    - if: '$CI_COMMIT_REF_NAME == "release/init-setup-fe-dist" || $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "release/init-setup-fe-dist"'
+      when: never
     - when: on_success
   script:
     - |
@@ -359,6 +364,12 @@ run_on_runner_dev:
     - build_image
   resource_group: dev
   rules:
+    # dist 퍼블리시 전용 브랜치에서는 배포/검증을 돌리지 않는다.
+    # MR 파이프라인의 CI_COMMIT_REF_NAME 은 소스 브랜치라 대상 브랜치도 함께 본다 —
+    # 이 브랜치로 들어오는 MR 은 dist 빌드 검증만 하고(verify_init_setup_dist_build)
+    # 배포는 하지 않는다.
+    - if: '$CI_COMMIT_REF_NAME == "release/init-setup-fe-dist" || $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "release/init-setup-fe-dist"'
+      when: never
     - if: '$CI_COMMIT_REF_NAME !~ /^(qa|QA|prd|PRD|prod|production)$/'
       when: on_success
     - when: never
@@ -457,6 +468,12 @@ deploy_to_ecs:
   dependencies:
     - build_image
   rules:
+    # dist 퍼블리시 전용 브랜치에서는 배포/검증을 돌리지 않는다.
+    # MR 파이프라인의 CI_COMMIT_REF_NAME 은 소스 브랜치라 대상 브랜치도 함께 본다 —
+    # 이 브랜치로 들어오는 MR 은 dist 빌드 검증만 하고(verify_init_setup_dist_build)
+    # 배포는 하지 않는다.
+    - if: '$CI_COMMIT_REF_NAME == "release/init-setup-fe-dist" || $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "release/init-setup-fe-dist"'
+      when: never
     - if: '$CI_COMMIT_REF_NAME =~ /^(qa|QA|prd|PRD|prod|production)$/'
       when: on_success
     - when: never
@@ -492,18 +509,47 @@ deploy_to_ecs:
         exit 1
       fi
 
+      # AWS Secrets Manager에서 FEATURE_LEARNING_ENABLED 조회
+      FEATURE_LEARNING_ENABLED="false"
+
+      # 환경별 Secrets Manager 이름 설정
+      case "$DEPLOY_ENVIRONMENT" in
+        prod|production)
+          SECRET_NAME="rsp-prod/app/rsp_fe"
+          ;;
+        qa)
+          SECRET_NAME="rsp-qa/app/rsp_fe"
+          ;;
+        *)
+          SECRET_NAME=""
+          ;;
+      esac
+
+      if [ -n "$SECRET_NAME" ]; then
+        SECRET_VALUE=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --region "$AWS_DEFAULT_REGION" --query 'SecretString' --output text 2>/dev/null || echo "")
+        if [ -n "$SECRET_VALUE" ]; then
+          FEATURE_LEARNING_ENABLED=$(echo "$SECRET_VALUE" | jq -r '.FEATURE_LEARNING_ENABLED // "false"' 2>/dev/null || echo "false")
+          echo "✅ Secrets Manager에서 로드: FEATURE_LEARNING_ENABLED=$FEATURE_LEARNING_ENABLED"
+        else
+          echo "⚠️ Secrets Manager 조회 실패 [$SECRET_NAME] → 기본값 적용: FEATURE_LEARNING_ENABLED=$FEATURE_LEARNING_ENABLED"
+        fi
+      else
+        echo "ℹ️ 환경 $DEPLOY_ENVIRONMENT에서 Secrets Manager 미설정 → 기본값: FEATURE_LEARNING_ENABLED=$FEATURE_LEARNING_ENABLED"
+      fi
+
       # 현재 태스크 정의 가져오기 (출력 숨김)
       CURRENT_TASK_DEF_JSON=$(aws ecs describe-task-definition --task-definition "$TASK_DEFINITION_NAME" --region "$AWS_DEFAULT_REGION" 2>/dev/null)
 
       # 새 태스크 정의 생성 (출력 숨김)
-      NEW_TASK_DEF_JSON=$(echo "$CURRENT_TASK_DEF_JSON" | jq --arg IMAGE "$ECR_IMAGE_URI" --arg ENV "$ENVIRONMENT" --arg NODE_ENV "$NODE_ENV" '
+      NEW_TASK_DEF_JSON=$(echo "$CURRENT_TASK_DEF_JSON" | jq --arg IMAGE "$ECR_IMAGE_URI" --arg ENV "$ENVIRONMENT" --arg NODE_ENV "$NODE_ENV" --arg FEATURE_FLAG "$FEATURE_LEARNING_ENABLED" '
         .taskDefinition
         | .containerDefinitions[0].image = $IMAGE
         | .containerDefinitions[0].environment = [
             {"name":"NODE_ENV", "value": ($NODE_ENV|tostring)},
             {"name":"ENVIRONMENT", "value": ($ENV|tostring)},
             {"name":"ENV", "value": ($ENV|tostring)},
-            {"name":"DEPLOY_ENV", "value": ($ENV|tostring)}
+            {"name":"DEPLOY_ENV", "value": ($ENV|tostring)},
+            {"name":"VITE_FEATURE_LEARNING_ENABLED", "value": ($FEATURE_FLAG|tostring)}
           ]
         | del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy)
       ')
@@ -538,11 +584,191 @@ deploy_to_ecs:
     expire_in: 2 hours
   allow_failure: false
 
+# 📦 init-setup FE dist 퍼블리시
+#
+# init-setup 은 ECS 웹이 아니라 로봇(cloi_entropos)에 실려 나가는 앱이라, 루트 build
+# 스크립트에서 --filter=!init-setup 으로 제외되어 있다. 여기서만 따로 빌드해서
+# 산출물(apps-dist/init-setup)을 얇은 dist 리포에 push 하고, cloi_entropos 가 그 리포를
+# services/app/init-setup/frontend/dist 서브모듈로 pin 해서 이미지에 넣는다.
+#
+# 실행 방법 (ECS 배포와 분리된 전용 브랜치):
+#   release/init-setup-fe-dist 브랜치에 파이프라인이 생기면(push/web 무관) 자동 실행된다.
+#   단 MR 파이프라인은 제외한다 — 머지 전 코드가 dist 리포로 나가면 안 되므로,
+#   그 브랜치로 들어오는 MR 은 verify_init_setup_dist_build 가 빌드만 검증한다.
+# 이 브랜치에서는 build_image / run_on_runner_dev / deploy_to_ecs / verify_* 가 모두
+# 스킵되어 dist 퍼블리시만 돈다. 반대로 다른 브랜치의 평소 배포 파이프라인에서는
+# 이 job 이 스킵된다.
+#
+# 빌드/푸시 대상: pnpm run build:init-setup → dist 리포 qa 브랜치.
+# dist 리포는 빌드 산출물만 담으며 .gitattributes(* -text)로 EOL 변환을 금지한다
+# (Windows 체크아웃이 번들 JS 를 CRLF 로 바꿔 diff 가 통째로 튀는 것을 막는다).
+#
+# 선행 설정: dist 리포의 project access token (role Developer, scope write_repository) 을
+# opcon CI/CD 변수 INIT_SETUP_DIST_TOKEN (masked + protected) 으로 등록한다.
+# deploy token 은 쓸 수 없다 — git 리포에 대해서는 읽기 전용이고 write 스코프가 없다.
+# 미설정이면 이 job 은 아무 것도 하지 않고 통과한다.
+publish_init_setup_dist:
+  stage: deploy
+  # default 의 before_script 는 alpine(apk) + AWS AssumeRole 전용이라 상속하지 않는다.
+  image: node:20-bookworm-slim
+  before_script: []
+  needs: []
+  variables:
+    # dist 리포는 opcon 과 같은 그룹의 형제 프로젝트다. 프로젝트명만 지정하고 나머지
+    # (프로토콜/호스트/그룹 경로) 는 런타임에 CI_PROJECT_URL 에서 잘라 쓴다 —
+    # 경로를 손으로 적거나 CI_SERVER_HOST + CI_PROJECT_NAMESPACE 로 조립하면
+    # 최상위 그룹(hub) 이 빠지는 사고가 난다.
+    DIST_REPO_NAME: init-setup-fe-dist
+    GIT_DEPTH: '0'
+  rules:
+    # MR 파이프라인에서는 절대 push 하지 않는다 — 머지되지 않은 코드가 dist 리포로
+    # 나가면 로봇이 그 산출물을 받는다. MR 은 verify_init_setup_dist_build 로 검증만 한다.
+    # (MR 파이프라인의 CI_COMMIT_REF_NAME 은 소스 브랜치라 아래 조건에 그대로 걸린다.)
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: never
+    # ECS 배포와 완전히 분리한다 — dist 전용 브랜치에서만 돌고, 그 브랜치에서는
+    # 배포/검증 job 이 전부 스킵된다.
+    - if: '$CI_COMMIT_REF_NAME == "release/init-setup-fe-dist"'
+      when: on_success
+      variables:
+        DIST_BUILD_SCRIPT: 'build:init-setup'
+        DIST_BRANCH: 'qa'
+    - when: never
+  cache:
+    key:
+      files:
+        - pnpm-lock.yaml
+    paths:
+      - .pnpm-store
+  script:
+    - |
+      set -e
+      if [ -z "${INIT_SETUP_DIST_TOKEN:-}" ]; then
+        echo "⏭️  INIT_SETUP_DIST_TOKEN 미설정 — dist 퍼블리시를 건너뜁니다."
+        exit 0
+      fi
+      apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates
+      corepack enable
+      corepack prepare pnpm@10.30.3 --activate
+      pnpm config set store-dir "$CI_PROJECT_DIR/.pnpm-store"
+      pnpm install --frozen-lockfile
+      pnpm run "$DIST_BUILD_SCRIPT"
+
+      # 산출물 존재를 먼저 확인한다 — vite outDir 이 바뀌면 여기서 걸려야 한다
+      # (빈 커밋을 push 해서 로봇 FE 를 날리는 것보다 낫다).
+      test -s apps-dist/init-setup/index.html
+      test -s apps-dist/init-setup/build-info.json
+
+      # CI_PROJECT_URL = <proto>://<host>/<그룹 경로>/opcon (GitLab 이 보장하는 브라우저 URL).
+      # 마지막 세그먼트만 형제 프로젝트명으로 바꾸면 프로토콜·호스트·전체 그룹 경로가
+      # 자동으로 맞는다. 조립하지 않으므로 hub 같은 상위 그룹이 빠질 수 없다.
+      DIST_REPO_URL="${CI_PROJECT_URL%/*}/${DIST_REPO_NAME}.git"
+
+      # 자격증명을 뺀 URL 을 먼저 찍는다 — GitLab 은 경로 오타와 토큰 권한 부족을
+      # 똑같이 404 "repository not found" 로 응답하므로, 로그에 URL 이 없으면 둘을 구분할 수 없다.
+      echo "🔽 dist 리포 클론: ${DIST_REPO_URL} (branch ${DIST_BRANCH})"
+
+      # project access token 의 username 은 oauth2 다. URL 을 다시 조립하지 않고
+      # 스킴 뒤에 자격증명만 끼워 넣는다(POSIX 치환 — sh/bash 양쪽에서 동작).
+      DIST_PROTO="${DIST_REPO_URL%%://*}"
+      DIST_REST="${DIST_REPO_URL#*://}"
+      git clone --quiet "${DIST_PROTO}://oauth2:${INIT_SETUP_DIST_TOKEN}@${DIST_REST}" /tmp/dist
+      cd /tmp/dist
+      # 원격에 브랜치가 있으면 반드시 그 히스토리 위에 쌓아야 한다. clone 은 기본
+      # 브랜치를 체크아웃하므로, 여기서 -B 를 무조건 쓰면 기본 브랜치 위치에 브랜치를
+      # 새로 만들어 원격 히스토리를 잃고 non-fast-forward 로 거부된다.
+      # force push 로 우회하면 안 된다 — cloi_entropos 가 특정 커밋을 서브모듈로
+      # pin 하고 있어서, 히스토리를 갈아치우면 그 포인터가 끊긴다.
+      if git show-ref --verify --quiet "refs/remotes/origin/${DIST_BRANCH}"; then
+        git checkout -q "$DIST_BRANCH"
+      else
+        echo "ℹ️  원격에 ${DIST_BRANCH} 가 없음 — 기본 브랜치에서 새로 만든다(최초 실행)."
+        git checkout -q -B "$DIST_BRANCH"
+      fi
+
+      # dist 리포가 직접 소유하는 파일(.git/.gitattributes/README.md)만 남기고 비운 뒤
+      # 새 산출물로 채운다. (해시 파일명이 매 빌드 바뀌므로 덮어쓰기만 하면 옛 번들이 계속 쌓인다.)
+      find . -mindepth 1 -maxdepth 1 \
+        ! -name .git ! -name .gitattributes ! -name README.md -exec rm -rf {} +
+      cp -a "$CI_PROJECT_DIR/apps-dist/init-setup/." .
+
+      git add -A
+      if git diff --cached --quiet; then
+        echo "✅ 변경 없음 — push 생략"
+        exit 0
+      fi
+      git -c user.email="opcon-ci@lge.com" -c user.name="opcon CI" commit -q -m \
+        "[init-setup] dist ${DIST_BRANCH} from opcon ${CI_COMMIT_SHORT_SHA}
+
+      source: ${CI_PROJECT_URL}/-/commit/${CI_COMMIT_SHA}
+      pipeline: ${CI_PIPELINE_URL}
+      build script: pnpm run ${DIST_BUILD_SCRIPT}"
+      git push --quiet origin "$DIST_BRANCH"
+      echo "✅ push 완료: ${DIST_REPO_URL} ${DIST_BRANCH} $(git rev-parse --short HEAD)"
+  allow_failure: false
+
+# 🔎 init-setup FE dist 빌드 검증 (MR 전용)
+#
+# release/init-setup-fe-dist 로 들어오는 MR 은 머지되는 순간 dist 리포로 push 되어
+# 로봇이 그 산출물을 받는다. 그래서 MR 단계에서 빌드가 되는지만 미리 확인한다 —
+# publish_init_setup_dist 와 같은 빌드를 돌리되 dist 리포 클론/커밋/push 는 하지 않는다.
+# 토큰도 필요 없다(INIT_SETUP_DIST_TOKEN 미설정이어도 검증은 돈다).
+#
+# 이 MR 에서는 build_image / run_on_runner_dev / deploy_to_ecs / verify_* 가 모두
+# 스킵되므로(각 job 의 rules 참고) 파이프라인에 이 job 만 남는다.
+verify_init_setup_dist_build:
+  stage: build
+  # default 의 before_script 는 alpine(apk) + AWS AssumeRole 전용이라 상속하지 않는다.
+  image: node:20-bookworm-slim
+  before_script: []
+  needs: []
+  variables:
+    DIST_BUILD_SCRIPT: 'build:init-setup'
+  rules:
+    # MR 파이프라인 전용. CI_MERGE_REQUEST_* 는 MR 파이프라인에서만 채워지므로 먼저 끊는다.
+    - if: '$CI_PIPELINE_SOURCE != "merge_request_event"'
+      when: never
+    # 대상이 dist 브랜치인 MR — 머지되면 곧바로 퍼블리시되므로 미리 빌드를 확인한다.
+    - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "release/init-setup-fe-dist"'
+      when: on_success
+    # 소스가 dist 브랜치인 MR — 다른 job 이 전부 스킵되어 job 0 개로 파이프라인 생성이
+    # 실패하는 것을 막는다. 조건을 한 줄로 합치지 않는 이유는 GitLab rules if 가
+    # 괄호를 지원하지 않아 && 와 || 를 섞으면 우선순위가 모호해지기 때문이다.
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "release/init-setup-fe-dist"'
+      when: on_success
+    - when: never
+  cache:
+    key:
+      files:
+        - pnpm-lock.yaml
+    paths:
+      - .pnpm-store
+  script:
+    - |
+      set -e
+      corepack enable
+      corepack prepare pnpm@10.30.3 --activate
+      pnpm config set store-dir "$CI_PROJECT_DIR/.pnpm-store"
+      pnpm install --frozen-lockfile
+      pnpm run "$DIST_BUILD_SCRIPT"
+
+      # 퍼블리시 job 과 같은 산출물 검사 — vite outDir 이 바뀌면 머지 전에 여기서 걸린다.
+      test -s apps-dist/init-setup/index.html
+      test -s apps-dist/init-setup/build-info.json
+      echo "✅ dist 빌드 검증 완료 (push 하지 않음)"
+  allow_failure: false
+
 verify_dev:
   stage: verify
   dependencies:
     - run_on_runner_dev
   rules:
+    # dist 퍼블리시 전용 브랜치에서는 배포/검증을 돌리지 않는다.
+    # MR 파이프라인의 CI_COMMIT_REF_NAME 은 소스 브랜치라 대상 브랜치도 함께 본다 —
+    # 이 브랜치로 들어오는 MR 은 dist 빌드 검증만 하고(verify_init_setup_dist_build)
+    # 배포는 하지 않는다.
+    - if: '$CI_COMMIT_REF_NAME == "release/init-setup-fe-dist" || $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "release/init-setup-fe-dist"'
+      when: never
     - if: '$CI_COMMIT_REF_NAME !~ /^(qa|QA|prd|PRD|prod|production)$/'
       when: on_success
     - when: never
@@ -571,6 +797,12 @@ verify_ecs:
   dependencies:
     - deploy_to_ecs
   rules:
+    # dist 퍼블리시 전용 브랜치에서는 배포/검증을 돌리지 않는다.
+    # MR 파이프라인의 CI_COMMIT_REF_NAME 은 소스 브랜치라 대상 브랜치도 함께 본다 —
+    # 이 브랜치로 들어오는 MR 은 dist 빌드 검증만 하고(verify_init_setup_dist_build)
+    # 배포는 하지 않는다.
+    - if: '$CI_COMMIT_REF_NAME == "release/init-setup-fe-dist" || $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "release/init-setup-fe-dist"'
+      when: never
     - if: '$CI_COMMIT_REF_NAME =~ /^(qa|QA|prd|PRD|prod|production)$/'
       when: on_success
     - when: never

@@ -146,8 +146,15 @@
   "siteModify": "사이트 수정",
   "siteName": "사이트명",
   "inputSiteName": "사이트명을 입력해주세요.",
+  "region": "지역",
+  "regionDomestic": "국내",
+  "regionGlobal": "해외",
   "address": "주소",
   "searchAddress": "주소를 검색해주세요.",
+  "searchAddressGlobal": "해외 주소 검색",
+  "googleMapsLoadFailed": "Google Maps를 불러오지 못했습니다.",
+  "searchAddressGlobalGuide": "검색 결과를 선택하면 자동으로 입력됩니다.",
+  "domesticAddressNotAllowedGlobal": "국내 주소는 해외 주소 검색에서 사용할 수 없습니다. 국내로 전환한 후 검색해주세요.",
   "inputAddress": "상세주소를 입력해주세요.",
   "siteNumber": "사이트 수",
   "management": "관리",
@@ -547,7 +554,8 @@
       "parseError": "MCAP 파싱 오류: {{message}}",
       "loadingMcap": "MCAP 로딩 중...",
       "noSystemLogs": "표시할 System/Event 로그가 없습니다.",
-      "noTextLogs": "표시할 텍스트 로그가 없습니다."
+      "noTextLogs": "표시할 텍스트 로그가 없습니다.",
+      "skippedRange": "{{from}} ~ {{to}} 구간은 아직 로드 전입니다 (빠른 재생으로 로딩이 따라가지 못해 건너뜀). 해당 시각으로 이동하면 불러옵니다."
     },
     "common": {
       "time": "Time",

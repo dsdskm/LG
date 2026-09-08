@@ -9,6 +9,7 @@ export async function postSiteAssistantChat({
   groupId,
   siteId,
   context,
+  reqId,
   signal
 }) {
   const key = currentPath && currentPath.startsWith('/') ? currentPath.substring(1) : currentPath
@@ -27,7 +28,8 @@ export async function postSiteAssistantChat({
       conversationId,
       groupId,
       siteId,
-      context
+      context,
+      reqId
     }),
     signal
   })

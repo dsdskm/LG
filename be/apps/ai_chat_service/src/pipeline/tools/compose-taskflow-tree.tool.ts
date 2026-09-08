@@ -1,24 +1,29 @@
 import type { ToolContext, ToolDefinition } from '../tool.type'
 import { getPropertyTmsStore, TASK_TYPE, type TaskSemantics } from '../../features/taskflow/service/property-tms-store.service'
-import { CHAT_PROMPT_TYPE } from '../../features/chat/prompt-types'
-import { renderPromptTemplate } from '../prompt-template.util'
 import {
   findContentRef,
   findSuggestions,
   formatNodeLabel,
   readCurrentGraph,
+  describeTaskProperties,
   readTaskContents,
+  resolveProperties,
   toMatchKey,
   TASKFLOW_CANVAS_SCREEN_KEY,
   type TaskContentRef,
 } from './taskflow-palette'
 import { taskflowMessage, taskflowMessageNumber, TASKFLOW_MESSAGE_KEY } from './taskflow-message'
+import { includesConfiguredPhrase, loadTaskflowClassifierRules } from '../taskflow-language-rules'
+import { trace, traceReqId } from '../trace.util'
+import { buildApplyDraftAction } from './taskflow-client-action'
 
 /** LLM 이 내려주는 노드. 트리는 preorder + depth 로 표현해 id/좌표 환각을 원천 차단한다. */
 type ComposeNodeArg = {
   depth: number
   taskName: string
   contentName?: string
+  /** Delay 의 delay_msec 처럼 값으로 지정하는 속성. 스키마에 있는 키만 반영된다. */
+  properties?: Record<string, unknown>
 }
 
 export type TaskflowTreeNode = {
@@ -26,6 +31,7 @@ export type TaskflowTreeNode = {
   taskType: string
   contentName?: string
   contentId?: number
+  properties?: Record<string, unknown>
   children: TaskflowTreeNode[]
 }
 
@@ -36,6 +42,7 @@ type ComposeFailure = {
 
 /** 사용자 요청과 실제 구성이 달라진 지점. 응답에 그대로 드러낸다. */
 type ComposeNotes = {
+  unknownProperties: string[]
   missing: string[]
   unresolved: string[]
   substituted: Array<{ requested: string; resolved: string }>
@@ -45,8 +52,15 @@ type ComposeNotes = {
 
 const TOOL_NAME = 'compose_linear_taskflow'
 
+function readComposeIntents(task: TaskSemantics): string[] {
+  const single = String(task.composeHint?.intent ?? '').trim()
+  const many = Array.isArray(task.composeHint?.intents) ? task.composeHint.intents : []
+
+  return [single, ...many.map((value) => String(value ?? '').trim())].filter(Boolean)
+}
+
 function findTaskNamesByIntent(tasks: TaskSemantics[], intent: string): string[] {
-  return tasks.filter((task) => String(task.composeHint.intent || '') === intent).map((task) => task.taskName)
+  return tasks.filter((task) => readComposeIntents(task).includes(intent)).map((task) => task.taskName)
 }
 
 // 제어 노드 이름을 하드코딩하지 않는다. 카탈로그에 없는 이름을 안내하면 LLM 이 그대로 쓰고 거부된다.
@@ -58,11 +72,23 @@ function buildDescription(catalogText: string, tasks: TaskSemantics[]): string {
     return taskflowMessage(key, { tasks: names.join(joiner) })
   }
 
-  return renderPromptTemplate(TASKFLOW_CANVAS_SCREEN_KEY, CHAT_PROMPT_TYPE.toolComposeTaskflow, {
+  return taskflowMessage(TASKFLOW_MESSAGE_KEY.toolCompose, {
     catalog: catalogText,
     concurrentRule: buildRule('concurrent', TASKFLOW_MESSAGE_KEY.composeConcurrentRule),
     alternativeRule: buildRule('alternative', TASKFLOW_MESSAGE_KEY.composeAlternativeRule),
+    propertyCatalog: describeTaskProperties(tasks),
   })
+}
+
+/** "Parallel > [도슨트 대기, 이동 음악, Joy]" 처럼 트리를 한 줄로 적는다. 구조가 맞는지 눈으로 보는 용도. */
+function describeTree(nodes: TaskflowTreeNode[]): string {
+  return nodes
+    .map((node) => {
+      const label = node.contentName ? `${node.contentName}(${node.taskName})` : node.taskName
+      if (node.children.length === 0) return label
+      return `${label} > [${describeTree(node.children)}]`
+    })
+    .join(', ')
 }
 
 function emphasize(values: string[]): string {
@@ -91,6 +117,13 @@ function buildAssistantText(roots: TaskflowTreeNode[], notes: ComposeNotes): str
   if (notes.missing.length > 0) {
     lines.push(taskflowMessage(TASKFLOW_MESSAGE_KEY.composeMissing, { names: emphasize(notes.missing) }))
   }
+  if (notes.unknownProperties.length > 0) {
+    lines.push(
+      taskflowMessage(TASKFLOW_MESSAGE_KEY.composeUnknownProperties, {
+        names: emphasize(Array.from(new Set(notes.unknownProperties))),
+      }),
+    )
+  }
   if (notes.unresolved.length > 0) {
     lines.push(taskflowMessage(TASKFLOW_MESSAGE_KEY.composeUnresolved, { names: emphasize(notes.unresolved) }))
   }
@@ -107,6 +140,10 @@ function toComposeNodes(value: unknown): ComposeNodeArg[] {
       depth: Number(item.depth),
       taskName: String(item.taskName || '').trim(),
       contentName: item.contentName === undefined ? undefined : String(item.contentName).trim(),
+      properties:
+        item.properties && typeof item.properties === 'object' && !Array.isArray(item.properties)
+          ? (item.properties as Record<string, unknown>)
+          : undefined,
     }))
     .filter((item) => Number.isInteger(item.depth) && item.depth >= 0)
     .filter((item) => item.taskName.length > 0 || Boolean(item.contentName))
@@ -149,7 +186,11 @@ function buildForest(
 
     // 콘텐츠 이름이 있으면 실제 팔레트에서 찾아 Task 를 역추적하고 contentId 까지 확정한다.
     const contentRef = node.contentName ? findContentRef(node.contentName, node.taskName, contents) : undefined
-    const effectiveTaskName = taskKnown ? node.taskName : contentRef?.taskName
+    // Pause/Wait/Rotate 처럼 콘텐츠가 없는 Task 는 이름 자체가 노드다. "pause 추가" 를 콘텐츠로 찾으면 실패한다.
+    const contentNameIsTask = node.contentName ? Boolean(store.get(node.contentName)) : false
+    const effectiveTaskName = taskKnown
+      ? node.taskName
+      : contentRef?.taskName ?? (contentNameIsTask ? node.contentName : undefined)
     const semantics = effectiveTaskName ? store.get(effectiveTaskName) : undefined
 
     if (!semantics) {
@@ -163,6 +204,12 @@ function buildForest(
       taskType: semantics.taskType,
       children: [],
     }
+    // 속성은 스키마(property_tms.compose_hint.properties)에 있는 키만 남긴다.
+    if (node.properties) {
+      const resolvedProperties = resolveProperties(semantics, node.properties)
+      if (Object.keys(resolvedProperties.properties).length > 0) treeNode.properties = resolvedProperties.properties
+      notes.unknownProperties.push(...resolvedProperties.unknownKeys)
+    }
     if (contentRef && node.contentName) {
       treeNode.contentName = contentRef.contentName
       treeNode.contentId = contentRef.contentId
@@ -170,7 +217,7 @@ function buildForest(
       if (toMatchKey(contentRef.contentName) !== toMatchKey(node.contentName)) {
         notes.substituted.push({ requested: node.contentName, resolved: contentRef.contentName })
       }
-    } else if (node.contentName) {
+    } else if (node.contentName && toMatchKey(node.contentName) !== toMatchKey(semantics.taskName)) {
       // 대상을 못 찾아도 구조는 만든다. 같은 Task 의 다른 콘텐츠로 임시 채우고 응답에 경고를 남긴다.
       const placeholder = contents.find((row) => toMatchKey(row.taskName) === toMatchKey(semantics.taskName))
       if (!placeholder) {
@@ -213,6 +260,44 @@ function buildForest(
   return roots
 }
 
+/** 동시 실행 요청인데 LLM 이 동작만 나열한 경우, 제어 노드로 묶어 준다.
+ * "~하면서 ~하고" 를 순차 연결로 내려주는 일이 있어 프롬프트만으로는 보장되지 않는다.
+ * 판단 문구는 rule 테이블(concurrentHintKeywords), 묶을 Task 는 property_tms(compose_hint.intent)에서 온다.
+ */
+export async function wrapConcurrentRootsIfNeeded(
+  roots: TaskflowTreeNode[],
+  store: NonNullable<ReturnType<typeof getPropertyTmsStore>>,
+  ctx: ToolContext,
+): Promise<TaskflowTreeNode[]> {
+  if (roots.length < 2) return roots
+  // 이미 제어 노드를 세운 응답은 그대로 존중한다.
+  if (roots.some((root) => root.taskType === TASK_TYPE.control)) return roots
+
+  const message = String((ctx.context as Record<string, unknown> | undefined)?.__userMessage ?? '').trim()
+  if (!message) return roots
+
+  const rules = await loadTaskflowClassifierRules(TASKFLOW_CANVAS_SCREEN_KEY)
+  const hints = Array.isArray(rules?.concurrentHintKeywords) ? rules.concurrentHintKeywords : []
+  if (hints.length === 0 || !includesConfiguredPhrase(message, hints)) return roots
+
+  const controlName = findTaskNamesByIntent(store.list(), 'concurrent')[0]
+  const semantics = controlName ? store.get(controlName) : undefined
+  if (!semantics) {
+    ctx.log?.log(`[${TOOL_NAME}] concurrent-wrap skipped reason=compose_hint.intent=concurrent 인 Task 가 없다`)
+    return roots
+  }
+
+  ctx.log?.log(`[${TOOL_NAME}] concurrent-wrap applied control=${semantics.taskName} children=${roots.length}`)
+
+  return [
+    {
+      taskName: semantics.taskName,
+      taskType: semantics.taskType,
+      children: roots,
+    },
+  ]
+}
+
 /** CONTROL 인데 자식이 없는 노드 이름을 모은다. 자식 개수 상한 같은 세부 규칙은 tms 앱이 검증한다. */
 function collectEmptyControls(node: TaskflowTreeNode, found: string[]): string[] {
   if (node.taskType === TASK_TYPE.control && node.children.length === 0) {
@@ -228,7 +313,14 @@ function collectEmptyControls(node: TaskflowTreeNode, found: string[]): string[]
 
 type ComposeInsertOp = {
   after: string
-  step: { label: string; taskName: string; taskType?: string; contentName?: string; contentId?: number }
+  step: {
+    label: string
+    taskName: string
+    taskType?: string
+    contentName?: string
+    contentId?: number
+    properties?: Record<string, unknown>
+  }
   appendOnly: true
   sourceHandle: 'left' | 'right'
   targetHandle: 'left'
@@ -248,6 +340,7 @@ function flattenTreeToInsertOps(roots: TaskflowTreeNode[]): ComposeInsertOp[] {
     taskType: node.taskType,
     contentName: node.contentName,
     contentId: node.contentId,
+    ...(node.properties ? { properties: node.properties } : {}),
   })
 
   const walkChildren = (node: TaskflowTreeNode, parentIndex: number) => {
@@ -309,6 +402,7 @@ export function createComposeTaskflowTool(): ToolDefinition | null {
                 depth: { type: 'integer', description: taskflowMessage(TASKFLOW_MESSAGE_KEY.composeParamDepth) },
                 taskName: { type: 'string', description: taskflowMessage(TASKFLOW_MESSAGE_KEY.composeParamTaskName) },
                 contentName: { type: 'string', description: taskflowMessage(TASKFLOW_MESSAGE_KEY.composeParamContentName) },
+                properties: { type: 'object', description: taskflowMessage(TASKFLOW_MESSAGE_KEY.composeParamProperties) },
               },
               required: ['depth'],
             },
@@ -328,14 +422,30 @@ export function createComposeTaskflowTool(): ToolDefinition | null {
 
       // 비활성 Task 의 콘텐츠가 먼저 잡혀 역추적이 실패하지 않도록 카탈로그에 있는 Task 로 한정한다.
       const contents = readTaskContents(ctx).filter((row) => Boolean(store.get(row.taskName)))
-      const notes: ComposeNotes = { missing: [], unresolved: [], substituted: [], placeholders: [] }
+      // 팔레트가 비면 자식 노드가 전부 버려진다. 여기 0 이면 프론트가 context.taskflow 를 안 보낸 것이다.
+      trace(traceReqId(ctx.context), '4-1.compose-input', {
+        llmNodes: nodes.map((node) => `${node.depth}:${node.taskName || '?'}/${node.contentName ?? '-'}`),
+        paletteContents: contents.length,
+        canvasNodes: readCurrentGraph(ctx).nodes.length,
+      })
+
+      const notes: ComposeNotes = { missing: [], unresolved: [], substituted: [], placeholders: [], unknownProperties: [] }
       const result = buildForest(nodes, store, contents, notes)
       if ('clarification' in result) {
         ctx.log?.log(`[${TOOL_NAME}] rejected reason=${result.clarification}`)
         return result
       }
 
-      const emptyControls = result.flatMap((root) => collectEmptyControls(root, []))
+      const roots = await wrapConcurrentRootsIfNeeded(result, store, ctx)
+      trace(traceReqId(ctx.context), '4-2.compose-tree', {
+        beforeWrap: describeTree(result),
+        afterWrap: describeTree(roots),
+        missing: notes.missing,
+        substituted: notes.substituted.map((row) => `${row.requested}->${row.resolved}`),
+        placeholders: notes.placeholders.map((row) => `${row.requested}->${row.placedWith}`),
+      })
+
+      const emptyControls = roots.flatMap((root) => collectEmptyControls(root, []))
       if (emptyControls.length > 0) {
         return {
           clarification: taskflowMessage(TASKFLOW_MESSAGE_KEY.composeEmptyControl, { names: emptyControls.join(', ') }),
@@ -344,7 +454,7 @@ export function createComposeTaskflowTool(): ToolDefinition | null {
       }
 
       ctx.log?.log(
-        `[${TOOL_NAME}] composed roots=${result.map((root) => root.taskName).join('>')} nodes=${nodes.length} contents=${contents.length}`,
+        `[${TOOL_NAME}] composed roots=${roots.map((root) => root.taskName).join('>')} nodes=${nodes.length} contents=${contents.length}`,
       )
       if (notes.missing.length > 0) {
         ctx.log?.log(`[${TOOL_NAME}] skipped names=${notes.missing.join(', ')}`)
@@ -353,12 +463,20 @@ export function createComposeTaskflowTool(): ToolDefinition | null {
         ctx.log?.log(`[${TOOL_NAME}] content-unresolved names=${notes.unresolved.join(', ')}`)
       }
 
+      // 캔버스에 이미 노드가 있으면 지우고 새로 그리지 않고, 현재 흐름 우측 끝에 이어붙인다.
+      const draft = readCurrentGraph(ctx).nodes.length > 0
+        ? { mode: 'edit', insertAfter: flattenTreeToInsertOps(roots) }
+        : { mode: 'replace', roots }
+
+      trace(traceReqId(ctx.context), '4-3.compose-draft', {
+        mode: draft.mode,
+        rootCount: Array.isArray((draft as any).roots) ? (draft as any).roots.length : 0,
+        insertCount: Array.isArray((draft as any).insertAfter) ? (draft as any).insertAfter.length : 0,
+      })
+
       const payload: Record<string, unknown> = {
-        // 캔버스에 이미 노드가 있으면 지우고 새로 그리지 않고, 현재 흐름 우측 끝에 이어붙인다.
-        canvasDraft: readCurrentGraph(ctx).nodes.length > 0
-          ? { mode: 'edit', insertAfter: flattenTreeToInsertOps(result) }
-          : { mode: 'replace', roots: result },
-        assistantText: buildAssistantText(result, notes),
+        ...buildApplyDraftAction(draft, ctx, TASKFLOW_MESSAGE_KEY.toolCompose),
+        assistantText: buildAssistantText(roots, notes),
       }
       if (notes.missing.length > 0) {
         payload.skippedNodes = notes.missing

@@ -4,6 +4,7 @@ import {
   getChatHistory,
   getGuidanceList,
   getRagList,
+  listActionTools,
   listAllChatRules,
   listPrompts,
   createChatPrompt,
@@ -272,12 +273,13 @@ const ChatSettings = () => {
     setError('')
 
     try {
-      const [settingsRes, guidanceRes, promptRes, ragRes, ruleRes] = await Promise.all([
+      const [settingsRes, guidanceRes, promptRes, ragRes, ruleRes, actionToolRes] = await Promise.all([
         getChatSettings(),
         getGuidanceList(),
         listPrompts(),
         getRagList(),
         listAllChatRules(),
+        listActionTools(),
       ])
       const data = settingsRes?.data ?? {}
       const guidanceItems = Array.isArray(guidanceRes?.data?.items)
@@ -299,6 +301,11 @@ const ChatSettings = () => {
         ? ruleRes.data.items
         : Array.isArray(ruleRes?.items)
           ? ruleRes.items
+          : []
+      const actionToolItems = Array.isArray(actionToolRes?.data?.items)
+        ? actionToolRes.data.items
+        : Array.isArray(actionToolRes?.items)
+          ? actionToolRes.items
           : []
 
       console.info('[chat-settings] common prompt listPrompts result', {
@@ -326,6 +333,7 @@ const ChatSettings = () => {
         guidance: guidanceItems,
         ragDocs: ragItemsFromList.length > 0 ? ragItemsFromList : Array.isArray(nextManagement.ragDocs) ? nextManagement.ragDocs : [],
         rules: ruleItems,
+        actionTools: actionToolItems,
         history: Array.isArray(nextManagement.history) ? nextManagement.history : [],
       }
 
@@ -335,6 +343,7 @@ const ChatSettings = () => {
         guidance: normalizedManagement.guidance.length,
         ragDocs: normalizedManagement.ragDocs.length,
         rules: normalizedManagement.rules.length,
+        actionTools: normalizedManagement.actionTools.length,
       })
 
       setManagement(normalizedManagement)
@@ -1334,6 +1343,10 @@ const ChatSettings = () => {
 
           {activeAppTab === APP_TAB.RULE ? (
             <DatabaseTableSettingsTab kind="rule" items={management.rules} screens={management.screens} onChanged={load} />
+          ) : null}
+
+          {activeAppTab === APP_TAB.ACTION_TOOL ? (
+            <DatabaseTableSettingsTab kind="actionTool" items={management.actionTools} screens={management.screens} onChanged={load} />
           ) : null}
 
           {activeAppTab === APP_TAB.HISTORY ? (

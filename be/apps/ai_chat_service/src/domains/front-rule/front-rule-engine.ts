@@ -158,7 +158,9 @@ export async function matchFrontRule(
     ctx.appKey || screenKey.split('/').filter(Boolean)[0] || '',
   ).trim();
 
-  const rules = await loadRules(appKey, appKey);
+  // 화면 룰(예: tms/taskflows/:taskFlowId/canvas)도 후보에 들어와야 한다.
+  // appKey 만 넘기면 앱 루트 룰만 조회돼 화면 전용 룰이 전부 빠진다.
+  const rules = await loadRules(appKey, screenKey || appKey);
 
   return matchFrontRuleRows(
     {
@@ -183,9 +185,16 @@ export function matchFrontRuleRows(
     ctx.appKey || ctx.screenKey.split('/').filter(Boolean)[0] || '',
   ).trim();
 
-  const candidateRules = appKey
+  const filtered = appKey
     ? rules.filter((rule) => String(rule.appKey ?? '').trim() === appKey)
     : rules;
+
+  // 여러 룰이 같은 문장에 걸릴 수 있다. extra_json.priority 가 큰 룰(더 구체적인 룰)을 먼저 본다.
+  const priorityOf = (rule: ChatRuleEntity): number => {
+    const value = Number(toRecord(rule.extraJson).priority);
+    return Number.isFinite(value) ? value : 0;
+  };
+  const candidateRules = [...filtered].sort((a, b) => priorityOf(b) - priorityOf(a));
 
   if (candidateRules.length === 0) {
     return null;

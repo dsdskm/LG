@@ -146,13 +146,6 @@ export function useLogReplayLogic({ initialDate, deviceId }) {
     return Number(playTimeSecValRef.current) || 0
   }, []) // ← 빈 deps: 함수 참조 불변
 
-  // ✅ 재생 여부도 ref로 안정화 → tick이 seek/재생을 추측이 아닌 "실제 상태"로 판정
-  const isPlayingValRef = useRef(false)
-  useEffect(() => {
-    isPlayingValRef.current = isPlaying
-  }, [isPlaying])
-  const getIsPlaying = useCallback(() => !!isPlayingValRef.current, [])
-
   // ✅ 사용자 seek 발생 카운터 getter (데이터 훅이 변화 감지 → pose 캐시 리셋)
   const getSeekEpoch = useCallback(() => Number(seekEpochRef?.current) || 0, [seekEpochRef])
 
@@ -176,7 +169,6 @@ export function useLogReplayLogic({ initialDate, deviceId }) {
     deviceId,
     // ✅ ADD
     getPlayTimeSec,
-    getIsPlaying,
     getSeekEpoch
   })
 

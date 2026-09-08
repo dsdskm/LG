@@ -10,6 +10,13 @@ export const AI_TASKFLOW_CANVAS_COMMAND_EVENT = 'ai-assistant:taskflow-canvas-co
 export const AI_TASKFLOW_CANVAS_RESULT_EVENT = 'ai-assistant:taskflow-canvas-result'
 export const AI_TASKFLOW_REFRESH_CONTENTS_EVENT = 'ai-assistant:taskflow-refresh-contents'
 
+// 서버가 지시하는 "약속된 함수" 이름. action_tool.client_function 값과 같은 문자열이어야 한다.
+// LLM 함수(action_tool.llm_function)와 이름을 맞춰 둔다. 어느 도구의 결과인지 이름만 보고 알 수 있다.
+export const CLIENT_ACTION = {
+  COMPOSE_LINEAR_TASKFLOW: 'compose_linear_taskflow',
+  EDIT_TASKFLOW: 'edit_taskflow'
+}
+
 // node-*.js 액션의 command.type은 RULE_KEY.NODE_* 값을 그대로 재사용한다.
 export const TASKFLOW_CANVAS_COMMAND_TYPE = {
   SAVE: 'save',
@@ -55,5 +62,9 @@ export const RULE_KEY = {
 
   // robot 앱 이름 기반 상세 이동 (기존 로봇/사이트 목록 API로 이름→ID 조회 후 이동)
   ROBOT_APP_MANAGEMENT_DETAIL: 'robot-app-management-detail',
-  ROBOT_APP_SITE_DETAIL: 'robot-app-site-detail'
+  ROBOT_APP_SITE_DETAIL: 'robot-app-site-detail',
+
+  // robot 앱 로그 리플레이 (사이트+로봇명으로 조회 후 새 창 열기)
+  ROBOT_LOGREPLAY_DRIVING_BY_NAME: 'robot-logreplay-driving-by-name',
+  ROBOT_LOGREPLAY_MANIPULATION_BY_NAME: 'robot-logreplay-manipulation-by-name'
 }

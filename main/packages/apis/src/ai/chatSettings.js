@@ -423,3 +423,26 @@ export async function deleteChatRagDoc(id) {
   })
   return response.json()
 }
+
+/** 앱/화면별 action tool 목록. AI Assistant 설정의 Action Tool 탭이 쓴다. */
+export async function listActionTools({ appKey, screenKey } = {}) {
+  const params = new URLSearchParams()
+  if (appKey) params.set('app_key', appKey)
+  if (screenKey) params.set('screen_key', screenKey)
+  const query = params.toString()
+
+  const response = await fetch(`${BASE_URL}/chat/settings/action-tools${query ? `?${query}` : ''}`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  return response.json()
+}
+
+/** 코드에 구현된 action tool 의 LLM 함수 / 프론트 함수 쌍. */
+export async function listActionToolDefinitions() {
+  const response = await fetch(`${BASE_URL}/chat/settings/action-tools/available`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  return response.json()
+}

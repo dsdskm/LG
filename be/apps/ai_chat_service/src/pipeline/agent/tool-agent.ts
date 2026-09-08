@@ -11,6 +11,7 @@ import type {
 } from '../../llm/llm.types'
 import type { ToolContext, ToolDefinition } from '../tool.type'
 import type { ChatTurn } from '../pipeline.types'
+import { trace, traceReqId } from '../trace.util'
 import { logLlmPromptMeta, safeJsonParse } from '../../utils/utils'
 
 export type ExecutedCall = {
@@ -73,6 +74,10 @@ export class ToolAgent {
       { role: 'user', content: userMessage },
     ]
     const executed: ExecutedCall[] = []
+    // 모델이 tool 을 부르지 않고 "이미 추가했습니다" 처럼 답해 버리는 일이 있다.
+    // 그때 한 번은 tool 호출을 강제해 실제 반영까지 가게 한다.
+    let toolChoice: 'auto' | 'required' = 'auto'
+    let forcedRetryUsed = false
 
     for (let turn = 0; turn < this.maxToolTurns; turn++) {
       logLlmPromptMeta({
@@ -89,15 +94,39 @@ export class ToolAgent {
         messages,
         maxOutputTokens: this.maxOutputTokens,
         tools: llmTools,
-        toolChoice: 'auto',
+        toolChoice,
       })
 
       const toolCalls = res.toolCalls ?? []
+      trace(traceReqId(toolCtx.context), '3-1.llm-turn', {
+        turn: turn + 1,
+        offeredTools: llmTools.map((tool: any) => tool?.name ?? tool?.function?.name),
+        toolCalls: toolCalls.map((call) => call.function?.name),
+        textLen: String(res.text ?? '').length,
+      })
 
-      // tool 호출이 없으면 최종 답변
+      // tool 호출이 없으면 최종 답변. 단, 아무 tool 도 안 부른 첫 턴은 한 번 강제로 되돌린다.
       if (toolCalls.length === 0) {
+        const nothingExecuted = executed.length === 0
+        if (!forcedRetryUsed && nothingExecuted && llmTools.length > 0) {
+          forcedRetryUsed = true
+          toolChoice = 'required'
+          trace(traceReqId(toolCtx.context), '3-1b.force-tool', {
+            reason: 'tool 미호출로 캔버스가 바뀌지 않아 tool 호출을 강제한다',
+            modelText: res.text ?? '',
+          })
+          messages.push({
+            role: 'user',
+            content: 'tool 을 호출하지 않았다. 캔버스는 아직 바뀌지 않았다. 완료했다고 답하지 말고, 지금 요청을 반영할 tool 을 호출하라.',
+          })
+          continue
+        }
+
         return { text: (res.text ?? '').trim(), executed }
       }
+
+      // 강제 호출로 tool 을 받았으면 다음 턴부터는 다시 모델 판단에 맡긴다.
+      toolChoice = 'auto'
 
       // assistant turn(tool_calls) 기록
       messages.push({
@@ -120,7 +149,14 @@ export class ToolAgent {
           resultContent = JSON.stringify({ error })
         } else {
           try {
+            // LLM 이 어떤 인자를 채웠는지가 자연어 해석 품질을 보는 유일한 지점이다.
+            trace(traceReqId(toolCtx.context), '3-2.tool-call', { tool: call.function.name, args })
             const result = await def.execute(args, toolCtx)
+            trace(traceReqId(toolCtx.context), '3-3.tool-result', {
+              tool: call.function.name,
+              resultKeys: result && typeof result === 'object' ? Object.keys(result as Record<string, unknown>) : typeof result,
+              clientAction: (result as any)?.clientAction?.name ?? '-',
+            })
             executed.push({ name: call.function.name, args, result })
             resultContent = JSON.stringify(result ?? null)
           } catch (e: any) {

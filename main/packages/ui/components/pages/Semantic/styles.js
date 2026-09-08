@@ -35,6 +35,46 @@ export const ButtonWrapper = styled.div`
   justify-content: flex-end;
 `
 
+/**
+ * 가상 장애물 명령 줄 — 왼쪽에 형태/타입 필터, 오른쪽에 추가 버튼.
+ *
+ * 라벨이 붙은 Dropdown(라벨 줄 + 컨트롤 3.6rem)과 라벨이 없는 Button 을 한 줄에 두면
+ * flex 기본값(stretch)으로 버튼이 줄 전체 높이만큼 늘어나 컨트롤과 아래선이 어긋난다.
+ * 아래선을 기준으로 맞추고(align-items: flex-end), 직속 버튼 높이를 Dropdown 컨트롤의
+ * md 높이(3.6rem)와 같게 고정한다 — 안쪽 select 버튼은 이미 같은 값이라 영향받지 않는다.
+ */
+export const ObstacleCommandRow = styled.div`
+  margin-top: 3.2rem;
+  display: flex;
+  gap: 1.6rem;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+
+  & > button {
+    height: 3.6rem;
+  }
+`
+
+// 꼭지점 좌표 목록 — 목록 칸과 모달이 같이 쓴다(같은 표기/줄바꿈 규칙).
+export const ObstaclePointGrid = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 1.2rem;
+  padding: 0.4rem 0;
+`
+
+// 새 가상 장애물의 타입/이름을 받는 모달 본문 — 입력이 두 개뿐이라 한 열로 세운다.
+export const ObstacleFormBody = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 1.6rem;
+
+  & > * {
+    width: 100%;
+  }
+`
+
 // 목록 행의 command 칸 버튼들 — ButtonWrapper 와 달리 셀 안이라 위쪽 여백을 두지 않는다.
 export const RowCommands = styled.div`
   display: flex;

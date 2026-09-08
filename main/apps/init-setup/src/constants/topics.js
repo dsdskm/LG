@@ -36,6 +36,10 @@ export const SCAN_TOPICS = ['/lidar_points']
 // 매핑/측위 진행 상태 (std_msgs/String)
 export const STATUS_TOPICS = ['/lio_node/status']
 
+// 주행 궤적 (nav_msgs/Path) — lio_node 가 매핑/측위 중 누적 경로를 발행한다.
+// lio_odom 프레임 기준이라 지도 위에 겹칠 때는 frameCorrections 로 보정한다(MapCanvas).
+export const TRAJECTORY_TOPICS = ['/lio/path']
+
 // 비상정지 버튼(하드웨어 키) 상태 (power_on_micom_msgs/EmergencyKeyStatus, uint8 emergency_key).
 // power-on-micom 이 CAN 0x700 을 받을 때마다(약 1Hz) 발행한다 — 0=Released, 1=Detected(눌림).
 // 소프트 E-Stop 명령 채널인 /e_stop(std_msgs/Bool)과는 다른 토픽이다: 그쪽은 앱이 걸는 명령이고
@@ -58,7 +62,7 @@ export const SPATIAL_TOPICS = [
   ...SCAN_TOPICS,
   ...TF_TOPICS,
   ...FOOTPRINT_TOPICS,
-  '/lio/path',
+  ...TRAJECTORY_TOPICS,
   '/scan_matched_points2',
   '/trajectory_node_list',
   '/constraint_list',

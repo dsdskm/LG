@@ -16,7 +16,8 @@ function ReplayControls({
   playbackRate = 1.0,
   viewMode, // ✅ 'landing' | 'result
   // ✅ callbacks (부모가 상태를 갖고 업데이트)
-  onSeek, // (t:number)=>void
+  onSeek, // (t:number)=>void — 사용자 명시적 점프(드래그/이슈 이동/리셋). 부모가 seek 신호로 취급.
+  onPlayTick, // (t:number)=>void — 재생 타이머 전진 전용(seek 신호 아님). 없으면 onSeek으로 폴백.
   onTogglePlay, // ()=>void
   onStop, // ()=>void
   onChangeRate, // (r:number)=>void
@@ -73,11 +74,15 @@ function ReplayControls({
       const next = Number(currentTimeRef.current || 0) + 0.1 * Number(playbackRate || 1.0)
       const clamped = next >= totalDuration ? totalDuration : next
       currentTimeRef.current = clamped
-      onSeek?.(clamped)
+      // ✅ 재생 전진은 onPlayTick으로 통보(= seek 신호 아님).
+      //    이 통로를 onSeek과 분리해야 로더가 "점프"와 "재생 중 뒤처짐"을 구분할 수 있다.
+      //    onPlayTick 미전달(구 호출부)이면 기존 동작 그대로 onSeek 폴백.
+      const advance = typeof onPlayTick === 'function' ? onPlayTick : onSeek
+      advance?.(clamped)
     }, 100)
 
     return () => clearInterval(timerRef.current)
-  }, [isPlaying, playbackRate, totalDuration, onSeek])
+  }, [isPlaying, playbackRate, totalDuration, onPlayTick, onSeek])
 
   // ▶ 재생 시작 시: 현재 위치부터 누적 시작
   useEffect(() => {
@@ -478,6 +483,7 @@ export default React.memo(ReplayControls, (p, n) => {
   if (p.timeRange !== n.timeRange) return false
 
   if (p.onSeek !== n.onSeek) return false
+  if (p.onPlayTick !== n.onPlayTick) return false
   if (p.onTogglePlay !== n.onTogglePlay) return false
   if (p.onStop !== n.onStop) return false
   if (p.onChangeRate !== n.onChangeRate) return false

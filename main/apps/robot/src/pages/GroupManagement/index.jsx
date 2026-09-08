@@ -181,6 +181,7 @@ const GroupManagement = () => {
             tempSite.siteAddressState = dataSites[j].siteAddressState
             tempSite.siteCode = dataSites[j].siteCode
             tempSite.siteAddressPostalCode = dataSites[j].siteAddressPostalCode
+            tempSite.siteAddressCountry = dataSites[j].siteAddressCountry
             tempSite.siteLatitude = dataSites[j].siteLatitude
             tempSite.siteLongitude = dataSites[j].siteLongitude
             tempSite.createdAt = dataSites[j].createdAt
@@ -274,6 +275,7 @@ const GroupManagement = () => {
                 onClick={() =>
                   openModalEditSite(site.groupId, site.siteId, {
                     siteName: site.siteName,
+                    siteAddressCountry: site.siteAddressCountry,
                     siteAddressPostalCode: site.siteAddressPostalCode,
                     siteAddressState: site.siteAddressState,
                     siteAddressCity: site.siteAddressCity,

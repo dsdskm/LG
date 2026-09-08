@@ -1,6 +1,16 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react'
+import { Dropdown } from '@repo/ui'
 import { FOOTPRINT_TOPICS, SPATIAL_TOPICS, subscribedTopicOf } from '@/constants/topics'
 import { transformPoint } from '@/utils/tf'
+import {
+  Canvas,
+  CanvasViewport,
+  ObstacleDrawBar,
+  ObstacleDrawBarRow,
+  ObstacleDrawPanel,
+  Placeholder,
+  PlaceholderText
+} from './styles'
 
 // OccupancyGrid의 장애물 확률(0~100)에 따른 밝기(0~255) 값을 미리 계산한 캐시 배열
 const BRIGHTNESS_CACHE = new Uint8Array(101)
@@ -32,7 +42,7 @@ const MARKER_CORE_RATIO = 0.3
 // POI 를 클릭으로 잡는 판정 반경(px) — 마커보다 조금 넉넉하게 잡아 정확히 점을 찍지 않아도 집힌다.
 const POI_HIT_RADIUS_PX = MARKER_RADIUS_PX + 4
 
-// 고정장애물 사각형 — 면으로 영역을, 테두리로 경계를 보여준다. 지도(회색/검정)와 POI(앰버/초록)
+// 가상 장애물 사각형 — 면으로 영역을, 테두리로 경계를 보여준다. 지도(회색/검정)와 POI(앰버/초록)
 // 사이에서 구분되도록 붉은 계열로 두고, 아래의 격자가 보여야 하므로 면은 반투명이다.
 const OBSTACLE_FILL = 'rgba(231, 76, 60, 0.22)'
 const OBSTACLE_STROKE = 'rgba(192, 57, 43, 0.95)'
@@ -54,19 +64,44 @@ const OBSTACLE_MIN_DRAG_PX = 6
 // 판정은 손잡이보다 넉넉하게 잡아 정확히 모서리를 찍지 않아도 집힌다(POI 마커와 같은 규약).
 const OBSTACLE_HANDLE_HALF_PX = 5
 const OBSTACLE_HANDLE_HIT_PX = OBSTACLE_HANDLE_HALF_PX + 5
+// 회전 손잡이 — 위쪽 변 중앙에서 바깥으로 이 거리(px)만큼 띈 원. 모서리 손잡이와 헷갈리지
+// 않도록 충분히 떨어뜨린다.
+const OBSTACLE_ROTATE_HANDLE_OFFSET_PX = 26
+const OBSTACLE_ROTATE_HANDLE_RADIUS_PX = 6
+const OBSTACLE_ROTATE_HANDLE_HIT_PX = OBSTACLE_ROTATE_HANDLE_RADIUS_PX + 5
 
-// 고정장애물의 형태. 사각형은 드래그 한 번, 폴리곤은 점을 하나씩 찍어 만든다.
+// 가상 장애물의 형태. 점은 클릭 한 번, 선분/사각형은 드래그 한 번, 폴리곤은 점을 하나씩 찍는다.
+// 로봇(corepath_nav2_plugins::VirtualObstacleLayer)은 shape 를 모르고 점 개수로만 판정한다 —
+// 1점은 반경 0.05 m 점, 2점은 거리 0.05 m 선분, 3점 이상은 폴리곤 내부다.
+// shape 를 함께 들고 있는 이유는 편집 화면이 "사각형으로 그린 것"을 사각형 편집으로 다시 열어야
+// 하기 때문이다(대각선 꼭지점 고정 리사이즈).
+export const OBSTACLE_SHAPE_POINT = 'POINT'
+export const OBSTACLE_SHAPE_LINE = 'LINE'
 export const OBSTACLE_SHAPE_RECTANGLE = 'RECTANGLE'
 export const OBSTACLE_SHAPE_POLYGON = 'POLYGON'
+// 드래그 한 번으로 만드는 형태 — 누른 지점과 놓은 지점이 도형을 정한다.
+const OBSTACLE_DRAG_SHAPES = [OBSTACLE_SHAPE_RECTANGLE, OBSTACLE_SHAPE_LINE]
 // 면이 되는 최소 점 개수 — 이보다 적으면 닫을 수 없다.
 const OBSTACLE_POLYGON_MIN_POINTS = 3
 // 찍고 있는 폴리곤의 첫 점을 다시 눌러 닫는 판정 반경(px) — 손잡이보다 넉넉하게 잡는다.
 const OBSTACLE_POLYGON_CLOSE_HIT_PX = 12
+// 점(POINT) 장애물을 지도에 그릴 반경(px). 로봇 쪽 판정 반경(0.05 m)은 줌에 따라 1~2 px 밖에
+// 안 되는 경우가 있어 화면에서는 보이는 크기로 그린다(POI 마커와 같은 규약).
+const OBSTACLE_POINT_RADIUS_PX = 5
 
 /**
- * 두 월드 좌표를 화면 기준 좌상단/우하단으로 정규화한 사각형으로 바꾼다.
- * 캔버스 y 축은 아래가 +라서 화면의 위쪽이 월드 maxY 다 — 어느 방향으로 끌었는지와 무관하게
- * 같은 사각형이 나온다.
+ * 장애물 꼭지점의 z. 캔버스는 지도 평면만 다루므로 항상 0.0 이고, BE(map_obstacles.points)와
+ * 로봇 yaml(polygon.points)이 {x, y, z} 3요소를 기대하므로 FE 가 실어 보낸다.
+ */
+const OBSTACLE_POINT_Z = 0.0
+
+/**
+ * 두 월드 좌표로 축정렬 사각형의 네 꼭지점을 만든다.
+ *
+ * 좌상 → 우상 → 우하 → 좌하 순서로 담는다(월드 기준 시계방향). 어느 방향으로 끌었는지와
+ * 무관하게 같은 순서가 나오고, 인덱스 +2 가 대각선 반대 꼭지점이 된다(리사이즈에서 고정할 점).
+ * 경계(min/max)를 저장하지 않는 이유는 로봇/BE 가 받는 형식이 "순서 있는 점 목록" 하나이기
+ * 때문이다 — 표현을 하나로 두면 형태가 늘어도 저장/전송 경로가 갈라지지 않는다.
  */
 const rectFromWorldPoints = (a, b) => {
   const minX = Math.min(a.x, b.x)
@@ -75,54 +110,66 @@ const rectFromWorldPoints = (a, b) => {
   const maxY = Math.max(a.y, b.y)
   return {
     shape: OBSTACLE_SHAPE_RECTANGLE,
-    topLeft: { x: minX, y: maxY },
-    bottomRight: { x: maxX, y: minY },
-    minX,
-    minY,
-    maxX,
-    maxY
-  }
-}
-
-/** 폴리곤 점들을 확정된 도형으로 — 경계(min/max)는 목록/조회에서 쓰라고 함께 담는다. */
-const polygonFromWorldPoints = (points) => {
-  const xs = points.map((point) => point.x)
-  const ys = points.map((point) => point.y)
-  const minX = Math.min(...xs)
-  const maxX = Math.max(...xs)
-  const minY = Math.min(...ys)
-  const maxY = Math.max(...ys)
-  return {
-    shape: OBSTACLE_SHAPE_POLYGON,
-    points: points.map((point) => ({ x: point.x, y: point.y })),
-    topLeft: { x: minX, y: maxY },
-    bottomRight: { x: maxX, y: minY },
-    minX,
-    minY,
-    maxX,
-    maxY
+    points: [
+      { x: minX, y: maxY, z: OBSTACLE_POINT_Z },
+      { x: maxX, y: maxY, z: OBSTACLE_POINT_Z },
+      { x: maxX, y: minY, z: OBSTACLE_POINT_Z },
+      { x: minX, y: minY, z: OBSTACLE_POINT_Z }
+    ]
   }
 }
 
 /**
+ * 회전된 사각형의 대각선 반대 꼭지점을 고정한 채 크기를 조절한다(캔버스 픽셀 기준).
+ *
+ * corners 는 rectFromWorldPoints 가 만드는 순서(0→1→2→3 이 시계로 돌며 각 변이
+ * ex/ey/-ex/-ey 방향)를 그대로 따른다고 가정한다. 그 순서에서 축(ex, ey)을 다시 구해
+ * "고정 꼭지점 기준으로 손끝까지의 폭/높이"만 새로 재고 나머지 꼭지점을 같은 축으로
+ * 다시 배치하므로, 사각형이 회전해 있어도 그 회전이 그대로 유지된다(축정렬을 다시
+ * 강제하는 rectFromWorldPoints 와 달리 방향을 보존한다).
+ */
+const resizeRotatedRectCorners = (corners, fixedIndex, target) => {
+  const sub = (a, b) => ({ x: a.px - b.px, y: a.py - b.py })
+  const dot = (a, b) => a.x * b.x + a.y * b.y
+  const normalize = (v) => {
+    const len = Math.hypot(v.x, v.y) || 1
+    return { x: v.x / len, y: v.y / len }
+  }
+  const ex = normalize(sub(corners[1], corners[0]))
+  const ey = normalize(sub(corners[3], corners[0]))
+  const fixed = corners[fixedIndex]
+  const delta = { x: target.x - fixed.px, y: target.y - fixed.py }
+  const w = dot(delta, ex)
+  const h = dot(delta, ey)
+  // 꼭지점 i 의 로컬 좌표(0번 꼭지점 기준, ex/ey 단위) — rectFromWorldPoints 의 순서와 같다.
+  const LOCAL = [
+    { a: 0, b: 0 },
+    { a: 1, b: 0 },
+    { a: 1, b: 1 },
+    { a: 0, b: 1 }
+  ]
+  const local = LOCAL[fixedIndex]
+  const originPx = fixed.px - local.a * w * ex.x - local.b * h * ey.x
+  const originPy = fixed.py - local.a * w * ex.y - local.b * h * ey.y
+  return LOCAL.map(({ a, b }) => ({
+    px: originPx + a * w * ex.x + b * h * ey.x,
+    py: originPy + a * w * ex.y + b * h * ey.y
+  }))
+}
+
+/** 찍은 점들을 확정된 도형으로 — 점 순서를 그대로 유지한다(폴리곤의 변 순서가 곧 모양이다). */
+const shapeFromWorldPoints = (shape, points) => ({
+  shape,
+  points: points.map((point) => ({ x: point.x, y: point.y, z: OBSTACLE_POINT_Z }))
+})
+
+/**
  * 장애물 하나를 그릴 월드 좌표 꼭지점들.
- * 폴리곤은 저장된 점 그대로, 사각형은 경계(min/max)로 네 꼭지점을 만든다 —
- * 두 형태가 같은 경로로 그려지고 손잡이도 같은 규칙으로 붙는다.
- * 사각형의 순서는 좌상 → 우상 → 우하 → 좌하 로, 인덱스 +2 가 대각선 반대 꼭지점이 된다.
+ * 모든 형태가 순서 있는 points 하나로 표현되므로 그리기/손잡이 코드가 형태별로 갈리지 않는다.
  */
 const obstacleWorldPoints = (obstacle) => {
-  if (obstacle?.shape === OBSTACLE_SHAPE_POLYGON) {
-    const points = Array.isArray(obstacle.points) ? obstacle.points : []
-    return points.filter((point) => typeof point?.x === 'number' && typeof point?.y === 'number')
-  }
-  const { minX, minY, maxX, maxY } = obstacle ?? {}
-  if ([minX, minY, maxX, maxY].some((value) => typeof value !== 'number')) return []
-  return [
-    { x: minX, y: maxY },
-    { x: maxX, y: maxY },
-    { x: maxX, y: minY },
-    { x: minX, y: minY }
-  ]
+  const points = Array.isArray(obstacle?.points) ? obstacle.points : []
+  return points.filter((point) => typeof point?.x === 'number' && typeof point?.y === 'number')
 }
 
 /**
@@ -205,7 +252,7 @@ const poiColorsOf = (type, isDeleted) => {
  *   1. OccupancyGrid 격자 지도  (회색/흰색/검정)
  *   2. LaserScan 포인트          (빨간 점들)
  *   3. 커스텀 토픽(궤적/랜드마크/TF 등)
- *   4. 고정장애물 도형            (사각형/폴리곤 — 반투명 붉은 면 + 테두리)
+ *   4. 가상 장애물 도형            (사각형/폴리곤 — 반투명 붉은 면 + 테두리)
  *   5. POI 마커                   (타입별 색 점 + 방향 삼각형 + 이름)
  *   6. 로봇 위치 마커             (파란 외형 + 방향 삼각형)
  *      크기는 footprint 토픽(nav2 costmap)이 있으면 실제 폴리곤, 없으면 상수 반경으로 그린다.
@@ -224,32 +271,40 @@ const poiColorsOf = (type, isDeleted) => {
  * @param {Function} [onViewChange] 줌/팬/전체보기로 뷰가 바뀔 때 호출 — canvasX/Y 기준 오버레이를
  *   띄운 쪽이 위치가 어긋난 오버레이를 닫을 수 있게 알려준다.
  *
- * @param {Array} [obstacles] 지도 위에 그릴 고정장애물 목록(좌표는 지도 프레임, m) —
- *   사각형: { id, shape: 'RECTANGLE', minX, minY, maxX, maxY, editStatus }
- *   폴리곤: { id, shape: 'POLYGON', points: [{x,y}...], editStatus }
- *   shape 가 없으면 사각형으로 본다. 작업본의 삭제 예정(editStatus.softDelete)은 POI 마커와
- *   같이 무채색으로 낮춰 그린다.
- * @param {'RECTANGLE'|'POLYGON'|null} [drawObstacleShape] 고정장애물 그리기 모드와 형태.
- *   null 이면 꺼진 상태다. 켜져 있는 동안에는 지도 클릭(onMapClick)이 일어나지 않고
- *   더블클릭 전체보기도 막힌다 — 영역을 지정하는 중에 이동 말풍선이 뜨거나 뷰가 튀면 안 된다.
- *   RECTANGLE: 좌클릭 드래그가 팬 대신 사각형 그리기가 된다.
+ * @param {Array} [obstacles] 지도 위에 그릴 가상 장애물 목록(좌표는 지도 프레임, m) —
+ *   { id, shape: 'POINT'|'LINE'|'RECTANGLE'|'POLYGON', points: [{x,y}...], editStatus }
+ *   형태와 무관하게 좌표는 순서 있는 points 하나로만 표현한다(점 1 / 선분 2 / 사각형 4 /
+ *   폴리곤 3 이상). 작업본의 삭제 예정(editStatus.softDelete)은 POI 마커와 같이 무채색으로
+ *   낮춰 그린다.
+ * @param {'POINT'|'LINE'|'RECTANGLE'|'POLYGON'|null} [drawObstacleShape] 가상 장애물 그리기
+ *   모드와 형태. null 이면 꺼진 상태다. 켜져 있는 동안에는 지도 클릭(onMapClick)이 일어나지
+ *   않고 더블클릭 전체보기도 막힌다 — 영역을 지정하는 중에 이동 말풍선이 뜨거나 뷰가 튀면 안 된다.
+ *   POINT: 제자리 클릭 한 번으로 확정된다(끌면 평소처럼 팬이다).
+ *   LINE / RECTANGLE: 좌클릭 드래그가 팬 대신 도형 그리기가 된다.
  *   POLYGON: 클릭마다 점이 하나 찍히고(끌면 평소처럼 팬이다), 첫 점을 다시 누르거나 우클릭 또는
  *   Enter 로 닫는다. Esc 는 찍던 점을 모두 버린다(모드는 유지 — 다시 찍기 시작할 수 있다).
- *   휠 확대/축소는 두 형태 모두 그대로 쓴다.
- * @param {Function} [onObstacleDrawn] 도형이 확정될 때 호출 —
- *   사각형: ({ shape: 'RECTANGLE', topLeft, bottomRight, minX, minY, maxX, maxY })
- *   폴리곤: ({ shape: 'POLYGON', points: [{x,y}...], topLeft, bottomRight, minX, minY, maxX, maxY })
- *   좌표는 지도 프레임(m)이고 topLeft/bottomRight 는 화면 기준(위=+y)이라
- *   topLeft.y >= bottomRight.y 다(폴리곤에서는 점들을 감싸는 경계다).
+ *   휠 확대/축소는 모든 형태에서 그대로 쓴다.
+ * @param {Function} [onObstacleDrawn] 도형이 확정될 때 호출 — ({ shape, points: [{x,y}...] }).
+ *   좌표는 지도 프레임(m)이고 점 순서는 그린 순서를 그대로 유지한다. 사각형만은 끈 방향과
+ *   무관하게 좌상 → 우상 → 우하 → 좌하(월드 기준 시계방향)로 정규화되어 들어온다.
  * @param {string|number|null} [selectedObstacleId] 목록에서 선택된 장애물의 id — 그 도형만
  *   진하게 강조한다(목록과 지도에서 같은 것을 보고 있는지 확인하는 용도).
  * @param {string|number|null} [editingObstacleId] 고치는 중인 장애물의 id — 그 도형에만 꼭지점
  *   손잡이가 붙는다(다른 곳을 끌면 평소처럼 팬이다).
- * @param {Function} [onObstacleResize] 사각형의 모서리를 끄는 동안 계속 호출 —
- *   (id, { shape, topLeft, bottomRight, minX, minY, maxX, maxY }). 끌던 모서리의 대각선 반대
- *   꼭지점을 고정한 사각형이라, 어느 방향으로 끌어도 좌상단/우하단이 정규화되어 들어온다.
- * @param {Function} [onObstacleVertexMove] 폴리곤의 점을 끄는 동안 계속 호출 —
- *   (id, index, { x, y }). 그 점만 옮긴다(다른 점은 그대로다).
+ * @param {Function} [onObstacleResize] 사각형(shape: 'RECTANGLE')의 모서리를 끄는 동안 계속
+ *   호출 — (id, { shape: 'RECTANGLE', points: [4개] }). 끌던 모서리의 대각선 반대 꼭지점을
+ *   고정하므로 어느 방향으로 끌어도 축정렬과 꼭지점 순서가 유지된다.
+ * @param {Function} [onObstacleVertexMove] 그 밖의 형태(점/선분/폴리곤)에서 점을 끄는 동안 계속
+ *   호출 — (id, index, { x, y }). 그 점만 옮긴다(다른 점은 그대로다).
+ *
+ * @param {Array} [obstacleShapeOptions] 그리기 중 지도 위 조작 줄에 띄울 형태 목록 —
+ *   [{ value, name }]. 문구는 번역된 상태로 받는다(이 컴포넌트는 semantic 번역을 모른다).
+ *   비어 있으면 조작 줄에 드롭다운을 그리지 않는다.
+ * @param {Function} [onObstacleShapeChange] 조작 줄에서 형태를 바꿀 때 — (shape) => void.
+ *   형태가 바뀌면 찍어 둔 좌표는 버려진다(형태마다 점 개수 규칙이 다르다).
+ * @param {string} [obstacleShapeLabel] 형태 드롭다운 라벨.
+ * @param {string} [obstacleDrawHint] 그리기 중 지도 위에 띄울 안내 문구(형태별).
+ * @param {string} [obstaclePointsLabel] 찍은 좌표 목록의 제목.
  */
 function MapCanvas({
   mapData,
@@ -266,7 +321,7 @@ function MapCanvas({
   showScan = true,
   onMapClick = null,
   onViewChange = null,
-  // 고정장애물(시맨틱 화면) — 사각형 목록과 그리기 모드. 목록이 비어 있고 모드가 꺼져 있으면
+  // 가상 장애물(시맨틱 화면) — 사각형 목록과 그리기 모드. 목록이 비어 있고 모드가 꺼져 있으면
   // 아무 동작도 달라지지 않으므로 다른 화면(스캔 등)은 이 props 를 넘기지 않아도 된다.
   obstacles = [],
   drawObstacleShape = null,
@@ -274,7 +329,13 @@ function MapCanvas({
   selectedObstacleId = null,
   editingObstacleId = null,
   onObstacleResize = null,
-  onObstacleVertexMove = null
+  onObstacleVertexMove = null,
+  // 그리기 중 지도 위에 겹쳐 띄우는 조작 줄(형태 선택 + 안내 + 찍은 좌표).
+  obstacleShapeOptions = [],
+  onObstacleShapeChange = null,
+  obstacleShapeLabel = '',
+  obstacleDrawHint = '',
+  obstaclePointsLabel = ''
 }) {
   const canvasRef = useRef(null)
   const wrapperRef = useRef(null)
@@ -300,8 +361,8 @@ function MapCanvas({
   // 지금 화면에 찍혀 있는 POI 마커의 캔버스 좌표 — 클릭으로 POI 를 집는 판정에 쓴다.
   // 줌/팬마다 값이 달라지므로 render 가 매번 다시 채운다(상태로 들 필요가 없다).
   const poiHitsRef = useRef([])
-  // 그리는 중인 고정장애물 사각형 — 캔버스 픽셀 기준 { x0, y0, x1, y1 }. 확정 전까지만 존재한다.
-  // 리렌더 없이 render 만 다시 돌려 미리보기를 그리므로 상태가 아니라 ref 다.
+  // 드래그로 그리는 중인 가상 장애물(사각형/선분) — 캔버스 픽셀 기준 { shape, x0, y0, x1, y1 }.
+  // 확정 전까지만 존재한다. 리렌더 없이 render 만 다시 돌려 미리보기를 그리므로 상태가 아니라 ref 다.
   const obstacleDraftRef = useRef(null)
   // 찍고 있는 폴리곤 — { points: [{x,y}(월드)...], cursor: {px,py}(캔버스) }. 점은 월드 좌표로
   // 들고 있어야 찍은 뒤 줌/팬을 해도 그 자리에 남는다. 확정 전까지만 존재한다.
@@ -314,6 +375,13 @@ function MapCanvas({
   const obstacleHandlesRef = useRef([])
   // 지금 끌고 있는 손잡이. 있으면 마우스 이동이 팬이 아니라 크기 조절/점 옮기기다.
   const obstacleResizeRef = useRef(null)
+  // 지금 끌고 있는 회전 손잡이 — { id, center, corners(드래그 시작 시점의 네 꼭지점) }.
+  // 있으면 마우스 이동이 팬/크기 조절이 아니라 회전이다.
+  const obstacleRotateRef = useRef(null)
+  // 지도 위 조작 줄에 보여줄 "지금까지 찍은 좌표"(월드, m). 도형이 확정되기 전의 진행 상태다.
+  // 그리기 자체는 ref + 캔버스 재그리기로 처리하지만(리렌더 없이), 이 값은 DOM 으로 보여줘야
+  // 하므로 상태로 둔다 — 갱신 시점을 점이 실제로 늘거나 끝점이 바뀔 때로 제한해 둔다.
+  const [obstacleDraftPoints, setObstacleDraftPoints] = useState([])
   // 콜백은 ref 로 들고 쓴다 — 리스너를 다시 붙이지 않아도 최신 함수가 호출된다.
   const onMapClickRef = useRef(onMapClick)
   const onViewChangeRef = useRef(onViewChange)
@@ -804,24 +872,52 @@ function MapCanvas({
       drawTF(customTopicsData['/tf_static'])
     }
 
-    // ── Layer 4: 고정장애물(사각형/폴리곤) ────────────────────────────────
+    // ── Layer 4: 가상 장애물(점/선분/사각형/폴리곤) ─────────────────────────
     // POI 와 마찬가지로 저장된 맵 기준 좌표라 프레임 보정 없이 찍는다.
     // POI/로봇보다 아래에 둔다 — 영역이 마커를 덮으면 어느 지점인지 안 보인다.
-    // 사각형도 네 꼭지점으로 바꿔 폴리곤과 같은 경로로 그린다(그리기/손잡이 코드가 하나가 된다).
+    // 네 형태 모두 순서 있는 점 목록 하나로 그린다(그리기/손잡이 코드가 하나가 된다):
+    //   1점  — 점 마커(면이 없다)
+    //   2점  — 열린 선분(닫으면 같은 선을 두 번 긋는다)
+    //   3점+ — 닫힌 면
     const paintObstacleShape = (canvasPoints, { fill, stroke, lineWidth = 2, dashed = false, halo = false }) => {
-      if (canvasPoints.length < 2) return
+      if (canvasPoints.length === 0) return
+
+      // 점 하나 — 원으로 찍는다. 흰 테두리는 halo 와 무관하게 늘 둘러 어두운 벽 위에서도 보인다.
+      if (canvasPoints.length === 1) {
+        const [point] = canvasPoints
+        ctx.beginPath()
+        ctx.arc(point.px, point.py, OBSTACLE_POINT_RADIUS_PX, 0, Math.PI * 2)
+        ctx.fillStyle = fill
+        ctx.fill()
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)'
+        ctx.lineWidth = lineWidth + 1
+        ctx.stroke()
+        ctx.beginPath()
+        ctx.arc(point.px, point.py, OBSTACLE_POINT_RADIUS_PX, 0, Math.PI * 2)
+        ctx.strokeStyle = stroke
+        ctx.lineWidth = lineWidth
+        if (dashed) ctx.setLineDash([4, 3])
+        ctx.stroke()
+        if (dashed) ctx.setLineDash([])
+        return
+      }
+
+      const closed = canvasPoints.length >= 3
       const trace = () => {
         ctx.beginPath()
         canvasPoints.forEach((point, index) => {
           if (index === 0) ctx.moveTo(point.px, point.py)
           else ctx.lineTo(point.px, point.py)
         })
-        ctx.closePath()
+        if (closed) ctx.closePath()
       }
 
       trace()
-      ctx.fillStyle = fill
-      ctx.fill()
+      // 선분은 면이 없다 — 채우면 아무것도 안 보이거나 선이 두꺼워 보이기만 한다.
+      if (closed) {
+        ctx.fillStyle = fill
+        ctx.fill()
+      }
       // 흰 외곽선을 먼저 굵게 깔면 어두운 벽/다른 장애물 위에서도 테두리가 살아 있다
       // (POI 마커의 흰 테두리와 같은 규약).
       if (halo) {
@@ -848,10 +944,28 @@ function MapCanvas({
       ctx.strokeRect(px - OBSTACLE_HANDLE_HALF_PX, py - OBSTACLE_HANDLE_HALF_PX, size, size)
     }
 
+    /** 회전 손잡이 — 위쪽 변 중앙(anchor)에서 손잡이(px,py)까지 안내선을 긋고 원을 그린다. */
+    const drawObstacleRotateHandle = (anchorPx, anchorPy, px, py) => {
+      ctx.beginPath()
+      ctx.moveTo(anchorPx, anchorPy)
+      ctx.lineTo(px, py)
+      ctx.strokeStyle = OBSTACLE_SELECTED_STROKE
+      ctx.lineWidth = 1.5
+      ctx.stroke()
+
+      ctx.beginPath()
+      ctx.arc(px, py, OBSTACLE_ROTATE_HANDLE_RADIUS_PX, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.95)'
+      ctx.fill()
+      ctx.strokeStyle = OBSTACLE_SELECTED_STROKE
+      ctx.lineWidth = 2
+      ctx.stroke()
+    }
+
     obstacleHandlesRef.current = []
     obstacles.forEach((obstacle) => {
       const worldPoints = obstacleWorldPoints(obstacle)
-      if (worldPoints.length < 2) return
+      if (worldPoints.length === 0) return
       const id = obstacle?.id
       const canvasPoints = worldPoints.map((point) => worldToCanvas(point.x, point.y))
       // 편집 중인 도형은 선택된 것으로도 본다 — 목록에서 수정을 누르면 함께 선택되지만,
@@ -869,37 +983,70 @@ function MapCanvas({
 
       if (!isEditing) return
       // 꼭지점마다 손잡이를 붙인다. 끌었을 때 무엇이 되는지는 도형에 따라 다르므로 함께 남긴다:
-      //   사각형 — 대각선 반대 꼭지점(fixed)을 고정한 크기 조절
-      //   폴리곤 — 그 점(index)만 옮기기
-      const isPolygon = obstacle?.shape === OBSTACLE_SHAPE_POLYGON
+      //   사각형 — 대각선 반대 꼭지점(fixedIndex)을 고정한 크기 조절. corners 를 함께 남겨
+      //     드래그 시작 시점의 네 꼭지점(캔버스 픽셀)으로 지금의 회전을 그대로 유지한 채
+      //     늘이거나 줄인다(resizeRotatedRectCorners).
+      //   그 밖(점/선분/폴리곤) — 그 점(index)만 옮기기
+      const isRectangle = obstacle?.shape === OBSTACLE_SHAPE_RECTANGLE && worldPoints.length === 4
       canvasPoints.forEach((point, index) => {
         drawObstacleHandle(point.px, point.py)
         obstacleHandlesRef.current.push({
           id,
           px: point.px,
           py: point.py,
-          ...(isPolygon ? { index } : { fixed: worldPoints[(index + 2) % 4] })
+          ...(isRectangle ? { fixedIndex: (index + 2) % 4, corners: canvasPoints } : { index })
         })
       })
+
+      // 회전 손잡이 — 위쪽 변(0→1) 중앙에서 사각형 중심의 반대쪽(바깥)으로 띄운다.
+      // 중심을 지나는 방향이라 사각형이 어느 쪽으로 돌아 있어도 항상 "바깥"이 된다.
+      if (isRectangle) {
+        const [c0, c1, c2, c3] = canvasPoints
+        const midX = (c0.px + c1.px) / 2
+        const midY = (c0.py + c1.py) / 2
+        const centerX = (c0.px + c1.px + c2.px + c3.px) / 4
+        const centerY = (c0.py + c1.py + c2.py + c3.py) / 4
+        let outX = midX - centerX
+        let outY = midY - centerY
+        const outLen = Math.hypot(outX, outY) || 1
+        outX /= outLen
+        outY /= outLen
+        const handlePx = midX + outX * OBSTACLE_ROTATE_HANDLE_OFFSET_PX
+        const handlePy = midY + outY * OBSTACLE_ROTATE_HANDLE_OFFSET_PX
+        drawObstacleRotateHandle(midX, midY, handlePx, handlePy)
+        obstacleHandlesRef.current.push({
+          id,
+          px: handlePx,
+          py: handlePy,
+          rotate: true,
+          center: { px: centerX, py: centerY },
+          corners: canvasPoints
+        })
+      }
     })
 
-    // 드래그 중인 사각형 — 이미 캔버스 픽셀이라 뷰 변환을 거치지 않는다.
+    // 드래그 중인 사각형/선분 — 이미 캔버스 픽셀이라 뷰 변환을 거치지 않는다.
     // 점선으로 그려 확정된 장애물과 구분한다.
     const draft = obstacleDraftRef.current
     if (draft) {
-      const x0 = Math.min(draft.x0, draft.x1)
-      const y0 = Math.min(draft.y0, draft.y1)
-      const x1 = Math.max(draft.x0, draft.x1)
-      const y1 = Math.max(draft.y0, draft.y1)
-      paintObstacleShape(
-        [
-          { px: x0, py: y0 },
-          { px: x1, py: y0 },
-          { px: x1, py: y1 },
-          { px: x0, py: y1 }
-        ],
-        { fill: OBSTACLE_DRAFT_FILL, stroke: OBSTACLE_DRAFT_STROKE, dashed: true }
-      )
+      const draftPoints =
+        draft.shape === OBSTACLE_SHAPE_LINE
+          ? // 선분은 끈 방향 그대로 두 점이다(정규화하면 시작/끝이 뒤바뀐다).
+            [
+              { px: draft.x0, py: draft.y0 },
+              { px: draft.x1, py: draft.y1 }
+            ]
+          : [
+              { px: Math.min(draft.x0, draft.x1), py: Math.min(draft.y0, draft.y1) },
+              { px: Math.max(draft.x0, draft.x1), py: Math.min(draft.y0, draft.y1) },
+              { px: Math.max(draft.x0, draft.x1), py: Math.max(draft.y0, draft.y1) },
+              { px: Math.min(draft.x0, draft.x1), py: Math.max(draft.y0, draft.y1) }
+            ]
+      paintObstacleShape(draftPoints, {
+        fill: OBSTACLE_DRAFT_FILL,
+        stroke: OBSTACLE_DRAFT_STROKE,
+        dashed: true
+      })
     }
 
     // 찍고 있는 폴리곤 — 점은 월드 좌표로 들고 있어(줌/팬을 해도 찍은 자리에 남는다) 매번 옮겨 찍는다.
@@ -1141,6 +1288,8 @@ function MapCanvas({
     // 브라우저가 React 의 onWheel 을 passive 로 등록해 preventDefault 가 먹지 않으므로
     // 네이티브 리스너를 passive: false 로 직접 붙인다(페이지 스크롤 방지).
     const handleWheel = (e) => {
+      // 조작 줄 위에서 굴린 휠은 지도 확대/축소가 아니다(드롭다운 목록 스크롤을 막지 않는다).
+      if (isOverlayEvent(e)) return
       e.preventDefault()
       const rect = (canvasRef.current ?? wrapper).getBoundingClientRect()
       if (!rect.width || !rect.height) return
@@ -1153,11 +1302,22 @@ function MapCanvas({
       return { x: e.clientX - rect.left, y: e.clientY - rect.top }
     }
 
+    /**
+     * 지도 위 조작 줄(그리기 중 오버레이) 안에서 난 이벤트인지.
+     *
+     * 오버레이는 뷰포트의 자식이라 그 안을 눌러도 이벤트가 여기까지 올라온다 — 그대로 두면
+     * 형태 드롭다운을 누르는 순간 그 자리에서 사각형 그리기가 시작된다.
+     * React 의 stopPropagation 으로는 막을 수 없다: 이 리스너들은 wrapper 에 직접 붙어 있어
+     * 루트에 위임된 React 핸들러보다 먼저 실행된다. 그래서 여기서 대상만 걸러낸다.
+     */
+    const isOverlayEvent = (e) => !!e.target?.closest?.('[data-obstacle-overlay]')
+
     /** 캔버스 좌표에서 잡을 수 있는 꼭지점 손잡이 — 판정 반경 안에서 가장 가까운 하나. */
     const obstacleHandleAt = (point) =>
       obstacleHandlesRef.current.reduce((best, candidate) => {
         const distance = Math.hypot(candidate.px - point.x, candidate.py - point.y)
-        if (distance > OBSTACLE_HANDLE_HIT_PX) return best
+        const hitPx = candidate.rotate ? OBSTACLE_ROTATE_HANDLE_HIT_PX : OBSTACLE_HANDLE_HIT_PX
+        if (distance > hitPx) return best
         return !best || distance < best.distance ? { ...candidate, distance } : best
       }, null)
 
@@ -1166,24 +1326,58 @@ function MapCanvas({
       const points = polygonDraftRef.current?.points ?? []
       if (points.length < OBSTACLE_POLYGON_MIN_POINTS) return
       polygonDraftRef.current = null
+      setObstacleDraftPoints([])
       renderRef.current()
-      onObstacleDrawnRef.current?.(polygonFromWorldPoints(points))
+      onObstacleDrawnRef.current?.(shapeFromWorldPoints(OBSTACLE_SHAPE_POLYGON, points))
+    }
+
+    /**
+     * 조작 줄에 보여줄 좌표 갱신 — 소수 둘째 자리(표시 자리수)에서 값이 실제로 바뀔 때만
+     * 상태를 건드린다. 드래그 중에는 mousemove 가 초당 수십 번 오므로 매번 setState 하면
+     * 같은 문자열을 다시 그리기만 한다.
+     */
+    const setDraftPointsIfChanged = (points) => {
+      const key = (list) => list.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join('|')
+      setObstacleDraftPoints((prev) => (key(prev) === key(points) ? prev : points))
     }
 
     const handleMouseDown = (e) => {
       if (e.button !== 0) return
+      // 조작 줄(형태 드롭다운)을 누른 것이면 지도 조작이 아니다.
+      if (isOverlayEvent(e)) return
       e.preventDefault()
-      // 사각형 그리기 모드에서는 같은 좌클릭 드래그가 팬 대신 사각형 그리기가 된다.
-      // 폴리곤은 클릭으로 점을 찍으므로(handleMouseUp) 여기서는 평소의 팬/클릭 경로를 그대로 탄다.
-      if (drawObstacleShapeRef.current === OBSTACLE_SHAPE_RECTANGLE) {
+      // 사각형/선분 그리기 모드에서는 같은 좌클릭 드래그가 팬 대신 도형 그리기가 된다.
+      // 점은 클릭 한 번, 폴리곤은 클릭마다 점 추가이므로(handleMouseUp) 여기서는 평소의
+      // 팬/클릭 경로를 그대로 탄다.
+      if (OBSTACLE_DRAG_SHAPES.includes(drawObstacleShapeRef.current)) {
         const point = canvasPointOf(e)
-        obstacleDraftRef.current = { x0: point.x, y0: point.y, x1: point.x, y1: point.y }
+        obstacleDraftRef.current = {
+          shape: drawObstacleShapeRef.current,
+          x0: point.x,
+          y0: point.y,
+          x1: point.x,
+          y1: point.y
+        }
+        // 누른 지점이 첫 좌표다 — 끌기 전에도 시작점이 조작 줄에 보여야 한다.
+        const start = canvasToWorld(point.x, point.y)
+        if (start) setDraftPointsIfChanged([start])
         return
       }
-      // 편집 중인 도형의 꼭지점을 집었으면 크기 조절/점 옮기기다. 꼭지점 밖을 누르면 평소처럼
-      // 팬이므로 편집 중에도 지도를 옮겨 가며 고칠 수 있다.
+      // 편집 중인 도형의 꼭지점/회전 손잡이를 집었으면 크기 조절/회전/점 옮기기다. 밖을 누르면
+      // 평소처럼 팬이므로 편집 중에도 지도를 옮겨 가며 고칠 수 있다.
       if (obstacleHandlesRef.current.length > 0) {
-        const handleHit = obstacleHandleAt(canvasPointOf(e))
+        const point = canvasPointOf(e)
+        const handleHit = obstacleHandleAt(point)
+        if (handleHit?.rotate) {
+          obstacleRotateRef.current = {
+            id: handleHit.id,
+            center: handleHit.center,
+            corners: handleHit.corners,
+            startAngle: Math.atan2(point.y - handleHit.center.py, point.x - handleHit.center.px)
+          }
+          wrapper.style.cursor = 'grab'
+          return
+        }
         if (handleHit) {
           obstacleResizeRef.current = handleHit
           wrapper.style.cursor = 'nwse-resize'
@@ -1200,19 +1394,56 @@ function MapCanvas({
       if (draft) {
         const point = canvasPointOf(e)
         obstacleDraftRef.current = { ...draft, x1: point.x, y1: point.y }
+        // 사각형은 두 대각 꼭지점이 아니라 네 꼭지점을 보여준다 — 저장되는 좌표와 같아야 한다.
+        const start = canvasToWorld(draft.x0, draft.y0)
+        const end = canvasToWorld(point.x, point.y)
+        if (start && end) {
+          setDraftPointsIfChanged(
+            draft.shape === OBSTACLE_SHAPE_LINE ? [start, end] : rectFromWorldPoints(start, end).points
+          )
+        }
         renderRef.current()
         return
       }
 
+      // 회전 손잡이를 끄는 중 — 드래그 시작 시점의 네 꼭지점을, 중심 기준으로 지금까지 돌린
+      // 각도만큼 그대로 회전시켜 새 좌표로 올려보낸다(캔버스 픽셀 기준 회전 후 월드로 환산).
+      const rotate = obstacleRotateRef.current
+      if (rotate) {
+        const point = canvasPointOf(e)
+        const angle = Math.atan2(point.y - rotate.center.py, point.x - rotate.center.px)
+        const delta = angle - rotate.startAngle
+        const cos = Math.cos(delta)
+        const sin = Math.sin(delta)
+        const worldPoints = rotate.corners
+          .map((corner) => {
+            const dx = corner.px - rotate.center.px
+            const dy = corner.py - rotate.center.py
+            return canvasToWorld(rotate.center.px + dx * cos - dy * sin, rotate.center.py + dx * sin + dy * cos)
+          })
+          .filter(Boolean)
+        if (worldPoints.length === 4) {
+          onObstacleResizeRef.current?.(rotate.id, { shape: OBSTACLE_SHAPE_RECTANGLE, points: worldPoints })
+        }
+        return
+      }
+
       // 꼭지점을 끄는 중 — 좌표를 곧바로 올려보낸다(목록의 좌표와 지도가 같이 따라온다).
-      // 사각형은 고정된 대각선 반대 꼭지점과 커서로 사각형을 다시 만들고, 폴리곤은 그 점만 옮긴다.
+      // 사각형은 드래그 시작 시점의 네 꼭지점(corners)에서 지금의 회전을 유지한 채 대각선
+      // 반대 꼭지점을 고정하고 다시 만들고, 폴리곤은 그 점만 옮긴다.
       const resize = obstacleResizeRef.current
       if (resize) {
         const point = canvasPointOf(e)
-        const world = canvasToWorld(point.x, point.y)
-        if (!world) return
-        if (resize.index != null) onObstacleVertexMoveRef.current?.(resize.id, resize.index, world)
-        else onObstacleResizeRef.current?.(resize.id, rectFromWorldPoints(resize.fixed, world))
+        if (resize.index != null) {
+          const world = canvasToWorld(point.x, point.y)
+          if (world) onObstacleVertexMoveRef.current?.(resize.id, resize.index, world)
+          return
+        }
+        const canvasCorners = resizeRotatedRectCorners(resize.corners, resize.fixedIndex, point)
+        const worldPoints = canvasCorners.map((corner) => canvasToWorld(corner.px, corner.py)).filter(Boolean)
+        if (worldPoints.length === 4) {
+          onObstacleResizeRef.current?.(resize.id, { shape: OBSTACLE_SHAPE_RECTANGLE, points: worldPoints })
+        }
         return
       }
 
@@ -1226,9 +1457,10 @@ function MapCanvas({
           renderRef.current()
           return
         }
-        // 편집 중인 꼭지점 위에서는 커서로 잡을 수 있음을 알린다.
+        // 편집 중인 꼭지점/회전 손잡이 위에서는 커서로 잡을 수 있음을 알린다.
         if (obstacleHandlesRef.current.length > 0 && !drawObstacleShapeRef.current) {
-          wrapper.style.cursor = obstacleHandleAt(canvasPointOf(e)) ? 'nwse-resize' : 'grab'
+          const hit = obstacleHandleAt(canvasPointOf(e))
+          wrapper.style.cursor = hit?.rotate ? 'grab' : hit ? 'nwse-resize' : 'grab'
         }
         return
       }
@@ -1244,29 +1476,45 @@ function MapCanvas({
     }
 
     const handleMouseUp = () => {
-      // 고정장애물 사각형 확정 — 드래그를 놓은 시점의 두 꼭지점을 월드 좌표로 바꿔 올려보낸다.
+      // 가상 장애물 사각형/선분 확정 — 드래그를 놓은 시점의 두 점을 월드 좌표로 바꿔 올려보낸다.
       const draft = obstacleDraftRef.current
       if (draft) {
         obstacleDraftRef.current = null
+        // 도형이 확정되면(또는 버려지면) 진행 중 좌표는 더 이상 진행 중이 아니다 —
+        // 확정된 좌표는 모달이 이어서 보여준다.
+        setObstacleDraftPoints([])
         renderRef.current()
         // 너무 작은 드래그는 그리기 모드에서 잘못 누른 것으로 보고 버린다.
-        if (
-          Math.abs(draft.x1 - draft.x0) < OBSTACLE_MIN_DRAG_PX ||
-          Math.abs(draft.y1 - draft.y0) < OBSTACLE_MIN_DRAG_PX
-        ) {
-          return
-        }
+        // 사각형은 두 변이 모두 있어야 하고(넓이 0 금지), 선분은 길이만 있으면 된다.
+        const dx = Math.abs(draft.x1 - draft.x0)
+        const dy = Math.abs(draft.y1 - draft.y0)
+        const tooSmall =
+          draft.shape === OBSTACLE_SHAPE_LINE
+            ? Math.hypot(dx, dy) < OBSTACLE_MIN_DRAG_PX
+            : dx < OBSTACLE_MIN_DRAG_PX || dy < OBSTACLE_MIN_DRAG_PX
+        if (tooSmall) return
+
         const handleDrawn = onObstacleDrawnRef.current
         if (!handleDrawn) return
         const start = canvasToWorld(draft.x0, draft.y0)
         const end = canvasToWorld(draft.x1, draft.y1)
         if (!start || !end) return
-        // 어느 방향으로 끌었는지와 무관하게 화면 기준 좌상단/우하단으로 정규화한다.
+        if (draft.shape === OBSTACLE_SHAPE_LINE) {
+          // 선분은 끈 방향을 그대로 둔다 — 시작/끝 순서가 곧 저장되는 점 순서다.
+          handleDrawn(shapeFromWorldPoints(OBSTACLE_SHAPE_LINE, [start, end]))
+          return
+        }
+        // 사각형은 어느 방향으로 끌었는지와 무관하게 같은 꼭지점 순서(좌상→우상→우하→좌하)로 만든다.
         handleDrawn(rectFromWorldPoints(start, end))
         return
       }
 
-      // 모서리 끌기 종료 — 좌표는 이동 중에 이미 반영했으므로 여기서는 상태만 푼다.
+      // 회전/모서리 끌기 종료 — 좌표는 이동 중에 이미 반영했으므로 여기서는 상태만 푼다.
+      if (obstacleRotateRef.current) {
+        obstacleRotateRef.current = null
+        wrapper.style.cursor = 'grab'
+        return
+      }
       if (obstacleResizeRef.current) {
         obstacleResizeRef.current = null
         wrapper.style.cursor = 'grab'
@@ -1288,6 +1536,14 @@ function MapCanvas({
       const canvasX = drag.startX - rect.left
       const canvasY = drag.startY - rect.top
 
+      // 점(POINT) 그리기 모드 — 제자리 클릭 한 번이 곧 도형 확정이다(드래그는 평소처럼 팬).
+      if (drawObstacleShapeRef.current === OBSTACLE_SHAPE_POINT) {
+        const world = canvasToWorld(canvasX, canvasY)
+        if (!world) return
+        onObstacleDrawnRef.current?.(shapeFromWorldPoints(OBSTACLE_SHAPE_POINT, [world]))
+        return
+      }
+
       // 폴리곤을 찍는 중이면 제자리 클릭은 점 추가다(이동 말풍선은 뜨지 않는다).
       // 찍은 점이 3개 이상이고 첫 점을 다시 눌렀으면 그것으로 닫는다.
       if (drawObstacleShapeRef.current === OBSTACLE_SHAPE_POLYGON) {
@@ -1303,7 +1559,9 @@ function MapCanvas({
         }
         const world = canvasToWorld(canvasX, canvasY)
         if (!world) return
-        polygonDraftRef.current = { points: [...points, world], cursor: { px: canvasX, py: canvasY } }
+        const next = [...points, world]
+        polygonDraftRef.current = { points: next, cursor: { px: canvasX, py: canvasY } }
+        setDraftPointsIfChanged(next)
         renderRef.current()
         return
       }
@@ -1329,7 +1587,9 @@ function MapCanvas({
 
     // 더블클릭 → 전체보기로 초기화.
     // 폴리곤을 찍는 중에는 막는다 — 점을 빠르게 두 번 찍으면 더블클릭으로 잡혀 뷰가 튄다.
-    const handleDoubleClick = () => {
+    const handleDoubleClick = (e) => {
+      // 조작 줄을 두 번 눌렀다고 전체보기로 돌아가면 안 된다.
+      if (isOverlayEvent(e)) return
       if (drawObstacleShapeRef.current === OBSTACLE_SHAPE_POLYGON) return
       const canvas = canvasRef.current
       const { w, h } = gridSizeRef.current
@@ -1343,6 +1603,8 @@ function MapCanvas({
     // 폴리곤 마무리 — 우클릭으로 닫는다(그리기 도구의 흔한 규약이고, 마우스만으로 끝낼 수 있다).
     // 폴리곤을 찍는 중에만 기본 컨텍스트 메뉴를 막는다 — 그 밖에서는 브라우저 메뉴를 그대로 둔다.
     const handleContextMenu = (e) => {
+      // 조작 줄 위에서 우클릭한 것으로 폴리곤을 닫아 버리면 안 된다.
+      if (isOverlayEvent(e)) return
       if (drawObstacleShapeRef.current !== OBSTACLE_SHAPE_POLYGON) return
       e.preventDefault()
       commitPolygonDraft()
@@ -1357,6 +1619,7 @@ function MapCanvas({
       }
       if (e.key === 'Escape' && polygonDraftRef.current) {
         polygonDraftRef.current = null
+        setObstacleDraftPoints([])
         renderRef.current()
       }
     }
@@ -1379,13 +1642,15 @@ function MapCanvas({
     }
   }, [wrapperEl, applyFit, clampView, canvasToWorld])
 
-  // 고정장애물 그리기 모드/형태 전환 — 커서로 지금 지도를 끌 수 없다는 것을 보여준다.
+  // 가상 장애물 그리기 모드/형태 전환 — 커서로 지금 지도를 끌 수 없다는 것을 보여준다.
   // 모드를 끄거나 형태를 바꾸면 그리던 것은 버린다: 확정되지 않은 도형이 화면에 남으면 안 되고,
-  // 사각형으로 바꿨는데 찍어 둔 폴리곤 점이 남아 있으면 안 된다.
+  // 사각형으로 바꿨는데 찍어 둔 폴리곤 점이 남아 있으면 안 된다(형태마다 점 개수 규칙이 다르다).
+  // 조작 줄에 보여주던 좌표도 같은 이유로 함께 비운다.
   useEffect(() => {
     drawObstacleShapeRef.current = drawObstacleShape
     obstacleDraftRef.current = null
     polygonDraftRef.current = null
+    setObstacleDraftPoints([])
     if (wrapperEl) wrapperEl.style.cursor = drawObstacleShape ? 'crosshair' : 'grab'
     renderRef.current()
   }, [drawObstacleShape, wrapperEl])
@@ -1396,75 +1661,96 @@ function MapCanvas({
     obstacleResizeRef.current = null
   }, [editingObstacleId])
 
+  /*
+   * 지도 위 조작 줄(그리기 중 오버레이)과 지도 조작의 분리 — 전파를 끊지 않고 "대상" 으로 가린다.
+   *
+   * 조작 줄은 뷰포트의 자식이라 그 안을 눌러도 이벤트가 뷰포트까지 올라온다. 막지 않으면
+   * 형태 드롭다운을 누르는 순간 그 자리가 좌표로 확정된다(점 모드는 클릭 한 번이 곧 도형이다).
+   *
+   * 그렇다고 조작 줄 노드에서 stopPropagation 을 하면 안 된다 — React 는 이벤트를 앱 루트에
+   * 위임하므로(React 17+), 오버레이에서 전파를 끊으면 그 안에 있는 Dropdown 의 onClick 까지
+   * 루트에 도달하지 못해 드롭다운이 아예 열리지 않는다.
+   * 그래서 지도 쪽 네이티브 핸들러들이 isOverlayEvent(e) 로 대상만 걸러낸다(아래 포인터 effect).
+   */
+
   const hasSpatialSubscription = subscribedTopics.some((t) => SPATIAL_TOPICS.includes(t))
 
   if (!hasSpatialSubscription) {
     return (
-      <div style={styles.placeholder}>
-        <span style={styles.placeholderText}>시각화 가능한 토픽을 구독해주세요.</span>
-      </div>
+      <Placeholder>
+        <PlaceholderText>시각화 가능한 토픽을 구독해주세요.</PlaceholderText>
+      </Placeholder>
     )
   }
 
   const mapTopic = subscribedTopicOf(subscribedTopics, 'map')
   if (mapTopic && !mapData) {
     return (
-      <div style={styles.placeholder}>
+      <Placeholder>
         {/* 토픽 이름은 노출하지 않는다 — 사용자가 기다리는 대상은 화면에 그려질 그리드맵이다. */}
-        <span style={styles.placeholderText}>그리드맵 수신 대기 중...</span>
-      </div>
+        <PlaceholderText>그리드맵 수신 대기 중...</PlaceholderText>
+      </Placeholder>
     )
   }
 
   return (
-    <div
+    <CanvasViewport
       ref={setWrapperNode}
-      style={styles.wrapper}
       title={
-        drawObstacleShape === OBSTACLE_SHAPE_RECTANGLE
-          ? '드래그: 고정장애물 영역 지정 · 휠: 확대/축소'
-          : drawObstacleShape === OBSTACLE_SHAPE_POLYGON
-            ? '클릭: 점 추가 · 우클릭/Enter/첫 점 클릭: 닫기 · Esc: 다시 찍기 · 드래그: 이동'
-            : editingObstacleId != null
-              ? '꼭지점 드래그: 모양 수정 · 그 밖 드래그: 이동 · 휠: 확대/축소'
-              : '휠: 확대/축소 · 드래그: 이동 · 더블클릭: 전체보기'
+        drawObstacleShape === OBSTACLE_SHAPE_POINT
+          ? '클릭: 점 장애물 지정 · 드래그: 이동 · 휠: 확대/축소'
+          : drawObstacleShape === OBSTACLE_SHAPE_LINE
+            ? '드래그: 선분 장애물 지정 · 휠: 확대/축소'
+            : drawObstacleShape === OBSTACLE_SHAPE_RECTANGLE
+              ? '드래그: 가상 장애물 영역 지정 · 휠: 확대/축소'
+              : drawObstacleShape === OBSTACLE_SHAPE_POLYGON
+                ? '클릭: 점 추가 · 우클릭/Enter/첫 점 클릭: 닫기 · Esc: 다시 찍기 · 드래그: 이동'
+                : editingObstacleId != null
+                  ? '꼭지점 드래그: 모양 수정 · 그 밖 드래그: 이동 · 휠: 확대/축소'
+                  : '휠: 확대/축소 · 드래그: 이동 · 더블클릭: 전체보기'
       }
     >
-      <canvas ref={canvasRef} style={styles.canvas} />
-    </div>
-  )
-}
+      <Canvas ref={canvasRef} />
 
-const styles = {
-  // 지도를 담는 고정 뷰포트 — 스크롤 대신 캔버스 내부 뷰 변환(줌/팬)으로 탐색한다
-  wrapper: {
-    position: 'relative',
-    overflow: 'hidden',
-    flex: 1,
-    // 부모 높이가 확정되지 않는 레이아웃에서도 캔버스가 찌그러지지 않도록 최소 높이 확보
-    minHeight: 400,
-    background: '#e8e8e8',
-    cursor: 'grab',
-    touchAction: 'none'
-  },
-  canvas: {
-    display: 'block',
-    width: '100%',
-    height: '100%',
-    imageRendering: 'pixelated' // 픽셀 선명하게
-  },
-  placeholder: {
-    flex: 1,
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    background: '#e8e8e8',
-    minHeight: 400
-  },
-  placeholderText: {
-    color: '#888',
-    fontSize: 16
-  }
+      {/* 그리기 중 조작 줄 — 형태 선택과 "지금까지 찍은 좌표" 를 지도를 보면서 확인해야 하므로
+          목록 패널이 아니라 지도 위에 겹친다. 지도 조작을 가로채지 않도록 드롭다운만
+          pointer-events 를 되살린다(styles.js ObstacleDrawBarRow 참고).
+          data-obstacle-overlay 는 지도 포인터 핸들러가 "조작 줄에서 난 이벤트" 를 알아보는 표시다
+          — 전파를 끊지 않고 대상으로 거르는 이유는 위 주석(React 이벤트 위임) 참고. */}
+      {drawObstacleShape && (
+        <ObstacleDrawBar data-obstacle-overlay>
+          <ObstacleDrawBarRow>
+            {obstacleShapeOptions.length > 0 && onObstacleShapeChange && (
+              <div className="control">
+                <Dropdown
+                  label={obstacleShapeLabel}
+                  size="sm"
+                  minWidth="14rem"
+                  value={drawObstacleShape}
+                  options={obstacleShapeOptions}
+                  onChange={onObstacleShapeChange}
+                />
+              </div>
+            )}
+            {obstacleDrawHint && <ObstacleDrawPanel>{obstacleDrawHint}</ObstacleDrawPanel>}
+          </ObstacleDrawBarRow>
+
+          {/* 찍은 좌표 — 점이 하나라도 생긴 뒤에만 띄운다(빈 판이 지도를 가리지 않게).
+              표기는 목록/모달과 같은 소수 두 자리다. */}
+          {obstacleDraftPoints.length > 0 && (
+            <ObstacleDrawPanel>
+              <span className="title">{obstaclePointsLabel}</span>
+              <div className="points">
+                {obstacleDraftPoints.map((point, index) => (
+                  <span key={index}>{`${index + 1}. [ ${point.x.toFixed(2)}, ${point.y.toFixed(2)} ]`}</span>
+                ))}
+              </div>
+            </ObstacleDrawPanel>
+          )}
+        </ObstacleDrawBar>
+      )}
+    </CanvasViewport>
+  )
 }
 
 const MemoizedMapCanvas = React.memo(MapCanvas, (prevProps, nextProps) => {
@@ -1477,11 +1763,18 @@ const MemoizedMapCanvas = React.memo(MapCanvas, (prevProps, nextProps) => {
   if (prevProps.showScan !== nextProps.showScan) return false
   // POI 목록은 편집(생성/수정/삭제 예정)마다 새 배열이 오므로 레퍼런스 비교로 충분하다.
   if (prevProps.pois !== nextProps.pois) return false
-  // 고정장애물도 추가/삭제마다 새 배열이 온다.
+  // 가상 장애물도 추가/삭제마다 새 배열이 온다.
   if (prevProps.obstacles !== nextProps.obstacles) return false
   if (prevProps.drawObstacleShape !== nextProps.drawObstacleShape) return false
   if (prevProps.selectedObstacleId !== nextProps.selectedObstacleId) return false
   if (prevProps.editingObstacleId !== nextProps.editingObstacleId) return false
+  // 지도 위 조작 줄 — 형태별로 문구가 바뀌므로 함께 본다. options 는 부모가 useMemo 로
+  // 고정해 넘기므로(SemanticPage) 레퍼런스 비교로 충분하다.
+  if (prevProps.obstacleShapeOptions !== nextProps.obstacleShapeOptions) return false
+  if (prevProps.obstacleShapeLabel !== nextProps.obstacleShapeLabel) return false
+  if (prevProps.obstacleDrawHint !== nextProps.obstacleDrawHint) return false
+  if (prevProps.obstaclePointsLabel !== nextProps.obstaclePointsLabel) return false
+  if (prevProps.onObstacleShapeChange !== nextProps.onObstacleShapeChange) return false
   if (prevProps.subscribedTopics !== nextProps.subscribedTopics) return false
   // 콜백은 ref 로 최신값을 쓰지만, 부모가 새 함수를 넘기면 리스너 재등록이 필요할 수 있어 함께 본다.
   if (prevProps.onMapClick !== nextProps.onMapClick) return false

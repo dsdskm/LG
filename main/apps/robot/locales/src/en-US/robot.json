@@ -146,8 +146,15 @@
   "siteModify": "Modify site",
   "siteName": "Site Name",
   "inputSiteName": "Please enter the site name.",
+  "region": "Region",
+  "regionDomestic": "Domestic",
+  "regionGlobal": "Global",
   "address": "Address",
   "searchAddress": "Please search for the address.",
+  "searchAddressGlobal": "Search Global Address",
+  "googleMapsLoadFailed": "Failed to load Google Maps.",
+  "searchAddressGlobalGuide": "Select a search result to fill it in automatically.",
+  "domesticAddressNotAllowedGlobal": "Domestic (Korea) addresses can't be used in global address search. Please switch to Domestic and search again.",
   "inputAddress": "Please enter the detailed address.",
   "siteNumber": "Number of sites",
   "management": "Management",
@@ -547,7 +554,8 @@
       "parseError": "MCAP parse error: {{message}}",
       "loadingMcap": "Loading MCAP...",
       "noSystemLogs": "No System/Event logs to display.",
-      "noTextLogs": "No text logs to display."
+      "noTextLogs": "No text logs to display.",
+      "skippedRange": "{{from}} - {{to}} is not loaded yet (skipped because loading fell behind fast playback). Jump to that time to load it."
     },
     "common": {
       "time": "Time",

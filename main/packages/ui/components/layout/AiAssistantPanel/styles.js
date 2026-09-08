@@ -258,45 +258,6 @@ export const StyledAiAssistantMessageBubble = styled.div`
   word-break: break-word;
 `
 
-export const StyledAiAssistantEmphasis = styled.strong`
-  font-size: 1.45rem;
-  font-weight: 700;
-`
-
-export const StyledAiCommandTip = styled.aside`
-  width: 90%;
-  margin-top: 0.4rem;
-  padding: 1rem 1.2rem;
-  border-left: 3px solid #b91c4c;
-  background: #fff7f9;
-  color: var(--color-secondary-70, #525b70);
-  font-size: 1.2rem;
-  line-height: 1.55;
-`
-
-export const StyledAiCommandTipTitle = styled.strong`
-  display: block;
-  color: var(--color-secondary-90, #262f44);
-  font-size: 1.3rem;
-  font-weight: 700;
-`
-
-export const StyledAiCommandTipExamples = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
-  margin-top: 0.7rem;
-`
-
-export const StyledAiCommandTipExample = styled.code`
-  padding: 0.3rem 0.6rem;
-  border: 1px solid rgba(185, 28, 76, 0.2);
-  background: #ffffff;
-  color: #a71945;
-  font-size: 1.2rem;
-  font-weight: 700;
-`
-
 export const StyledAiHelpContent = styled.div`
   display: flex;
   flex-direction: column;

@@ -7,8 +7,8 @@ import { useTelemetry } from '@/hooks/useTelemetry'
 import { useEmergencyKey } from '@/hooks/useEmergencyKey'
 import EmergencyKeyBadge from './EmergencyKeyBadge'
 import { NAV_STATUS_TOPICS, SPIN_STATUS_TOPICS, STATUS_TOPICS } from '@/constants/topics'
-import { resolveMapDir, visibleMaps } from '@/utils/mapRecord'
-import { resolveMappingMode } from '@/utils/lioStatus'
+import { resolveMapDir } from '@/utils/mapRecord'
+import { resolveMappingMode, resolveStatusLabel } from '@/utils/lioStatus'
 import { SETUP_STEPS, tryAdvanceSetupProgress } from '@/utils/setupProgress'
 import {
   isNavMoving,
@@ -32,12 +32,28 @@ import {
 
 import * as poiApi from '@/apis/mapPoiApis'
 import * as mapApi from '@/apis/mapApis'
+import * as obstacleApi from '@/apis/mapObstacleApis'
 import { navGoto, navSpin, stopNavGoto, stopNavSpin } from '@/apis/navApis'
 
+/**
+ * 맵 이름 뒤에 붙이는 상태 표시.
+ *
+ * 목록에 세 종류가 섞여 있어(작업본 · 서비스 맵 · 이전 맵) 이름만으로는 구분되지 않는다 —
+ * 어느 것이 지금 서비스에 쓰이는 맵인지 모르면 잘못된 맵에 POI 를 얹게 된다.
+ * active 는 표시하지 않는다: 정상 상태에 이름을 덧붙이면 목록 전체가 꼬리표로 시끄러워지고,
+ * 표시가 없는 것이 곧 서비스 맵이라는 규칙이 더 읽기 쉽다.
+ */
+const MAP_STATUS_SUFFIX_KEYS = {
+  inactive: 'workingMapSuffix',
+  archived: 'archivedMapSuffix'
+}
+
 /** 맵 표시 이름 — 레코드의 다국어 이름, 없으면 저장 디렉터리 이름(= 맵 이름). */
-const mapLabel = (map) => {
+const mapLabel = (map, t) => {
   const display = map?.name?.default ?? map?.name?.['ko-KR'] ?? map?.name?.['en-US'] ?? null
-  return display || resolveMapDir(map).split('/').pop() || `#${map?.id}`
+  const name = display || resolveMapDir(map).split('/').pop() || `#${map?.id}`
+  const suffixKey = MAP_STATUS_SUFFIX_KEYS[map?.status]
+  return suffixKey ? `${name} — ${t(suffixKey)}` : name
 }
 
 /** POI 표시 이름 — 지도 마커 라벨(MapCanvas)과 같은 규약. */
@@ -50,9 +66,15 @@ const poiLabel = (poi) => poi?.name?.default ?? poi?.name?.['ko-KR'] ?? poi?.nam
  * 업로드(승격) 후에야 active 가 되므로, inactive 가 있으면 그게 지금 POI 를 얹는 중인 작업본이다.
  * 없으면 서비스에 쓰이는 active 맵을 고른다. 목록은 createdAt DESC 라 같은 status 안에서는
  * 가장 최근 맵이다.
+ *
+ * archived 는 자동으로 고르지 않는다 — 목록에는 있지만(사용자가 직접 고를 수 있다) 진입 시
+ * 편집 대상이 이전 맵이 되면 안 된다. 남은 것이 archived 뿐이면 아무 것도 고르지 않는다.
  */
 const pickWorkingMap = (maps) =>
-  maps.find((map) => map?.status === 'inactive') ?? maps.find((map) => map?.status === 'active') ?? maps[0] ?? null
+  maps.find((map) => map?.status === 'inactive') ??
+  maps.find((map) => map?.status === 'active') ??
+  maps.find((map) => map?.status !== 'archived') ??
+  null
 
 /**
  * Semantic
@@ -74,7 +96,12 @@ const pickWorkingMap = (maps) =>
  *
  * POI 는 맵(mapId)에 매달리므로 편집 대상 맵이 정해져야 한다 — GET /maps 목록에서 맵을 직접 고르고
  * 그 맵의 POI 만 조회/저장한다. 위치 계층(Building/Floor/Area)으로 좁히지 않는다: 구역에 매이지 않은
- * 맵(위치 정보 없이 저장된 Default 등)도 편집 대상이어야 한다.
+ * 맵(위치 정보 없이 저장된 Default 등)도 편집 대상이어야 한다. 목록에는 archived(업로드로 대체된
+ * 이전 맵)도 넣는다 — 파일이 남아 있어 로드할 수 있으므로 이전 맵의 POI 도 확인할 수 있다.
+ *
+ * 다만 '고른 맵' 과 '편집 대상 맵' 은 다르다 — 편집 대상은 맵 로드로 로봇에 올린 맵(loadedMapId)이다.
+ * 드롭다운은 다음에 로드할 맵을 고르는 것뿐이라, 선택만 바꿔서는 POI 를 다시 조회하지 않는다:
+ * 지도 화면과 로봇 좌표계는 아직 이전 맵의 것이므로 그 사이에 찍은 POI 는 엉뚱한 맵에 남는다.
  */
 const Semantic = () => {
   const { t } = useTranslation('map')
@@ -92,17 +119,32 @@ const Semantic = () => {
   )
   const mapId = mapRecord?.id ?? null
   const mapDir = useMemo(() => resolveMapDir(mapRecord), [mapRecord])
-  const mapOptions = useMemo(() => maps.map((map) => ({ value: String(map.id), name: mapLabel(map) })), [maps])
+  const mapOptions = useMemo(() => maps.map((map) => ({ value: String(map.id), name: mapLabel(map, t) })), [maps, t])
+
+  // 로봇에 실제로 로드된(측위 중인) 맵. 맵 로드가 성공한 시점에만 갱신된다(handleLoadMap).
+  //
+  // POI 조회는 드롭다운 선택(mapId)을 따르지만, 화면에 보여주는 것은 이 값과 일치할 때만이다
+  // (아래 isMapMismatched) — POI 좌표와 MapCanvas 의 지도는 로봇이 물고 있는 맵의 좌표계라서,
+  // 고르기만 한 맵의 POI 를 이전 맵 위에 그리면 마커가 엉뚱한 자리를 가리키고, 그 상태로 찍은
+  // 좌표를 저장하면 어긋난 값이 남는다.
+  const [loadedMapId, setLoadedMapId] = useState(null)
+
+  // 가상 장애물 — POI 와 같이 선택한 맵(mapId)에 매달린다.
+  // 저장은 전체 치환(full-state)이고, 로봇 반영은 맵 폴더의 vo_*.yaml 로 내보내는 별도 동작이다
+  // (아래 handleObstacleApply). 두 단계를 나눠 두는 이유는 저장이 로봇 파일을 건드리지 않아야
+  // 편집 중에 마음대로 저장할 수 있기 때문이다.
+  const [obstacles, setObstacles] = useState([])
+  // 고를 수 있는 장애물 타입 — 로봇과 약속된 정수 enum이고 모델별로 범위가 달라 BE(meta)에서
+  // 받는다. 조회 전/실패는 빈 배열이고, 그때는 추가가 잠긴다(아래 meta effect 주석 참고).
+  const [obstacleTypes, setObstacleTypes] = useState([])
+  const [isApplyingObstacles, setIsApplyingObstacles] = useState(false)
 
   // 지도 클릭으로 잡은 이동 목표 — { x, y, canvasX, canvasY }. 있으면 말풍선이 뜬다.
   const [navTarget, setNavTarget] = useState(null)
   const [isLoadingMap, setIsLoadingMap] = useState(false)
-  // 맵 로드 요청으로 시작된 재정위인지 — 그때만 회전을 자동으로 건다.
-  const autoSpinArmedRef = useRef(false)
-  // 무장 시점에 이미 재정위(relocalizing_gkr) 중이었는지. 그렇다면 그 상태가 한 번 풀린 뒤
-  // 다시 재정위로 들어올 때만 회전을 건다 — 재정위 중에 다른 맵을 로드하면 상태값이 계속
-  // relocalizing_gkr 이라, 새 맵이 올라오기도 전에 이전 재정위에 회전을 걸어 1회 무장을 소모한다.
-  const autoSpinWaitsForNewGkrRef = useRef(false)
+  // 제자리 회전은 자동으로 걸지 않는다 — 맵 로드가 어떤 경로로 이뤄졌든(버튼·진입 시 자동 로드)
+  // 로봇이 예고 없이 돌기 시작하면 안 된다. GKR 재정위 단계에서는 회전 버튼을 노출하므로
+  // (아래 needsGkrSpin) 사용자가 로봇 주변을 확인하고 시작한다.
   const [isSendingGoto, setIsSendingGoto] = useState(false)
   const [isSendingSpin, setIsSendingSpin] = useState(false)
 
@@ -163,6 +205,12 @@ const Semantic = () => {
   // 재정위가 어느 맵의 좌표인지 알 수 없게 된다.
   const isMapLoadLocked = isMoving || isSpinBusy
 
+  // 고른 맵과 로봇이 물고 있는 맵이 다른 상태 — 이때는 POI 와 지도를 감추고 맵 로드를 안내한다.
+  // 지도(MapCanvas)는 로봇이 발행하는 격자맵이라 이전 맵이 그려지고, POI 는 새로 고른 맵의
+  // 좌표라 그 지도 위에서는 엉뚱한 자리를 가리킨다 — 둘을 함께 보여주면 서로를 검증할 수 없다.
+  // 로드된 맵을 모르는 동안(loadedMapId 미확정)에는 막지 않는다.
+  const isMapMismatched = Boolean(loadedMapId) && String(loadedMapId) !== String(mapId)
+
   useEffect(() => {
     connect()
     return () => disconnect()
@@ -181,15 +229,19 @@ const Semantic = () => {
   }, [gotoState, navStatus, t])
 
   // 저장된 맵 목록 조회. 진입 직후 편집 대상이 정해져 있어야 하므로 작업 중인 맵을 골라 둔다
-  // (pickWorkingMap: inactive 우선, 없으면 active).
+  // (pickWorkingMap: inactive 우선, 없으면 active, archived 는 자동 선택하지 않는다).
   useEffect(() => {
     let alive = true
     mapApi
       .list()
       .then((res) => {
         if (!alive) return
-        // archived(업로드로 대체된 이전 맵)는 편집 대상이 아니므로 뺀다.
-        const items = visibleMaps(res?.data)
+        // archived(업로드로 대체된 이전 맵)도 목록에 넣는다 — 승격은 status 만 바꾸고 맵 파일과
+        // 레코드 경로는 그대로 두므로(init-setup-be map.service.activate) 이전 맵도 로드해서
+        // POI 를 확인할 수 있다. 다른 화면이 쓰는 visibleMaps 로 걸러내지 않는 것은 이 화면뿐이다
+        // — 저장 대상 판단(ConnectionBar)과 승격 판단(pages/Upload)에는 섞이면 안 된다.
+        // 목록에는 두지만 진입 시 자동 선택 대상은 아니다(pickWorkingMap).
+        const items = res?.data ?? []
         setMaps(items)
         setSelectedMapId((current) =>
           items.some((map) => String(map.id) === String(current)) ? current : String(pickWorkingMap(items)?.id ?? '')
@@ -205,7 +257,18 @@ const Semantic = () => {
     }
   }, [])
 
-  // POI 버전은 선택한 맵 레코드에서 온다(POI 일괄 적용의 기준 버전).
+  // 진입 시점의 POI 편집 대상은 처음 고른 맵(작업 중인 맵)으로 둔다 — 상태 토픽은 모드만 주므로
+  // 로봇이 어느 맵을 물고 있는지 알 수 없고, 진입 직후 자동 로드가 걸리면 결국 이 맵이 된다.
+  // 한 번만 채운다: 그 뒤로는 맵 로드만 이 값을 바꾼다(드롭다운 선택은 바꾸지 않는다).
+  const poiTargetSeededRef = useRef(false)
+  useEffect(() => {
+    if (poiTargetSeededRef.current || !mapId) return
+    poiTargetSeededRef.current = true
+    setLoadedMapId(mapId)
+  }, [mapId])
+
+  // POI 버전은 선택한 맵 레코드에서 온다(POI 일괄 적용의 기준 버전) — POI 목록과 같은 맵이어야
+  // 하고, 저장은 선택과 로드가 일치할 때만 가능하다(그때는 두 값이 같다).
   useEffect(() => {
     setPoiVersion(mapRecord?.poiVersion ?? null)
   }, [mapRecord])
@@ -228,47 +291,35 @@ const Semantic = () => {
    * 선택한 맵을 로봇에 로드한다(측위 모드 전환).
    * 응답은 3D 맵 로드까지만 보장하므로 이후 진행은 /lio_node/status 배지로 확인한다.
    *
-   * @param {{armAutoSpin?: boolean}} [options] armAutoSpin: 이 로드로 시작된 GKR 재정위에서
-   *   제자리 회전을 자동으로 걸지 여부. 버튼 클릭은 true, 진입 시 자동 로드는 false —
-   *   화면에 들어온 것만으로 로봇이 돌기 시작하면 안 된다.
+   * 회전은 걸지 않는다 — GKR 재정위에 회전이 필요하면 사용자가 회전 버튼으로 시작한다.
    */
-  const handleLoadMap = useCallback(
-    async ({ armAutoSpin = true } = {}) => {
-      if (!mapDir) {
-        toast.error(t('noMapSelected'), { autoClose: 3000 })
-        return
-      }
-      setIsLoadingMap(true)
-      // 이전 로드의 무장은 버린다 — 이 로드로 시작되는 재정위만 자동 회전 대상이다.
-      autoSpinArmedRef.current = false
-      // gridLoadArmedRef.current = false
-      try {
-        const response = await mapApi.loadMapForLocalization({ mapPath: mapDir })
-        toast.success(response?.data?.message || t('mapLoadRequested'), { autoClose: 2000 })
-        // 측위가 끝나면(ready) 이 맵의 2D 격자맵을 한 번 다시 로드한다(아래 effect).
-        // gridLoadArmedRef.current = true
-        // gridLoadTargetRef.current = mapDir
-        // 이 요청으로 시작된 재정위에서는 회전을 자동으로 걸어준다(아래 effect).
-        // 지금 이미 재정위 중이면 그 재정위는 이전 맵의 것이므로, 상태가 한 번 풀릴 때까지 기다린다.
-        if (armAutoSpin) {
-          autoSpinArmedRef.current = true
-          autoSpinWaitsForNewGkrRef.current = needsGkrSpin
-        }
-      } catch (error) {
-        const message = error?.response?.data?.error?.message || error?.message || 'Request failed'
-        toast.error(message, { autoClose: 3000 })
-      } finally {
-        setIsLoadingMap(false)
-      }
-    },
-    [mapDir, needsGkrSpin, t]
-  )
+  const handleLoadMap = useCallback(async () => {
+    if (!mapDir) {
+      toast.error(t('noMapSelected'), { autoClose: 3000 })
+      return
+    }
+    setIsLoadingMap(true)
+    // gridLoadArmedRef.current = false
+    try {
+      const response = await mapApi.loadMapForLocalization({ mapPath: mapDir })
+      toast.success(response?.data?.message || t('mapLoadRequested'), { autoClose: 2000 })
+      // 로드가 받아들여진 이 시점부터 편집 대상이 이 맵이다 — POI 목록/버전이 여기에 맞춰
+      // 다시 조회된다(아래 fetchData effect). 실패하면 이전 대상을 그대로 둔다.
+      setLoadedMapId(mapId)
+      // 측위가 끝나면(ready) 이 맵의 2D 격자맵을 한 번 다시 로드한다(아래 effect).
+      // gridLoadArmedRef.current = true
+      // gridLoadTargetRef.current = mapDir
+    } catch (error) {
+      const message = error?.response?.data?.error?.message || error?.message || 'Request failed'
+      toast.error(message, { autoClose: 3000 })
+    } finally {
+      setIsLoadingMap(false)
+    }
+  }, [mapDir, mapId, t])
 
   // 진입 시 자동 맵 로딩 — 작업 중인 맵(inactive 우선)이 이미 선택돼 있으므로 그 맵을 그대로 올린다.
   // POI 편집은 로봇이 그 맵을 물고 있어야(측위) 지도 위 좌표가 맞으므로, 매번 버튼을 누르게 할 이유가 없다.
-  //
-  // 회전은 걸지 않는다(armAutoSpin: false) — 화면에 들어온 것만으로 로봇이 제자리에서 돌기 시작하면
-  // 안 된다. GKR 재정위 단계에서 회전이 필요하면 사용자가 회전 버튼(또는 맵 로드 버튼)으로 시작한다.
+  // 맵 로드는 로봇을 움직이지 않으므로(회전은 걸지 않는다) 자동으로 걸어도 안전하다.
   //
   // 단 한 번만, 그리고 "로봇이 아직 맵을 물고 있지 않을 때만" 건다:
   //   - unknown : 상태 토픽을 아직 못 받았다 → 판단 보류(여기서 걸면 이미 측위된 로봇을 다시 돌린다)
@@ -283,7 +334,7 @@ const Semantic = () => {
     if (mode === 'unknown' || mode === 'saving') return
     autoLoadedRef.current = true
     if (mode !== 'mapping') return
-    handleLoadMap({ armAutoSpin: false })
+    handleLoadMap()
   }, [mapDir, lioStatus, isLoadingMap, handleLoadMap])
 
   // 맵 로드가 측위 완료(ready)까지 갔으면 그 맵의 2D 격자맵을 다시 로드한다
@@ -400,25 +451,9 @@ const Semantic = () => {
     }
   }, [emergency.isLocked, t])
 
-  // 맵 로드 요청이 GKR 재정위 단계로 넘어가면 회전을 자동으로 시작한다 — 이 단계는 로봇이 한 바퀴
-  // 돌아야 진행되므로 사용자가 버튼을 한 번 더 누를 이유가 없다.
-  // 맵 로드로 무장(autoSpinArmedRef)했을 때만 걸어서, 화면에 들어왔을 때 이미 재정위 중이던
-  // 로봇에게 예고 없이 회전을 시키지 않는다.
-  useEffect(() => {
-    // 재정위를 벗어났다 — 다음에 들어오는 재정위는 마지막 로드가 만든 것이므로 대기를 푼다.
-    if (!needsGkrSpin) {
-      autoSpinWaitsForNewGkrRef.current = false
-      return
-    }
-    if (!autoSpinArmedRef.current || autoSpinWaitsForNewGkrRef.current) return
-    if (isRotating || isSendingSpin) return
-    // 비상정지 버튼이 눌려 있으면 무장을 소모하지 않고 기다린다 — 여기서 걸면 회전은 시작되지도
-    // 않은 채 1회 무장만 없어져, 버튼을 풀어도 자동 회전이 다시 걸리지 않는다.
-    // (handleSpin 이 잠금 여부를 의존성으로 갖고 있어, 풀리는 순간 이 effect 가 다시 돈다.)
-    if (emergency.isLocked) return
-    autoSpinArmedRef.current = false
-    handleSpin()
-  }, [needsGkrSpin, isRotating, isSendingSpin, emergency.isLocked, handleSpin])
+  // 맵 로드가 GKR 재정위 단계로 넘어가도 회전은 자동으로 걸지 않는다 — 제자리 회전은 로봇이 실제로
+  // 움직이는 동작이라, 화면 조작(맵 로드·화면 진입)의 부수 효과로 시작되면 로봇 주변을 확인하지
+  // 못한 채 돌게 된다. 이 단계에서는 회전 버튼이 노출되므로(needsGkrSpin) 사용자가 직접 시작한다.
 
   /** 진행 중인 제자리 회전 정지 — nav_spin_stop. */
   const handleStopSpin = useCallback(async () => {
@@ -437,18 +472,22 @@ const Semantic = () => {
   // 회전은 GKR 재정위를 진행시키기 위한 것이므로, 측위가 끝나면(status ready) 남은 각도를 더 돌 이유가
   // 없다 — nav_spin_once 는 요청한 각도를 마칠 때까지 돌기 때문에 여기서 대신 정지를 걸어준다.
   //
-  // 한 번만 보내고 끝내면 정지가 먹지 않았을 때(요청 실패, 또는 spin 액션이 아직 goal 을 받지 않은
-  // 상태에서 정지가 도착해 무시되는 경우) 로봇이 계속 도는데 화면은 손을 놓는다 — ready 로 바뀌었는데
-  // 회전이 멈추지 않는 증상이 이 경로다. 그래서 회전이 보이는 동안 최대 3회까지 다시 보낸다.
-  // 재시도는 2초 간격이다: 정지 요청이 반영돼도 spin_status 하트비트가 한두 틱 뒤에 꺼지므로
-  // 곧바로 재시도하면 이미 처리된 정지를 중복으로 보낸다.
-  // 3회로 끝내는 이유는 무한 요청 루프를 막기 위한 것이고, 그 뒤에는 사용자가 정지 버튼으로 처리한다
-  // (그 버튼은 ready 에서도 회전 중이면 보인다 — 아래 렌더 참고).
-  const AUTO_STOP_SPIN_MAX_TRIES = 3
+  // 자동 정지는 1회만 보낸다 — 재요청이 쌓이면 사용자가 지시하지 않은 정지 명령이 로봇에
+  // 여러 번 들어가고, 정지가 반영된 뒤에도 spin_status 하트비트가 한두 틱 늦게 꺼져서
+  // 이미 처리된 정지를 중복으로 보내게 된다.
+  //
+  // 그래서 1회로 안 멈추는 경우(요청 실패, 또는 spin 액션이 아직 goal 을 받지 않은 상태에서
+  // 정지가 도착해 무시되는 경우)는 화면이 자동으로 처리하지 않고 사용자에게 넘긴다 —
+  // 정지 버튼은 ready 에서도 회전 중이면 계속 보인다(아래 렌더 참고).
+  //
+  // 재시도 간격(AUTO_STOP_SPIN_RETRY_MS)은 시도 횟수를 다시 늘릴 때를 위해 남겨 둔다 —
+  // 1회에서는 첫 요청이 지연 없이(0ms) 나가므로 쓰이지 않는다.
+  const AUTO_STOP_SPIN_MAX_TRIES = 1
   const AUTO_STOP_SPIN_RETRY_MS = 2000
   const autoStopSpinTriesRef = useRef(0)
   useEffect(() => {
-    // ready 를 벗어나거나 회전이 멈추면 시도 횟수를 초기화한다(다음 회전에 다시 3회를 쓴다).
+    // ready 를 벗어나거나 회전이 멈추면 시도 횟수를 초기화한다 — 다음 회전에서 다시 1회를 쓴다
+    // (회전마다 자동 정지 1회이고, 한 회전 안에서 반복되지는 않는다).
     if (!isLocalized || !isRotating) {
       autoStopSpinTriesRef.current = 0
       return
@@ -477,7 +516,7 @@ const Semantic = () => {
     }
   }
 
-  // 위치를 고르면 그 맵의 POI 만, 아직 안 골랐으면 전체 POI 를 보여준다
+  // 고른 맵의 POI 만, 아직 안 골랐으면 전체 POI 를 보여준다
   // (위치 계층을 쓰지 않는 로봇도 POI 는 편집해야 한다).
   // 저장 후 단계 완료 판정에도 이 결과를 쓰므로 조회한 목록을 돌려준다(실패 시 빈 배열).
   const fetchData = useCallback(async () => {
@@ -516,9 +555,117 @@ const Semantic = () => {
     }
   }, [mapId])
 
+  // 고른 맵이 바뀌면 그 맵의 POI 를 조회한다 — 로드된 맵과 다르면 화면에는 내보내지 않지만
+  // (isMapMismatched) 목록은 갖고 있으므로, 원래 맵을 다시 고르거나 맵 로드가 끝나면
+  // 추가 요청 없이 그대로 복원된다.
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  // 고를 수 있는 장애물 타입 — 값이 로봇(corepath_msgs/VirtualObstacle)과 약속된 정수이고
+  // 모델에 따라 범위가 다르므로(예: cloid-nvidia-thor 는 가상벽만) 화면에 하드코딩하지 않고
+  // BE 에서 받는다.
+  //
+  // 실패 시 화면 기본 목록으로 폴백하지 않는다 — 모델이 지원하지 않는 타입까지 드롭다운에 뜨면
+  // 그려 놓고 저장할 때 BE 검증에서 400 이 난다("그렸는데 저장이 안 되는" 경험).
+  // 빈 배열로 두어 추가를 잠그고, 목록/필터는 그대로 볼 수 있게 한다.
+  useEffect(() => {
+    let alive = true
+    obstacleApi
+      .meta()
+      .then((res) => {
+        if (!alive) return
+        const types = res?.data?.userSelectableTypes
+        setObstacleTypes(Array.isArray(types) ? types : [])
+      })
+      .catch(() => {
+        if (alive) setObstacleTypes([])
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  /** 선택한 맵의 저장된 가상 장애물 조회. 맵이 없으면 빈 목록이다(작업본도 함께 비워진다). */
+  const fetchObstacles = useCallback(async () => {
+    if (!mapId) {
+      setObstacles([])
+      return []
+    }
+    try {
+      const res = await obstacleApi.list({ mapId })
+      const items = res?.data ?? []
+      setObstacles(items)
+      return items
+    } catch (error) {
+      console.error('[SemanticPage] 가상 장애물 조회 실패:', error)
+      setObstacles([])
+      return []
+    }
+  }, [mapId])
+
+  // 맵을 바꾸면 이전 맵의 도형은 좌표계가 달라 그대로 쓸 수 없다 — 새로 조회한다
+  // (조회 결과가 공용 화면의 작업본을 다시 만들므로 미저장 편집도 함께 버려진다).
+  useEffect(() => {
+    fetchObstacles()
+  }, [fetchObstacles])
+
+  /**
+   * 가상 장애물 임시 저장 — 작업본 전체를 그대로 보낸다(전체 치환).
+   * 로봇 프로토콜이 full-state 라 삭제는 "보내지 않는 것" 으로 표현된다(가이드 §0.1).
+   * 이 저장은 DB 까지만이다 — 로봇 맵 폴더 반영은 아래 handleObstacleApply 다.
+   */
+  const handleObstacleSave = useCallback(
+    async (workingObstacles) => {
+      if (!mapId) {
+        toast.error(t('noMapSelected'), { autoClose: 3000 })
+        return
+      }
+      const payload = workingObstacles
+        .filter((obstacle) => !obstacle.editStatus?.softDelete)
+        .map((obstacle) => ({
+          // obsId 가 있으면 유지한다 — 재저장에도 로봇 쪽 [type, id] 가 그대로 남아야
+          // 로그/디버깅에서 같은 장애물로 읽힌다. 새로 그린 것은 BE 가 발급한다.
+          ...(obstacle.obsId != null ? { obsId: obstacle.obsId } : {}),
+          type: obstacle.type,
+          name: obstacle.name ?? '',
+          shape: obstacle.shape,
+          points: obstacle.points
+        }))
+
+      try {
+        await obstacleApi.bulkReplace({ mapId, obstacles: payload })
+        await fetchObstacles()
+        toast.success(t('obstacleSaved'), { autoClose: 2000 })
+      } catch (error) {
+        const message = error?.response?.data?.error?.message || error?.message || t('obstacleSaveFailed')
+        toast.error(message, { autoClose: 4000 })
+      }
+    },
+    [mapId, fetchObstacles, t]
+  )
+
+  /**
+   * 저장된 가상 장애물을 맵 폴더의 vo_*.yaml 로 내보낸다.
+   * corepath_nav2_plugins::VirtualObstacleLayer 가 기동 시 이 파일을 읽으므로, 반영 시점은
+   * 주행 스택 재기동이다(라이브 게시 경로가 붙기 전까지).
+   */
+  const handleObstacleApply = useCallback(async () => {
+    if (!mapId) {
+      toast.error(t('noMapSelected'), { autoClose: 3000 })
+      return
+    }
+    setIsApplyingObstacles(true)
+    try {
+      const res = await obstacleApi.apply({ mapId })
+      toast.success(t('obstacleApplied', { count: res?.data?.total ?? 0 }), { autoClose: 4000 })
+    } catch (error) {
+      const message = error?.response?.data?.error?.message || error?.message || 'Request failed'
+      toast.error(message, { autoClose: 4000 })
+    } finally {
+      setIsApplyingObstacles(false)
+    }
+  }, [mapId, t])
 
   const onSave = async (workingPois) => {
     const toCreatPois = []
@@ -547,6 +694,8 @@ const Semantic = () => {
     }
 
     // 새 POI 는 소속 맵(mapId)이 있어야 저장된다(BE 가 없으면 400). 수정/삭제는 mapId 없이도 된다.
+    // 편집 화면은 선택과 로드가 일치할 때만 열리므로(isMapMismatched) 이 mapId 는 로봇이 물고 있는
+    // 맵이다 — 화면에서 찍은 좌표와 소속 맵이 어긋나지 않는다.
     if (toCreatPois.length > 0 && !mapId) {
       toast.error(t('selectLocationForSemantic'), { autoClose: 3000 })
       return
@@ -604,8 +753,8 @@ const Semantic = () => {
               로봇이 움직이는 중(주행/회전)에만 잠근다 — 움직이는 도중에 기준 맵이 갈리면 진행 중인
               목표나 재정위가 어느 맵의 좌표인지 알 수 없게 된다. 먼저 정지 버튼으로 멈춰야 한다.
               진입 시 맵을 안 물고 있으면 자동으로 한 번 걸린다(위 autoLoadedRef effect). 이 버튼은
-              자동 로드를 건너뛴 경우(상태 미수신·로드 실패)와 다른 맵으로 갈아탈 때 쓰고,
-              GKR 재정위 회전을 자동으로 거는 것도 이 버튼을 통한 로드뿐이다(자동 로드는 걸지 않는다). */}
+              자동 로드를 건너뛴 경우(상태 미수신·로드 실패)와 다른 맵으로 갈아탈 때 쓴다.
+              로드는 회전을 걸지 않는다 — GKR 재정위 회전은 아래 회전 버튼으로만 시작된다. */}
           <Button
             size="md"
             onClick={() => handleLoadMap()}
@@ -618,6 +767,7 @@ const Semantic = () => {
           </Button>
 
           {/* 회전 버튼 — GKR 재정위 단계에서 회전을 시작하는 용도(로봇이 한 바퀴 돌아야 측위가 진행된다).
+              회전을 시작하는 경로는 이 버튼 하나다: 맵 로드나 화면 진입이 회전을 걸지는 않는다.
               회전 중이면 어느 상태에서든 정지 버튼으로 바뀐다: ready 로 바뀐 뒤에도 회전이 남아 있을 수
               있어서(자동 정지가 먹지 않는 경우) 손으로 멈출 길이 없으면 안 된다. */}
           {(needsGkrSpin || isRotating) &&
@@ -636,7 +786,7 @@ const Semantic = () => {
             <MappingStatusBadge $active={isRotating}>
               <span className="label typographyBody5">{t('navSpinStatus')}</span>
               <strong className="value typographyBody5">
-                {summarizeSpinStatus(spinStatus) || t('waitingForData')}
+                {summarizeSpinStatus(spinStatus, t) || t('waitingForData')}
               </strong>
             </MappingStatusBadge>
           )}
@@ -649,22 +799,42 @@ const Semantic = () => {
             </Button>
           )}
 
+          {/* 저장된 가상 장애물을 맵 폴더(vo_*.yaml)로 내보낸다 — 임시 저장(DB)과 나눠 둔 이유는
+              저장이 로봇 파일을 건드리지 않아야 편집 중에 마음대로 저장할 수 있기 때문이다.
+              주행 스택은 기동 시 이 파일을 읽으므로 반영 시점은 재기동이다. */}
+          <Button
+            size="md"
+            theme="secondary"
+            onClick={handleObstacleApply}
+            disabled={!mapId || isApplyingObstacles}
+            title={!mapId ? t('noMapSelected') : t('obstacleApplyHint')}
+          >
+            {isApplyingObstacles ? t('waitingForData') : t('obstacleApply')}
+          </Button>
+
           {/* 맵 로드/측위 진행 상태 (/lio_node/status) */}
           <MappingStatusBadge $active={lioStatus === 'ready'}>
             <span className="label typographyBody5">{t('status')}</span>
-            <strong className="value typographyBody5">{lioStatus || t('waitingForData')}</strong>
+            <strong className="value typographyBody5">{resolveStatusLabel(lioStatus, t)}</strong>
           </MappingStatusBadge>
 
           {/* 주행 진행 상태 (/robot_hub/nav_action_status) */}
           <MappingStatusBadge $active={isMoving}>
             <span className="label typographyBody5">{t('navStatus')}</span>
-            <strong className="value typographyBody5">{summarizeNavStatus(navStatus) || t('waitingForData')}</strong>
+            <strong className="value typographyBody5">{summarizeNavStatus(navStatus, t) || t('waitingForData')}</strong>
           </MappingStatusBadge>
         </BadgeRow>
       </LocationRow>
 
-      {/* POI 편집 — SemanticPage 가 Section(명령 버튼) + Section(지도 | 목록/상세)을 직접 내보낸다 */}
-      {state === 'STATE_EDITING' ? (
+      {/* POI 편집 — SemanticPage 가 Section(명령 버튼) + Section(지도 | 목록/상세)을 직접 내보낸다.
+          고른 맵이 로봇에 로드된 맵과 다르면 편집부를 통째로 감추고 맵 로드를 안내한다 — POI 목록은
+          이미 조회해 두었으므로(위 fetchData) 원래 맵을 다시 고르거나 맵 로드를 마치면 그대로 돌아온다.
+          맵 선택 줄과 맵 로드 버튼은 위에 그대로 남으므로 이 상태에서 나갈 길이 막히지 않는다. */}
+      {isMapMismatched ? (
+        <Section>
+          <EmptyMessage className="typographyBody5">{t('loadSelectedMapForSemantic')}</EmptyMessage>
+        </Section>
+      ) : state === 'STATE_EDITING' ? (
         <SemanticPage
           poiVersion={poiVersion}
           poiList={pois}
@@ -679,9 +849,15 @@ const Semantic = () => {
           onPoiGoto={handlePoiGoto}
           gotoDisabled={isSendingGoto || isMoving}
           gotoLabel={t('moveHere')}
+          // 가상 장애물 — 저장된 목록을 넘기면 공용 화면이 작업본을 만들고, 임시 저장이
+          // 이 콜백으로 돌아온다(전체 치환 → 재조회). 타입 목록은 BE meta 값(모델별로 다르다)이고,
+          // 비어 있으면(조회 전·실패) 공용 화면이 추가를 잠근다.
+          obstacleList={obstacles}
+          obstacleTypes={obstacleTypes}
+          onObstacleSave={handleObstacleSave}
           // 지도에는 목록에 보이는 POI 를 그린다 — SemanticPage 가 표시 중인 목록(IN-USE/WORKING)을
           // 넘겨주므로 아직 저장하지 않은 작업본 POI 도 지도에서 확인할 수 있다.
-          // 지도 칸은 POI 와 고정장애물을 함께 그린다 — 고정장애물 편집 중에도 POI 가 어디 있는지
+          // 지도 칸은 POI 와 가상 장애물을 함께 그린다 — 가상 장애물 편집 중에도 POI 가 어디 있는지
           // 보여야 영역을 어디에 잡을지 판단할 수 있다.
           mapSlot={({
             pois: visiblePois,
@@ -691,7 +867,12 @@ const Semantic = () => {
             selectedObstacleId,
             editingObstacleId,
             onObstacleResize,
-            onObstacleVertexMove
+            onObstacleVertexMove,
+            obstacleShapeOptions,
+            onObstacleShapeChange,
+            obstacleShapeLabel,
+            obstacleDrawHint,
+            obstaclePointsLabel
           }) => (
             <MapClickArea>
               <MapCanvas
@@ -710,6 +891,13 @@ const Semantic = () => {
                 editingObstacleId={editingObstacleId}
                 onObstacleResize={onObstacleResize}
                 onObstacleVertexMove={onObstacleVertexMove}
+                // 그리기 중 지도 위 조작 줄 — 형태 선택과 지금까지 찍은 좌표를 지도 위에 겹쳐 보여준다.
+                // 문구는 공용 화면(SemanticPage)이 semantic 번역으로 만들어 넘긴다.
+                obstacleShapeOptions={obstacleShapeOptions}
+                onObstacleShapeChange={onObstacleShapeChange}
+                obstacleShapeLabel={obstacleShapeLabel}
+                obstacleDrawHint={obstacleDrawHint}
+                obstaclePointsLabel={obstaclePointsLabel}
                 // POI 편집 화면이라 실시간 라이다 점군은 지도를 가리기만 한다
                 showScan={false}
                 onMapClick={handleMapClick}
@@ -718,7 +906,7 @@ const Semantic = () => {
               />
 
               {/* 클릭 지점 말풍선 — 좌표 표시 + 이동.
-                  고정장애물 영역을 그리는 중에는 감춘다 — 그때는 지도 클릭이 이동 목표가 아니라
+                  가상 장애물 영역을 그리는 중에는 감춘다 — 그때는 지도 클릭이 이동 목표가 아니라
                   사각형 그리기이므로, 남아 있는 말풍선은 지금 무엇을 하는 중인지 흐리게 만든다. */}
               {navTarget && !drawObstacleShape && (
                 <NavBubble $x={navTarget.canvasX} $y={navTarget.canvasY}>

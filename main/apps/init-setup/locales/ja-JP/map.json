@@ -1,4 +1,31 @@
 {
+  "navState": {
+    "idle": "待機",
+    "running": "移動中",
+    "done": "到着",
+    "stopped": "停止",
+    "failed": "失敗",
+    "remaining": "残り {{distance}} m"
+  },
+  "spinState": {
+    "idle": "待機",
+    "running": "回転中",
+    "done": "回転完了",
+    "stopped": "停止",
+    "timeout": "タイムアウト",
+    "error": "エラー"
+  },
+  "lioStatus": {
+    "mapping": "マッピング中",
+    "savingMap": "マップ保存中",
+    "loadingMap": "マップ読み込み中",
+    "relocalizingPose": "自己位置推定中",
+    "relocalizingGkr": "自己位置推定中（ロボットの回転が必要）",
+    "loadingGridMap": "2Dマップ読み込み中",
+    "recovering": "自己位置再確認中",
+    "ready": "自己位置推定完了",
+    "failed": "失敗"
+  },
   "pageTitle": "マップスキャン",
   "disconnected": "切断",
   "connecting": "接続中",
@@ -69,8 +96,16 @@
   "noMapForArea": "選択したエリアに保存されたマップがありません",
   "mapSelect": "マップ",
   "noMaps": "保存されたマップがありません",
+  "archivedMapSuffix": "以前のマップ",
+  "workingMapSuffix": "作業中",
   "noMapSelected": "編集するマップを選択してください",
   "mapLoadRequested": "マップの読み込みを要求しました。自己位置推定の状態を確認してください。",
+  "loadSelectedMapForSemantic": "選択したマップはロボットに読み込まれていません。マップを読み込むとPOIを編集できます。",
+  "obstacleSaved": "仮想障害物を保存しました。",
+  "obstacleSaveFailed": "仮想障害物の保存に失敗しました。",
+  "obstacleApply": "障害物をロボットに適用",
+  "obstacleApplied": "仮想障害物をマップフォルダに適用しました（{{count}}件）。走行スタックの再起動時に反映されます。",
+  "obstacleApplyHint": "保存済みの仮想障害物をマップフォルダの vo_*.yaml に書き出します。走行スタックが起動時に読み込みます。",
   "moveHere": "移動",
   "close": "閉じる",
   "navGotoRequested": "移動を要求しました。",

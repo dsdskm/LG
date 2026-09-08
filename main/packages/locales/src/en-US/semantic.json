@@ -3,6 +3,8 @@
   "restore": "Undo delete",
   "create": "Create",
   "edit": "Edit",
+  "save": "Save",
+  "nameRequired": "Enter at least one name",
   "tempSave": "Save draft",
   "goto": "Move",
   "loading": "Loading...",
@@ -11,21 +13,45 @@
   "filterOperation": "Operation",
   "semanticTypes": {
     "POI": "POI",
-    "FIXED-OBSTACLE": "Fixed obstacle"
+    "VIRTUAL-OBSTACLE": "Virtual obstacle"
   },
-  "obstacleCreate": "Add fixed obstacle",
+  "obstacleCreate": "Add virtual obstacle",
   "obstacleShape": "Shape",
   "obstacleShapes": {
+    "POINT": "Point",
+    "LINE": "Line",
     "RECTANGLE": "Rectangle",
     "POLYGON": "Polygon"
   },
+  "obstacleTypes": {
+    "0": "Unknown (0)",
+    "1": "Dock wall (1)",
+    "2": "Forbidden (2)",
+    "3": "Virtual wall (3)",
+    "4": "Mop forbidden (4)",
+    "5": "Door sill (5)",
+    "6": "Object (6)",
+    "7": "Stain (7)",
+    "8": "Nav obstacle (8)",
+    "9": "Carpet (9)"
+  },
+  "obstacleTypeFilter": "Type filter",
+  "obstacleTypesUnavailable": "Cannot add: the supported obstacle types could not be loaded. Refresh and try again.",
+  "obstacleNewTitle": "Virtual obstacle properties",
+  "obstacleType": "Type",
+  "obstacleName": "Name (optional)",
+  "obstaclePointUnit": " points",
   "obstacleDrawHint": "Press and drag on the map to mark the area, then release.",
+  "obstacleDrawHint_POINT": "Click the spot on the map to mark it. (Dragging pans the map.)",
+  "obstacleDrawHint_LINE": "Press and drag on the map from the start point to the end point.",
   "obstaclePolygonHint": "Click the map to add points, then right-click or press Enter (or click the first point) to close. Esc: start over, drag: pan the map",
   "obstacleEditDone": "Done",
   "obstacleEditHint": "Drag a vertex of the shape on the map to reshape it.",
-  "noObstacles": "No fixed obstacles yet.",
+  "noObstacles": "No virtual obstacles yet.",
   "obstacleColumns": {
     "no": "No.",
+    "type": "Type / ID",
+    "name": "Name",
     "shape": "Shape",
     "points": "Points (X, Y)"
   },

@@ -13,6 +13,9 @@
   "LanguageSelect": {
     "button": "言語"
   },
+  "Header": {
+    "myProfile": "マイプロフィール"
+  },
   "ThemeToggle": {
     "title": "画面スタイル切替（Forge領域を除く）",
     "modernNeutral": "モダンニュートラル",

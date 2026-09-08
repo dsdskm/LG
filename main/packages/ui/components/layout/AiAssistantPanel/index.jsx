@@ -1,8 +1,7 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAiAssistantStore, useUserStore, useOrganizationStore, useAiLogEventStore } from '@repo/stores'
 import { getAppPrefix } from '@repo/utils'
-import { AI_TASKFLOW_CANVAS_CLARIFY_EVENT, AI_TASKFLOW_CANVAS_DRAFT_EVENT, AI_TASKFLOW_CANVAS_RESULT_EVENT } from '@repo/constants'
 import {
   getChatHistory,
   getChatSettings,
@@ -18,7 +17,6 @@ import {
   StyledAiAssistantDockBody,
   StyledAiAssistantDockHeader,
   StyledAiAssistantDockToggle,
-  StyledAiAssistantEmphasis,
   StyledAiAssistantLoadingBubble,
   StyledAiAssistantLoadingDots,
   StyledAiAssistantLoadingRow,
@@ -33,10 +31,6 @@ import {
   StyledAiAssistantImageTitle,
   StyledAiAssistantMessageList,
   StyledAiAssistantMessageMeta,
-  StyledAiCommandTip,
-  StyledAiCommandTipExample,
-  StyledAiCommandTipExamples,
-  StyledAiCommandTipTitle,
   StyledAiHelpCommand,
   StyledAiHelpCommandDescription,
   StyledAiHelpCommandExample,
@@ -67,6 +61,7 @@ import {
   StyledAiStopButton
 } from './styles'
 import { postSiteAssistantChat } from '@repo/apis/ai/chat.js'
+import { runClientAction } from '@repo/ai/client-actions/index.js'
 import { ruleCheck } from '@repo/ai/rules/chat-rule-matcher.js'
 
 const ENABLE_QUICK_COMMANDS = true
@@ -332,6 +327,19 @@ const findInputHintForPath = (guidanceItems, pathname) => {
   return ''
 }
 
+/** 서버 문구의 **강조** 표기를 굵게 렌더링한다. 그대로 두면 별표가 그대로 보인다. */
+const renderBoldSegments = (text) => {
+  const raw = String(text ?? '')
+  if (!raw.includes('**')) return raw
+
+  // 짝이 맞는 ** 만 강조로 본다. 홀수로 남은 별표는 글자 그대로 남긴다.
+  return raw.split(/(\*\*[^*]+\*\*)/g).map((segment, index) => {
+    const matched = segment.match(/^\*\*([^*]+)\*\*$/)
+    if (!matched) return segment
+    return <strong key={`bold-${index}`}>{matched[1]}</strong>
+  })
+}
+
 const buildMessageId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -430,6 +438,20 @@ const normalizeAppPrefix = (pathname) => {
   return String(raw).replace(/^\//, '')
 }
 
+// TaskFlow 캔버스 화면이 window 에 올려둔 팔레트/캔버스 스냅샷. 서버가 context.taskflow 로 읽는다.
+// 이걸 실어 보내지 않으면 서버는 팔레트를 빈 것으로 보고 요청한 자식 노드를 모두 버린다.
+// 서버 로그([ai-trace] reqId=...)와 브라우저 로그를 이어 보기 위한 요청 식별자.
+const buildReqId = () =>
+  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? `fe-${crypto.randomUUID().slice(0, 8)}`
+    : `fe-${Date.now().toString(36)}`
+
+const readTaskflowChatContext = () => {
+  if (typeof window === 'undefined') return null
+  const snapshot = window.__AI_TASKFLOW_CONTEXT__?.chatContext
+  return snapshot && typeof snapshot === 'object' ? snapshot : null
+}
+
 const buildRouteContext = (location) => ({
   pathname: location.pathname,
   search: location.search,
@@ -450,86 +472,6 @@ const extractAssistantText = (result) => {
 }
 
 const STORAGE_KEY = 'ai-assistant-trigger-y'
-
-// 답변 안의 **노드 이름** 을 강조해 보여준다. 타이핑 중 닫히지 않은 마지막 ** 도 강조로 이어간다.
-const renderAssistantContent = (text) => {
-  const parts = String(text ?? '').split('**')
-  if (parts.length < 2) return text
-
-  return parts.map((part, index) =>
-    index % 2 === 1 ? (
-      <StyledAiAssistantEmphasis key={index}>{part}</StyledAiAssistantEmphasis>
-    ) : (
-      <Fragment key={index}>{part}</Fragment>
-    )
-  )
-}
-
-// TaskFlowCanvasPage 가 window 에 올려둔 팔레트 스냅샷. 서버가 콘텐츠 이름으로 Task 를 역추적하는 데 쓴다.
-const readTaskflowContext = () => {
-  const source = typeof window === 'undefined' ? null : window.__AI_TASKFLOW_CONTEXT__
-  if (!source || !Array.isArray(source.taskContents)) return {}
-
-  return {
-    taskflow: {
-      taskFlowId: source.taskFlowId,
-      taskContents: source.taskContents,
-      currentGraph: source.currentGraph
-    }
-  }
-}
-
-// CustomEvent 는 동기 실행이라 캔버스 적용 결과를 그 자리에서 회수할 수 있다.
-const dispatchServerCanvasDraft = (result, originalMessage) => {
-  const payload = result?.data ?? result ?? null
-  const actionParam = payload?.chat_action_param
-  if (!actionParam || typeof actionParam !== 'object') return ''
-
-  let rejected = []
-  let clarification = ''
-  let didApply = false
-  let resultMessage = ''
-
-  const onResult = (event) => {
-    didApply = Boolean(event.detail?.didApply)
-    resultMessage = String(event.detail?.message ?? '').trim()
-    if (Array.isArray(event.detail?.rejectedLabels)) rejected = event.detail.rejectedLabels
-  }
-  const onClarify = (event) => {
-    clarification = String(event.detail?.message ?? '').trim()
-  }
-
-  window.addEventListener(AI_TASKFLOW_CANVAS_RESULT_EVENT, onResult)
-  window.addEventListener(AI_TASKFLOW_CANVAS_CLARIFY_EVENT, onClarify)
-  window.dispatchEvent(
-    new CustomEvent(AI_TASKFLOW_CANVAS_DRAFT_EVENT, {
-      detail: { ...actionParam, message: String(originalMessage || '') }
-    })
-  )
-  window.removeEventListener(AI_TASKFLOW_CANVAS_RESULT_EVENT, onResult)
-  window.removeEventListener(AI_TASKFLOW_CANVAS_CLARIFY_EVENT, onClarify)
-
-  console.log('[AI_TASKFLOW][DISPATCH_DRAFT]', {
-    message: String(originalMessage || ''),
-    hasCanvasDraft: Boolean(actionParam?.canvasDraft || actionParam?.toolResult?.canvasDraft),
-    didApply,
-    clarification,
-    resultMessage,
-    rejected
-  })
-
-  // 캔버스가 못 반영한 경우를 그대로 삼키면 "했습니다" 문구만 남아 사용자가 속는다.
-  if (clarification) return `\n\n${clarification}`
-
-  const names = rejected.filter(Boolean)
-  if (names.length > 0) {
-    return `\n\n일부 노드는 찾을 수 없어 구성하지 않았습니다: ${names.map((name) => `**${name}**`).join(', ')}`
-  }
-
-  if (!didApply) return `\n\n${resultMessage}`
-
-  return ''
-}
 
 const getInitialY = () => {
   try {
@@ -592,7 +534,12 @@ function FloatingTrigger({ onClick }) {
   )
 }
 
-const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
+const AiAssistantPanel = ({
+  greetingExtra,
+  className,
+  commandAdapter,
+  multiSelectComponentMap = null
+}) => {
   const navigate = useNavigate()
   const location = useLocation()
   const session = useUserStore((state) => state.session)
@@ -619,6 +566,7 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
   const [chatInputPlaceholder, setChatInputPlaceholder] = useState('')
   const [isAssistantTyping, setIsAssistantTyping] = useState(false)
   const [isHistoryLoading, setIsHistoryLoading] = useState(false)
+  const [multiSelectResponse, setMultiSelectResponse] = useState(null)
 
   const messageListRef = useRef(null)
   const textareaRef = useRef(null)
@@ -1071,6 +1019,12 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
     else navigate(target)
   }, [navigate, location.pathname])
 
+  // 다중 선택 항목 선택 후 정리
+  const handleMultiSelectItem = useCallback((...args) => {
+    // 선택 목록 초기화
+    setMultiSelectResponse(null)
+  }, [])
+
   const handleBackToInitial = () => {
     if (isSending) return
     historyRequestIdRef.current += 1
@@ -1086,7 +1040,7 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
   }
 
   const requestAssistantReply = useCallback(
-    async ({ content, currentPath, currentApp, conversationId, author, groupId, siteId, context, signal }) =>
+    async ({ content, currentPath, currentApp, conversationId, author, groupId, siteId, context, reqId, signal }) =>
       postSiteAssistantChat({
         message: content,
         currentPath: currentPath || undefined,
@@ -1096,6 +1050,7 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
         groupId,
         siteId,
         context,
+        reqId,
         signal
       }),
     []
@@ -1119,6 +1074,9 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
     // handle message
     const content = String(text ?? draft ?? '').trim()
     if (!content || isSending || submitInFlightRef.current) return
+
+    // 이전 다중 선택 목록 초기화
+    setMultiSelectResponse(null)
 
     submitInFlightRef.current = true
     const requestId = activeRequestIdRef.current + 1
@@ -1159,6 +1117,29 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
       })
       if (activeRequestIdRef.current !== requestId || controller.signal.aborted) return
       console.log(`rule`, rule)
+
+      // 다중 선택 응답 처리
+      if (rule?.ok && rule?.multiSelect && (rule.multiSelect.robots || rule.multiSelect.items)) {
+        setSendingStage(SENDING_STAGE.COMPLETED)
+        await sleep(180)
+        if (activeRequestIdRef.current !== requestId || controller.signal.aborted) return
+
+        // 다중 선택 UI 표시
+        setMultiSelectResponse(rule.multiSelect)
+        showAssistantReply(rule.replyText, context)
+
+        void saveLocalChatHistory({
+          author: session?.email || undefined,
+          conversationId,
+          currentApp: routeContext.appPrefix || undefined,
+          currentPath: routeContext.pathname || undefined,
+          chatAction: rule.ruleKey || 'local-rule',
+          userMessage: content,
+          assistantText: rule.replyText
+        }).catch(() => undefined)
+        return
+      }
+
       if (rule?.ok && rule.replyText) {
         setSendingStage(SENDING_STAGE.COMPLETED)
         await sleep(180)
@@ -1178,6 +1159,15 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
 
       // send message to backend
       setSendingStage(SENDING_STAGE.REQUESTING)
+      const traceReqId = buildReqId()
+      const taskflowContext = readTaskflowChatContext()
+      console.log('[ai-trace] 1.request', {
+        reqId: traceReqId,
+        screenKey: routeContext.pathname,
+        message: content,
+        paletteContents: taskflowContext?.taskContents?.length ?? 0,
+        canvasNodes: taskflowContext?.currentGraph?.nodes?.length ?? 0
+      })
       const result = await requestAssistantReply({
         content,
         currentPath: pageContextOn ? routeContext.pathname : undefined,
@@ -1186,19 +1176,48 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
         author: session?.email || undefined,
         groupId: selectedOrgs?.[0],
         siteId: selectedOrgs?.[1],
-        context: { ...routeContext, ...readTaskflowContext() },
+        context: taskflowContext ? { ...routeContext, taskflow: taskflowContext } : { ...routeContext },
+        reqId: traceReqId,
         signal: controller.signal
       })
       if (activeRequestIdRef.current !== requestId || controller.signal.aborted) return
 
-      const assistantText = extractAssistantText(result)
+      // 서버가 프론트 함수 실행(clientAction)을 지시했으면 실제 반영까지 확인한 뒤에 문구를 확정한다.
+      // 반영 결과를 안 보고 답하면 "구성했습니다" 만 뜨고 캔버스는 그대로인 상태가 된다.
+      const serverText = extractAssistantText(result)
+      const replyPayload = result?.data ?? result ?? {}
+      console.log('[ai-trace] 6.reply(browser)', {
+        reqId: traceReqId,
+        chatAction: replyPayload?.chat_action ?? '-',
+        hasParam: Boolean(replyPayload?.chat_action_param),
+        text: serverText
+      })
 
-      const canvasNotice = dispatchServerCanvasDraft(result, content)
+      const canvasApply = await runClientAction({
+        payload: result,
+        screenKey: routeContext.pathname,
+        message: content,
+        signal: controller.signal
+      })
+      if (activeRequestIdRef.current !== requestId || controller.signal.aborted) return
+
+      const assistantText = !canvasApply
+        ? serverText
+        : canvasApply.applied
+          ? serverText
+          : canvasApply.message || '요청을 받았지만 캔버스에 반영하지 못했습니다.'
+
+      console.log('[ai-trace] 10.final-text', {
+        reqId: traceReqId,
+        applied: canvasApply?.applied ?? null,
+        usedServerText: !canvasApply || canvasApply.applied,
+        text: assistantText
+      })
 
       setSendingStage(SENDING_STAGE.ASSEMBLING)
       await sleep(220)
       if (activeRequestIdRef.current !== requestId || controller.signal.aborted) return
-      showAssistantReply(assistantText + canvasNotice, context)
+      showAssistantReply(assistantText, context)
     } catch (error) {
       if (activeRequestIdRef.current === requestId && error?.name !== 'AbortError') {
         setSendingStage(SENDING_STAGE.COMPLETED)
@@ -1379,8 +1398,6 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
                 const displayedContent =
                   m.role === 'assistant' ? (typedAssistantMessages[m.id] ?? m.content) : m.content
                 const helpContent = m.role === 'assistant' ? parseTmsHelpContent(displayedContent) : null
-                const showNodeCommandTip =
-                  m.role === 'assistant' && displayedContent.includes('노드 이름을 다시 확인해주세요')
 
                 return (
                   <Fragment key={m.id}>
@@ -1441,22 +1458,9 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
                             ))}
                           </StyledAiHelpContent>
                         ) : (
-                          renderAssistantContent(displayedContent)
+                          renderBoldSegments(displayedContent)
                         )}
                       </StyledAiAssistantMessageBubble>
-                      {showNodeCommandTip && (
-                        <StyledAiCommandTip>
-                          <StyledAiCommandTipTitle>
-                            단축 명령어를 활용하여 더 많은 노드 작업을 한번에 할 수 있어요.
-                          </StyledAiCommandTipTitle>
-                          <StyledAiCommandTipExamples>
-                            <StyledAiCommandTipExample>A-&gt;B-&gt;C</StyledAiCommandTipExample>
-                            <StyledAiCommandTipExample>A-&gt;B=&gt;C</StyledAiCommandTipExample>
-                            <StyledAiCommandTipExample>-&gt;A-&gt;B</StyledAiCommandTipExample>
-                            <StyledAiCommandTipExample>-&gt;A=&gt;C</StyledAiCommandTipExample>
-                          </StyledAiCommandTipExamples>
-                        </StyledAiCommandTip>
-                      )}
                     </StyledAiAssistantMessage>
                   </Fragment>
                 )
@@ -1479,6 +1483,49 @@ const AiAssistantPanel = ({ greetingExtra, className, commandAdapter }) => {
                 </StyledAiAssistantMessage>
               )}
             </StyledAiAssistantMessageList>
+          )}
+
+          {/* ── Multi-Select Component (앱별 맞춤) ── */}
+          {multiSelectResponse && hasConversation && multiSelectComponentMap && (
+            <div style={{
+              position: 'sticky',
+              bottom: 0,
+              padding: '1.2rem 1.6rem',
+              borderTop: '1px solid #e5e7eb',
+              background: '#ffffff',
+              zIndex: 10
+            }}>
+              {(() => {
+                const componentKey = multiSelectResponse.componentKey || 'robot'
+                const Component = multiSelectComponentMap[componentKey]
+
+                if (!Component) return null
+
+                // 로봇 선택 (robots 필드)
+                if (multiSelectResponse.robots) {
+                  return React.createElement(Component, {
+                    robots: multiSelectResponse.robots,
+                    logType: multiSelectResponse.logType,
+                    message: multiSelectResponse.message,
+                    onSelectRobot: handleMultiSelectItem
+                  })
+                }
+
+                // 디바이스/사이트 선택 (items 필드)
+                if (multiSelectResponse.items) {
+                  return React.createElement(Component, {
+                    items: multiSelectResponse.items,
+                    message: multiSelectResponse.message,
+                    rule: multiSelectResponse.rule,
+                    idKey: multiSelectResponse.idKey,
+                    renderItem: multiSelectResponse.renderItem,
+                    onSelectRobot: handleMultiSelectItem
+                  })
+                }
+
+                return null
+              })()}
+            </div>
           )}
 
           {/* ── Composer ── */}

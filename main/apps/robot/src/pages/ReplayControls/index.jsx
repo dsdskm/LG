@@ -25,16 +25,6 @@ export default function ReplayControlsUXOnlyPage() {
   const [deviceName, setDeviceName] = useState('')
   const today = new Date().toISOString().slice(0, 10)
 
-  const getDeviceName = async () => {
-    try {
-      const data = await deviceApis.getDeviceInfo(deviceId)
-      if (!data?.deviceName) return
-      setDeviceName((prev) => (prev === data.deviceName ? prev : data.deviceName))
-    } catch (err) {
-      console.error('Error loadGetDevices:', err)
-    }
-  }
-
   useEffect(() => {
     let canceled = false
     ;(async () => {
@@ -51,6 +41,14 @@ export default function ReplayControlsUXOnlyPage() {
       canceled = true
     }
   }, [deviceId])
+
+  // ✅ 사용자 seek 신호(에폭). 진행바 드래그/이슈 이동/로그 행 클릭처럼 "명시적 점프"에서만 증가한다.
+  //    재생 타이머의 전진은 onPlayTick으로 분리해 에폭을 올리지 않으므로,
+  //    rosout 로더가 "사용자가 점프함"과 "재생이 로딩을 앞질러 뒤처짐"을 추측 없이 구분할 수 있다.
+  //    (Logreplay의 seekEpochRef와 같은 개념 — 재생과 seek이 같은 통로를 쓰던 구조를 갈라냄)
+  //    ⚠️ 아래 useReplayControlsLogic 호출보다 먼저 선언해야 한다(TDZ).
+  const seekEpochRef = useRef(0)
+  const getSeekEpoch = useCallback(() => seekEpochRef.current, [])
 
   const {
     selectedDate,
@@ -82,8 +80,9 @@ export default function ReplayControlsUXOnlyPage() {
     handleViewSelectedFile,
     handleDownloadLog,
     handleOpenLichtblick,
-    handleVisibleRangeChange
-  } = useReplayControlsLogic({ deviceId, currentTime, isPlaying })
+    handleVisibleRangeChange,
+    logGaps // ✅ 고배속 재생으로 건너뛴 rosout 미로드 구간(로그 패널에 표시)
+  } = useReplayControlsLogic({ deviceId, currentTime, isPlaying, getSeekEpoch })
 
   // 분석 임계값(추정 기준) 상태 — 설정 UI(⚙)에서 조정, localStorage 영속
   const { thresholds, updateThreshold, resetThresholds } = useAnalysisThresholdsState()
@@ -149,7 +148,14 @@ export default function ReplayControlsUXOnlyPage() {
   }, [replayIssuePoints, totalDuration])
   // ✅ handlers: ReplayControls -> 부모 state 업데이트
 
+  // 사용자 명시적 점프 → 에폭 증가(위 seekEpochRef 선언부 주석 참고)
   const onSeek = useCallback((t) => {
+    seekEpochRef.current++
+    setCurrentTime(t)
+  }, [])
+
+  // 재생 타이머 전진 전용: 위치만 갱신하고 seek 신호는 올리지 않는다.
+  const onPlayTick = useCallback((t) => {
     setCurrentTime(t)
   }, [])
 
@@ -178,7 +184,8 @@ export default function ReplayControlsUXOnlyPage() {
   const handleGoLanding = useCallback(() => {
     // 1) 재생 정지
     setIsPlaying(false)
-    // 2) 커서 0으로
+    // 2) 커서 0으로 (명시적 점프 → seek 신호도 올린다)
+    seekEpochRef.current++
     setCurrentTime(0)
     // 3) (선택) 속도도 기본값으로
     setPlaybackRate(1.0)
@@ -288,6 +295,7 @@ export default function ReplayControlsUXOnlyPage() {
                 isPlaying={isPlaying}
                 playbackRate={playbackRate}
                 onSeek={onSeek}
+                onPlayTick={onPlayTick}
                 onTogglePlay={onTogglePlay}
                 onStop={onStop}
                 onChangeRate={onChangeRate}
@@ -338,6 +346,7 @@ export default function ReplayControlsUXOnlyPage() {
               logFocus={logFocus}
               currentTime={currentTime}
               timeRange={mcapTimeRange}
+              logGaps={logGaps}
             />
           </div>
         </div>

@@ -12,6 +12,7 @@ import type { TaskApiPayload, ContentApiPayload, PropertySchema } from '../types
 
 import type { Task } from '../types/task'
 import { listTasks } from '../api/taskApi'
+import { resolveIfThenElseBranchRoles } from '../utils/ifThenElseRoles'
 import type { PaletteItem } from '../types/palette'
 import {
   TASK_TYPE_CONTROL,
@@ -213,80 +214,6 @@ function normalizeTaskName(value?: string | null): string {
     .toLowerCase()
     .replace(/[_\s]+/g, ' ')
     .replace(/\s+/g, ' ')
-}
-
-function isIfThenElseTaskNode(node: RFNode | undefined | null): boolean {
-  if (!node) return false
-
-  const taskType = String(node.data?.taskType ?? '').toUpperCase()
-  const taskName = normalizeTaskName(
-    (node.data as Record<string, any> | undefined)?.taskName ??
-      (node.data as Record<string, any> | undefined)?.label ??
-      (node.data as Record<string, any> | undefined)?.name
-  )
-  return taskType === 'CONTROL' && (taskName === 'ifthenelse' || taskName === 'if then else' || taskName === 'if_then_else')
-}
-
-function syncIfThenElseBranchRoles(
-  parentNodeId: string,
-  nodes: RFNode[],
-  edges: RFEdge[],
-  flowMode: FlowMode
-): Record<string, string> | null {
-  const parentNode = nodes.find((node) => String(node.id) === String(parentNodeId))
-  if (!parentNode || !isIfThenElseTaskNode(parentNode)) return null
-
-  const branchRoleOrder = ['condition', 'success', 'failure'] as const
-  const validRoleSet = new Set(branchRoleOrder)
-
-  const currentRoles = (() => {
-    const raw = (parentNode.data?.properties as Record<string, any> | undefined)?.ifthenelse_branch_roles
-    if (!raw || typeof raw !== 'object') return {}
-
-    const next: Record<string, string> = {}
-    for (const [targetId, role] of Object.entries(raw)) {
-      const normalized = typeof role === 'string' ? role.trim().toLowerCase() : ''
-      if (normalized && validRoleSet.has(normalized as (typeof branchRoleOrder)[number])) {
-        next[String(targetId)] = normalized
-      }
-    }
-    return next
-  })()
-
-  const sortedLeftChildren = Array.from(
-    new Set(
-      edges
-        .filter(
-          (edge) => String(edge.source) === String(parentNodeId) && String(edge.sourceHandle ?? '') === 'left'
-        )
-        .map((edge) => String(edge.target))
-    )
-  )
-    .map((targetId) => nodes.find((node) => String(node.id) === targetId))
-    .filter((node): node is RFNode => Boolean(node))
-    .sort((a, b) => {
-      const aPos = { x: Number(a.position?.x ?? 0), y: Number(a.position?.y ?? 0) }
-      const bPos = { x: Number(b.position?.x ?? 0), y: Number(b.position?.y ?? 0) }
-
-      if (flowMode === 'tree') {
-        return aPos.x - bPos.x || aPos.y - bPos.y
-      }
-
-      return aPos.y - bPos.y || aPos.x - bPos.x
-    })
-    .map((node) => String(node.id))
-
-  const nextRoles: Record<string, string> = { ...currentRoles }
-  const usedRoles = new Set(Object.values(nextRoles))
-  const missingRoles = branchRoleOrder.filter((role) => !usedRoles.has(role))
-
-  for (const targetId of sortedLeftChildren) {
-    if (nextRoles[targetId]) continue
-    const nextRole = missingRoles.shift()
-    if (nextRole) nextRoles[targetId] = nextRole
-  }
-
-  return Object.keys(nextRoles).length > 0 ? nextRoles : null
 }
 
 function pushHistory(historyPast: FlowSnapshot[], prev: FlowSnapshot) {
@@ -538,8 +465,14 @@ function buildPaletteAndCatalog(tasks: TaskApiPayload[]) {
     }
 
     const contents = task.contents ?? []
-    // Pause 처럼 대상 콘텐츠가 없는 ACTION 은 Task 이름 자체가 노드다. 빼면 팔레트에서도 AI 로도 못 만든다.
-    if (contents.length === 0) {
+
+    // Pause/Wait/Rotate 처럼 콘텐츠를 참조하지 않는 ACTION 은 태스크 자체가 하나의 노드다.
+    // 팔레트 패널도 이런 task 를 카드 하나로 보여 준다(ControlTaskNodeCard).
+    // 여기서 빠지면 AI 가 "pause 추가해줘" 를 매칭할 대상이 없어 요청을 버린다.
+    const referencesContent = Object.values(task.propertySchema?.properties ?? {}).some(
+      (property) => property?.type === 'content_reference'
+    )
+    if (!referencesContent) {
       palette.push({ kind: 'controlTaskNode', task, label: task.name })
       continue
     }
@@ -1358,13 +1291,17 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
   clearAllNodesExceptStart: () => {
     const { nodes, edges, viewport, flowMode } = get()
 
-    const startNodes = nodes.filter((node) => isStartNodeId(node.id))
+    // id 가 'start' 가 아닌 예전 정의도 있어 노드 타입까지 함께 본다. Start 는 어떤 경우에도 남긴다.
+    const isStartNode = (node: Node) => isStartNodeId(String(node.id)) || String((node as any)?.type ?? '') === 'startNode'
+    const startNodes = nodes.filter((node) => isStartNode(node))
     if (startNodes.length === nodes.length && edges.length === 0) return
 
     const prev = makeSnapshot(nodes, edges, viewport, flowMode)
+    // Start 가 아예 없던 캔버스라면 새로 만들어 남긴다. 지우고 나서 Start 까지 사라지면 아무 것도 이을 수 없다.
+    const keptStartNodes = startNodes.length > 0 ? startNodes : (ensureStartNode(null, get().tasks).nodes as Node[])
 
     set((state) => ({
-      nodes: startNodes.map((node) => (node.selected ? { ...node, selected: false } : node)),
+      nodes: keptStartNodes.map((node) => (node.selected ? { ...node, selected: false } : node)),
       edges: [],
       canvasNotes: [],
       selectedNodeId: null,
@@ -1529,7 +1466,7 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
 
     const nextBranchRoles =
       connection.source && connection.sourceHandle === 'left'
-        ? syncIfThenElseBranchRoles(connection.source, nodes, next, get().flowMode)
+        ? resolveIfThenElseBranchRoles(connection.source, nodes, next, get().flowMode)
         : null
 
     set((state) => {
@@ -1892,4 +1829,4 @@ export const useFlowEditorStore = create<FlowEditorState>((set, get) => ({
   }
 }))
 
-export { buildDefaultProperties, generateNodeId, buildNodeDataFromPaletteItem, isIfThenElseTaskNode, syncIfThenElseBranchRoles }
+export { buildDefaultProperties, generateNodeId, buildNodeDataFromPaletteItem }

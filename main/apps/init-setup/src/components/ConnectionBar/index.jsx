@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import styled from 'styled-components'
 import { Button } from '@repo/ui'
 import {
   startMapping,
@@ -20,73 +19,11 @@ import {
   resolveMapDir,
   visibleMaps
 } from '@/utils/mapRecord'
-import { isMappingSession } from '@/utils/lioStatus'
-import { resolveWsUrl } from '@/utils/wsUrl'
 import { toast } from 'react-toastify'
 import MapSaveCompleteModal from '@/components/MapSaveCompleteModal'
 import MapSaveLocationModal from '@/components/MapSaveLocationModal'
 import MapOverwriteModal from '@/components/MapOverwriteModal'
-
-const StyledSlider = styled.input`
-  -webkit-appearance: none;
-  appearance: none;
-  width: 100px;
-  height: 6px;
-  background: ${({ $percentage }) =>
-    `linear-gradient(to right, #2980b9 0%, #2980b9 ${$percentage}%, #dee2e6 ${$percentage}%, #dee2e6 100%)`};
-  border-radius: 3px;
-  outline: none;
-  cursor: pointer;
-
-  &::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: #2980b9;
-    border: 2px solid #fff;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-    transition:
-      transform 0.1s ease,
-      background-color 0.1s ease;
-  }
-
-  &::-webkit-slider-thumb:hover {
-    transform: scale(1.15);
-    background: #2471a3;
-  }
-
-  &::-moz-range-track {
-    background: #dee2e6;
-    height: 6px;
-    border-radius: 3px;
-  }
-
-  &::-moz-range-progress {
-    background-color: #2980b9;
-    height: 6px;
-    border-radius: 3px 0 0 3px;
-  }
-
-  &::-moz-range-thumb {
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: #2980b9;
-    border: 2px solid #fff;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-    transition:
-      transform 0.1s ease,
-      background-color 0.1s ease;
-    cursor: pointer;
-  }
-
-  &::-moz-range-thumb:hover {
-    transform: scale(1.15);
-    background: #2471a3;
-  }
-`
+import { ConnectionBadge, FpsControl, FpsSlider, MappingActions, Toolbar } from './styles'
 
 /** 새 작업본에 저장할 때의 대상 — 난수 폴더 + 새 레코드(재사용할 레코드가 없다). */
 const NEW_SAVE_TARGET = () => ({ dirName: newWorkingMapDirName(), recordId: null })
@@ -100,9 +37,10 @@ const NEW_SAVE_TARGET = () => ({ dirName: newWorkingMapDirName(), recordId: null
  * 하는 값이 텔레메트리로 오기 때문이다. 그래도 시작 버튼은 연결을 겸한다: 진입 시 연결이 실패했거나
  * 사용자가 해제한 뒤에 눌린 경우를 위한 폴백이다.
  *
- * 매핑을 시작하기 전에는 URL 입력창과 연결 조작 버튼을 노출하지 않는다 — 그 단계에서 주소를 만질
- * 이유가 없다(연결 상태는 옆 배지로 보인다). 세션이 열린 뒤에는 주소창과 연결 해제 버튼이 보이고,
- * 해제한 뒤에는 다시 연결할 수 있도록 연결 버튼이 돌아온다.
+ * WebSocket 주소는 화면에 노출하지 않는다 — 현재 페이지 기준으로 계산되므로(utils/wsUrl) 사용자가
+ * 고칠 값이 아니고, 연결 상태는 옆 배지로 보인다. 연결 조작 버튼도 매핑을 시작하기 전에는 두지
+ * 않는다(시작이 연결을 겸한다). 세션이 열린 뒤에만 연결 해제 버튼이 보이고, 해제한 뒤에는 다시
+ * 연결할 수 있도록 연결 버튼이 돌아온다.
  *
  * 맵 이름은 여기서 입력받지 않는다 — 위치 계층(Building/Floor/Area)에서 만든 mapName(표시용)과
  * 시작 가능 여부(canStartMapping)를 부모(pages/Map)에서 props 로 받는다. 저장 폴더 이름은 난수라
@@ -111,9 +49,10 @@ const NEW_SAVE_TARGET = () => ({ dirName: newWorkingMapDirName(), recordId: null
  * 위치 선택은 저장 시점에만 한다 — 저장 버튼은 곧바로 save-map 을 호출하지 않고, 부모가
  * locationSelector 로 넘긴 Building/Floor/Area 드롭다운을 담은 모달을 먼저 띄운다.
  *
- * 매핑 조작부의 구성은 이 컴포넌트의 로컬 state 가 아니라 로봇이 발행하는 모드로 결정한다
- * (부모가 /lio_node/status 를 utils/lioStatus 로 접어 mode 로 내려준다) — 새로고침이나 다른
- * 경로로 매핑이 시작·종료된 경우에도 버튼 구성이 로봇 실제 상태와 어긋나지 않는다.
+ * 매핑 조작부의 구성은 로봇 모드가 아니라 사용자의 액션으로 결정한다 — 진입 시에는 로봇이 이미
+ * 매핑 중이더라도 시작 버튼만 보여주고, 시작을 누른 뒤에 저장·재시작을 노출한다. 로봇 모드로
+ * 판단하면 화면에 들어오는 것만으로 재시작 버튼이 떠서 처음 스캔하는 사용자가 헷갈린다.
+ * 로봇 모드(mode)는 여전히 받지만 저장 중 중복 호출을 막는 데만 쓴다.
  *
  * @param {string} [mapName] 맵 레코드에 남길 표시용 이름 ([Building]_[Floor]_[Area], 선택 미완료면 '').
  *   저장 폴더 이름은 이 값이 아니라 난수로 만든다(utils/mapRecord.newWorkingMapDirName).
@@ -126,8 +65,6 @@ const NEW_SAVE_TARGET = () => ({ dirName: newWorkingMapDirName(), recordId: null
  * @param {object|null} [mapInfo] 살아 있는 OccupancyGrid 의 info — yaml 을 못 읽을 때의 폴백
  */
 export default function ConnectionBar({
-  url,
-  onUrlChange,
   status,
   onConnect,
   onDisconnect,
@@ -145,17 +82,18 @@ export default function ConnectionBar({
   const isConnected = status === 'connected'
   const isConnecting = status === 'connecting'
 
-  // 상태 토픽을 못 받는 구성(LIO 없음·미구독)에서도 조작은 가능해야 하므로, 그 경우에만
-  // 직전 시작 요청을 기억해 세션을 판단한다. mode 를 받는 동안에는 이 값을 쓰지 않는다.
-  const [startedLocally, setStartedLocally] = useState(false)
+  // 이 화면의 매핑 세션은 '사용자가 이 화면에서 시작을 눌렀는지'로만 판단한다 — 로봇 상태(mode)로
+  // 판단하지 않는다. 진입 시 로봇이 이미 매핑 중이면(이전 세션이 안 끝났거나 다른 경로로 시작됐거나)
+  // 화면에 들어오자마자 저장·재시작만 보여서, 처음 스캔하려는 사용자가 무엇을 눌러야 하는지 알기
+  // 어려웠다. 그래서 진입 시에는 항상 시작 버튼만 두고, 시작을 누른 뒤에 저장·재시작을 노출한다.
+  // (로봇이 이미 매핑 중이어도 시작은 switch_mode mode=mapping 이라 새 세션으로 다시 시작된다.)
+  const [sessionStarted, setSessionStarted] = useState(false)
   // 명령 왕복 중 중복 클릭 방지 — 세션 상태가 아니라 요청 진행 여부다.
   const [isBusy, setIsBusy] = useState(false)
-  const hasMode = mode !== 'unknown'
-  const inMappingSession = hasMode ? isMappingSession(mode) : startedLocally
+  const inMappingSession = sessionStarted
   // 연결 조작부 노출 조건 — 매핑 세션일 때만.
   // 페이지가 진입 시 이미 연결해 두므로(pages/Map) 연결 여부로는 판단하지 않는다: 그러면 화면에
   // 들어오는 것만으로 주소창과 해제 버튼이 떠서, 매핑 전에 주소를 만질 이유가 없다는 전제가 깨진다.
-  // 새로고침으로 들어와 로봇이 이미 매핑 중이어도 세션으로 판단되므로 주소/해제 버튼이 보인다.
   const showConnectionControls = inMappingSession
   // 저장 완료 모달 상태. savedMap 이 있으면 모달이 열린다.
   const [savedMap, setSavedMap] = useState(null)
@@ -164,7 +102,7 @@ export default function ConnectionBar({
   // 덮어쓰기 확인 대기 중인 저장 대상 — 작업 중인 맵이 있을 때만 채워진다(있으면 확인 모달이 열린다).
   const [pendingOverwrite, setPendingOverwrite] = useState(null)
   // 2D 격자맵 산출물 확인 상태. 'checking' 은 저장 직후 폴링 중이라는 뜻이고 저장 버튼을 잠그므로
-  // (아래 mappingContainer), 저장 전 초기값은 'unknown' 이어야 한다 — 'checking' 으로 두면 화면에
+  // (아래 MappingActions), 저장 전 초기값은 'unknown' 이어야 한다 — 'checking' 으로 두면 화면에
   // 들어오는 것만으로 첫 저장이 막힌다. 저장 시점에 saveMapTo 가 'checking' 으로 바꾼다.
   const [gridMapState, setGridMapState] = useState('unknown')
   // grid_map 폴링이 끝나기 전에 화면을 떠날 수 있으므로 언마운트 후 setState 를 막는다.
@@ -176,14 +114,15 @@ export default function ConnectionBar({
     []
   )
 
-  // 연결 상태별 표시 텍스트와 색상
+  // 연결 상태별 표시 텍스트와 색 계열(vars.css 의 계열 이름 — ConnectionBadge 가 명도만 나눠 쓴다).
+  // 연결 안 됨은 error 가 아니다(아직 붙지 않았거나 사용자가 끊은 상태) — 회색 계열로 눕혀 둔다.
   const STATUS_CONFIG = {
-    disconnected: { label: t('disconnected'), color: '#888' },
-    connecting: { label: t('connecting'), color: '#f0a500' },
-    connected: { label: t('connected'), color: '#27ae60' },
-    error: { label: t('error'), color: '#e74c3c' }
+    disconnected: { label: t('disconnected'), tone: 'secondary' },
+    connecting: { label: t('connecting'), tone: 'warning', pulse: true },
+    connected: { label: t('connected'), tone: 'success' },
+    error: { label: t('error'), tone: 'error' }
   }
-  const { label, color } = STATUS_CONFIG[status] || STATUS_CONFIG.disconnected
+  const { label, tone, pulse: pulseDot = false } = STATUS_CONFIG[status] || STATUS_CONFIG.disconnected
 
   // 위치 계층을 받아온 경우에는 Building/Floor/Area 가 모두 선택돼야 매핑을 시작할 수 있다
   // (맵 이름이 곧 위치라서, 미선택 상태로 시작하면 어디를 그린 맵인지 남지 않는다).
@@ -220,11 +159,11 @@ export default function ConnectionBar({
     if (!isConnected && !isConnecting) onConnect()
     await runMappingAction(startMapping, {
       onSuccess: () => {
-        setStartedLocally(true)
+        setSessionStarted(true)
         // 매핑을 시작했을 뿐이므로 이 단계는 아직 완료되지 않은 것으로 기록한다(작업 중인 단계 = 맵 스캔).
         tryAdvanceSetupProgress(SETUP_STEPS.MAP_SCAN)
       },
-      onError: () => setStartedLocally(false),
+      onError: () => setSessionStarted(false),
       successMessage: 'Mapping started'
     })
   }
@@ -306,8 +245,8 @@ export default function ConnectionBar({
         // 저장이 시작됐으므로 위치 선택 모달은 닫는다(실패 시에는 열어둔 채 재시도할 수 있게 한다).
         setSaveLocationOpen(false)
         // 저장해도 lio_node 는 매핑 세션을 유지하지만(status 가 다시 mapping), 이 화면의 한 사이클은
-        // 끝났으므로 상태 토픽이 없는 구성에서는 시작 버튼으로 되돌린다.
-        setStartedLocally(false)
+        // 끝났으므로 조작부를 시작 버튼으로 되돌린다.
+        setSessionStarted(false)
         // 맵 저장이 끝났으므로 이 단계를 완료로 기록한다 — 다음 작업 단계(시맨틱)를 가리킨다.
         tryAdvanceSetupProgress(SETUP_STEPS.MAP_SEMANTIC)
         // 저장 응답 성공 = 3D 맵(PCD + trajectory) 저장 완료 → 완료 모달을 띄운다.
@@ -454,45 +393,36 @@ export default function ConnectionBar({
 
   return (
     <>
-      <div style={styles.bar}>
+      <Toolbar>
         {/* 페이지 제목은 페이지의 Title 이 담당한다 — 툴바는 조작 요소만 갖는다. */}
 
-        {/* WebSocket URL + 연결 조작은 시작 전에는 노출하지 않는다 — 시작 버튼이 연결까지 겸하므로
-            매핑을 시작하기 전에 주소를 만질 이유가 없다. 시작(또는 이미 연결/세션 진행) 이후에만
-            주소창과 해제 버튼을 보여준다. 세션 중 해제했다면 다시 연결할 수 있도록 연결 버튼이 돌아온다. */}
-        {showConnectionControls && (
-          <>
-            <input
-              style={styles.input}
-              type="text"
-              value={url}
-              onChange={(e) => onUrlChange(e.target.value)}
-              // 기본값은 현재 페이지 기준으로 계산된다(utils/wsUrl.js) — 빌드에 박힌 주소가 없다
-              placeholder={resolveWsUrl()}
-              disabled={isConnected || isConnecting}
-            />
-
-            {isConnected ? (
-              <Button size="md" theme="delete" onClick={onDisconnect}>
-                {t('disconnect')}
-              </Button>
-            ) : (
-              <Button size="md" onClick={onConnect} disabled={isConnecting}>
-                {isConnecting ? t('connecting') : t('connect')}
-              </Button>
-            )}
-          </>
-        )}
+        {/* WebSocket 주소는 입력창으로 노출하지 않는다 — 현재 페이지 기준으로 계산되므로
+            (utils/wsUrl.js, 빌드에 박힌 주소가 없다) 사용자가 고칠 값이 아니다.
+            연결 조작은 시작 전에는 노출하지 않는다 — 시작 버튼이 연결까지 겸한다. 시작 이후에만
+            해제 버튼이 보이고, 세션 중 해제했다면 다시 연결할 수 있도록 연결 버튼이 돌아온다. */}
+        {showConnectionControls &&
+          (isConnected ? (
+            <Button size="md" theme="delete" onClick={onDisconnect}>
+              {t('disconnect')}
+            </Button>
+          ) : (
+            <Button size="md" onClick={onConnect} disabled={isConnecting}>
+              {isConnecting ? t('connecting') : t('connect')}
+            </Button>
+          ))}
 
         {/* 연결 상태 표시 뱃지 */}
-        <span style={{ ...styles.badge, backgroundColor: color }}>{label}</span>
+        <ConnectionBadge $tone={tone} $pulse={pulseDot}>
+          {label}
+        </ConnectionBadge>
 
-        {/* 업데이트 주기 (FPS) 조절 슬라이더 */}
-        <div style={styles.fpsContainer}>
-          <span style={styles.fpsLabel}>
-            FPS : <strong>{fps} Hz</strong>
-          </span>
-          <StyledSlider
+        {/* 업데이트 주기 (FPS) 조절 슬라이더 — 잠시 감춘다.
+            fps 는 그대로 부모의 기본값(10 Hz)으로 동작한다(useTelemetry) — 이 UI 만 빠진다.
+            되살릴 때는 label 로 감싸 둔 형태 그대로 쓰면 숫자·글자를 눌러도 슬라이더가 잡힌다. */}
+        {/* <FpsControl>
+          <span className="label">FPS</span>
+          <span className="value">{fps} Hz</span>
+          <FpsSlider
             type="range"
             min="1"
             max="30"
@@ -500,10 +430,10 @@ export default function ConnectionBar({
             onChange={(e) => onFpsChange(Number(e.target.value))}
             $percentage={((fps - 1) / 29) * 100}
           />
-        </div>
+        </FpsControl> */}
 
         {/* 매핑 조작부는 항상 자리를 유지한다 — 연결 전에도 시작 버튼은 보여준다(시작이 연결을 겸한다). */}
-        <div style={styles.mappingContainer}>
+        <MappingActions>
           {/* 저장될 맵 이름은 여기 노출하지 않는다 — 위치(Building/Floor/Area)를 고르는 저장 모달에서
               확정되므로, 선택 UI 가 없는 이 줄에 미리 보여줄 이름이 없다. */}
           {/* 저장 · 재시작은 매핑 세션(로봇 모드 mapping/saving)에서만 의미가 있으므로 그때만 노출한다
@@ -538,8 +468,8 @@ export default function ConnectionBar({
               {t('start')}
             </Button>
           )}
-        </div>
-      </div>
+        </MappingActions>
+      </Toolbar>
 
       {/* 저장 위치 선택 — Building/Floor/Area 를 고르고 저장 이름을 확정한다 */}
       <MapSaveLocationModal
@@ -572,54 +502,4 @@ export default function ConnectionBar({
       />
     </>
   )
-}
-
-const styles = {
-  // Section(카드) 안에 놓이는 툴바다 — 배경/좌우 여백은 Section 이 이미 갖고 있어서
-  // 아래쪽 구분선과 그만큼의 여백만 남긴다.
-  bar: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    paddingBottom: 12,
-    borderBottom: '1px solid var(--color-secondary-20)',
-    flexWrap: 'wrap'
-  },
-  // 글꼴 크기는 공용 토큰(--font-size-body-5/6)만 쓴다 — 툴바 안에서 12/13/14px 이 섞이지 않게.
-  input: {
-    width: '200px',
-    padding: '6px 10px',
-    border: '1px solid var(--color-secondary-20)',
-    borderRadius: 'var(--radius-xs)',
-    fontSize: 'var(--font-size-body-5)',
-    color: 'var(--color-neutral-80)'
-  },
-  badge: {
-    padding: '4px 10px',
-    borderRadius: 12,
-    color: 'var(--color-neutral-10)',
-    fontSize: 'var(--font-size-body-6)',
-    fontWeight: 700,
-    whiteSpace: 'nowrap'
-  },
-  mappingContainer: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    marginLeft: 'auto'
-  },
-  fpsContainer: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    whiteSpace: 'nowrap',
-    backgroundColor: 'var(--color-secondary-10)',
-    padding: '4px 12px',
-    borderRadius: 'var(--radius-xs)',
-    border: '1px solid var(--color-secondary-20)'
-  },
-  fpsLabel: {
-    fontSize: 'var(--font-size-body-5)',
-    color: 'var(--color-neutral-70)'
-  }
 }

@@ -541,6 +541,9 @@ export async function getOrOpenIndexedReaderFromUrl(url, options = {}) {
       const reader = await openReaderFromUrlRange(url, { decompressHandlers })
       return { reader }
     })()
+    p.catch(() => {
+      if (__readerCache.get(key) === p) __readerCache.delete(key)
+    })
     __readerCache.set(key, p)
   }
 

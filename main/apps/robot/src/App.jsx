@@ -26,6 +26,8 @@ import MapHistory from './pages/MapManagement/MapHistory'
 import AiLogManagement from './pages/AiLogManagement'
 import AiEventSummaryPanel from './pages/Dashboard/components/AiEventSummaryPanel'
 import AlarmNotification from './components/AlarmNotification'
+import MultiSelectRobotList from './components/MultiSelectRobotList'
+import MultiSelectDetailList from './components/MultiSelectDetailList'
 import TVDashboard from './pages/TVDashboard'
 import TermManagement from './pages/TermManagement'
 
@@ -155,8 +157,6 @@ const getAppPrefix = (pathname) => {
   return pathname.split('/').filter(Boolean)[0] || 'robot'
 }
 
-const session = useUserStore.getState().session
-
 const flattenRoutes = (routes) => {
   let result = []
   routes.forEach((route) => {
@@ -179,11 +179,9 @@ const App = () => {
   const { pathname } = useLocation()
   const { t: layoutT } = useTranslation('layout')
   const { t: appT } = useTranslation('route')
-  const { isLoggedIn, session } = useUserStore.getState()
+  const { isLoggedIn, session } = useUserStore()
 
   const appPrefix = useMemo(() => getAppPrefix(pathname), [pathname])
-
-  //console.log('isLoggedIn=' + isLoggedIn)
 
   if (!isLoggedIn) {
     window.location.href = '/login'
@@ -209,6 +207,11 @@ const App = () => {
                     t={appT}
                     aiGreetingExtra={<AiEventSummaryPanel />}
                     notificationSlot={<AlarmNotification />}
+                    multiSelectComponentMap={{
+                      robot: MultiSelectRobotList,
+                      device: MultiSelectDetailList,
+                      site: MultiSelectDetailList
+                    }}
                   >
                     {item.element}
                   </MainLayout>

@@ -1,5 +1,5 @@
 import type { ToolContext } from '../tool.type'
-import type { TaskSemantics } from '../../features/taskflow/service/property-tms-store.service'
+import { getPropertyTmsStore, type TaskSemantics } from '../../features/taskflow/service/property-tms-store.service'
 import { taskflowMessage, TASKFLOW_MESSAGE_KEY } from './taskflow-message'
 
 export { TASKFLOW_CANVAS_SCREEN_KEY } from './taskflow-message'
@@ -21,6 +21,14 @@ export type GraphNodeRef = {
   taskType?: string
   /** 이름이 겹치는 노드에만 프론트가 붙이는 화면 순번. 유일한 이름은 없다. */
   ordinal?: number
+}
+
+/** 프론트 팔레트가 알려 준 Task 속성 스키마. Delay 의 delay_msec 처럼 값으로 지정할 수 있는 키들. */
+export type TaskPropertyRef = {
+  taskName: string
+  key: string
+  type: string
+  description: string
 }
 
 export type CurrentGraph = {
@@ -68,6 +76,78 @@ export function readTaskContentsFromContext(context: unknown): TaskContentRef[] 
     )
 }
 
+/** property_tms.compose_hint.properties 에 적어 둔 속성 스키마를 읽는다. 프론트 propertySchema 와 같은 키를 쓴다. */
+export function readTaskPropertySchema(semantics: TaskSemantics | undefined): TaskPropertyRef[] {
+  const holder = semantics?.composeHint?.properties
+  if (!holder || typeof holder !== 'object' || Array.isArray(holder)) return []
+
+  return Object.entries(holder as Record<string, unknown>)
+    .map(([key, def]) => {
+      const row = def && typeof def === 'object' ? (def as Record<string, unknown>) : {}
+      return {
+        taskName: semantics?.taskName ?? '',
+        key: String(key).trim(),
+        type: String(row.type ?? '').trim(),
+        description: String(row.description ?? '').trim(),
+      }
+    })
+    .filter((row) => row.key.length > 0)
+}
+
+/** LLM 이 읽을 속성 목록. 값을 지정할 수 있는 키를 Task 별로 한 줄씩 적는다. */
+export function describeTaskProperties(tasks: TaskSemantics[]): string {
+  return tasks
+    .map((task) => {
+      const rows = readTaskPropertySchema(task)
+      if (rows.length === 0) return ''
+      const keys = rows
+        .map((row) => `${row.key}${row.type ? `:${row.type}` : ''}${row.description ? `(${row.description})` : ''}`)
+        .join(', ')
+      return `- ${task.taskName}: ${keys}`
+    })
+    .filter(Boolean)
+    .join('\n')
+}
+
+/** 스키마 타입에 맞춰 값을 바꾼다. LLM 이 숫자를 문자열로 보내도 프론트가 그대로 쓸 수 있게 한다. */
+export function coercePropertyValue(value: unknown, type: string): unknown {
+  const normalizedType = String(type ?? '').trim().toLowerCase()
+
+  if (normalizedType === 'number' || normalizedType === 'content_reference') {
+    const numeric = Number(value)
+    return Number.isFinite(numeric) ? numeric : value
+  }
+  if (normalizedType === 'boolean') {
+    if (typeof value === 'boolean') return value
+    const text = String(value ?? '').trim().toLowerCase()
+    if (text === 'true') return true
+    if (text === 'false') return false
+    return value
+  }
+  return value
+}
+
+/** LLM 이 보낸 속성 이름을 스키마의 실제 키로 맞춘다. 스키마에 없는 키는 버리고 따로 알린다. */
+export function resolveProperties(
+  semantics: TaskSemantics | undefined,
+  requested: Record<string, unknown>,
+): { properties: Record<string, unknown>; unknownKeys: string[] } {
+  const rows = readTaskPropertySchema(semantics)
+  const properties: Record<string, unknown> = {}
+  const unknownKeys: string[] = []
+
+  for (const [key, value] of Object.entries(requested ?? {})) {
+    const matched = rows.find((row) => toMatchKey(row.key) === toMatchKey(key))
+    if (!matched) {
+      unknownKeys.push(key)
+      continue
+    }
+    properties[matched.key] = coercePropertyValue(value, matched.type)
+  }
+
+  return { properties, unknownKeys }
+}
+
 export function readCurrentGraph(ctx: ToolContext): CurrentGraph {
   return readCurrentGraphFromContext(ctx.context)
 }
@@ -102,6 +182,24 @@ export function readCurrentGraphFromContext(context: unknown): CurrentGraph {
       }))
       .filter((edge) => edge.source.length > 0 && edge.target.length > 0),
   }
+}
+
+/** "타임아웃" 처럼 사람이 부르는 이름을 Task 이름으로 바꾼다. 별칭은 property_tms.trigger_phrases 에 있다. */
+export function resolveTaskAlias(name: string): string {
+  const key = toMatchKey(name)
+  if (!key) return String(name ?? '').trim()
+
+  const store = getPropertyTmsStore()
+  if (!store) return String(name ?? '').trim()
+
+  const direct = store.get(String(name ?? '').trim())
+  if (direct) return direct.taskName
+
+  const matched = store
+    .list()
+    .find((task) => task.triggerPhrases.some((phrase) => toMatchKey(phrase) === key))
+
+  return matched?.taskName ?? String(name ?? '').trim()
 }
 
 /** 낮을수록 좋은 매칭. 요청어가 콘텐츠명보다 길 수도 있어 양방향으로 본다. */
@@ -167,16 +265,87 @@ export function findSuggestions(requested: string, tasks: TaskSemantics[]): stri
   return matched.slice(0, 3).map((task) => task.taskName)
 }
 
+/**
+ * "두번째 Love" 처럼 말로 센 순번을 읽기 위한 규칙. 표기는 코드에 두지 않고
+ * taskflow rule(nodeTargetOrdinalWords / nodeTargetOrdinalSuffixPhrases / nodeTargetNounPhrases)에서 온다.
+ * 규칙이 없으면 "#N" 만 인식하던 이전 동작이 그대로 유지된다.
+ */
+export type NodeTargetRules = {
+  ordinalWords: Record<string, number>
+  ordinalSuffixPhrases: string[]
+  nounPhrases: string[]
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function alternation(values: string[]): string {
+  return values
+    .map((value) => String(value ?? '').trim())
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRegExp)
+    .join('|')
+}
+
+/** 이름 뒤에 붙는 군더더기를 규칙대로 떼어낸다. "두번째 Parallel 노드" -> "Parallel" */
+function stripNounPhrase(value: string, rules?: NodeTargetRules): string {
+  const nouns = alternation(rules?.nounPhrases ?? [])
+  const trimmed = value.trim()
+  if (!nouns) return trimmed
+  return trimmed.replace(new RegExp(`\\s*(?:${nouns})$`, 'i'), '').trim()
+}
+
+function toOrdinal(rules: NodeTargetRules, digits?: string, word?: string): number | null {
+  const value = digits ? Number(digits) : word ? rules.ordinalWords[word] : NaN
+  return Number.isInteger(value) && value > 0 ? value : null
+}
+
+/** 규칙이 다 채워졌을 때만 순번 문구용 정규식을 만든다. */
+function buildOrdinalPatterns(rules?: NodeTargetRules): { prefix: RegExp; suffix: RegExp } | null {
+  if (!rules) return null
+
+  const words = alternation(Object.keys(rules.ordinalWords))
+  const suffixes = alternation(rules.ordinalSuffixPhrases)
+  if (!words || !suffixes) return null
+
+  const counter = `(?:(\\d+)|(${words}))\\s*(?:${suffixes})`
+  return {
+    prefix: new RegExp(`^${counter}\\s*(.+)$`, 'i'),
+    suffix: new RegExp(`^(.+?)\\s*${counter}$`, 'i'),
+  }
+}
+
 /** "Parallel #2" 처럼 번호가 붙은 지목을 이름과 번호로 가른다. 프론트 parseNodeTargetName 과 같은 규칙이다. */
-export function parseNodeTarget(value: unknown): { name: string; ordinal: number | null } {
+export function parseNodeTarget(value: unknown, rules?: NodeTargetRules): { name: string; ordinal: number | null } {
   const raw = String(value ?? '').trim()
   const matched = raw.match(/^(.*\S)\s*#\s*(\d+)$/)
-  if (!matched) return { name: raw, ordinal: null }
+  if (matched) {
+    const ordinal = Number(matched[2])
+    if (Number.isInteger(ordinal) && ordinal > 0) return { name: matched[1].trim(), ordinal }
+    return { name: raw, ordinal: null }
+  }
 
-  const ordinal = Number(matched[2])
-  if (!Number.isInteger(ordinal) || ordinal <= 0) return { name: raw, ordinal: null }
+  const patterns = buildOrdinalPatterns(rules)
+  if (patterns && rules) {
+    const prefix = raw.match(patterns.prefix)
+    if (prefix) {
+      const ordinal = toOrdinal(rules, prefix[1], prefix[2])
+      const name = stripNounPhrase(prefix[3], rules)
+      if (ordinal !== null && name.length > 0) return { name, ordinal }
+    }
 
-  return { name: matched[1].trim(), ordinal }
+    const suffix = raw.match(patterns.suffix)
+    if (suffix) {
+      const ordinal = toOrdinal(rules, suffix[2], suffix[3])
+      const name = stripNounPhrase(suffix[1], rules)
+      if (ordinal !== null && name.length > 0) return { name, ordinal }
+    }
+  }
+
+  const bare = stripNounPhrase(raw, rules)
+  return { name: bare.length > 0 ? bare : raw, ordinal: null }
 }
 
 /** 프론트가 draft 를 적용할 때 쓰는 지목 문자열. 번호가 있으면 반드시 붙여 한 노드로 좁힌다. */
@@ -185,14 +354,20 @@ export function formatNodeTarget(node: GraphNodeRef): string {
 }
 
 /** 이름이 같은 노드를 화면 번호 순서대로 모두 돌려준다. 번호를 지정하면 그 한 개만 남는다. */
-export function findGraphNodes(name: string, graph: CurrentGraph): GraphNodeRef[] {
-  const { name: baseName, ordinal } = parseNodeTarget(name)
+export function findGraphNodes(name: string, graph: CurrentGraph, rules?: NodeTargetRules): GraphNodeRef[] {
+  const { name: baseName, ordinal } = parseNodeTarget(name, rules)
 
   const matchByName = (needle: string): GraphNodeRef[] => {
     const key = toMatchKey(needle)
     if (!key) return []
 
-    const names = (node: GraphNodeRef) => [node.label, node.taskName, node.contentName]
+    // 조회 출력에 쓰는 표기(DB node.label 템플릿)도 후보에 넣는다. LLM 이 그 문자열을 그대로 지목해 온다.
+    const names = (node: GraphNodeRef) => [
+      node.label,
+      node.taskName,
+      node.contentName,
+      formatNodeLabel(node.taskName, node.contentName),
+    ]
 
     const exact = graph.nodes.filter((node) => names(node).some((value) => toMatchKey(String(value ?? '')) === key))
     if (exact.length > 0) return exact
@@ -208,23 +383,37 @@ export function findGraphNodes(name: string, graph: CurrentGraph): GraphNodeRef[
   const bySortOrder = (rows: GraphNodeRef[]) =>
     rows.slice().sort((a, b) => Number(a.ordinal ?? 0) - Number(b.ordinal ?? 0))
 
-  if (ordinal === null) return bySortOrder(matchByName(baseName))
+  // "타임아웃 노드" 처럼 별칭으로 지목한 경우 Task 이름으로 바꿔 한 번 더 찾는다.
+  const matchWithAlias = (needle: string): GraphNodeRef[] => {
+    const direct = matchByName(needle)
+    if (direct.length > 0) return direct
 
-  const numbered = bySortOrder(matchByName(baseName)).filter((node) => Number(node.ordinal ?? 0) === ordinal)
+    const alias = resolveTaskAlias(needle)
+    return toMatchKey(alias) === toMatchKey(needle) ? [] : matchByName(alias)
+  }
+
+  if (ordinal === null) return bySortOrder(matchWithAlias(baseName))
+
+  const candidates = bySortOrder(matchWithAlias(baseName))
+  const numbered = candidates.filter((node) => Number(node.ordinal ?? 0) === ordinal)
   if (numbered.length > 0) return numbered
+
+  // 프론트가 순번 배지를 안 붙인 경우엔 화면 순서 그대로 N 번째를 고른다.
+  if (candidates.length > 1 && ordinal <= candidates.length) return [candidates[ordinal - 1]]
 
   // "Room #3" 처럼 이름 자체에 # 이 들어간 콘텐츠일 수 있다.
   return bySortOrder(matchByName(String(name ?? '').trim()))
 }
 
 /** 같은 이름이 여러 개면 프론트와 같이 가장 나중에 추가된 노드를 고른다. */
-export function findGraphNode(name: string, graph: CurrentGraph): GraphNodeRef | undefined {
-  const matched = findGraphNodes(name, graph)
+export function findGraphNode(name: string, graph: CurrentGraph, rules?: NodeTargetRules): GraphNodeRef | undefined {
+  const matched = findGraphNodes(name, graph, rules)
   return matched[matched.length - 1]
 }
 
 export function describeGraphNode(node: GraphNodeRef): string {
-  const base = node.contentName && node.taskName ? `${node.taskName}(${node.contentName})` : node.label
+  // 표기는 DB node.label 템플릿 하나로 통일한다. 코드가 다른 순서로 적으면 LLM 이 되돌려준 이름을 못 찾는다.
+  const base = formatNodeLabel(node.taskName, node.contentName) || node.label
   return node.ordinal ? `${base} #${node.ordinal}` : base
 }
 

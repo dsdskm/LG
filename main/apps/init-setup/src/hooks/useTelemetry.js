@@ -9,6 +9,7 @@ import {
   SPIN_STATUS_TOPICS,
   STATUS_TOPICS,
   TF_TOPICS,
+  TRAJECTORY_TOPICS,
   encodingFor,
   resolveTopic,
   topicCategory
@@ -157,6 +158,8 @@ export function useTelemetry(wsUrl, throttleFps = 10) {
             resolveTopic(ODOM_TOPICS, allTopicsList),
             resolveTopic(SCAN_TOPICS, allTopicsList),
             resolveTopic(STATUS_TOPICS, allTopicsList),
+            // 주행 궤적 — 매핑 중에만 발행되므로 없을 수 있다(MapCanvas 가 구독 여부로 그림 결정).
+            resolveTopic(TRAJECTORY_TOPICS, allTopicsList),
             resolveTopic(NAV_STATUS_TOPICS, allTopicsList),
             resolveTopic(SPIN_STATUS_TOPICS, allTopicsList),
             // 비상정지 버튼 상태 — power-on-micom 이 없는 구성(시뮬레이터 등)에서는 안 온다.

@@ -3,6 +3,8 @@
   "restore": "削除取消",
   "create": "作成",
   "edit": "編集",
+  "save": "保存",
+  "nameRequired": "名前を1つ以上入力してください",
   "tempSave": "一時保存",
   "goto": "移動",
   "loading": "読み込み中...",
@@ -11,21 +13,45 @@
   "filterOperation": "区分",
   "semanticTypes": {
     "POI": "POI",
-    "FIXED-OBSTACLE": "固定障害物"
+    "VIRTUAL-OBSTACLE": "仮想障害物"
   },
-  "obstacleCreate": "固定障害物を追加",
+  "obstacleCreate": "仮想障害物を追加",
   "obstacleShape": "形状",
   "obstacleShapes": {
+    "POINT": "点",
+    "LINE": "線分",
     "RECTANGLE": "四角形",
     "POLYGON": "ポリゴン"
   },
+  "obstacleTypes": {
+    "0": "Unknown (0)",
+    "1": "ドック壁 (1)",
+    "2": "進入禁止 (2)",
+    "3": "バーチャルウォール (3)",
+    "4": "水拭き禁止 (4)",
+    "5": "敷居 (5)",
+    "6": "物体 (6)",
+    "7": "シミゾーン (7)",
+    "8": "走行障害物 (8)",
+    "9": "カーペット (9)"
+  },
+  "obstacleTypeFilter": "タイプフィルター",
+  "obstacleTypesUnavailable": "対応する障害物タイプを取得できないため追加できません。しばらくしてから再読み込みしてください。",
+  "obstacleNewTitle": "仮想障害物のプロパティ",
+  "obstacleType": "タイプ",
+  "obstacleName": "名前（任意）",
+  "obstaclePointUnit": "点",
   "obstacleDrawHint": "地図上でドラッグして範囲を指定し、離してください。",
+  "obstacleDrawHint_POINT": "地図上で障害物にする地点をクリックしてください。（ドラッグは地図移動です）",
+  "obstacleDrawHint_LINE": "地図上で始点から終点までドラッグして線を引いてください。",
   "obstaclePolygonHint": "地図をクリックして点を追加し、右クリックまたは Enter（最初の点をクリック）で閉じてください。Esc: やり直し、ドラッグ: 地図移動",
   "obstacleEditDone": "編集完了",
   "obstacleEditHint": "地図上で図形の頂点をドラッグして形を修正してください。",
-  "noObstacles": "登録された固定障害物はありません。",
+  "noObstacles": "登録された仮想障害物はありません。",
   "obstacleColumns": {
     "no": "番号",
+    "type": "タイプ / ID",
+    "name": "名前",
     "shape": "形状",
     "points": "点の座標 (X, Y)"
   },

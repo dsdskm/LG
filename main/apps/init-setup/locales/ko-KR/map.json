@@ -1,4 +1,31 @@
 {
+  "navState": {
+    "idle": "대기",
+    "running": "이동 중",
+    "done": "도착",
+    "stopped": "정지됨",
+    "failed": "실패",
+    "remaining": "{{distance}} m 남음"
+  },
+  "spinState": {
+    "idle": "대기",
+    "running": "회전 중",
+    "done": "회전 완료",
+    "stopped": "정지됨",
+    "timeout": "시간 초과",
+    "error": "오류"
+  },
+  "lioStatus": {
+    "mapping": "매핑 중",
+    "savingMap": "맵 저장 중",
+    "loadingMap": "맵 불러오는 중",
+    "relocalizingPose": "위치 인식 중",
+    "relocalizingGkr": "위치 인식 중 (로봇 회전 필요)",
+    "loadingGridMap": "2D 지도 불러오는 중",
+    "recovering": "위치 재확인 중",
+    "ready": "위치 인식 완료",
+    "failed": "실패"
+  },
   "pageTitle": "맵 스캔",
   "disconnected": "연결 끊김",
   "connecting": "연결 중",
@@ -70,8 +97,16 @@
   "noMapForArea": "선택한 구역에 저장된 맵이 없습니다",
   "mapSelect": "맵",
   "noMaps": "저장된 맵이 없습니다",
+  "archivedMapSuffix": "이전 맵",
+  "workingMapSuffix": "작업 중",
   "noMapSelected": "편집할 맵을 선택하세요",
   "mapLoadRequested": "맵 로드를 요청했습니다. 측위 상태를 확인하세요.",
+  "loadSelectedMapForSemantic": "선택한 맵이 로봇에 로드되어 있지 않습니다. 맵 로드 후 POI 를 편집할 수 있습니다.",
+  "obstacleSaved": "가상 장애물을 저장했습니다.",
+  "obstacleSaveFailed": "가상 장애물 저장에 실패했습니다.",
+  "obstacleApply": "장애물 로봇 적용",
+  "obstacleApplied": "가상 장애물을 맵 폴더에 적용했습니다({{count}}개). 주행 스택 재기동 시 반영됩니다.",
+  "obstacleApplyHint": "저장된 가상 장애물을 맵 폴더의 vo_*.yaml 로 내보냅니다. 주행 스택이 기동할 때 읽습니다.",
   "moveHere": "이동",
   "close": "닫기",
   "navGotoRequested": "이동을 요청했습니다.",

@@ -3,14 +3,11 @@ export const CHAT_PROMPT_TYPE = {
   intentClassifier: 'intent-classifier',
   ragInfo: 'rag-info',
   ragAction: 'rag-action',
-  /** action tool 사용 규칙. {{mutatingTools}} 에 변경 tool 이름이 들어간다. */
-  actionToolPolicy: 'action-tool-policy',
-  /** compose_linear_taskflow 설명. {{catalog}} 에 Task 카탈로그가 들어간다. */
-  toolComposeTaskflow: 'tool-compose-taskflow',
-  /** edit_taskflow 설명. {{catalog}} 에 Task 카탈로그가 들어간다. */
-  toolEditTaskflow: 'tool-edit-taskflow',
-  /** taskflow 도구가 쓰는 문구 묶음. prompt 본문에 JSON 객체로 키별 템플릿을 담는다. */
-  toolTaskflowMessage: 'tool-taskflow-message',
-  /** read_taskflow_graph 설명. */
-  toolReadTaskflowGraph: 'tool-read-taskflow-graph',
+  /** 액션 수행에 필요한 프롬프트 묶음. 행 하나에 JSON 으로 담는다.
+   * policy: action tool 사용 규칙({{mutatingTools}} 주입)
+   * tool.compose / tool.edit / tool.readGraph: 각 도구의 description({{catalog}} 주입)
+   * 그 밖의 키: 도구가 채팅에 내보내는 문구
+   * 스코프는 common -> app -> screen 순으로 찾는다.
+   */
+  actionTools: 'action-tools',
 } as const

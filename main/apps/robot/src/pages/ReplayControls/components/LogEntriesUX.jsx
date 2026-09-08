@@ -93,7 +93,8 @@ export default function LogEntriesUX({
   onSeek,
   logFocus,
   currentTime = 0,
-  timeRange = null
+  timeRange = null,
+  logGaps = null // [{ startSec, endSec }] — 빠른 재생으로 불러오지 못한 구간(Text 탭에 구분선으로 표시)
 }) {
   const { t } = useTranslation('robot')
   // 절대 KST 시계. timeRange(absStartSec)가 있으면 절대시각, 없으면 상대 mm:ss로 폴백.
@@ -182,6 +183,49 @@ export default function LogEntriesUX({
     }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [textEntries, timeRange])
+
+  // ✅ 미로드 구간(빠른 재생으로 건너뛴 범위) → 그 구간 "뒤"에 오는 첫 행 앞에 표시할 위치를 계산.
+  //    조용히 비어 있으면 "그 시간엔 로그가 없었다"로 오해할 수 있어 명시적으로 알려준다.
+  const gapBeforeIdx = useMemo(() => {
+    const gaps = (Array.isArray(logGaps) ? logGaps : []).filter(
+      (g) => Number.isFinite(g?.startSec) && Number.isFinite(g?.endSec) && g.endSec > g.startSec
+    )
+    if (!gaps.length) return null
+    // rowIdx -> 그 행 앞에 표시할 빈 구간 목록(rowIdx === textRows.length 이면 목록 맨 끝).
+    // 같은 두 로그 행 사이에 빈 구간이 여러 개 생길 수 있으므로 배열로 모은다(하나만 표시하면 실제 상태가 가려짐).
+    const map = new Map()
+    for (const g of gaps) {
+      let idx = textRows.findIndex((r) => Number.isFinite(r?.tSec) && r.tSec >= g.endSec)
+      if (idx < 0) idx = textRows.length
+      const list = map.get(idx)
+      if (list) list.push(g)
+      else map.set(idx, [g])
+    }
+    for (const list of map.values()) list.sort((a, b) => a.startSec - b.startSec)
+    return map
+  }, [logGaps, textRows])
+
+  const renderGapRow = (g, key) => (
+    <div
+      key={key}
+      style={{
+        padding: '4px 10px',
+        fontSize: 11,
+        color: theme.colors.textMuted,
+        background: 'rgba(148,163,184,0.10)',
+        borderTop: `1px dashed ${theme.colors.border || 'rgba(148,163,184,0.4)'}`,
+        borderBottom: `1px dashed ${theme.colors.border || 'rgba(148,163,184,0.4)'}`,
+        textAlign: 'center'
+      }}
+    >
+      {t('replayControls.logEntries.skippedRange', {
+        from: fmtClock(g.startSec),
+        to: fmtClock(g.endSec)
+      })}
+    </div>
+  )
+
+  const renderGapRows = (list, keyPrefix) => (list || []).map((g, i) => renderGapRow(g, `${keyPrefix}-${i}`))
 
   // ✅ 플레이바 싱크: tSec <= currentTime 인 마지막(=현재 시점) 로그 인덱스 (이진탐색)
   const currentTextIdx = useMemo(() => {
@@ -343,43 +387,51 @@ export default function LogEntriesUX({
               {textRows.map((r, idx) => {
                 const seekable = typeof onSeek === 'function' && Number.isFinite(r.tSec)
                 const highlighted = idx === currentTextIdx
+                const gaps = gapBeforeIdx?.get(idx)
                 return (
-                  <div
-                    key={idx}
-                    ref={(el) => {
-                      if (el) textRowRefs.current.set(idx, el)
-                      else textRowRefs.current.delete(idx)
-                    }}
-                    style={{
-                      ...UX.logRow,
-                      cursor: seekable ? 'pointer' : 'default',
-                      ...(highlighted ? { background: theme.colors.highlight || 'rgba(59,130,246,0.16)' } : null)
-                    }}
-                    onClick={seekable ? () => onSeek(r.tSec) : undefined}
-                    title={seekable ? t('replayControls.logEntries.moveTo', { time: r.timeText }) : undefined}
-                  >
-                    <div style={{ color: theme.colors.textSecondary, fontFamily: 'Consolas, monospace' }}>
-                      {r.timeText}
-                    </div>
+                  <React.Fragment key={idx}>
+                    {gaps ? renderGapRows(gaps, `gap-${idx}`) : null}
                     <div
-                      style={{
-                        fontWeight: 800,
-                        color:
-                          r.levelText === 'ERROR'
-                            ? theme.colors.statusError
-                            : r.levelText === 'WARN'
-                              ? theme.colors.statusWarn
-                              : theme.colors.primary
+                      ref={(el) => {
+                        if (el) textRowRefs.current.set(idx, el)
+                        else textRowRefs.current.delete(idx)
                       }}
+                      style={{
+                        ...UX.logRow,
+                        cursor: seekable ? 'pointer' : 'default',
+                        ...(highlighted ? { background: theme.colors.highlight || 'rgba(59,130,246,0.16)' } : null)
+                      }}
+                      onClick={seekable ? () => onSeek(r.tSec) : undefined}
+                      title={seekable ? t('replayControls.logEntries.moveTo', { time: r.timeText }) : undefined}
                     >
-                      {r.levelText}
+                      <div style={{ color: theme.colors.textSecondary, fontFamily: 'Consolas, monospace' }}>
+                        {r.timeText}
+                      </div>
+                      <div
+                        style={{
+                          fontWeight: 800,
+                          color:
+                            r.levelText === 'ERROR'
+                              ? theme.colors.statusError
+                              : r.levelText === 'WARN'
+                                ? theme.colors.statusWarn
+                                : theme.colors.primary
+                        }}
+                      >
+                        {r.levelText}
+                      </div>
+                      <div style={msgStyle} title={r.messageText}>
+                        {r.messageText}
+                      </div>
                     </div>
-                    <div style={msgStyle} title={r.messageText}>
-                      {r.messageText}
-                    </div>
-                  </div>
+                  </React.Fragment>
                 )
               })}
+
+              {/* 마지막 행 이후에 생긴 미로드 구간(아직 그 뒤 로그가 안 들어온 경우) */}
+              {gapBeforeIdx?.get(textRows.length)
+                ? renderGapRows(gapBeforeIdx.get(textRows.length), 'gap-tail')
+                : null}
 
               {!textRows.length && (
                 <div style={{ padding: 10, color: theme.colors.textMuted, fontSize: 12 }}>

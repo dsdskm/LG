@@ -18,6 +18,7 @@ import { useAiAssistantStore, useResponsiveStore, useSideBarStore, useUserStore,
 import { logout as requestLogout } from '@repo/apis'
 import ServiceMenuIcon from '../ServiceMenuIcon'
 import LearningNotification from './LearningNotification'
+import MyProfileModal from './MyProfileModal'
 import { getAppPrefix } from '@repo/utils'
 import { COMMON_GNB } from '@repo/constants/routes'
 import { useTranslation } from 'react-i18next'
@@ -41,6 +42,8 @@ const Header = ({ notificationSlot }) => {
   const { state: isProfileOpen, toggle: toggleProfile, off: closeProfile } = useToggle()
   const profileRef = useRef(null)
   useClickOutSide(profileRef, closeProfile)
+
+  const { state: isMyProfileOpen, on: openMyProfile, off: closeMyProfile } = useToggle()
 
   // FEATURE_LEARNING_ENABLED에 따라 "학습" 앱 필터링
   const headerRoutes = useMemo(() => {
@@ -66,6 +69,11 @@ const Header = ({ notificationSlot }) => {
 
   const handleClickAiAssistant = () => {
     openAiAssistantPanel()
+  }
+
+  const handleMyProfile = () => {
+    closeProfile()
+    openMyProfile()
   }
 
   return (
@@ -131,6 +139,10 @@ const Header = ({ notificationSlot }) => {
 
             {isProfileOpen && (
               <StyledProfileDropdown className={responsiveMode}>
+                <button type="button" onClick={handleMyProfile}>
+                  <Icon name="profile" size={16} />
+                  {t('Header.myProfile')}
+                </button>
                 <button type="button" onClick={handleLogout}>
                   <Icon name="sign_out" size={16} />
                   Logout
@@ -140,6 +152,8 @@ const Header = ({ notificationSlot }) => {
           </StyledProfileContainer>
         </div>
       </div>
+
+      <MyProfileModal isOpen={isMyProfileOpen} onClose={closeMyProfile} onLogout={handleLogout} />
     </StyledHeader>
   )
 }

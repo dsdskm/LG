@@ -4,6 +4,7 @@ export const EMPTY_MANAGEMENT = {
     guidance: [],
     ragDocs: [],
     rules: [],
+    actionTools: [],
     history: [],
 }
 
@@ -14,6 +15,7 @@ export const APP_TAB = {
     PROMPT: 'prompt',
     RAG: 'rag',
     RULE: 'rule',
+    ACTION_TOOL: 'actionTool',
 }
 
 export const APP_TABS = [
@@ -40,6 +42,10 @@ export const APP_TABS = [
     {
         key: APP_TAB.RULE,
         label: 'Rule 설정',
+    },
+    {
+        key: APP_TAB.ACTION_TOOL,
+        label: 'Action Tool 설정',
     },
 ]
 

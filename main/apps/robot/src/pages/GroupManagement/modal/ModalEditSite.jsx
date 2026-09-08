@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Modal, ModalButton, Input } from '@repo/ui'
+import { Modal, ModalButton, Input, Radio } from '@repo/ui'
 import { useForm, Controller } from 'react-hook-form'
 import { siteApis, buildingApis, floorApis, areaApis } from '@/apis'
 import { useDaumPostcodePopup } from 'react-daum-postcode'
 import { loadKakaoMaps } from '@/utils/kakaoLoader'
+import ModalGoogleAddressSearch from './ModalGoogleAddressSearch'
 import styled from 'styled-components'
 import { ChevronDown, ChevronRight, Trash2, Search } from 'lucide-react'
 
@@ -315,6 +316,14 @@ const ErrorBox = styled.div`
   color: var(--color-error-70, #c62828);
 `
 
+const RegionRadioGroup = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  margin-left: 0.5rem;
+  margin-bottom: 0.6rem;
+`
+
 const AddressSearchWrap = styled.div`
   position: relative;
   & input {
@@ -348,13 +357,15 @@ const ModalEditSite = ({ isOpen, t, onClose, onConfirm, groupId, siteId, siteInf
     mode: 'onSubmit',
     defaultValues: {
       siteName: '',
+      region: 'DOMESTIC',
       zipCode: '',
       sido: '',
       sigungu: '',
       address1: '',
       address2: '',
       siteLat: '',
-      siteLng: ''
+      siteLng: '',
+      siteCountry: ''
     }
   })
 
@@ -364,12 +375,15 @@ const ModalEditSite = ({ isOpen, t, onClose, onConfirm, groupId, siteId, siteInf
   const [expanded, setExpanded] = useState(new Set())
   const [saveErrors, setSaveErrors] = useState([])
   const [fieldErrors, setFieldErrors] = useState({})
+  const [isGoogleSearchOpen, setIsGoogleSearchOpen] = useState(false)
 
   const clearFieldError = (key) =>
     setFieldErrors((p) => { if (!p[key]) return p; const n = { ...p }; delete n[key]; return n })
 
   const siteName = watch('siteName')
+  const region = watch('region')
   const address1 = watch('address1')
+  const siteCountry = watch('siteCountry')
 
   const openPostcode = useDaumPostcodePopup(POSTCODE_SCRIPT_URL)
 
@@ -380,16 +394,20 @@ const ModalEditSite = ({ isOpen, t, onClose, onConfirm, groupId, siteId, siteInf
     setSaveErrors([])
     setFieldErrors({})
 
+    const isDomestic = !siteInfo?.siteAddressCountry || siteInfo.siteAddressCountry === 'KR'
+
     reset(
       {
         siteName: siteInfo?.siteName ?? '',
+        region: isDomestic ? 'DOMESTIC' : 'GLOBAL',
         zipCode: siteInfo?.siteAddressPostalCode ?? '',
         sido: siteInfo?.siteAddressState ?? '',
         sigungu: siteInfo?.siteAddressCity ?? '',
         address1: siteInfo?.siteAddressOne ?? '',
         address2: siteInfo?.siteAddressTwo ?? '',
         siteLat: siteInfo?.siteLatitude ?? '',
-        siteLng: siteInfo?.siteLongitude ?? ''
+        siteLng: siteInfo?.siteLongitude ?? '',
+        siteCountry: isDomestic ? '' : siteInfo.siteAddressCountry
       },
       { keepDirty: false }
     )
@@ -577,7 +595,26 @@ const ModalEditSite = ({ isOpen, t, onClose, onConfirm, groupId, siteId, siteInf
   }
 
   // ── Address search ─────────────────────────────────────────────────────────
+  const handleRegionChange = (value) => {
+    setValue('region', value, { shouldDirty: true })
+    // Domestic (Kakao) and global (Google) addresses aren't interchangeable, so
+    // switching modes clears whatever was already picked to avoid mixing the two.
+    setValue('zipCode', '', { shouldDirty: true })
+    setValue('sido', '', { shouldDirty: true })
+    setValue('sigungu', '', { shouldDirty: true })
+    setValue('address1', '', { shouldDirty: true })
+    setValue('address2', '', { shouldDirty: true })
+    setValue('siteLat', '', { shouldDirty: true })
+    setValue('siteLng', '', { shouldDirty: true })
+    setValue('siteCountry', '', { shouldDirty: true })
+  }
+
   const handleOpenAddressSearch = useCallback(() => {
+    if (region === 'GLOBAL') {
+      setIsGoogleSearchOpen(true)
+      return
+    }
+
     openPostcode({
       onComplete: (data) => {
         setValue('zipCode', data.zonecode || '', { shouldDirty: true })
@@ -600,7 +637,19 @@ const ModalEditSite = ({ isOpen, t, onClose, onConfirm, groupId, siteId, siteInf
         requestAnimationFrame(() => setFocus('address2'))
       }
     })
-  }, [openPostcode, setValue, setFocus])
+  }, [region, openPostcode, setValue, setFocus])
+
+  const handleGoogleAddressSelect = useCallback((result) => {
+    setValue('zipCode', result.postalCode || '', { shouldDirty: true })
+    setValue('address1', result.formattedAddress || '', { shouldDirty: true })
+    setValue('sido', result.state || '', { shouldDirty: true })
+    setValue('sigungu', result.city || '', { shouldDirty: true })
+    setValue('siteLat', result.lat != null ? Number(result.lat).toFixed(7) : '', { shouldDirty: true })
+    setValue('siteLng', result.lng != null ? Number(result.lng).toFixed(7) : '', { shouldDirty: true })
+    setValue('siteCountry', result.country || '', { shouldDirty: true })
+    setIsGoogleSearchOpen(false)
+    requestAnimationFrame(() => setFocus('address2'))
+  }, [setValue, setFocus])
 
   // ── Save ───────────────────────────────────────────────────────────────────
   const validateFields = () => {
@@ -633,6 +682,7 @@ const ModalEditSite = ({ isOpen, t, onClose, onConfirm, groupId, siteId, siteInf
       const payload = {
         groupId,
         siteName: values.siteName,
+        siteAddressCountry: region === 'DOMESTIC' ? 'KR' : siteCountry,
         siteAddressPostalCode: values.zipCode || null,
         siteAddressState: values.sido || null,
         siteAddressCity: values.sigungu || null,
@@ -759,6 +809,23 @@ const ModalEditSite = ({ isOpen, t, onClose, onConfirm, groupId, siteId, siteInf
               />
             </div>
             <div style={{ marginTop: '5px' }}>
+              <FieldLabel className="typographyBody4">{t('region')}</FieldLabel>
+              <RegionRadioGroup>
+                <Radio
+                  name="region"
+                  label={t('regionDomestic')}
+                  checked={region !== 'GLOBAL'}
+                  onChange={() => handleRegionChange('DOMESTIC')}
+                />
+                <Radio
+                  name="region"
+                  label={t('regionGlobal')}
+                  checked={region === 'GLOBAL'}
+                  onChange={() => handleRegionChange('GLOBAL')}
+                />
+              </RegionRadioGroup>
+            </div>
+            <div style={{ marginTop: '5px' }}>
               <FieldLabel className="typographyBody4" style={{ marginBottom: '1rem' }}>
                 {t('address')}
               </FieldLabel>
@@ -768,6 +835,7 @@ const ModalEditSite = ({ isOpen, t, onClose, onConfirm, groupId, siteId, siteInf
                 <Controller name="sigungu" control={control} render={({ field }) => <Input type="text" size="md" readOnly {...field} />} />
                 <Controller name="siteLat" control={control} render={({ field }) => <Input type="text" size="md" readOnly {...field} />} />
                 <Controller name="siteLng" control={control} render={({ field }) => <Input type="text" size="md" readOnly {...field} />} />
+                <Controller name="siteCountry" control={control} render={({ field }) => <Input type="text" size="md" readOnly {...field} />} />
               </div>
               <AddressSearchWrap>
                 <AddressSearchIcon><Search size={15} /></AddressSearchIcon>
@@ -997,6 +1065,13 @@ const ModalEditSite = ({ isOpen, t, onClose, onConfirm, groupId, siteId, siteInf
           </BuildingSection>
         </ScrollBody>
       </form>
+
+      <ModalGoogleAddressSearch
+        isOpen={isGoogleSearchOpen}
+        t={t}
+        onClose={() => setIsGoogleSearchOpen(false)}
+        onSelect={handleGoogleAddressSelect}
+      />
     </Modal>
   )
 }

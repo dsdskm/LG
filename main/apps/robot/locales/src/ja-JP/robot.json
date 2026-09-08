@@ -146,8 +146,15 @@
   "siteModify": "サイトの編集",
   "siteName": "サイト名",
   "inputSiteName": "サイト名を入力してください。",
+  "region": "地域",
+  "regionDomestic": "国内",
+  "regionGlobal": "海外",
   "address": "住所",
   "searchAddress": "住所を検索してください。",
+  "searchAddressGlobal": "海外の住所を検索",
+  "googleMapsLoadFailed": "Google Mapsの読み込みに失敗しました。",
+  "searchAddressGlobalGuide": "検索結果を選択すると自動的に入力されます。",
+  "domesticAddressNotAllowedGlobal": "国内(韓国)の住所は海外の住所検索では使用できません。国内に切り替えて再検索してください。",
   "inputAddress": "詳細アドレスを入力してください。",
   "siteNumber": "サイト数",
   "management": "管理",
@@ -547,7 +554,8 @@
       "parseError": "MCAP解析エラー: {{message}}",
       "loadingMcap": "MCAP読み込み中...",
       "noSystemLogs": "表示できるSystem/Eventログがありません。",
-      "noTextLogs": "表示できるテキストログがありません。"
+      "noTextLogs": "表示できるテキストログがありません。",
+      "skippedRange": "{{from}} ~ {{to}} の区間はまだ読み込まれていません（高速再生に読み込みが追いつかずスキップ）。その時刻へ移動すると読み込まれます。"
     },
     "common": {
       "time": "Time",

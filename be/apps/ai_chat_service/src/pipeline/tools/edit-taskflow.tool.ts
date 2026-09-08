@@ -1,27 +1,35 @@
 import type { ToolContext, ToolDefinition } from '../tool.type'
-import { getPropertyTmsStore } from '../../features/taskflow/service/property-tms-store.service'
-import { CHAT_PROMPT_TYPE } from '../../features/chat/prompt-types'
-import { renderPromptTemplate } from '../prompt-template.util'
+import { getPropertyTmsStore, TASK_TYPE } from '../../features/taskflow/service/property-tms-store.service'
 import {
   describeGraphNode,
   describeGraphNodeForUser,
+  describeTaskProperties,
   findContentRef,
   findGraphNodes,
   formatNodeTarget,
   parseNodeTarget,
   readCurrentGraph,
+  resolveTaskAlias,
   readTaskContents,
+  resolveProperties,
   toMatchKey,
   TASKFLOW_CANVAS_SCREEN_KEY,
   type CurrentGraph,
   type GraphNodeRef,
+  type NodeTargetRules,
   type TaskContentRef,
 } from './taskflow-palette'
+import { loadTaskflowLanguageRules } from '../taskflow-language-rules'
 import { taskflowMessage, TASKFLOW_MESSAGE_KEY } from './taskflow-message'
+import { buildApplyDraftAction } from './taskflow-client-action'
+import { trace, traceReqId } from '../trace.util'
 
 const TOOL_NAME = 'edit_taskflow'
 
-type EditAction = 'insert' | 'replace' | 'remove' | 'clone_all'
+/** 제어 노드가 자식에게 주는 역할. Parallel 은 main, IfThenElse 는 condition/success/failure 를 쓴다. */
+const NODE_ROLES = ['main', 'condition', 'success', 'failure'] as const
+
+type EditAction = 'insert' | 'replace' | 'remove' | 'clone_all' | 'set_property' | 'set_role'
 
 type EditOperationArg = {
   action: EditAction
@@ -32,6 +40,12 @@ type EditOperationArg = {
   branch: boolean
   all: boolean
   refId: string
+  /** Delay 의 delay_msec 처럼 노드에 값으로 지정하는 속성. 스키마에 있는 키만 반영된다. */
+  properties: Record<string, unknown>
+  /** set_role 에서 역할을 줄 자식 노드 이름. */
+  child: string
+  /** set_role 에서 줄 역할. main / condition / success / failure */
+  role: string
 }
 
 /** 프론트 applyEditDraftToFlowDefinition 이 그대로 소비하는 스텝. */
@@ -44,17 +58,29 @@ type DraftStep = {
   taskId?: number
   /** 요청한 대상을 못 찾아 같은 Task 의 다른 콘텐츠로 임시 채운 경우 원래 요청한 이름. */
   placeholderFor?: string
+  /** 프론트가 기본값 위에 덮어쓸 속성. */
+  properties?: Record<string, unknown>
 }
 
-function buildDescription(catalogText: string): string {
-  return renderPromptTemplate(TASKFLOW_CANVAS_SCREEN_KEY, CHAT_PROMPT_TYPE.toolEditTaskflow, {
-    catalog: catalogText,
-  })
+function buildDescription(catalogText: string, propertyCatalogText: string): string {
+  return taskflowMessage(TASKFLOW_MESSAGE_KEY.toolEdit, { catalog: catalogText, propertyCatalog: propertyCatalogText })
 }
 
 function appendedMessage(branch: boolean, anchor: string, label: string): string {
   const key = branch ? TASKFLOW_MESSAGE_KEY.editAppliedAppendBranch : TASKFLOW_MESSAGE_KEY.editAppliedAppendAfter
   return taskflowMessage(key, { anchor, label })
+}
+
+/** 못 찾은 대상 이름. 비어 있으면 다른 필드로 대신 채워 "무엇을" 못 찾았는지가 항상 남게 한다. */
+function missingName(...candidates: string[]): string {
+  return candidates.map((value) => String(value ?? '').trim()).find(Boolean) ?? ''
+}
+
+/** "delay_msec=3000" 처럼 사용자에게 보여 줄 속성 표기. */
+function describePropertyPairs(properties: Record<string, unknown>): string {
+  return Object.entries(properties)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(', ')
 }
 
 function ambiguousEntry(name: string, options: string[]): string {
@@ -79,8 +105,22 @@ function toEditOperations(value: unknown): EditOperationArg[] {
       branch: Boolean(item.branch),
       all: Boolean(item.all),
       refId: String(item.refId || '').trim(),
+      properties:
+        item.properties && typeof item.properties === 'object' && !Array.isArray(item.properties)
+          ? (item.properties as Record<string, unknown>)
+          : {},
+      child: String(item.child || '').trim(),
+      role: String(item.role || '').trim().toLowerCase(),
     }))
-    .filter((item) => item.action === 'insert' || item.action === 'replace' || item.action === 'remove' || item.action === 'clone_all')
+    .filter(
+      (item) =>
+        item.action === 'insert' ||
+        item.action === 'replace' ||
+        item.action === 'remove' ||
+        item.action === 'clone_all' ||
+        item.action === 'set_property' ||
+        item.action === 'set_role',
+    )
 }
 
 type TargetResolution =
@@ -89,8 +129,8 @@ type TargetResolution =
   | { kind: 'ambiguous'; options: string[] }
 
 /** 번호나 all 이 없는데 동명 노드가 여러 개면 임의로 고르지 않고 되묻는다. */
-function resolveTargetNodes(name: string, graph: CurrentGraph, all: boolean): TargetResolution {
-  const matched = findGraphNodes(name, graph)
+function resolveTargetNodes(name: string, graph: CurrentGraph, all: boolean, rules: NodeTargetRules): TargetResolution {
+  const matched = findGraphNodes(name, graph, rules)
   if (matched.length === 0) return { kind: 'missing' }
   if (all || matched.length === 1) return { kind: 'ok', nodes: matched }
 
@@ -98,8 +138,8 @@ function resolveTargetNodes(name: string, graph: CurrentGraph, all: boolean): Ta
 }
 
 /** 앞선 operation 이 만든 노드 이름과 같으면 그걸 기준으로 쓴다. 프론트가 순서대로 적용하며 찾아낸다. */
-function findPendingLabel(name: string, createdLabels: string[]): string | undefined {
-  const key = toMatchKey(parseNodeTarget(name).name)
+function findPendingLabel(name: string, createdLabels: string[], rules: NodeTargetRules): string | undefined {
+  const key = toMatchKey(parseNodeTarget(name, rules).name)
   if (!key) return undefined
 
   return [...createdLabels].reverse().find((label) => toMatchKey(label) === key)
@@ -110,11 +150,25 @@ function resolveStep(
   contentName: string,
   store: NonNullable<ReturnType<typeof getPropertyTmsStore>>,
   contents: TaskContentRef[],
+  requestedProperties: Record<string, unknown> = {},
+  unknownPropertyKeys: string[] = [],
 ): DraftStep | null {
   const contentRef = contentName ? findContentRef(contentName, taskName, contents) : undefined
-  const effectiveTaskName = store.get(taskName) ? taskName : contentRef?.taskName
+  // "타임아웃" 처럼 사람이 부르는 이름으로 와도 Task 를 찾는다. 별칭은 property_tms.trigger_phrases 에 있다.
+  const aliasTaskName = taskName ? resolveTaskAlias(taskName) : ''
+  // Pause/Wait/Rotate 처럼 콘텐츠가 없는 Task 는 이름 자체가 노드다. "pause 추가" 를 콘텐츠로 찾으면 실패한다.
+  const contentAsTaskName = contentName ? resolveTaskAlias(contentName) : ''
+  const contentNameIsTask = contentAsTaskName ? Boolean(store.get(contentAsTaskName)) : false
+  const effectiveTaskName = store.get(aliasTaskName)
+    ? aliasTaskName
+    : contentRef?.taskName ?? (contentNameIsTask ? contentAsTaskName : undefined)
   const semantics = effectiveTaskName ? store.get(effectiveTaskName) : undefined
   if (!semantics) return null
+
+  // 속성은 스키마(property_tms.compose_hint.properties)에 있는 키만 남긴다.
+  const resolved = resolveProperties(semantics, requestedProperties)
+  unknownPropertyKeys.push(...resolved.unknownKeys)
+  const properties = Object.keys(resolved.properties).length > 0 ? resolved.properties : undefined
 
   if (contentRef) {
     return {
@@ -124,12 +178,13 @@ function resolveStep(
       contentName: contentRef.contentName,
       contentId: contentRef.contentId,
       taskId: contentRef.taskId,
+      ...(properties ? { properties } : {}),
     }
   }
 
   // 대상을 지정했는데 팔레트에 없으면, 같은 Task 의 다른 콘텐츠로 임시 채우고 사용자가 바꾸게 한다.
   // 구조가 없으면 뒤이어지는 요청(자식 추가 등)이 전부 막힐 수 있어 임의로 따지지 않고 구조부터 유지한다.
-  if (contentName) {
+  if (contentName && toMatchKey(contentAsTaskName) !== toMatchKey(semantics.taskName)) {
     const placeholder = contents.find((row) => toMatchKey(row.taskName) === toMatchKey(semantics.taskName))
     if (!placeholder) return null
 
@@ -141,11 +196,17 @@ function resolveStep(
       contentId: placeholder.contentId,
       taskId: placeholder.taskId,
       placeholderFor: contentName,
+      ...(properties ? { properties } : {}),
     }
   }
 
   // 콘텐츠를 지정하지 않은 제어 노드는 Task 이름 자체가 팔레트 라벨이다.
-  return { label: semantics.taskName, taskName: semantics.taskName, taskType: semantics.taskType }
+  return {
+    label: semantics.taskName,
+    taskName: semantics.taskName,
+    taskType: semantics.taskType,
+    ...(properties ? { properties } : {}),
+  }
 }
 
 export function createEditTaskflowTool(): ToolDefinition | null {
@@ -156,7 +217,7 @@ export function createEditTaskflowTool(): ToolDefinition | null {
   if (!catalogText) return null
 
   // 설명은 prompt 테이블에서 온다. 행이 없으면 tool 을 등록하지 않아 설정 누락이 드러나게 한다.
-  const description = buildDescription(catalogText)
+  const description = buildDescription(catalogText, describeTaskProperties(store.list()))
   if (!description) return null
 
   return {
@@ -180,6 +241,9 @@ export function createEditTaskflowTool(): ToolDefinition | null {
                 branch: { type: 'boolean', description: taskflowMessage(TASKFLOW_MESSAGE_KEY.editParamBranch) },
                 all: { type: 'boolean', description: taskflowMessage(TASKFLOW_MESSAGE_KEY.editParamAll) },
                 refId: { type: 'string', description: taskflowMessage(TASKFLOW_MESSAGE_KEY.editParamRefId) },
+                properties: { type: 'object', description: taskflowMessage(TASKFLOW_MESSAGE_KEY.editParamProperties) },
+                child: { type: 'string', description: taskflowMessage(TASKFLOW_MESSAGE_KEY.editParamChild) },
+                role: { type: 'string', description: taskflowMessage(TASKFLOW_MESSAGE_KEY.editParamRole) },
               },
               required: ['action'],
             },
@@ -193,13 +257,29 @@ export function createEditTaskflowTool(): ToolDefinition | null {
       const operations = toEditOperations(args.operations)
       if (operations.length === 0) return {}
 
+      // 순번 표기("두번째" 등)는 rule 테이블에서 읽어 코드에 언어별 문구를 두지 않는다.
+      const languageRules = await loadTaskflowLanguageRules(TASKFLOW_CANVAS_SCREEN_KEY)
+      const nodeTargetRules: NodeTargetRules = {
+        ordinalWords: languageRules.nodeTargetOrdinalWords,
+        ordinalSuffixPhrases: languageRules.nodeTargetOrdinalSuffixPhrases,
+        nounPhrases: languageRules.nodeTargetNounPhrases,
+      }
+
       const graph: CurrentGraph = readCurrentGraph(ctx)
       ctx.log?.log(
         `[${TOOL_NAME}] ops=${JSON.stringify(operations)} graphNodes=${graph.nodes.map(describeGraphNode).join(' | ') || '-'}`,
       )
-      if (graph.nodes.length === 0) {
+      // 빈 캔버스에서도 "X 노드 추가해줘" 는 그냥 만들어 주면 된다.
+      // 기준 노드가 필요한 작업(삭제/교체/복제)만 먼저 구성하라고 안내한다.
+      const insertOnly = operations.every((operation) => operation.action === 'insert')
+      if (graph.nodes.length === 0 && !insertOnly) {
         return { clarification: taskflowMessage(TASKFLOW_MESSAGE_KEY.editEmptyCanvas), suggestions: [] }
       }
+
+      trace(traceReqId(ctx.context), '4-1.edit-input', {
+        operations: operations.map((operation) => `${operation.action}:${operation.target || operation.contentName || operation.taskName}${operation.branch ? '(branch)' : ''}`),
+        canvasNodes: graph.nodes.map(describeGraphNode),
+      })
 
       const contents = readTaskContents(ctx).filter((row) => Boolean(store.get(row.taskName)))
 
@@ -218,14 +298,45 @@ export function createEditTaskflowTool(): ToolDefinition | null {
       const applied: string[] = []
       const missing: string[] = []
       const ambiguous: string[] = []
+      // 스키마에 없어 버린 속성 키. 사용자에게 그대로 알린다.
+      const unknownProperties: string[] = []
+      // 기존 노드의 속성만 바꾸는 작업.
+      const updateProperties: Array<{ target: string; properties: Record<string, unknown> }> = []
+      // 제어 노드가 자식에게 주는 역할(main / condition / success / failure).
+      const setRoles: Array<{ target: string; child: string; role: string }> = []
       const createdLabels: string[] = []
       // 요청한 대상을 못 찾아 다른 콘텐츠로 임시 채운 경우. 채팅에 그대로 노출해 바꿔야 함을 알린다.
       const placeholders: string[] = []
       // refId -> 그 노드를 만드는 insertAfter 인덱스. 동명 노드를 여러 개 만들 때 섞이지 않게 한다.
       const insertIndexByRefId = new Map<string, number>()
 
+      /** 지목한 노드를 찾고, 못 찾거나 여러 개면 사용자에게 알릴 목록에 담는다.
+       * 찾은 노드가 없으면 null 을 주니 호출부는 그때 continue 하면 된다.
+       */
+      const takeTargetNodes = (name: string, all: boolean): GraphNodeRef[] | null => {
+        const resolved = resolveTargetNodes(name, graph, all, nodeTargetRules)
+        const requested = parseNodeTarget(name, nodeTargetRules).name
+
+        if (resolved.kind === 'missing') {
+          missing.push(missingName(requested, name))
+          return null
+        }
+        if (resolved.kind === 'ambiguous') {
+          ambiguous.push(ambiguousEntry(requested, resolved.options))
+          return null
+        }
+
+        return resolved.nodes
+      }
+
       // 흐름 맨 끝을 기준으로 삼는 요청은 after 를 비워 프론트가 꼬리 노드를 찾게 한다.
-      const tailIsExplicit = (operation: EditOperationArg) => operation.after.length > 0
+      // 빈 캔버스에서는 기준으로 삼을 노드가 없으니 after 를 무시하고 Start 뒤에 붙인다.
+      const tailIsExplicit = (operation: EditOperationArg) =>
+        operation.after.length > 0 && graph.nodes.length > 0
+      // 이번 호출에서 마지막으로 만든 제어 노드의 insert 인덱스.
+      // 자식 추가인데 기준을 안 적었으면 그 제어 노드에 매달아야 한다.
+      // 이름으로만 두면 프론트가 "제어 노드와 그 자식" 둘을 꼬리로 보고 모호하다며 전체를 취소한다.
+      let lastControlInsertIndex: number | undefined
 
       for (const operation of operations) {
         if (operation.action === 'clone_all') {
@@ -252,7 +363,7 @@ export function createEditTaskflowTool(): ToolDefinition | null {
           const cloneRefByOriginalId = new Map<string, string>()
           let cloneSeq = 0
           const rootAnchorResolved = tailIsExplicit(operation)
-            ? resolveTargetNodes(operation.after, graph, false)
+            ? resolveTargetNodes(operation.after, graph, false, nodeTargetRules)
             : undefined
 
           const enqueueClone = (originalId: string, parentRef: string, branch: boolean): boolean => {
@@ -296,11 +407,11 @@ export function createEditTaskflowTool(): ToolDefinition | null {
           }
 
           if (tailIsExplicit(operation) && rootAnchorResolved?.kind === 'missing') {
-            missing.push(parseNodeTarget(operation.after).name)
+            missing.push(missingName(parseNodeTarget(operation.after, nodeTargetRules).name, operation.after))
             continue
           }
           if (tailIsExplicit(operation) && rootAnchorResolved?.kind === 'ambiguous') {
-            ambiguous.push(ambiguousEntry(parseNodeTarget(operation.after).name, rootAnchorResolved.options))
+            ambiguous.push(ambiguousEntry(parseNodeTarget(operation.after, nodeTargetRules).name, rootAnchorResolved.options))
             continue
           }
 
@@ -328,27 +439,72 @@ export function createEditTaskflowTool(): ToolDefinition | null {
           continue
         }
 
-        if (operation.action === 'remove') {
-          const resolved = resolveTargetNodes(operation.target, graph, operation.all)
-          if (resolved.kind === 'missing') {
-            missing.push(parseNodeTarget(operation.target).name)
-            continue
-          }
-          if (resolved.kind === 'ambiguous') {
-            ambiguous.push(ambiguousEntry(parseNodeTarget(operation.target).name, resolved.options))
+        if (operation.action === 'set_role') {
+          const role = NODE_ROLES.find((item) => item === operation.role)
+          if (!role || !operation.child) {
+            missing.push(missingName(operation.role, operation.child, operation.target))
             continue
           }
 
-          for (const node of resolved.nodes) {
+          const roleTargets = takeTargetNodes(operation.target, operation.all)
+          if (!roleTargets) continue
+
+          // 자식은 프론트가 만든 id 로만 특정할 수 있어 이름만 넘긴다. id 변환은 프론트가 한다.
+          for (const node of roleTargets) {
+            setRoles.push({ target: formatNodeTarget(node), child: operation.child, role })
+            applied.push(
+              taskflowMessage(TASKFLOW_MESSAGE_KEY.editAppliedRole, {
+                node: describeGraphNodeForUser(node),
+                child: operation.child,
+                role,
+              }),
+            )
+          }
+          continue
+        }
+
+        if (operation.action === 'set_property') {
+          const propertyTargets = takeTargetNodes(operation.target, operation.all)
+          if (!propertyTargets) continue
+
+          for (const node of propertyTargets) {
+            const semantics = node.taskName ? store.get(node.taskName) : undefined
+            const applyResult = resolveProperties(semantics, operation.properties)
+            unknownProperties.push(...applyResult.unknownKeys)
+            if (Object.keys(applyResult.properties).length === 0) continue
+
+            updateProperties.push({ target: formatNodeTarget(node), properties: applyResult.properties })
+            applied.push(
+              taskflowMessage(TASKFLOW_MESSAGE_KEY.editAppliedProperty, {
+                node: describeGraphNodeForUser(node),
+                properties: describePropertyPairs(applyResult.properties),
+              }),
+            )
+          }
+          continue
+        }
+
+        if (operation.action === 'remove') {
+          const removeTargets = takeTargetNodes(operation.target, operation.all)
+          if (!removeTargets) continue
+
+          for (const node of removeTargets) {
             removeByName.push(formatNodeTarget(node))
             applied.push(taskflowMessage(TASKFLOW_MESSAGE_KEY.editAppliedRemove, { node: describeGraphNodeForUser(node) }))
           }
           continue
         }
 
-        const step = resolveStep(operation.taskName, operation.contentName, store, contents)
+        const step = resolveStep(
+          operation.taskName,
+          operation.contentName,
+          store,
+          contents,
+          operation.properties,
+          unknownProperties,
+        )
         if (!step) {
-          missing.push(operation.contentName || operation.taskName)
+          missing.push(missingName(operation.contentName, operation.taskName, operation.target, operation.after))
           continue
         }
         if (step.placeholderFor) {
@@ -356,17 +512,10 @@ export function createEditTaskflowTool(): ToolDefinition | null {
         }
 
         if (operation.action === 'replace') {
-          const resolved = resolveTargetNodes(operation.target, graph, operation.all)
-          if (resolved.kind === 'missing') {
-            missing.push(parseNodeTarget(operation.target).name)
-            continue
-          }
-          if (resolved.kind === 'ambiguous') {
-            ambiguous.push(ambiguousEntry(parseNodeTarget(operation.target).name, resolved.options))
-            continue
-          }
+          const replaceTargets = takeTargetNodes(operation.target, operation.all)
+          if (!replaceTargets) continue
 
-          for (const node of resolved.nodes) {
+          for (const node of replaceTargets) {
             replaceByName.push({ target: formatNodeTarget(node), step })
             applied.push(taskflowMessage(TASKFLOW_MESSAGE_KEY.editAppliedReplace, { node: describeGraphNodeForUser(node), label: step.label }))
           }
@@ -374,8 +523,12 @@ export function createEditTaskflowTool(): ToolDefinition | null {
         }
 
         if (!tailIsExplicit(operation)) {
+          // 자식인데 기준이 없으면 방금 만든 제어 노드를 부모로 삼는다.
+          const inferredParentIndex = operation.branch ? lastControlInsertIndex : undefined
+
           insertAfter.push({
             after: '',
+            ...(inferredParentIndex !== undefined ? { afterCreatedIndex: inferredParentIndex } : {}),
             step,
             appendOnly: true,
             sourceHandle: operation.branch ? 'left' : 'right',
@@ -383,6 +536,7 @@ export function createEditTaskflowTool(): ToolDefinition | null {
           })
           applied.push(taskflowMessage(TASKFLOW_MESSAGE_KEY.editAppliedAppend, { label: step.label }))
           createdLabels.push(step.label)
+          if (step.taskType === TASK_TYPE.control) lastControlInsertIndex = insertAfter.length - 1
           if (operation.refId) insertIndexByRefId.set(operation.refId, insertAfter.length - 1)
           continue
         }
@@ -401,12 +555,13 @@ export function createEditTaskflowTool(): ToolDefinition | null {
           const anchorLabel = insertAfter[refIndex]?.step.label ?? operation.after
           applied.push(appendedMessage(operation.branch, anchorLabel, step.label))
           createdLabels.push(step.label)
+          if (step.taskType === TASK_TYPE.control) lastControlInsertIndex = insertAfter.length - 1
           if (operation.refId) insertIndexByRefId.set(operation.refId, insertAfter.length - 1)
           continue
         }
 
         // 같은 호출에서 방금 만든 노드를 기준으로 삼는 경우가 기존 캔버스 노드보다 우선한다.
-        const pendingAnchor = findPendingLabel(operation.after, createdLabels)
+        const pendingAnchor = findPendingLabel(operation.after, createdLabels, nodeTargetRules)
         if (pendingAnchor) {
           insertAfter.push({
             after: pendingAnchor,
@@ -417,22 +572,16 @@ export function createEditTaskflowTool(): ToolDefinition | null {
           })
           applied.push(appendedMessage(operation.branch, pendingAnchor, step.label))
           createdLabels.push(step.label)
+          if (step.taskType === TASK_TYPE.control) lastControlInsertIndex = insertAfter.length - 1
           if (operation.refId) insertIndexByRefId.set(operation.refId, insertAfter.length - 1)
           continue
         }
 
-        const resolved = resolveTargetNodes(operation.after, graph, operation.all)
-        if (resolved.kind === 'missing') {
-          missing.push(parseNodeTarget(operation.after).name)
-          continue
-        }
-        if (resolved.kind === 'ambiguous') {
-          ambiguous.push(ambiguousEntry(parseNodeTarget(operation.after).name, resolved.options))
-          continue
-        }
+        const anchorTargets = takeTargetNodes(operation.after, operation.all)
+        if (!anchorTargets) continue
 
         // "모든 Parallel 에" 같은 요청은 기준 노드 수만큼 같은 삽입을 펼친다.
-        for (const anchor of resolved.nodes) {
+        for (const anchor of anchorTargets) {
           insertAfter.push({
             after: formatNodeTarget(anchor),
             step,
@@ -443,19 +592,32 @@ export function createEditTaskflowTool(): ToolDefinition | null {
           applied.push(appendedMessage(operation.branch, describeGraphNodeForUser(anchor), step.label))
         }
         createdLabels.push(step.label)
+        if (step.taskType === TASK_TYPE.control) lastControlInsertIndex = insertAfter.length - 1
         if (operation.refId) insertIndexByRefId.set(operation.refId, insertAfter.length - 1)
       }
 
       if (ambiguous.length > 0 && applied.length === 0) {
         return {
-          clarification: taskflowMessage(TASKFLOW_MESSAGE_KEY.editAmbiguousClarification, { options: ambiguous.join(' / ') }),
+          // 같은 이름을 여러 번 지목했으면 한 번만 되묻는다.
+          clarification: taskflowMessage(TASKFLOW_MESSAGE_KEY.editAmbiguousClarification, {
+            options: Array.from(new Set(ambiguous)).join(' / '),
+          }),
           suggestions: [],
         }
       }
 
       if (applied.length === 0) {
+        // 못 찾은 이름을 반드시 같이 보여 준다. notFound 문구에 {{names}} 자리가 없으면 missing 문구를 한 줄 더 붙인다.
+        const missingNames = missing.filter(Boolean)
+        const joined = missingNames.join(', ')
+        const notFound = taskflowMessage(TASKFLOW_MESSAGE_KEY.editNotFound, { names: joined })
+        const detail =
+          joined && !notFound.includes(joined)
+            ? taskflowMessage(TASKFLOW_MESSAGE_KEY.editMissing, { names: emphasize(missingNames) })
+            : ''
+
         return {
-          clarification: taskflowMessage(TASKFLOW_MESSAGE_KEY.editNotFound, { names: missing.join(', ') }),
+          clarification: [notFound, detail].filter(Boolean).join('\n'),
           suggestions: [],
         }
       }
@@ -474,17 +636,32 @@ export function createEditTaskflowTool(): ToolDefinition | null {
       if (ambiguous.length > 0) {
         lines.push(taskflowMessage(TASKFLOW_MESSAGE_KEY.editAmbiguous, { names: emphasize(ambiguous) }))
       }
+      if (unknownProperties.length > 0) {
+        lines.push(
+          taskflowMessage(TASKFLOW_MESSAGE_KEY.editUnknownProperties, {
+            names: emphasize(Array.from(new Set(unknownProperties))),
+          }),
+        )
+      }
 
-      const canvasDraft: Record<string, unknown> = { mode: 'edit' }
-      if (removeByName.length > 0) canvasDraft.removeByName = removeByName
-      if (replaceByName.length > 0) canvasDraft.replaceByName = replaceByName
-      if (insertAfter.length > 0) canvasDraft.insertAfter = insertAfter
+      const draft: Record<string, unknown> = { mode: 'edit' }
+      if (removeByName.length > 0) draft.removeByName = removeByName
+      if (replaceByName.length > 0) draft.replaceByName = replaceByName
+      if (insertAfter.length > 0) draft.insertAfter = insertAfter
+      if (updateProperties.length > 0) draft.updateProperties = updateProperties
+      if (setRoles.length > 0) draft.setRoles = setRoles
 
       // 프론트가 이 draft 를 그대로 소비한다. 화면이 안 바뀌면 여기와 브라우저 로그를 대조한다.
-      ctx.log?.log(`[${TOOL_NAME}] draft=${JSON.stringify(canvasDraft)}`)
+      ctx.log?.log(`[${TOOL_NAME}] draft=${JSON.stringify(draft)}`)
+
+      trace(traceReqId(ctx.context), '4-2.edit-draft', {
+        remove: removeByName,
+        replace: replaceByName.map((row) => `${row.target}->${row.step.label}`),
+        insert: insertAfter.map((row) => `${row.after || `#${row.afterCreatedIndex ?? '-'}`}${row.sourceHandle === 'left' ? '↳' : '→'}${row.step.label}`),
+      })
 
       return {
-        canvasDraft,
+        ...buildApplyDraftAction(draft, ctx, TASKFLOW_MESSAGE_KEY.toolEdit),
         assistantText: lines.filter(Boolean).join('\n'),
       }
     },

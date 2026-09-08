@@ -1,10 +1,11 @@
 import type { ToolDefinition } from './tool.type'
 import { getPromptStore } from '../features/chat/service/prompt-store.service'
 import { CHAT_PROMPT_TYPE } from '../features/chat/prompt-types'
+import { listActionTools } from './action-tool-registry'
 import { createComposeTaskflowTool } from './tools/compose-taskflow-tree.tool'
 import { createEditTaskflowTool } from './tools/edit-taskflow.tool'
 import { createReadTaskflowGraphTool } from './tools/read-taskflow-graph.tool'
-import { TASKFLOW_CANVAS_SCREEN_KEY } from './tools/taskflow-palette'
+import { TASKFLOW_MESSAGE_KEY } from './tools/taskflow-message'
 
 export type ScreenConfig = {
   /** currentApp::currentPath. handleXxx 의 routeKey 와 동일. */
@@ -92,6 +93,52 @@ function findParameterizedScreenKey(routeKey: string): string | null {
   return matched || null
 }
 
+/** action-tools 묶음의 키 -> 그 도구를 만드는 팩토리.
+ * 어떤 화면이 어떤 도구를 쓰는지는 화면 키가 아니라 DB(prompt 의 action-tools 행)가 정한다.
+ */
+const ACTION_TOOL_FACTORIES: Record<string, () => ToolDefinition | null> = {
+  [TASKFLOW_MESSAGE_KEY.toolCompose]: createComposeTaskflowTool,
+  [TASKFLOW_MESSAGE_KEY.toolEdit]: createEditTaskflowTool,
+  [TASKFLOW_MESSAGE_KEY.toolReadGraph]: createReadTaskflowGraphTool,
+}
+
+/** 구현체가 있는 도구의 tool key 와 LLM 함수 이름. 표의 llm_function 과 대조하는 데 쓴다.
+ * 프론트 함수 이름은 코드 레지스트리(client-actions)와 표의 client_function 이 짝이므로 표 값을 그대로 보여 준다.
+ */
+export function listActionToolDefinitions(): Array<{ toolKey: string; llmFunction: string }> {
+  return Object.entries(ACTION_TOOL_FACTORIES).map(([toolKey, factory]) => ({
+    toolKey,
+    llmFunction: String(factory()?.declaration?.name ?? ''),
+  }))
+}
+
+/** action_tool 표에 등록된 순서대로, 구현체가 있는 도구만 만든다.
+ * 표에 없으면 그 화면은 도구를 쓰지 않고 action RAG 경로로 내려간다.
+ * 구현체가 없는 key(오타 등)나 팩토리가 null 을 주는 경우는 사유를 남겨 설정 누락이 드러나게 한다.
+ */
+export function resolveActionTools(
+  toolKeys: string[],
+  factories: Record<string, () => ToolDefinition | null> = ACTION_TOOL_FACTORIES,
+): { tools: ToolDefinition[]; skipped: string[]; unknown: string[] } {
+  const tools: ToolDefinition[] = []
+  const skipped: string[] = []
+  const unknown: string[] = []
+
+  for (const key of toolKeys) {
+    const factory = factories[key]
+    if (!factory) {
+      unknown.push(key)
+      continue
+    }
+
+    const tool = factory()
+    if (tool) tools.push(tool)
+    else skipped.push(key)
+  }
+
+  return { tools, skipped, unknown }
+}
+
 function toChatAction(routeKey: string) {
   const normalized = String(routeKey || '').replace(/^\//, '').replace(/^robot\//, '')
   return normalized || 'default'
@@ -140,23 +187,22 @@ export function getScreenConfig(routeKey: string, reqId?: string): ScreenConfig 
 
   const commonActionTools: ToolDefinition[] = []
 
-  if (effectiveRouteKey === TASKFLOW_CANVAS_SCREEN_KEY) {
-    const composeTool = createComposeTaskflowTool()
-    if (composeTool) {
-      actionTools.push(composeTool)
-    }
+  // 어떤 도구를 열어 줄지는 action_tool 표(앱·화면별)가 정한다.
+  const registeredToolKeys = listActionTools(effectiveRouteKey).map((row) => row.toolKey)
+  const resolved = resolveActionTools(registeredToolKeys)
+  actionTools.push(...resolved.tools)
 
-    const readTool = createReadTaskflowGraphTool()
-    const editTool = createEditTaskflowTool()
-    if (readTool && editTool) {
-      actionTools.push(readTool, editTool)
-    }
+  // 표의 llm_function 이 실제 선언 이름과 다르면 관리 화면이 거짓을 보여 주게 되므로 로그로 드러낸다.
+  const registeredRows = listActionTools(effectiveRouteKey)
+  const nameMismatch = resolved.tools
+    .map((tool, index) => ({ tool, row: registeredRows[index] }))
+    .filter(({ tool, row }) => row?.llmFunction && row.llmFunction !== tool.declaration.name)
+    .map(({ tool, row }) => `${row?.toolKey}:${row?.llmFunction}!=${tool.declaration.name}`)
 
-    // 설명 prompt 행이 없으면 tool 이 조용히 빠져 캔버스 편집이 통째로 안 된다.
-    console.log(
-      `[taskflow-tools] route=${effectiveRouteKey} compose=${Boolean(composeTool)} read=${Boolean(readTool)} edit=${Boolean(editTool)} registered=${actionTools.map((tool) => tool.declaration.name).join(',') || '-'}`,
-    )
-  }
+  // 표에 행이 없으면 도구 없이 action RAG 경로로 내려간다.
+  console.log(
+    `[action-tools] route=${effectiveRouteKey} keys=${registeredToolKeys.join(',') || '-'} registered=${actionTools.map((tool) => tool.declaration.name).join(',') || '-'} skipped=${resolved.skipped.join(',') || '-'} unknown=${resolved.unknown.join(',') || '-'} nameMismatch=${nameMismatch.join(',') || '-'}`,
+  )
 
   const baseAction = toChatAction(effectiveRouteKey)
   return {

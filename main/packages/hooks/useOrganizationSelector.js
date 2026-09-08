@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation } from 'react-router-dom'
 import { organizationApis, organizationCmsApis, groupApis, siteApis } from '@repo/apis'
-import { useOrganizationStore } from '@repo/stores'
+import { useOrganizationStore, useUserStore } from '@repo/stores'
 import { standardizeOrganization } from '@repo/utils'
 
 export const useOrganizationSelector = (email) => {
@@ -11,6 +11,7 @@ export const useOrganizationSelector = (email) => {
   const [organizations, setOrganizations] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [company, setCompany] = useState({})
+  const { refreshToken } = useUserStore((state) => state.session || {})
   const {
     setAllOrgs,
     setCompany: setStoreCompany,
@@ -90,24 +91,24 @@ export const useOrganizationSelector = (email) => {
       }
     })
 
-    // °èÃþÇü Á¤·Ä ¾Ë°í¸®Áò Àû¿ë
+    // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ë°ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
     const sortedResults = [...groupResults, ...siteResults].sort((a, b) => {
       const aGroupId = a.originalType === 'CMS_GROUP' ? a.code : a.parentCode
       const bGroupId = b.originalType === 'CMS_GROUP' ? b.code : b.parentCode
 
-      // 1¼øÀ§: ¼Ò¼ÓµÈ ±×·ìÀÌ ¼­·Î ´Ù¸£¸é, ±×·ì ÀÌ¸§À» ±âÁØÀ¸·Î °¡³ª´Ù¼ø Á¤·Ä
+      // 1ï¿½ï¿½ï¿½ï¿½: ï¿½Ò¼Óµï¿½ ï¿½×·ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ù¸ï¿½ï¿½ï¿½, ï¿½×·ï¿½ ï¿½Ì¸ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ù¼ï¿½ ï¿½ï¿½ï¿½ï¿½
       if (aGroupId !== bGroupId) {
         const aGroupName = a.originalType === 'CMS_GROUP' ? a.displayName : a.parentDisplayName
         const bGroupName = b.originalType === 'CMS_GROUP' ? b.displayName : b.parentDisplayName
         return (aGroupName || '').localeCompare(bGroupName || '')
       }
 
-      // 2¼øÀ§: ¼Ò¼ÓµÈ ±×·ìÀÌ °°´Ù¸é, ±×·ì °´Ã¼°¡ »çÀÌÆ® °´Ã¼º¸´Ù ¹«Á¶°Ç À§(¾Õ)¿¡ ¿Àµµ·Ï Á¤·Ä
+      // 2ï¿½ï¿½ï¿½ï¿½: ï¿½Ò¼Óµï¿½ ï¿½×·ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ù¸ï¿½, ï¿½×·ï¿½ ï¿½ï¿½Ã¼ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Æ® ï¿½ï¿½Ã¼ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½(ï¿½ï¿½)ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
       if (a.originalType !== b.originalType) {
         return a.originalType === 'CMS_GROUP' ? -1 : 1
       }
 
-      // 3¼øÀ§: ¼Ò¼Ó ±×·ìµµ °°°í Á¾·ù(»çÀÌÆ® vs »çÀÌÆ®)µµ °°´Ù¸é, »çÀÌÆ® ÀÌ¸§ ±âÁØÀ¸·Î °¡³ª´Ù¼ø Á¤·Ä
+      // 3ï¿½ï¿½ï¿½ï¿½: ï¿½Ò¼ï¿½ ï¿½×·ìµµ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½(ï¿½ï¿½ï¿½ï¿½Æ® vs ï¿½ï¿½ï¿½ï¿½Æ®)ï¿½ï¿½ ï¿½ï¿½ï¿½Ù¸ï¿½, ï¿½ï¿½ï¿½ï¿½Æ® ï¿½Ì¸ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ù¼ï¿½ ï¿½ï¿½ï¿½ï¿½
       return (a.displayName || '').localeCompare(b.displayName || '')
     })
     return sortedResults
@@ -217,7 +218,10 @@ export const useOrganizationSelector = (email) => {
   }
 
   useEffect(() => {
-    if (!email) return
+    if (!email || !refreshToken) {
+      setIsLoading(false)
+      return
+    }
     setIsLoading(true)
 
     if (isOTAApp) {
@@ -230,7 +234,7 @@ export const useOrganizationSelector = (email) => {
       // Robot App: Groups and Sites
       fetchGroupAndSites()
     }
-  }, [email, isOTAApp, isCMSpp])
+  }, [email, refreshToken, isOTAApp, isCMSpp])
 
   return {
     company,

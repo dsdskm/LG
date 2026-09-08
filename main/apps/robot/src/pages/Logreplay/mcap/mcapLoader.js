@@ -26,6 +26,13 @@ class HttpRangeReadable {
     this._blockSize = Math.max(64 * 1024, Number(opts.blockSizeBytes || 1024 * 1024)) // default 1MB
     this._maxBlocks = Math.max(1, Number(opts.maxCachedBlocks || 3)) // small LRU
 
+    // ✅ 다음 블록 선행 fetch: 기본 OFF.
+    //   계측 결과 이 경로가 순수 낭비였다. range 기반 스트리밍에서는 다음에 읽을 위치가
+    //   "다음 1MB 블록"이 아니라 재생/탐색 위치에 따라 튀기 때문에, 미리 받은 블록이 쓰이지 않고
+    //   LRU에서 밀려나 결국 다시 받게 된다(중복 전송). ReplayControls도 같은 측정 후 껐다.
+    //   재활성이 필요하면 생성자에 blockPrefetchNext: true 를 넘긴다.
+    this._blockPrefetchNext = opts.blockPrefetchNext === true
+
     // block cache: key=blockStartBigint.toString() -> Uint8Array
     this._cache = new Map()
 
@@ -110,7 +117,7 @@ class HttpRangeReadable {
     return written === out.length ? out : out.subarray(0, written)
   }
 
-  async _getBlock(blockStart, blockEnd, { prefetchNext = true } = {}) {
+  async _getBlock(blockStart, blockEnd, { prefetchNext = null } = {}) {
     const key = blockStart.toString()
     if (this._cache.has(key)) {
       const hit = this._cache.get(key)
@@ -122,7 +129,9 @@ class HttpRangeReadable {
     const buf = await this._fetchRange(blockStart, blockEnd)
     this._cache.set(key, buf)
 
-    if (prefetchNext) this._prefetchNext(blockStart)
+    // 명시 인자 우선, 없으면 인스턴스 기본값(_blockPrefetchNext, 기본 false)
+    const doPrefetch = prefetchNext == null ? this._blockPrefetchNext : prefetchNext
+    if (doPrefetch) this._prefetchNext(blockStart)
     this._evict()
     return buf
   }
@@ -366,6 +375,9 @@ async function getOrOpenIndexedReaderFromUrl(url, options = {}) {
         return { reader }
       }
     })()
+    p.catch(() => {
+      if (__readerCache.get(key) === p) __readerCache.delete(key)
+    })
     __readerCache.set(key, p)
   }
   return await __readerCache.get(key)
@@ -593,10 +605,12 @@ function findTopicWithMessages(reader, candidatesLower) {
 }
 
 function wrapHandler(name, fn) {
-  return (buf) => {
+  // ⚠️ @mcap/core는 핸들러를 (buffer, decompressedSize)로 호출한다.
+  //    WASM 핸들러(@mcap/support)는 두 번째 인자를 실제로 사용하므로 반드시 그대로 전달해야 한다.
+  return (buf, decompressedSize) => {
     try {
       const u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf)
-      const out = fn(u8)
+      const out = fn(u8, decompressedSize)
       return out instanceof Uint8Array ? out : new Uint8Array(out)
     } catch (e) {
       console.error(`[Logreplay] 압축 해제 실패 (${name})`, e)
@@ -625,20 +639,68 @@ function buildDefaultDecompressHandlers() {
 }
 
 /**
+ * WASM zstd 압축해제 핸들러(zstddec).
+ * 계측 근거: 순수 JS(fzstd)가 60초 재생 중 zstd 690건에 6278ms(입력 58MB, 약 9MB/s)를 메인스레드에서 소비했고,
+ *   이게 롱태스크 누적 16.7초의 최대 단일 기여였다. WASM은 같은 일을 훨씬 빠르게 끝낸다.
+ * ※ MCAP의 decompressHandlers는 "동기 함수"여야 하므로 압축해제만 워커로 뺄 수 없다.
+ *   따라서 메인스레드에 남는 한 더 빠른 동기 구현(WASM)이 유일한 해법이다.
+ * ※ @foxglove/wasm-zstd는 쓸 수 없다: glue의 locateFile이 `require("./wasm-zstd.wasm")`로
+ *   webpack을 전제해, vite에서 경로가 문자열이 아니게 되어 깨진다("filename.startsWith is not a function").
+ */
+async function buildWasmZstdHandler() {
+  const mod = await import('zstddec')
+  const ZSTDDecoder = mod?.ZSTDDecoder || mod?.default?.ZSTDDecoder
+  if (typeof ZSTDDecoder !== 'function') throw new Error('zstddec.ZSTDDecoder 없음')
+
+  const decoder = new ZSTDDecoder()
+  await decoder.init() // WASM 로딩은 1회만
+
+  return (u8, decompressedSize) => {
+    // @mcap/core는 decompressedSize를 bigint로 넘길 수 있어 Number로 변환한다.
+    const size = Number(decompressedSize)
+    const out = decoder.decode(u8, Number.isFinite(size) && size > 0 ? size : undefined)
+    return out instanceof Uint8Array ? out : new Uint8Array(out)
+  }
+}
+
+// 핸들러는 1회만 만들어 재사용한다(WASM 재로딩 방지 + reader 캐시 키 안정화)
+let __decompressHandlersPromise = null
+
+/**
  * 디컴프 핸들러 해결
  * 우선순위:
  *   1) 호출자가 주입한 handlers (options.decompressHandlers)
  *   2) 패키지 기반 기본 핸들러(fzstd/lz4js)
+ *
+ * ⚠️ @mcap/support.loadDecompressHandlers()는 이 환경에서 쓸 수 없다(2026-09-08 확인):
+ *    bz2/lz4/zstd 세 패키지를 Promise.all로 함께 import하는데 wasm-zstd만 설치돼 있어 항상 실패한다.
+ *    그래서 zstd만 zstddec(WASM)로 교체하고, lz4는 계측상 사용량이 0이라 JS(lz4js)로 남겨둔다.
  */
 async function resolveDecompressHandlers(customHandlers) {
   if (customHandlers && typeof customHandlers === 'object') {
     return customHandlers
   }
-  const handlers = buildDefaultDecompressHandlers()
-  if (Object.keys(handlers).length === 0) {
-    console.warn('[Logreplay] 사용 가능한 압축 핸들러 없음 (비압축 MCAP만 동작)')
+
+  if (!__decompressHandlersPromise) {
+    __decompressHandlersPromise = (async () => {
+      const handlers = buildDefaultDecompressHandlers()
+
+      // zstd만 WASM으로 교체 시도. 실패하면 위에서 만든 JS(fzstd) 핸들러가 그대로 남는다.
+      try {
+        const wasmZstd = await buildWasmZstdHandler()
+        handlers['zstd'] = wrapHandler('zstd(wasm/zstddec)', wasmZstd)
+      } catch (e) {
+        console.warn('[Logreplay] WASM zstd(zstddec) 로딩 실패 → JS(fzstd) 폴백. 이유:', e?.message || e)
+      }
+
+      if (Object.keys(handlers).length === 0) {
+        console.warn('[Logreplay] 사용 가능한 압축 핸들러 없음 (비압축 MCAP만 동작)')
+      }
+      return handlers
+    })()
   }
-  return handlers
+
+  return __decompressHandlersPromise
 }
 
 async function fetchBlob(url) {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import styled from 'styled-components'
 import { SectionRobot, Title, OrganizationSelector, NoData } from '@repo/ui'
 import {
   DashboardWrapper,
@@ -29,6 +30,7 @@ import { robotStore } from '@/utils/robotStore'
 import { parseRobotData, buildDeviceMerger } from '@/utils/robotUtils'
 
 import Location from './KakaoMap'
+import LocationGoogle from './GoogleMap'
 import TableAlarm from './AlarmTable'
 import SiteMap3D, { DASHBOARD_MAP_VIEW_KEY } from '../../common/SiteMap3D'
 import LocationSelector from '../../common/LocationSelector'
@@ -36,6 +38,30 @@ import DataCollectionSection from './components/DataCollectionSection'
 import RobotStateCards from './components/RobotStateCards'
 import { Play, Stop } from '@/assets/icon'
 import { useUserStore } from '@repo/stores'
+
+const MapRegionToggle = styled.div`
+  display: flex;
+  height: 28px;
+  margin-left: auto;
+  margin-bottom: 1.3rem;
+  border: 1px solid var(--color-secondary-20, #ddd);
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+`
+
+const MapRegionToggleBtn = styled.button`
+  font-size: 1.2rem;
+  padding: 0 0.8rem;
+  height: 100%;
+  border: none;
+  border-right: ${({ $pos }) => ($pos === 'left' ? '1px solid var(--color-secondary-20, #ddd)' : 'none')};
+  background: ${({ $on }) => ($on ? 'var(--color-primary-60, #0073e6)' : 'transparent')};
+  color: ${({ $on }) => ($on ? '#fff' : 'var(--color-secondary-60, #555)')};
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+`
 
 // 층 순서: floorIndex 1 이상 오름차순 → 0 이하 내림차순
 const orderFloorsAsc = (floors = []) => {
@@ -85,6 +111,7 @@ const Dashboard = () => {
   const [orgFilter, setOrgFilter] = useState({ values: ['all', 'all'] })
   const [deviceCount, setDeviceCount] = useState({ opr: 0, lrn: 0, sta: 0, chr: 0, err: 0, off: 0 })
   const [useImageMap, setUseImageMap] = useState(false)
+  const [mapRegion, setMapRegion] = useState('DOMESTIC') // 사이트 미선택(전체) 지도에서 국내(Kakao)/해외(Google) 전환
   const [isLiveImageMap, setIsLiveImageMap] = useState(false)
   const [inspectionCollapsed, setInspectionCollapsed] = useState(false)
   const { setDeviceState } = robotStore.getState()
@@ -147,6 +174,7 @@ const Dashboard = () => {
           name: site.siteName,
           lat: site.siteLatitude,
           lng: site.siteLongitude,
+          country: site.siteAddressCountry,
           count: 0,
           operation: 0,
           wait: 0,
@@ -170,6 +198,7 @@ const Dashboard = () => {
       name: m.name,
       lat: m.lat,
       lng: m.lng,
+      country: m.country,
       stats: {
         operationCnt: m.operation,
         standbyCnt: m.wait,
@@ -198,6 +227,18 @@ const Dashboard = () => {
   useEffect(() => {
     loadRobotInfo()
   }, [])
+
+  // 지도에 표시되는 마커(=실제 로봇이 있는 사이트) 중 국내(KR) 사이트가 하나도 없으면
+  // 처음 지도를 보여줄 때 해외 지도를 먼저 표시. 사용자가 토글을 직접 조작한 뒤에는
+  // 다시 덮어쓰지 않도록 최초 1회만 적용.
+  const mapRegionAutoSetRef = useRef(false)
+  useEffect(() => {
+    if (mapRegionAutoSetRef.current || markers.length === 0) return
+    mapRegionAutoSetRef.current = true
+    if (!markers.some((m) => m.country === 'KR')) {
+      setMapRegion('GLOBAL')
+    }
+  }, [markers])
 
   const handleSelectOrg = useCallback((info) => {
     setOrgFilter(info)
@@ -322,6 +363,10 @@ const Dashboard = () => {
     if (!locSel.areaId) return robotDatas
     return robotDatas.filter((r) => r.areaId === locSel.areaId)
   }, [robotDatas, locSel.areaId])
+
+  // Kakao 지도는 국내(KR) 좌표 기준이므로 해외 사이트는 빼고 표시.
+  // Google 지도로 전환하면 국내/해외를 모두 함께 보여줌(markers 원본 그대로 사용).
+  const domesticMarkers = useMemo(() => markers.filter((m) => m.country === 'KR'), [markers])
 
   // 최초 로딩 시 로봇이 가장 많은 영역을 자동 선택 (지도 초기 표시).
   // devicesLoaded 대기: 대시보드 재진입처럼 buildings·devices 로딩이 동시에 시작되는 경우,
@@ -566,13 +611,37 @@ const Dashboard = () => {
                   </div>
                 )}
                 {isLiveImageMap && <LiveSpan>Live</LiveSpan>}
+                {!hasSite && (
+                  <MapRegionToggle>
+                    <MapRegionToggleBtn
+                      type="button"
+                      $on={mapRegion !== 'GLOBAL'}
+                      $pos="left"
+                      onClick={() => setMapRegion('DOMESTIC')}
+                    >
+                      {t('regionDomestic')}
+                    </MapRegionToggleBtn>
+                    <MapRegionToggleBtn
+                      type="button"
+                      $on={mapRegion === 'GLOBAL'}
+                      $pos="right"
+                      onClick={() => setMapRegion('GLOBAL')}
+                    >
+                      {t('regionGlobal')}
+                    </MapRegionToggleBtn>
+                  </MapRegionToggle>
+                )}
               </DivSectionTitleWrap>
               {/* 지도 영역: 사이트 미선택 → 권역 지도, 사이트 선택 → 맵 있으면 SiteMap3D,
                   없으면 "표시할 지도가 없습니다" 안내. (사이트 선택 시점부터 영역 항시 표시) */}
               <SectionMap>
                 <DivMapCard>
                   {!hasSite ? (
-                    <Location markers={markers} />
+                    mapRegion === 'GLOBAL' ? (
+                      <LocationGoogle markers={markers} />
+                    ) : (
+                      <Location markers={domesticMarkers} />
+                    )
                   ) : useImageMap ? (
                     <SiteMap3D
                       mapData={mapData}

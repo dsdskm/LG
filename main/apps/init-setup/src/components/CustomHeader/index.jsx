@@ -22,7 +22,9 @@ const GroupTabs = ({ tabs, t }) => {
   // 선행 단계가 남아 클릭이 막힌 탭 (locked). 현재 화면은 그대로 두고 안내 모달만 띄운다.
   const [blockedTab, setBlockedTab] = useState(null)
 
-  if (tabs.length < 2) return null
+  // 탭이 하나만 남는 경우(셋업 완료 + 관리자 권한 없음 = 맵 설정 하나)에도 그대로 노출한다 —
+  // 여기서 숨기면 헤더에 로고만 남아 현재 그룹을 알 수 없다. 목록이 빈 경우만 그리지 않는다.
+  if (!tabs.length) return null
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '2rem', flexWrap: 'nowrap', minWidth: 0 }}>

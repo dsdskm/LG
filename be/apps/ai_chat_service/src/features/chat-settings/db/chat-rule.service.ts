@@ -1,7 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { clearTaskflowRulesCache } from '../../../pipeline/taskflow-language-rules';
+import { registerRuleReader } from '../../../pipeline/rule-registry';
 import { ChatRuleEntity } from './chat-rule.entity';
 
 export type ChatRuleRow = ChatRuleEntity;
@@ -42,13 +43,18 @@ function describeRuleNames(
 }
 
 @Injectable()
-export class ChatRuleService {
+export class ChatRuleService implements OnModuleInit {
   private readonly logger = new Logger(ChatRuleService.name);
 
   constructor(
     @InjectRepository(ChatRuleEntity)
     private readonly repository: Repository<ChatRuleEntity>,
   ) {}
+
+  onModuleInit() {
+    // 플레인 모듈(taskflow-language-rules)이 rule 테이블을 읽을 수 있게 등록한다.
+    registerRuleReader(this);
+  }
 
   async listByAppAndScreen(
     appKey?: string,

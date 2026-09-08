@@ -20,12 +20,29 @@ import { CHAT_PROMPT_TYPE } from '../features/chat/prompt-types'
 import { ChatOrchestrator } from '../pipeline/chat.orchestrator'
 import { loadChatPipelineConfig } from '../pipeline/pipeline.config'
 import { safeJsonParse } from '../utils/utils'
+import { findNearestRegisteredRouteKey } from './route-match.util'
+import {
+  ensurePeriodInEventReply,
+  ensureUserFacingReply,
+  isInfoPipelineReply,
+  toDisplayText,
+} from './reply-text.util'
 import type { ChatReply, ChatReplyImage, ChatTurn, SuggestedAction } from '../pipeline/pipeline.types'
 import {
   includesConfiguredPhrase,
   loadTaskflowClassifierRules,
+  loadTaskflowLanguageRules,
   type TaskflowClassifierRules,
 } from '../pipeline/taskflow-language-rules'
+import {
+  findContentRef,
+  findGraphNodes,
+  parseNodeTarget,
+  readCurrentGraphFromContext,
+  readTaskContentsFromContext,
+  resolveTaskAlias,
+} from '../pipeline/tools/taskflow-palette'
+import { getPropertyTmsStore } from '../features/taskflow/service/property-tms-store.service'
 import { getScreenConfig } from '../pipeline/screen-registry'
 import type { ToolDefinition } from '../pipeline/tool.type'
 import { buildToolContextFromBody } from '../pipeline/tool-context.util'
@@ -239,219 +256,6 @@ export class ChatService {
     return reqId
   }
 
-  private toDisplayText(value: unknown): string {
-    if (typeof value === 'string') return value.trim()
-    if (value === null || value === undefined) return ''
-    if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-    if (typeof value === 'object') {
-      const row = value as Record<string, unknown>
-
-      const isEventSummaryObject =
-        ['totalCount', 'actionCompletedCount', 'analysisCompletedCount', 'analysisFailedCount']
-          .some((k) => k in row)
-
-      if (isEventSummaryObject) {
-        const n = (k: string) => Number(row[k] ?? 0) || 0
-        return [
-          `조회 결과 총 ${n('totalCount')}건입니다.`,
-          `조치 완료 ${n('actionCompletedCount')}건, 분석 완료 ${n('analysisCompletedCount')}건, 분석 실패 ${n('analysisFailedCount')}건입니다.`,
-          `심각도는 critical ${n('severityCriticalCount')}건, high ${n('severityHighCount')}건, middle ${n('severityMiddleCount')}건, low ${n('severityLowCount')}건입니다.`,
-        ].join(' ')
-      }
-
-      const preferred = [row.text, row.summary, row.message, row.description]
-        .map((v) => (typeof v === 'string' ? v.trim() : ''))
-        .find(Boolean)
-      if (preferred) return preferred
-      try {
-        return JSON.stringify(value)
-      } catch {
-        return ''
-      }
-    }
-    return ''
-  }
-
-  private normalizeUserFacingText(rawText: string): string {
-    const text = String(rawText ?? '').trim()
-    if (!text) return ''
-
-    const stripCodeBlock = text.replace(/^```(?:json)?\s*|\s*```$/gi, '').trim()
-    const parsed = safeJsonParse(stripCodeBlock) as Record<string, unknown> | null
-    if (parsed && typeof parsed === 'object') {
-      const preferred = [
-        parsed.text,
-        parsed.answer,
-        parsed.content,
-        parsed.summary,
-        parsed.message,
-        parsed.reason,
-      ]
-        .map((value) => (typeof value === 'string' ? value.trim() : ''))
-        .filter(Boolean)
-        .find((value) => !/^\s*\{/.test(value))
-
-      if (preferred) return preferred
-    }
-
-    const reasonMatch = stripCodeBlock.match(/"reason"\s*:\s*"((?:\\.|[^"\\])*)"/i)
-    if (reasonMatch?.[1]) {
-      return reasonMatch[1]
-        .replace(/\\n/g, '\n')
-        .replace(/\\"/g, '"')
-        .replace(/\\'/g, "'")
-        .replace(/\\\\/g, '\\')
-    }
-
-    const singleQuoteReasonMatch = stripCodeBlock.match(/'reason'\s*:\s*'((?:\\.|[^'\\])*)'/i)
-    if (singleQuoteReasonMatch?.[1]) {
-      return singleQuoteReasonMatch[1]
-        .replace(/\\n/g, '\n')
-        .replace(/\\"/g, '"')
-        .replace(/\\'/g, "'")
-        .replace(/\\\\/g, '\\')
-    }
-
-    return text
-  }
-
-  private summarizeRagDebugText(text: string): string {
-    const raw = String(text ?? '').trim()
-    if (!raw) return ''
-
-    const isRagDebugText = /(?:matchScore=|adjustedScore=|thresholdScore=|selected=|selectedChunks=|comparison=|common=|screen\()/i.test(raw)
-    if (!isRagDebugText) return raw
-
-    return '질문과 관련된 내용을 확인해서 답변을 정리해봤어요.'
-  }
-
-  private ensureUserFacingReply(reply: ChatReply): ChatReply {
-    const text = String(reply?.text ?? '').trim()
-    if (text) {
-      const normalizedText = this.normalizeUserFacingText(text)
-      const ragFriendlyText = this.summarizeRagDebugText(normalizedText)
-      const finalTextCandidate = this.sanitizeLeadingAssistantPreface(ragFriendlyText)
-      const finalText = finalTextCandidate || ragFriendlyText || normalizedText
-
-      if (finalText !== text) {
-        return {
-          ...reply,
-          text: finalText,
-        }
-      }
-
-      if (normalizedText !== text) {
-        return {
-          ...reply,
-          text: normalizedText,
-        }
-      }
-
-      return reply
-    }
-
-    if (this.isInfoPipelineReply(reply)) {
-      return {
-        ...reply,
-        text: '정보 응답 생성에 실패했습니다.',
-      }
-    }
-
-    const chatAction = String(reply?.chat_action ?? '').trim()
-    const actionParam = reply?.chat_action_param && typeof reply.chat_action_param === 'object'
-      ? (reply.chat_action_param as Record<string, unknown>)
-      : undefined
-
-    let fallbackText = '요청을 처리했지만 답변 문장을 만들지 못했습니다. 다시 질문해 주세요.'
-
-    if (chatAction === 'navigation') {
-      const path = String(actionParam?.path ?? '').trim().replace(/^\/+/, '')
-      fallbackText = path ? `${path} 화면으로 이동을 준비했어요.` : '화면 이동을 준비했어요.'
-    } else if (Array.isArray(actionParam?.suggested_actions) && actionParam.suggested_actions.length > 0) {
-      fallbackText = '요청을 처리했지만 답변 문장을 만들지 못했습니다. 같은 내용을 한 번 더 질문해 주세요.'
-    }
-
-    return {
-      ...reply,
-      text: fallbackText,
-    }
-  }
-
-  private isInfoPipelineReply(reply: ChatReply | null | undefined): boolean {
-    const trace = String(reply?.pipelineTrace ?? '').trim()
-    if (!trace) return false
-
-    return trace.includes('rag(') || trace.includes('llm(정보 프롬프트)')
-  }
-
-  private sanitizeLeadingAssistantPreface(text: string): string {
-    const raw = String(text ?? '').trim()
-    if (!raw) return ''
-
-    const hasStructuredBody = (value: string): boolean => {
-      const v = String(value ?? '').trim()
-      if (v.length < 20) return false
-      return /\n/.test(v) || /(^#|^[-*]\s|^\d+\)|!\[|```|Taskflow|태스크\s*플로우|태스크플로우)/im.test(v)
-    }
-
-    // 1) "죄송합니다. 제공된 문서에는 ... 정보가 없습니다." + 실제 본문 형태
-    const noDocLead = /^죄송합니다\.\s*제공된\s*문서에는\s*[^\n.!?]*정보가\s*없습니다\.?\s*/i
-    if (noDocLead.test(raw)) {
-      const stripped = raw.replace(noDocLead, '').trim()
-      if (stripped.length >= 12) {
-        return stripped
-      }
-    }
-
-    // 2) "저는 ... 처리할 수 있습니다." 같은 소개성 선행 문구
-    const capabilityLead = /^저는\s+[^\n]{0,140}?(?:할\s*수\s*있습니다|해드릴\s*수\s*있습니다|지원합니다|가능합니다)\.?\s*/i
-    if (capabilityLead.test(raw)) {
-      const stripped = raw.replace(capabilityLead, '').trim()
-      if (hasStructuredBody(stripped)) {
-        return stripped
-      }
-    }
-
-    return raw
-  }
-
-  private ensurePeriodInEventReply(reply: ChatReply): ChatReply {
-    const action = String(reply?.chat_action ?? '').trim().toLowerCase()
-    if (action !== 'ailog/event/filter') return reply
-
-    const actionParam = reply?.chat_action_param && typeof reply.chat_action_param === 'object'
-      ? (reply.chat_action_param as Record<string, unknown>)
-      : undefined
-    const filters = actionParam?.filters && typeof actionParam.filters === 'object'
-      ? (actionParam.filters as Record<string, unknown>)
-      : undefined
-
-    const startDate = String(filters?.startDate ?? '').trim()
-    const endDate = String(filters?.endDate ?? '').trim()
-    if (!startDate || !endDate) return reply
-
-    const periodText = `조회 기간은 ${startDate} ~ ${endDate}입니다.`
-    const rawText = String(reply?.text ?? '').trim()
-    if (!rawText) {
-      return {
-        ...reply,
-        text: periodText,
-      }
-    }
-
-    // 이미 기간 안내가 있으면 중복 삽입하지 않는다.
-    const normalized = rawText.replace(/\s+/g, '')
-    const hasPeriod =
-      normalized.includes(startDate.replace(/\s+/g, ''))
-      && normalized.includes(endDate.replace(/\s+/g, ''))
-    if (hasPeriod) return reply
-
-    return {
-      ...reply,
-      text: `${periodText} ${rawText}`,
-    }
-  }
-
   async handleChat(body: any): Promise<ChatReply> {
     const reqId = this.ensureReqId(body)
     this.stageLog('1단계:요청수신', 'received', '채팅 요청 수신 및 파이프라인 시작', reqId)
@@ -470,7 +274,7 @@ export class ChatService {
     const frontRuleReply = await this.tryFrontRuleEngine(ctx)
     if (frontRuleReply) {
       this.stageLog('3단계:룰우선처리', 'served', '화면별 front-rule 처리로 응답 완료', reqId)
-      return this.ensureUserFacingReply(this.withSuggestedActions(
+      return ensureUserFacingReply(this.withSuggestedActions(
         this.withTaskflowExplanationImages(
           this.attachPipelineTrace(
             frontRuleReply,
@@ -488,7 +292,7 @@ export class ChatService {
       const fallbackReply = await this.tryComposeTaskflowFallback(ctx, pipelineReply)
       if (fallbackReply) {
         this.stageLog('4-1단계:화면파이프라인', 'completed', '화면 파이프라인 후 태스크플로우 draft 폴백 반영 완료', reqId)
-        return this.ensureUserFacingReply(this.withSuggestedActions(
+        return ensureUserFacingReply(this.withSuggestedActions(
           this.withTaskflowExplanationImages(
             this.attachPipelineTrace(
               fallbackReply,
@@ -500,7 +304,7 @@ export class ChatService {
         ))
       }
       this.stageLog('4-1단계:화면파이프라인', 'completed', '화면 파이프라인에서 응답 생성 완료', reqId)
-      return this.ensureUserFacingReply(this.withSuggestedActions(
+      return ensureUserFacingReply(this.withSuggestedActions(
         this.withTaskflowExplanationImages(
           this.attachPipelineTrace(
             pipelineReply,
@@ -516,7 +320,7 @@ export class ChatService {
     this.stageLog('5단계:가이던스폴백', 'fallback', '등록 화면 처리 불가로 기본 안내 경로 진입', reqId)
     const guidanceReply = await this.handleGuidance(ctx)
     this.stageLog('5-1단계:가이던스폴백', 'completed', '기본 안내 응답 생성 완료', reqId)
-    return this.ensureUserFacingReply(this.withSuggestedActions(
+    return ensureUserFacingReply(this.withSuggestedActions(
       this.withTaskflowExplanationImages(
         this.attachPipelineTrace(
           guidanceReply,
@@ -681,7 +485,7 @@ export class ChatService {
       return reply
     }
 
-    if (this.isInfoPipelineReply(reply) && !String(reply?.text ?? '').trim()) {
+    if (isInfoPipelineReply(reply) && !String(reply?.text ?? '').trim()) {
       return reply
     }
 
@@ -783,7 +587,7 @@ export class ChatService {
     rules: TaskflowClassifierRules,
   ): RagChunkData | null {
     const store = getPromptStore()
-    const normalizedRouteKey = this.findNearestRegisteredRouteKey(routeKey) ?? this.normalizeRouteLike(routeKey)
+    const normalizedRouteKey = findNearestRegisteredRouteKey(routeKey, undefined, this.logger) ?? this.normalizeRouteLike(routeKey)
     const collection = store?.getCollection(normalizedRouteKey)
     if (!collection) return null
 
@@ -848,7 +652,7 @@ export class ChatService {
     ctx: ChatContext,
     reply: ChatReply,
   ): Promise<ChatReply | null> {
-    const matchedRouteKey = this.findNearestRegisteredRouteKey(ctx.key, ctx.reqId) ?? ctx.key
+    const matchedRouteKey = findNearestRegisteredRouteKey(ctx.key, ctx.reqId, this.logger) ?? ctx.key
     if (!this.isTmsCanvasRoute(matchedRouteKey)) return null
     if (!this.looksLikeTaskflowComposeMessage(ctx.message, ctx.taskflowClassifierRules)) return null
     if (this.hasCanvasDraftParam(reply)) return null
@@ -1108,7 +912,7 @@ export class ChatService {
    */
   private async handleScreenPipeline(ctx: ChatContext): Promise<ChatReply | null> {
     this.stageLog('4-1단계:화면매칭', 'running', `requestedRoute=${ctx.key} 화면 매칭 시작`, ctx.reqId)
-    const matchedRouteKey = this.findNearestRegisteredRouteKey(ctx.key, ctx.reqId)
+    const matchedRouteKey = findNearestRegisteredRouteKey(ctx.key, ctx.reqId, this.logger)
 
     if (!matchedRouteKey) {
       this.stageLog('4-1단계:화면매칭', 'not-found', '등록된 화면을 찾지 못해 guidance 폴백 예정', ctx.reqId)
@@ -1156,110 +960,6 @@ export class ChatService {
       this.stageLog('4-3단계:화면디스패치', 'error', '화면 핸들러 처리 중 예외 발생', ctx.reqId)
       return null
     }
-  }
-
-  private isRegisteredScreen(routeKey: string, reqId?: string) {
-    return Boolean(getScreenConfig(routeKey, reqId))
-  }
-
-  private matchRouteTemplate(template: string, actual: string): boolean {
-    const tpl = String(template ?? '').trim().replace(/^\/+/, '')
-    const act = String(actual ?? '').trim().replace(/^\/+/, '')
-    if (!tpl || !act) return false
-
-    const tplSeg = tpl.split('/').filter(Boolean)
-    const actSeg = act.split('/').filter(Boolean)
-    if (tplSeg.length !== actSeg.length) return false
-
-    for (let i = 0; i < tplSeg.length; i += 1) {
-      const t = tplSeg[i]
-      const a = actSeg[i]
-      if (!t || !a) return false
-      if (t.startsWith(':')) continue
-      if (t !== a) return false
-    }
-
-    return true
-  }
-
-  private findParameterizedRegisteredRouteKey(routeKey: string): string | null {
-    const normalized = String(routeKey ?? '').trim().replace(/^\/+/, '')
-    if (!normalized) return null
-
-    const store = getPromptStore()
-    const screens = store?.getEnabledScreens() ?? []
-
-    const matched = screens
-      .map((screen) => String(screen.screenKey ?? '').trim())
-      .filter((key) => key && key.includes('/:'))
-      .filter((key) => this.matchRouteTemplate(key, normalized))
-      .sort((a, b) => b.length - a.length)[0]
-
-    return matched || null
-  }
-
-  private findNearestRegisteredRouteKey(routeKey: string, reqId?: string): string | null {
-    const normalized = String(routeKey ?? '').trim().replace(/^\/+/, '')
-    if (!normalized) return null
-
-    if (this.isRegisteredScreen(normalized, reqId)) {
-      return normalized
-    }
-
-    const parameterized = this.findParameterizedRegisteredRouteKey(normalized)
-    if (parameterized && this.isRegisteredScreen(parameterized, reqId)) {
-      this.logger.log(
-        `[handleScreenPipeline] param route match original=${normalized} matched=${parameterized}`,
-      )
-      return parameterized
-    }
-
-    const segments = normalized.split('/').filter(Boolean)
-    for (let i = segments.length - 1; i > 0; i -= 1) {
-      const candidate = segments.slice(0, i).join('/')
-      if (this.isRegisteredScreen(candidate, reqId)) {
-        return candidate
-      }
-    }
-
-    const heuristicCandidates = this.getHeuristicFallbackCandidates(normalized)
-    for (const candidate of heuristicCandidates) {
-      if (this.isRegisteredScreen(candidate, reqId)) {
-        this.logger.log(
-          `[handleScreenPipeline] heuristic route fallback original=${normalized} matched=${candidate}`,
-        )
-        return candidate
-      }
-    }
-
-    return null
-  }
-
-  private getHeuristicFallbackCandidates(routeKey: string): string[] {
-    const normalized = String(routeKey ?? '').trim().replace(/^\/+/, '')
-    if (!normalized) return []
-
-    if (normalized.startsWith('robot/ailog/')) {
-      return ['robot/ailog/event', 'robot/ailog', 'robot/dashboard']
-    }
-
-    if (normalized.startsWith('robot/')) {
-      return ['robot/dashboard', 'robot/management']
-    }
-
-    if (normalized.startsWith('ota/')) {
-      return ['ota']
-    }
-
-    if (normalized.startsWith('cms/')) {
-      return ['cms']
-    }
-
-    if (normalized.startsWith('tms/')) {
-      return ['tms']
-    }
-
-    return []
   }
 
   /**
@@ -1450,7 +1150,7 @@ export class ChatService {
         out.reply,
         pipelineTrace,
       )
-      const normalizedReply = this.ensurePeriodInEventReply(tracedReply)
+      const normalizedReply = ensurePeriodInEventReply(tracedReply)
       if (pipelineConfidence !== undefined) {
         normalizedReply.pipelineConfidence = pipelineConfidence
       }
@@ -1596,7 +1296,7 @@ export class ChatService {
       return {
         chat_action: ruleMatch.chatAction || screen?.chatActions.data || 'ailog/event/filter',
         chat_action_param: filters ? { filters } : undefined,
-        text: this.toDisplayText(result?.summary)
+        text: toDisplayText(result?.summary)
           || String(ruleMatch.fallbackText ?? '').trim()
           || String(screen?.fallbackText ?? '').trim()
           || '조회 결과를 확인했습니다.',
@@ -1606,7 +1306,7 @@ export class ChatService {
     const resultRow = toolResult && typeof toolResult === 'object'
       ? (toolResult as Record<string, unknown>)
       : {}
-    const text = this.toDisplayText(
+    const text = toDisplayText(
       resultRow.text ?? resultRow.summary ?? resultRow.message ?? resultRow.assistantText ?? toolResult,
     )
     const screen = getScreenConfig(routeKey)
@@ -1626,6 +1326,44 @@ export class ChatService {
         || String(screen?.fallbackText ?? '').trim()
         || '요청을 처리했습니다.',
     }
+  }
+
+  /** 룰이 캡처한 이름이 실제로 캔버스나 팔레트에 있는지 본다.
+   * 룰 정규식은 문장 조각까지 삼킬 수 있어, 이름을 못 찾으면 룰 처리를 포기하고 LLM 경로로 넘긴다.
+   */
+  private canvasNameExists(ctx: ChatContext, name: string, kind: 'canvas' | 'palette'): boolean {
+    const value = String(name ?? '').trim()
+    if (!value) return false
+
+    if (kind === 'canvas') {
+      const graph = readCurrentGraphFromContext(ctx.body?.context)
+      // 캔버스 정보를 못 받았으면 판단할 수 없다. 그때는 막지 않고 그대로 진행한다.
+      if (graph.nodes.length === 0) return true
+      return findGraphNodes(value, graph).length > 0
+    }
+
+    const contents = readTaskContentsFromContext(ctx.body?.context)
+    const store = getPropertyTmsStore()
+    if (Boolean(store?.get(resolveTaskAlias(value)))) return true
+    if (contents.length === 0) return true
+    return Boolean(findContentRef(value, '', contents))
+  }
+
+  /** 말로 센 순번을 프론트가 읽는 "이름 #N" 표기로 바꾼다. 표기 규칙은 rule 테이블에서 온다. */
+  private async normalizeNodeTargetName(routeKey: string, value: string): Promise<string> {
+    const raw = String(value ?? '').trim()
+    if (!raw) return raw
+
+    const rules = await loadTaskflowLanguageRules(routeKey)
+    const parsed = parseNodeTarget(raw, {
+      ordinalWords: rules.nodeTargetOrdinalWords,
+      ordinalSuffixPhrases: rules.nodeTargetOrdinalSuffixPhrases,
+      nounPhrases: rules.nodeTargetNounPhrases,
+    })
+
+    // "타임아웃" 처럼 사람이 부르는 이름은 Task 이름으로 바꿔야 프론트가 캔버스에서 찾는다.
+    const name = resolveTaskAlias(parsed.name)
+    return parsed.ordinal ? `${name} #${parsed.ordinal}` : name
   }
 
   /** taskflow-graph 룰(노드 연결/삭제)은 tool 없이 캔버스 draft를 바로 만들어 응답한다. */
@@ -1698,14 +1436,60 @@ export class ChatService {
       `[front-rule][taskflow-graph] reqId=${ctx.reqId} ruleKey=${ruleMatch.ruleKey} nodes=${JSON.stringify(nodes)} direction=${ruleMatch.direction ?? '-'}`,
     )
 
+    // append-tail 은 추가할 노드 이름 하나만 있으면 된다. 기준은 프론트가 흐름의 꼬리에서 찾는다.
     const minimumNodeCount =
-      ruleMatch.graphOperation === 'append-leading' || ruleMatch.graphOperation === 'separate-arrow-lines' ? 1 : 2
+      ruleMatch.graphOperation === 'append-leading' ||
+      ruleMatch.graphOperation === 'separate-arrow-lines' ||
+      ruleMatch.graphOperation === 'append-tail'
+        ? 1
+        : 2
     if (nodes.length < minimumNodeCount) {
       this.logger.warn(`[front-rule][taskflow-graph] reqId=${ctx.reqId} 노드 캡처 부족으로 draft 생성 생략`)
       return null
     }
 
-    const insertAfter = arrowLines.length > 0
+    const singleAttach =
+      ruleMatch.graphOperation === 'attach-child' || ruleMatch.graphOperation === 'attach-right'
+    if (singleAttach || ruleMatch.graphOperation === 'append-tail') {
+      const newNodeName = singleAttach ? String(nodes[1] ?? '') : String(nodes[0] ?? '')
+      const anchorOk = singleAttach ? this.canvasNameExists(ctx, String(nodes[0] ?? ''), 'canvas') : true
+      const stepOk = this.canvasNameExists(ctx, newNodeName, 'palette')
+
+      if (!anchorOk || !stepOk) {
+        this.logger.warn(
+          `[front-rule][taskflow-graph] reqId=${ctx.reqId} 이름 확인 실패로 룰 처리 생략 anchorOk=${anchorOk} stepOk=${stepOk} nodes=${JSON.stringify(nodes)}`,
+        )
+        return null
+      }
+    }
+
+    // 기준 노드에 하나만 붙이는 룰. attach-child 는 왼쪽 핸들(자식), attach-right 는 오른쪽 핸들(다음 순서)이다.
+    // "두번째 Parallel" 같은 말로 센 순번은 프론트가 읽는 "이름 #N" 으로 바꿔 넘긴다.
+    const anchorName = await this.normalizeNodeTargetName(routeKey, String(nodes[0] ?? ''))
+    const attachHandle = ruleMatch.graphOperation === 'attach-child' ? 'left' : 'right'
+    const insertAfter = ruleMatch.graphOperation === 'append-tail'
+      // 기준을 비우면 프론트가 Start 로부터 이어진 순차 흐름의 꼬리(자식 제외)를 찾아 그 우측에 붙인다.
+      // Start 만 있는 캔버스에서는 Start 우측이 된다.
+      ? [
+          {
+            after: '',
+            step: resolveTaskAlias(String(nodes[0] ?? '')),
+            appendOnly: true,
+            sourceHandle: 'right',
+            targetHandle: 'left',
+          },
+        ]
+      : ruleMatch.graphOperation === 'attach-child' || ruleMatch.graphOperation === 'attach-right'
+      ? [
+          {
+            after: anchorName,
+            step: resolveTaskAlias(String(nodes[1] ?? '')),
+            appendOnly: true,
+            sourceHandle: attachHandle,
+            targetHandle: 'left',
+          },
+        ]
+      : arrowLines.length > 0
       ? arrowLines.flatMap((line) => line.labels.map((label, index) => {
           if (index === 0) {
             return { after: '', step: label, isolated: true, sourceHandle: 'right', targetHandle: 'left' }
@@ -1737,7 +1521,19 @@ export class ChatService {
     const connectionText = arrowLines.length > 0
       ? arrowLines.map((line) => line.labels.join(' -> ')).join('\n')
       : nodes.join(' -> ')
-    const text = `${connectionText} 연결을 캔버스에 반영했습니다.`
+    // 문구는 rule.reply_text 를 쓴다. {{nodes}} 는 연결 대상, {{anchor}}/{{node}} 는 기준/추가 노드다.
+    const replyTemplate = String(
+      (ruleMatch.toolArgs?.replyText as string | undefined) ?? ruleMatch.rule?.replyText ?? '',
+    ).trim()
+    const text = replyTemplate
+      ? replyTemplate
+          .replace(/\{\{\s*nodes\s*\}\}/g, connectionText)
+          .replace(/\{\{\s*anchor\s*\}\}/g, ruleMatch.graphOperation === 'append-tail' ? '' : String(nodes[0] ?? ''))
+          .replace(
+            /\{\{\s*node\s*\}\}/g,
+            ruleMatch.graphOperation === 'append-tail' ? String(nodes[0] ?? '') : String(nodes[1] ?? nodes[0] ?? ''),
+          )
+      : `${connectionText} 연결을 캔버스에 반영했습니다.`
 
     const reply: ChatReply = {
       chat_action: ruleMatch.chatAction || screen?.chatActions.action || 'action',
@@ -1773,7 +1569,7 @@ export class ChatService {
   }
 
   private async tryFrontRuleEngine(ctx: ChatContext): Promise<ChatReply | null> {
-    const matchedRouteKey = this.findNearestRegisteredRouteKey(ctx.key, ctx.reqId) ?? ctx.key
+    const matchedRouteKey = findNearestRegisteredRouteKey(ctx.key, ctx.reqId, this.logger) ?? ctx.key
     this.logger.warn(
       `[front-rule] reqId=${ctx.reqId} ctxKey=${ctx.key} matchedRouteKey=${matchedRouteKey} currentPath=${ctx.currentPath || '-'} message="${ctx.message}"`,
     )
@@ -1925,7 +1721,7 @@ export class ChatService {
         pipelineTrace: `front-rule:${ruleMatch.ruleKey}`,
       }, 'front-rule'))
 
-      return this.ensurePeriodInEventReply(reply)
+      return ensurePeriodInEventReply(reply)
     } catch (e: any) {
       this.logger.debug(`[front-rule] tool execute failed rule=${ruleMatch.ruleKey} tool=${toolName} err=${e?.message ?? String(e)}`)
       this.stageLog('3단계:룰우선처리', 'error', `tool 실행 실패(rule=${ruleMatch.ruleKey})`, ctx.reqId)

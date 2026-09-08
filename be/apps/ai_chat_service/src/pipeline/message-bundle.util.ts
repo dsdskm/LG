@@ -39,6 +39,11 @@ export function renderMessage(
   return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_match, name: string) => vars[name] ?? '')
 }
 
+/** 묶음에 실제로 들어 있는 키 목록. 어떤 도구를 등록할지 DB 가 정하게 하는 데 쓴다. */
+export function listMessageKeys(scopeKey: string, promptType: string): string[] {
+  return Object.keys(readBundle(scopeKey, promptType))
+}
+
 /** 문구 묶음에 같이 담아 둔 수치 설정. 값이 없으면 0 이라 설정 누락이 화면에 드러난다. */
 export function readMessageNumber(scopeKey: string, promptType: string, key: string): number {
   const value = Number(readBundle(scopeKey, promptType)[key])

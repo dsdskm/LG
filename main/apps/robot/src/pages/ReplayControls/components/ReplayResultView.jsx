@@ -28,6 +28,7 @@ export default function ReplayResultView({
   isPlaying,
   playbackRate,
   onSeek,
+  onPlayTick, // 재생 타이머 전진 전용(seek 신호 없음) — 없으면 ReplayControls가 onSeek으로 폴백
   onTogglePlay,
   onStop,
   onChangeRate,
@@ -105,6 +106,7 @@ export default function ReplayResultView({
           issueCounts={issueCounts}
           onIssueSelect={onIssueSelect}
           onSeek={onSeek}
+          onPlayTick={onPlayTick}
           onTogglePlay={onTogglePlay}
           onStop={onStop}
           onChangeRate={onChangeRate}

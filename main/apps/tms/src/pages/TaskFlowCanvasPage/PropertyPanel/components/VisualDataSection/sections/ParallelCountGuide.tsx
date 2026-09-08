@@ -83,6 +83,8 @@ export default function ParallelCountGuide({
       )
     )
 
+    const childCount = childIds.length
+
     const rawMainNodes =
       selectedData.properties?.main_nodes
 
@@ -97,6 +99,10 @@ export default function ParallelCountGuide({
     )
 
     const mainCount = validMainNodeIds.size
+    const nonMainCount = Math.max(
+      0,
+      childCount - mainCount
+    )
 
     if (propertyKey === 'success_count') {
       if (countValue === -1) {
@@ -138,7 +144,9 @@ export default function ParallelCountGuide({
         message: t(
           'canvas.property.parallelSuccessCountGuide',
           {
-            input: countValue
+            input: countValue,
+            nonMainCount,
+            effective: countValue + nonMainCount
           }
         ),
         isError: false

@@ -1,0 +1,68 @@
+{
+  "title": "マイプロフィール",
+  "close": "閉じる",
+  "empty": "-",
+  "basicInfo": {
+    "title": "基本情報",
+    "email": "メール",
+    "nickname": "ニックネーム",
+    "nicknamePlaceholder": "ニックネームを入力してください",
+    "nicknameSaved": "ニックネームを保存しました"
+  },
+  "roleInfo": {
+    "title": "役割と所属",
+    "role": "役割",
+    "guide": "役割の変更は管理者にお問い合わせください",
+    "group": "管理グループ",
+    "site": "管理サイト"
+  },
+  "password": {
+    "title": "パスワード変更",
+    "guide": "英文字の大文字・小文字、数字、特殊文字の中から3種類以上の組み合わせで8文字以上、または2種類の組み合わせで10文字以上を入力してください。",
+    "change": "変更する",
+    "current": "現在のパスワード",
+    "currentPlaceholder": "現在のパスワードを入力",
+    "new": "新しいパスワード",
+    "newPlaceholder": "新しいパスワードを入力 (8文字以上)",
+    "confirm": "新しいパスワード（確認）",
+    "confirmPlaceholder": "新しいパスワードを再入力",
+    "cancel": "キャンセル",
+    "submit": "変更",
+    "changeSuccess": "パスワードを変更しました",
+    "currentPasswordInvalid": "現在のパスワードが正しくありません",
+    "changeFailed": "パスワードの変更に失敗しました",
+    "invalid": "パスワード要件を確認してください",
+    "sameAsCurrentPassword": "現在のパスワードと同じにすることはできません"
+  },
+  "accountManagement": {
+    "title": "アカウント管理",
+    "logout": "ログアウト",
+    "withdraw": "退会",
+    "withdrawConfirmTitle": "退会",
+    "withdrawConfirmMessage1": "本当に退会しますか？",
+    "withdrawConfirmMessage2": "退会するとアカウント情報が永久に削除され、復元できません。",
+    "withdrawConfirmButton": "退会する",
+    "withdrawDoneTitle": "退会完了",
+    "withdrawDoneMessage": "退会処理が完了しました。ログアウトします。",
+    "withdrawDoneButton": "確認"
+  },
+  "accountStatus": {
+    "title": "アカウント状態",
+    "status": "状態",
+    "active": "有効",
+    "createdAt": "登録日"
+  },
+  "help": {
+    "title": "ヘルプ",
+    "tip1": "ニックネームはいつでも変更できます",
+    "tip2": "メールは変更できません",
+    "tip3": "役割の変更は管理者にお問い合わせください"
+  },
+  "role": {
+    "SYSTEM_ADMIN": "システム管理者",
+    "SYSTEM_MANAGER": "システムマネージャー",
+    "GROUP_MANAGER": "グループ管理者",
+    "SITE_MANAGER": "サイト管理者",
+    "TERM_MANAGER": "利用規約管理者"
+  }
+}

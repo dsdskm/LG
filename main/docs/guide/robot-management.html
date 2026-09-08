@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>로봇 관리 · OPCON 사용 가이드</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    body { font-family: 'Inter', 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; background-color: #eae8e2; }
+    .display-serif { font-family: Georgia, 'Times New Roman', serif; font-weight: 400; letter-spacing: -0.5px; }
+    .btn-primary { background: #736e63; color: #ffffff; transition: all 0.15s ease; }
+    .btn-primary:hover { background: #6b655a; }
+    .btn-primary:active { background: #59544b; }
+    .badge-pill { background: #f4f3f0; color: #111111; border-radius: 9999px; padding: 4px 12px; font-size: 13px; font-weight: 500; }
+    .badge-accent { background: #b91c4c; color: #ffffff; border-radius: 9999px; padding: 4px 12px; font-size: 12px; font-weight: 500; letter-spacing: 1.5px; text-transform: uppercase; }
+    .hairline-border { border: 1px solid rgba(140, 134, 120, 0.22); }
+    .sidebar-link { transition: all 0.15s ease; }
+    .sidebar-link:hover { background: rgba(255, 255, 255, 0.5); }
+    .sidebar-link.active { background: #f4f3f0; color: #111111; font-weight: 600; }
+    .browser-dots span { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+  </style>
+</head>
+<body class="min-h-screen">
+  <div class="flex min-h-screen">
+    <!-- Sidebar -->
+    <aside class="w-64 bg-[#d3cfc4] border-r hairline-border fixed h-screen overflow-y-auto">
+      <div class="p-4 border-b hairline-border">
+        <a href="index.html" class="flex items-center gap-2">
+          <i data-lucide="bot" class="w-6 h-6 text-[#736e63]"></i>
+          <span class="font-bold text-[#111111]">OPCON 가이드</span>
+        </a>
+      </div>
+      <nav class="p-3 space-y-1">
+        <p class="px-3 pt-3 pb-1 text-xs font-semibold text-[#757575] uppercase">시작하기</p>
+        <a href="getting-started.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="rocket" class="w-4 h-4"></i> 시작하기
+        </a>
+        <a href="ai-assistant.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="sparkles" class="w-4 h-4"></i> AI 어시스턴트
+        </a>
+
+        <p class="px-3 pt-4 pb-1 text-xs font-semibold text-[#757575] uppercase">Robot</p>
+        <a href="robot-dashboard.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="bot" class="w-4 h-4"></i> 로봇 대시보드
+        </a>
+        <a href="robot-management.html" class="sidebar-link active flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="settings" class="w-4 h-4"></i> 로봇 관리
+        </a>
+        <a href="robot-detail.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="info" class="w-4 h-4"></i> 로봇 상세
+        </a>
+
+        <p class="px-3 pt-4 pb-1 text-xs font-semibold text-[#757575] uppercase">OTA</p>
+        <a href="ota-campaign.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="cloud-upload" class="w-4 h-4"></i> OTA 캠페인
+        </a>
+
+        <p class="px-3 pt-4 pb-1 text-xs font-semibold text-[#757575] uppercase">CMS</p>
+        <a href="cms-content.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="file-text" class="w-4 h-4"></i> 콘텐츠 관리
+        </a>
+
+        <p class="px-3 pt-4 pb-1 text-xs font-semibold text-[#757575] uppercase">TMS</p>
+        <a href="tms-taskflow-list.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="workflow" class="w-4 h-4"></i> 태스크플로우 목록
+        </a>
+        <a href="tms-canvas.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="pen-tool" class="w-4 h-4"></i> 캔버스 에디터
+        </a>
+        <a href="tms-robots.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="cpu" class="w-4 h-4"></i> TMS 로봇 관리
+        </a>
+
+        <p class="px-3 pt-4 pb-1 text-xs font-semibold text-[#757575] uppercase">Learn</p>
+        <a href="learn-overview.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="graduation-cap" class="w-4 h-4"></i> 러닝 개요
+        </a>
+      </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 ml-64">
+      <!-- Header -->
+      <header class="bg-[#8c8678] sticky top-0 z-10">
+        <div class="px-8 py-4 flex items-center justify-between">
+          <div>
+            <h1 class="text-xl display-serif text-white">로봇 관리</h1>
+            <p class="text-sm text-white/70">로봇 등록, 그룹 관리, 지도 관리</p>
+          </div>
+          <div class="flex items-center gap-2 text-sm text-white/70">
+            <i data-lucide="home" class="w-4 h-4"></i>
+            <span>/</span>
+            <span>Robot</span>
+            <span>/</span>
+            <span>로봇 관리</span>
+          </div>
+        </div>
+      </header>
+
+      <div class="px-8 py-8 max-w-5xl">
+        <!-- Overview -->
+        <section class="mb-10">
+          <h2 class="text-2xl display-serif text-[#111111] mb-4">로봇 관리 개요</h2>
+          <p class="text-[#555555] mb-6">
+            로봇 관리 메뉴에서는 로봇의 등록, 그룹 관리, 사이트 관리, 지도 관리, 용어 관리, 사용자 관리 기능을 제공합니다.
+            로봇을 효율적으로 운영하기 위한 기본 설정을 관리합니다.
+          </p>
+
+          <!-- UI Mockup -->
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border overflow-hidden mb-6">
+            <div class="bg-[#d3cfc4] px-4 py-2 flex items-center gap-2 border-b hairline-border">
+              <div class="browser-dots">
+                <span class="bg-red-400"></span>
+                <span class="bg-yellow-400"></span>
+                <span class="bg-green-400"></span>
+              </div>
+              <div class="flex-1 bg-white rounded-md px-3 py-1 text-xs text-[#8f8f8f] mx-4">https://hcrsp.com/...</div>
+            </div>
+            <div class="p-6">
+              <!-- Sub-tabs -->
+              <div class="flex border-b hairline-border mb-6">
+                <button class="px-4 py-2 text-sm font-semibold text-[#111111] border-b-2 border-[#111111]">로봇 관리</button>
+                <button class="px-4 py-2 text-sm text-[#8f8f8f]">그룹 관리</button>
+                <button class="px-4 py-2 text-sm text-[#8f8f8f]">사이트 관리</button>
+                <button class="px-4 py-2 text-sm text-[#8f8f8f]">지도 관리</button>
+                <button class="px-4 py-2 text-sm text-[#8f8f8f]">용어 관리</button>
+                <button class="px-4 py-2 text-sm text-[#8f8f8f]">사용자 관리</button>
+              </div>
+
+              <!-- Robot Management Table -->
+              <div class="border hairline-border rounded-xl overflow-hidden">
+                <div class="bg-[#eae8e2] px-4 py-3 flex items-center justify-between border-b hairline-border">
+                  <h3 class="font-semibold text-[#111111] text-sm">로봇 목록</h3>
+                  <div class="flex items-center gap-2">
+                    <div class="bg-white border hairline-border rounded-lg px-3 py-1.5 text-xs text-[#8f8f8f] flex items-center gap-1">
+                      <i data-lucide="search" class="w-3 h-3"></i> 검색
+                    </div>
+                    <div class="bg-[#736e63] text-white rounded-lg px-3 py-1.5 text-xs font-medium">+ 로봇 등록</div>
+                  </div>
+                </div>
+                <table class="w-full text-sm">
+                  <thead class="bg-white text-[#757575]">
+                    <tr>
+                      <th class="text-left px-4 py-3 font-medium">로봇 이름</th>
+                      <th class="text-left px-4 py-3 font-medium">시리얼 번호</th>
+                      <th class="text-left px-4 py-3 font-medium">그룹</th>
+                      <th class="text-left px-4 py-3 font-medium">사이트</th>
+                      <th class="text-left px-4 py-3 font-medium">상태</th>
+                      <th class="text-left px-4 py-3 font-medium">작업</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-[rgba(140,134,120,0.12)]">
+                    <tr class="hover:bg-[#eae8e2]">
+                      <td class="px-4 py-3 font-medium text-[#111111]">Robot-01</td>
+                      <td class="px-4 py-3 text-[#757575]">SN-2024-001</td>
+                      <td class="px-4 py-3 text-[#757575]">A그룹</td>
+                      <td class="px-4 py-3 text-[#757575]">서울 본사</td>
+                      <td class="px-4 py-3"><span class="bg-[#f4f3f0] text-[#736e63] text-xs px-2 py-1 rounded-full">활성</span></td>
+                      <td class="px-4 py-3">
+                        <div class="flex items-center gap-2 text-[#8f8f8f]">
+                          <i data-lucide="edit" class="w-4 h-4"></i>
+                          <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr class="hover:bg-[#eae8e2]">
+                      <td class="px-4 py-3 font-medium text-[#111111]">Robot-02</td>
+                      <td class="px-4 py-3 text-[#757575]">SN-2024-002</td>
+                      <td class="px-4 py-3 text-[#757575]">B그룹</td>
+                      <td class="px-4 py-3 text-[#757575]">부산 지사</td>
+                      <td class="px-4 py-3"><span class="bg-[#d3cfc4] text-[#555555] text-xs px-2 py-1 rounded-full">비활성</span></td>
+                      <td class="px-4 py-3">
+                        <div class="flex items-center gap-2 text-[#8f8f8f]">
+                          <i data-lucide="edit" class="w-4 h-4"></i>
+                          <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Robot Registration -->
+        <section class="mb-12">
+          <h2 class="text-2xl display-serif text-[#111111] mb-4">로봇 등록</h2>
+          <p class="text-[#555555] mb-6">"로봇 등록" 버튼을 클릭하여 새 로봇을 등록합니다.</p>
+
+          <h3 class="text-lg font-semibold text-[#111111] mb-3">로봇 등록 절차</h3>
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border p-6 mb-6">
+            <ol class="space-y-4">
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">1</div>
+                <div>
+                  <p class="font-medium text-[#111111]">로봇 등록 버튼 클릭</p>
+                  <p class="text-sm text-[#757575]">로봇 관리 탭에서 "로봇 등록" 버튼을 클릭합니다.</p>
+                </div>
+              </li>
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">2</div>
+                <div>
+                  <p class="font-medium text-[#111111]">로봇 정보 입력</p>
+                  <p class="text-sm text-[#757575]">로봇 이름, 시리얼 번호, 그룹, 사이트를 입력합니다.</p>
+                </div>
+              </li>
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">3</div>
+                <div>
+                  <p class="font-medium text-[#111111]">저장</p>
+                  <p class="text-sm text-[#757575]">저장 버튼을 클릭하여 로봇을 등록합니다.</p>
+                </div>
+              </li>
+            </ol>
+          </div>
+
+          <h3 class="text-lg font-semibold text-[#111111] mb-3">로봇 등록 입력 규칙</h3>
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border overflow-hidden">
+            <table class="w-full text-sm">
+              <thead class="bg-[#eae8e2] text-[#757575]">
+                <tr>
+                  <th class="text-left px-4 py-3 font-medium">항목</th>
+                  <th class="text-left px-4 py-3 font-medium">규칙</th>
+                  <th class="text-left px-4 py-3 font-medium">비고</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[rgba(140,134,120,0.12)]">
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">로봇 이름</td>
+                  <td class="px-4 py-3 text-[#757575]">필수 입력</td>
+                  <td class="px-4 py-3 text-[#757575]">중복 불가</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">시리얼 번호</td>
+                  <td class="px-4 py-3 text-[#757575]">필수 입력</td>
+                  <td class="px-4 py-3 text-[#757575]">로봇 하드웨어 시리얼 번호</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">그룹</td>
+                  <td class="px-4 py-3 text-[#757575]">선택 입력</td>
+                  <td class="px-4 py-3 text-[#757575]">그룹 관리에서 생성한 그룹</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">사이트</td>
+                  <td class="px-4 py-3 text-[#757575]">선택 입력</td>
+                  <td class="px-4 py-3 text-[#757575]">사이트 관리에서 생성한 사이트</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Group Management -->
+        <section class="mb-12">
+          <h2 class="text-2xl display-serif text-[#111111] mb-4">그룹 관리</h2>
+          <p class="text-[#555555] mb-6">로봇을 그룹으로 묶어 효율적으로 관리합니다.</p>
+
+          <h3 class="text-lg font-semibold text-[#111111] mb-3">그룹 생성 절차</h3>
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border p-6 mb-6">
+            <ol class="space-y-4">
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">1</div>
+                <div>
+                  <p class="font-medium text-[#111111]">그룹 관리 탭 선택</p>
+                  <p class="text-sm text-[#757575]">로봇 관리 메뉴에서 "그룹 관리" 탭을 선택합니다.</p>
+                </div>
+              </li>
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">2</div>
+                <div>
+                  <p class="font-medium text-[#111111]">그룹 생성</p>
+                  <p class="text-sm text-[#757575]">그룹 이름과 설명을 입력하고 생성합니다.</p>
+                </div>
+              </li>
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">3</div>
+                <div>
+                  <p class="font-medium text-[#111111]">로봇 배정</p>
+                  <p class="text-sm text-[#757575]">그룹에 로봇을 배정합니다.</p>
+                </div>
+              </li>
+            </ol>
+          </div>
+
+          <h3 class="text-lg font-semibold text-[#111111] mb-3">그룹 관리 입력 규칙</h3>
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border overflow-hidden">
+            <table class="w-full text-sm">
+              <thead class="bg-[#eae8e2] text-[#757575]">
+                <tr>
+                  <th class="text-left px-4 py-3 font-medium">항목</th>
+                  <th class="text-left px-4 py-3 font-medium">규칙</th>
+                  <th class="text-left px-4 py-3 font-medium">비고</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[rgba(140,134,120,0.12)]">
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">그룹 이름</td>
+                  <td class="px-4 py-3 text-[#757575]">필수 입력</td>
+                  <td class="px-4 py-3 text-[#757575]">중복 불가</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">설명</td>
+                  <td class="px-4 py-3 text-[#757575]">선택 입력</td>
+                  <td class="px-4 py-3 text-[#757575]">그룹에 대한 설명</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Site Management -->
+        <section class="mb-12">
+          <h2 class="text-2xl display-serif text-[#111111] mb-4">사이트 관리</h2>
+          <p class="text-[#555555] mb-6">로봇이 운영되는 사이트(지점)를 관리합니다.</p>
+
+          <h3 class="text-lg font-semibold text-[#111111] mb-3">사이트 생성 절차</h3>
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border p-6 mb-6">
+            <ol class="space-y-4">
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">1</div>
+                <div>
+                  <p class="font-medium text-[#111111]">사이트 관리 탭 선택</p>
+                  <p class="text-sm text-[#757575]">로봇 관리 메뉴에서 "사이트 관리" 탭을 선택합니다.</p>
+                </div>
+              </li>
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">2</div>
+                <div>
+                  <p class="font-medium text-[#111111]">사이트 생성</p>
+                  <p class="text-sm text-[#757575]">사이트 이름, 주소, 좌표를 입력하고 생성합니다.</p>
+                </div>
+              </li>
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">3</div>
+                <div>
+                  <p class="font-medium text-[#111111]">지도 연결</p>
+                  <p class="text-sm text-[#757575]">사이트에 지도를 연결합니다.</p>
+                </div>
+              </li>
+            </ol>
+          </div>
+
+          <h3 class="text-lg font-semibold text-[#111111] mb-3">사이트 관리 입력 규칙</h3>
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border overflow-hidden">
+            <table class="w-full text-sm">
+              <thead class="bg-[#eae8e2] text-[#757575]">
+                <tr>
+                  <th class="text-left px-4 py-3 font-medium">항목</th>
+                  <th class="text-left px-4 py-3 font-medium">규칙</th>
+                  <th class="text-left px-4 py-3 font-medium">비고</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[rgba(140,134,120,0.12)]">
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">사이트 이름</td>
+                  <td class="px-4 py-3 text-[#757575]">필수 입력</td>
+                  <td class="px-4 py-3 text-[#757575]">중복 불가</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">주소</td>
+                  <td class="px-4 py-3 text-[#757575]">선택 입력</td>
+                  <td class="px-4 py-3 text-[#757575]">사이트 물리적 주소</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">좌표</td>
+                  <td class="px-4 py-3 text-[#757575]">선택 입력</td>
+                  <td class="px-4 py-3 text-[#757575]">위도/경도</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Map Management -->
+        <section class="mb-12">
+          <h2 class="text-2xl display-serif text-[#111111] mb-4">지도 관리</h2>
+          <p class="text-[#555555] mb-6">로봇이 이동하는 공간의 지도를 업로드하고 관리합니다.</p>
+
+          <h3 class="text-lg font-semibold text-[#111111] mb-3">지도 업로드 절차</h3>
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border p-6 mb-6">
+            <ol class="space-y-4">
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">1</div>
+                <div>
+                  <p class="font-medium text-[#111111]">지도 관리 탭 선택</p>
+                  <p class="text-sm text-[#757575]">로봇 관리 메뉴에서 "지도 관리" 탭을 선택합니다.</p>
+                </div>
+              </li>
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">2</div>
+                <div>
+                  <p class="font-medium text-[#111111]">지도 파일 업로드</p>
+                  <p class="text-sm text-[#757575]">지도 이미지 파일을 업로드합니다.</p>
+                </div>
+              </li>
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">3</div>
+                <div>
+                  <p class="font-medium text-[#111111]">지도 정보 입력</p>
+                  <p class="text-sm text-[#757575]">지도 이름, 사이트, 좌표 정보를 입력합니다.</p>
+                </div>
+              </li>
+            </ol>
+          </div>
+
+          <h3 class="text-lg font-semibold text-[#111111] mb-3">지도 관리 입력 규칙</h3>
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border overflow-hidden">
+            <table class="w-full text-sm">
+              <thead class="bg-[#eae8e2] text-[#757575]">
+                <tr>
+                  <th class="text-left px-4 py-3 font-medium">항목</th>
+                  <th class="text-left px-4 py-3 font-medium">규칙</th>
+                  <th class="text-left px-4 py-3 font-medium">비고</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[rgba(140,134,120,0.12)]">
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">지도 파일</td>
+                  <td class="px-4 py-3 text-[#757575]">필수 (이미지 파일)</td>
+                  <td class="px-4 py-3 text-[#757575]">PNG, JPG, SVG 등</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">지도 이름</td>
+                  <td class="px-4 py-3 text-[#757575]">필수 입력</td>
+                  <td class="px-4 py-3 text-[#757575]">중복 불가</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">사이트</td>
+                  <td class="px-4 py-3 text-[#757575]">필수 선택</td>
+                  <td class="px-4 py-3 text-[#757575]">지도가 사용될 사이트</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Troubleshooting -->
+        <section class="mb-12">
+          <h2 class="text-2xl display-serif text-[#111111] mb-4">문제 해결</h2>
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border overflow-hidden">
+            <table class="w-full text-sm">
+              <thead class="bg-[#eae8e2] text-[#757575]">
+                <tr>
+                  <th class="text-left px-4 py-3 font-medium">문제</th>
+                  <th class="text-left px-4 py-3 font-medium">원인</th>
+                  <th class="text-left px-4 py-3 font-medium">해결 방법</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[rgba(140,134,120,0.12)]">
+                <tr>
+                  <td class="px-4 py-3 text-[#333333]">로봇 등록 시 중복 오류</td>
+                  <td class="px-4 py-3 text-[#757575]">이미 등록된 로봇 이름 또는 시리얼 번호</td>
+                  <td class="px-4 py-3 text-[#757575]">다른 이름/시리얼 번호로 등록</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 text-[#333333]">지도 업로드 실패</td>
+                  <td class="px-4 py-3 text-[#757575]">지원하지 않는 파일 형식 또는 용량 초과</td>
+                  <td class="px-4 py-3 text-[#757575]">지원 형식(PNG, JPG, SVG) 및 용량 확인</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 text-[#333333]">그룹 삭제 불가</td>
+                  <td class="px-4 py-3 text-[#757575]">그룹에 로봇이 배정되어 있음</td>
+                  <td class="px-4 py-3 text-[#757575]">그룹에서 로봇을 먼저 제거 후 삭제</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    lucide.createIcons();
+  </script>
+</body>
+</html>

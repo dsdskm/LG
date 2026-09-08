@@ -42,16 +42,18 @@ import PanelLayout from './PanelLayout'
 import DrawPanel from './DrawPanel'
 import type { PaletteItem } from '@/types/palette'
 import { MarkerType } from '@xyflow/react'
-import {
-  useFlowEditorStore as useFlowEditorStoreHook,
-  generateNodeId,
-  isIfThenElseTaskNode,
-  syncIfThenElseBranchRoles,
-  type RFEdge,
-  type RFNode
-} from '@/store/taskflow.canvas.store'
+import { useFlowEditorStore as useFlowEditorStoreHook, type RFEdge, type RFNode } from '@/store/taskflow.canvas.store'
 import { buildAiTaskflowReplyText, resolveAiTaskflowCommandTarget } from '@/utils/aiTaskflowCommand'
-import { buildNodeOrdinalMap, formatNodeTargetName, parseNodeTargetName } from '@/utils/node.util'
+import {
+  isBranchEdge,
+  isChildAppendInsert,
+  normalizeAssistantDraft,
+  pickFallbackAnchor,
+  type AssistantDraftTreeNode,
+  type DraftCreatedNode
+} from './assistantDraft'
+import { buildFlowOrdinals, parseFlowTarget, pickByFlowOrdinal } from './flowOrder'
+import { applyIfThenElseBranchRoles } from '@/utils/ifThenElseRoles'
 
 type SaveOverride = { name: string; description: string }
 type MoveToMapEntry = { nodeId: string; mapId: string }
@@ -69,9 +71,13 @@ declare global {
       addableNodes: Array<Record<string, unknown>>
       taskList: Array<Record<string, unknown>>
       taskContents: Array<Record<string, unknown>>
-      currentGraph: {
-        nodes: Array<Record<string, unknown>>
-        edges: Array<Record<string, unknown>>
+      /** 채팅 요청의 context.taskflow 로 그대로 실려 가는 값. */
+      chatContext?: {
+        currentGraph: {
+          nodes: Array<Record<string, unknown>>
+          edges: Array<Record<string, unknown>>
+        }
+        taskContents: Array<Record<string, unknown>>
       }
       updatedAt: number
     }
@@ -90,26 +96,28 @@ type AssistantStep = {
   properties?: Record<string, unknown>
 }
 
-type AssistantTreeNode = {
-  taskName: string
-  taskType?: string
-  contentName?: string
-  contentId?: number
-  properties?: Record<string, unknown>
-  children?: AssistantTreeNode[]
-}
-
 type AssistantDraft = {
   mode?: 'replace' | 'edit'
+  roots?: AssistantDraftTreeNode[]
   layout?: string
   flowMode?: 'default' | 'tree'
   assistantMessageId?: string
-  roots?: AssistantTreeNode[]
   steps?: Array<string | AssistantStep>
   removeByName?: string[]
   replaceByName?: Array<{
     target?: string
     step?: string | AssistantStep
+  }>
+  /** 기존 노드의 속성만 바꾼다. 노드 구성은 그대로 둔다. */
+  updateProperties?: Array<{
+    target?: string
+    properties?: Record<string, unknown>
+  }>
+  /** 제어 노드가 자식에게 주는 역할. 서버는 이름으로 지목하고 id 변환은 캔버스가 한다. */
+  setRoles?: Array<{
+    target?: string
+    child?: string
+    role?: string
   }>
   insertAfter?: Array<{
     after?: string
@@ -119,15 +127,18 @@ type AssistantDraft = {
     reverseDirection?: boolean
     appendOnly?: boolean
     isolated?: boolean
-    /** 이름이 같은 노드를 여러 개 만들 때 앞선 insert 가 만든 노드를 기준으로 삼는다. */
+    /** 같은 draft 안에서 n 번째 insert 가 만든 노드를 기준으로 붙인다. 이름이 겹쳐도 섞이지 않는다. */
     afterCreatedIndex?: number
-    /** 캔버스 우측 끝으로 밀어내 기존과 겹치지 않게 배치한다(전체 복제 등). */
-    placement?: 'right-of-all'
+    placement?: string
   }>
   nodes?: RFNode[]
   edges?: RFEdge[]
   viewport?: { x?: number; y?: number; zoom?: number }
 }
+
+// 노드 폭은 78px(BaseNodeRoot). 그보다 넉넉히 벌려 엣지와 라벨이 겹치지 않게 한다.
+const NODE_HORIZONTAL_GAP = 160
+const NODE_VERTICAL_GAP = 80
 
 function normalizeText(value: unknown): string {
   return String(value ?? '')
@@ -150,13 +161,13 @@ function toPositiveNumber(value: unknown): number | undefined {
 }
 
 function extractAssistantDraft(value: unknown): AssistantDraft | null {
+  return normalizeAssistantDraft(extractAssistantDraftRaw(value))
+}
+
+function extractAssistantDraftRaw(value: unknown): AssistantDraft | null {
   if (!value || typeof value !== 'object') return null
 
   const row = value as Record<string, unknown>
-
-  if (Array.isArray(row.roots)) {
-    return row as AssistantDraft
-  }
 
   const mode = String(row.mode ?? '')
     .trim()
@@ -164,8 +175,11 @@ function extractAssistantDraft(value: unknown): AssistantDraft | null {
   const looksLikeEditDraft =
     (mode === 'edit' || mode === 'replace') &&
     (Array.isArray(row.insertAfter) ||
+      Array.isArray(row.roots) ||
       Array.isArray(row.removeByName) ||
       Array.isArray(row.replaceByName) ||
+      Array.isArray(row.updateProperties) ||
+      Array.isArray(row.setRoles) ||
       Array.isArray(row.steps) ||
       Array.isArray(row.nodes) ||
       Array.isArray(row.edges))
@@ -174,7 +188,7 @@ function extractAssistantDraft(value: unknown): AssistantDraft | null {
   }
 
   if (row.draft && typeof row.draft === 'object') {
-    return extractAssistantDraft(row.draft)
+    return extractAssistantDraftRaw(row.draft)
   }
 
   if (Array.isArray(row.nodes) || Array.isArray(row.steps)) {
@@ -198,11 +212,11 @@ function extractAssistantDraft(value: unknown): AssistantDraft | null {
   }
 
   if (row.toolResult && typeof row.toolResult === 'object') {
-    return extractAssistantDraft(row.toolResult)
+    return extractAssistantDraftRaw(row.toolResult)
   }
 
   if (row.executed && typeof row.executed === 'object') {
-    return extractAssistantDraft(row.executed)
+    return extractAssistantDraftRaw(row.executed)
   }
 
   return null
@@ -268,6 +282,70 @@ function buildDefaultPropertiesFromSchema(
   }
 
   return result
+}
+
+/** AI 가 노드 이름을 맞출 때 쓰는 목록. 매칭 실패 원인은 대부분 이 목록에 대상이 없는 것이다. */
+/** flowDefinition 의 nodes 를 제자리에서 갱신해 IfThenElse 역할을 채운다. */
+/** 팔레트 항목 하나를 캔버스 노드 data 로 옮긴다.
+ * 콘텐츠 노드/제어 노드에 따라 채우는 필드가 다르고, 속성은 스키마 기본값 위에 요청 값을 덮어쓴다.
+ */
+function buildNodeDataFromPaletteItem(
+  item: PaletteItem,
+  requestedProperties?: Record<string, unknown>
+): Record<string, unknown> {
+  const isContent = item.kind === 'contentNode'
+  const content = isContent ? item.content : null
+  const defaults = content
+    ? buildDefaultPropertiesFromSchema(
+        item.task.propertySchema,
+        Number(content.id),
+        String(content.contentTypeName ?? '')
+      )
+    : buildDefaultPropertiesFromSchema(item.task.propertySchema)
+
+  return {
+    label: content ? content.name : item.task.name,
+    taskId: item.task.id,
+    taskName: item.task.name,
+    taskType: item.task.taskType,
+    contentId: content ? content.id : undefined,
+    contentName: content ? content.name : undefined,
+    contentTypeId: content ? content.contentTypeId : undefined,
+    contentTypeName: content ? content.contentTypeName : undefined,
+    contentValue: content ? content.contentValue : undefined,
+    contentVersion: content ? content.contentVersion : undefined,
+    groupId: content ? content.groupId : undefined,
+    siteId: content ? content.siteId : undefined,
+    propertySchema: item.task.propertySchema,
+    // AI 가 값을 지정했으면 기본값 위에 덮어쓴다(Delay 의 delay_msec 등).
+    properties: { ...defaults, ...(requestedProperties ?? {}) }
+  }
+}
+
+function withIfThenElseRoles(flow: { nodes?: unknown; edges?: unknown; flowMode?: string } | null | undefined) {
+  if (!flow || !Array.isArray(flow.nodes) || !Array.isArray(flow.edges)) return
+
+  const flowMode = flow.flowMode === 'tree' ? 'tree' : 'default'
+  const nextNodes = applyIfThenElseBranchRoles(flow.nodes as any[], flow.edges as any[], flowMode)
+  if (nextNodes === flow.nodes) return
+
+  flow.nodes = nextNodes
+  console.log('[ai-trace] 8.ifthenelse-roles', {
+    roles: (nextNodes as any[])
+      .filter((node) => node?.data?.properties?.ifthenelse_branch_roles)
+      .map((node) => ({
+        parent: String(node?.data?.label ?? node?.id),
+        roles: node.data.properties.ifthenelse_branch_roles
+      }))
+  })
+}
+
+function describePalette(palette: PaletteItem[]) {
+  return palette.map((item) =>
+    item.kind === 'contentNode'
+      ? `${item.content.name} (${item.task.name}/content)`
+      : `${item.task.name} (${item.task.taskType}/task)`
+  )
 }
 
 function resolvePaletteItemByName(step: AssistantStep, palette: PaletteItem[]): PaletteItem | null {
@@ -370,261 +448,7 @@ function resolvePaletteItem(step: AssistantStep, palette: PaletteItem[]): Palett
   return null
 }
 
-/** 팔레트에 실제로 있는 항목만 노드로 만든다. 못 찾으면 null 을 돌려 임의의 노드가 생기지 않게 한다. */
-function buildNodeFromStep(
-  step: AssistantStep,
-  palette: PaletteItem[],
-  nodeId: string,
-  position: { x: number; y: number }
-): RFNode | null {
-  const item = resolvePaletteItem(step, palette)
-
-  if (item?.kind === 'contentNode') {
-    const defaults = buildDefaultPropertiesFromSchema(
-      item.task.propertySchema,
-      Number(item.content.id),
-      String(item.content.contentTypeName ?? '')
-    )
-
-    return {
-      id: nodeId,
-      type: 'taskNode',
-      position,
-      data: {
-        label: item.content.name,
-        taskId: item.task.id,
-        taskName: item.task.name,
-        taskType: item.task.taskType,
-        contentId: item.content.id,
-        contentName: item.content.name,
-        contentTypeId: item.content.contentTypeId,
-        contentTypeName: item.content.contentTypeName,
-        contentValue: item.content.contentValue,
-        contentVersion: item.content.contentVersion,
-        groupId: item.content.groupId,
-        siteId: item.content.siteId,
-        propertySchema: item.task.propertySchema,
-        properties: {
-          ...defaults,
-          ...(step.properties ?? {})
-        }
-      }
-    }
-  }
-
-  if (item?.kind === 'controlTaskNode') {
-    const defaults = buildDefaultPropertiesFromSchema(item.task.propertySchema)
-
-    return {
-      id: nodeId,
-      type: 'taskNode',
-      position,
-      data: {
-        label: item.task.name,
-        taskId: item.task.id,
-        taskName: item.task.name,
-        taskType: item.task.taskType,
-        propertySchema: item.task.propertySchema,
-        properties: {
-          ...defaults,
-          ...(step.properties ?? {})
-        }
-      }
-    }
-  }
-
-  return null
-}
-
-function createFlowEdge(
-  sourceId: string,
-  targetId: string,
-  sourceHandle: 'left' | 'right',
-  index: number,
-  edgeType: 'straight' | 'step'
-): RFEdge {
-  return {
-    id: `ai-edge-${Date.now()}-${index}`,
-    source: sourceId,
-    target: targetId,
-    sourceHandle,
-    targetHandle: 'left',
-    data: {
-      sourceNodeId: sourceId,
-      targetNodeId: targetId,
-      sourceHandleId: sourceHandle,
-      targetHandleId: 'left',
-      edgeType
-    },
-    markerEnd: {
-      type: MarkerType.ArrowClosed,
-      width: 10,
-      height: 10,
-      color: '#94a3b8'
-    },
-    style: {
-      stroke: '#94a3b8',
-      strokeWidth: 1.25
-    }
-  }
-}
-
-function findTaskIdByName(taskName: string, palette: PaletteItem[]): number | undefined {
-  const key = normalizeNameKey(taskName)
-  if (!key) return undefined
-
-  const found = palette.find((item) => normalizeNameKey(item.task.name) === key)
-  return found ? Number(found.task.id) : undefined
-}
-
-// Sequence 는 캔버스에서 좌→우 엣지 연결 자체가 순차 실행을 뜻하므로 노드로 그리지 않는다.
-const TRANSPARENT_TREE_TASK_NAMES = new Set(['sequence'])
-
-function isTransparentTreeNode(treeNode: AssistantTreeNode): boolean {
-  const children = treeNode.children ?? []
-  return children.length > 0 && TRANSPARENT_TREE_TASK_NAMES.has(normalizeNameKey(treeNode.taskName))
-}
-
-type TreeEmitResult = { nodeId: string; x: number; y: number }
-
-/**
- * 최상위 노드들을 좌→우 체인으로, 각 노드의 자식(분기)은 sourceHandle='left' 로 아래에 세로 배치한다.
- * 분기 순서는 y 좌표로 결정되므로 선언 순서대로 행을 늘려 순서를 보존한다.
- */
-function buildFlowDefinitionFromTree(roots: AssistantTreeNode[], palette: PaletteItem[], flowMode?: string) {
-  const baseX = 150
-  const childIndentX = 40
-  const chainGapX = 240
-  const gapY = 90
-
-  const builtNodes: RFNode[] = []
-  const builtEdges: RFEdge[] = []
-  const rejectedLabels: string[] = []
-  let nextIndex = 0
-  let rowCount = 0
-
-  const walk = (
-    treeNode: AssistantTreeNode,
-    parentId: string,
-    parentHandle: 'left' | 'right',
-    anchorX: number,
-    anchorY: number
-  ): TreeEmitResult | null => {
-    if (isTransparentTreeNode(treeNode)) {
-      let prevId = parentId
-      let handle = parentHandle
-      let x = anchorX
-      let last: TreeEmitResult | null = null
-
-      for (const child of treeNode.children ?? []) {
-        const emitted = walk(child, prevId, handle, x, anchorY)
-        if (!emitted) continue
-
-        prevId = emitted.nodeId
-        handle = 'right'
-        x = emitted.x + chainGapX
-        last = emitted
-      }
-
-      return last
-    }
-
-    const nodeId = generateNodeId()
-    const taskId = findTaskIdByName(treeNode.taskName, palette)
-
-    // contentName 이 있으면 taskId 로 후보를 좁히고 taskName 은 이름 후보에서 뺀다.
-    // taskName 을 남기면 task.name 완전일치가 content 부분일치를 이겨서 엉뚱한 콘텐츠가 잡힌다.
-    const step: AssistantStep =
-      treeNode.contentName && taskId
-        ? {
-            label: treeNode.contentName,
-            contentName: treeNode.contentName,
-            contentId: treeNode.contentId,
-            taskId,
-            taskType: treeNode.taskType,
-            properties: treeNode.properties
-          }
-        : {
-            label: treeNode.contentName || treeNode.taskName,
-            taskName: treeNode.taskName,
-            contentName: treeNode.contentName,
-            contentId: treeNode.contentId,
-            taskId,
-            taskType: treeNode.taskType,
-            properties: treeNode.properties
-          }
-
-    const node = buildNodeFromStep(step, palette, nodeId, { x: anchorX, y: anchorY })
-    if (!node) {
-      // 팔레트에 없는 항목은 임의로 만들지 않고 서브트리까지 통째로 생략한다.
-      rejectedLabels.push(String(step.label ?? treeNode.taskName))
-      return null
-    }
-
-    builtNodes.push(node)
-
-    builtEdges.push(
-      createFlowEdge(parentId, nodeId, parentHandle, nextIndex, parentHandle === 'left' ? 'step' : 'straight')
-    )
-    nextIndex += 1
-
-    for (const child of treeNode.children ?? []) {
-      rowCount += 1
-      walk(child, nodeId, 'left', anchorX + childIndentX, rowCount * gapY)
-    }
-
-    return { nodeId, x: anchorX, y: anchorY }
-  }
-
-  let prevId = 'start'
-  let prevHandle: 'left' | 'right' = 'right'
-  let chainX = baseX
-
-  for (const root of roots) {
-    const emitted = walk(root, prevId, prevHandle, chainX, 0)
-    if (!emitted) continue
-
-    prevId = emitted.nodeId
-    prevHandle = 'right'
-    chainX = emitted.x + chainGapX
-  }
-
-  if (builtNodes.length === 0) return null
-
-  // compose_linear_taskflow 로 만든 IfThenElse 도 자식 위치 순서대로 condition/success/failure 를 정한다.
-  const composeFlowMode = flowMode === 'tree' ? 'tree' : 'default'
-  const nodesWithRoles = builtNodes.map((node) => {
-    if (!isIfThenElseTaskNode(node)) return node
-
-    const roles = syncIfThenElseBranchRoles(String(node.id), builtNodes, builtEdges, composeFlowMode)
-    if (!roles) return node
-
-    return {
-      ...node,
-      data: {
-        ...(node.data ?? {}),
-        properties: {
-          ...((node.data as any)?.properties ?? {}),
-          ifthenelse_branch_roles: roles
-        }
-      }
-    }
-  })
-
-  return {
-    nodes: nodesWithRoles,
-    edges: builtEdges,
-    viewport: { x: 0, y: 0, zoom: 1 },
-    flowMode: composeFlowMode,
-    rejectedLabels
-  }
-}
-
 function buildLinearFlowDefinitionFromDraft(draft: AssistantDraft, palette: PaletteItem[]) {
-  if (Array.isArray(draft.roots) && draft.roots.length > 0) {
-    return buildFlowDefinitionFromTree(draft.roots, palette, draft.flowMode)
-  }
-
   if (Array.isArray(draft.nodes) && Array.isArray(draft.edges)) {
     const shouldPassThrough = draft.nodes.some((node) => {
       const id = String(node?.id ?? '')
@@ -674,24 +498,43 @@ function buildLinearFlowDefinitionFromDraft(draft: AssistantDraft, palette: Pale
   const startY = 0
   const baseX = startX + 150
   const baseY = startY
-  const gapX = 140
+  const gapX = NODE_HORIZONTAL_GAP
   const builtNodes: RFNode[] = []
   const rejectedLabels: string[] = []
 
   for (let i = 0; i < steps.length; i += 1) {
     const step = steps[i]
-    const nodeId = generateNodeId()
-    const node = buildNodeFromStep(step, palette, nodeId, {
-      x: baseX + i * gapX,
-      y: baseY
-    })
+    const item = resolvePaletteItem(step, palette)
+    const nodeId = `ai-${Date.now()}-${i}`
 
-    if (!node) {
-      rejectedLabels.push(String(step.label ?? ''))
+    if (item) {
+      builtNodes.push({
+        id: nodeId,
+        type: 'taskNode',
+        position: { x: baseX + i * gapX, y: baseY },
+        data: buildNodeDataFromPaletteItem(item, step.properties)
+      })
       continue
     }
 
-    builtNodes.push(node)
+    const label = String(step.label ?? step.contentName ?? step.taskName ?? '').trim()
+    const fallbackTaskType = /retry|재시도/i.test(label) ? 'CONTROL' : 'ACTION'
+    builtNodes.push({
+      id: nodeId,
+      type: 'taskNode',
+      position: { x: baseX + i * gapX, y: baseY },
+      data: {
+        label,
+        taskName: label,
+        taskType: fallbackTaskType,
+        contentName: label,
+        propertySchema: { properties: {} },
+        properties: {
+          ...(step.properties ?? {})
+        }
+      }
+    })
+    rejectedLabels.push(label)
   }
 
   if (builtNodes.length === 0) {
@@ -701,8 +544,31 @@ function buildLinearFlowDefinitionFromDraft(draft: AssistantDraft, palette: Pale
   }
 
   const builtEdges: RFEdge[] = builtNodes.map((node, index) => {
-    const source = index === 0 ? 'start' : String(builtNodes[index - 1].id)
-    return createFlowEdge(source, String(node.id), 'right', index, 'straight')
+    const source = index === 0 ? 'start' : builtNodes[index - 1]?.id
+    return {
+      id: `ai-edge-${Date.now()}-${index}`,
+      source: String(source),
+      target: String(node.id),
+      sourceHandle: 'right',
+      targetHandle: 'left',
+      data: {
+        sourceNodeId: String(source),
+        targetNodeId: String(node.id),
+        sourceHandleId: 'right',
+        targetHandleId: 'left',
+        edgeType: 'straight'
+      },
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        width: 10,
+        height: 10,
+        color: '#94a3b8'
+      },
+      style: {
+        stroke: '#94a3b8',
+        strokeWidth: 1.25
+      }
+    }
   })
 
   return {
@@ -757,30 +623,6 @@ function matchesStepName(step: AssistantStep, target: string): boolean {
   return candidates.includes(needle)
 }
 
-/** "Parallel #2" 처럼 번호가 붙으면 그 한 개만, 번호가 없으면 이름이 같은 모든 노드를 고른다. */
-function selectNodesByTargetName(
-  target: string,
-  candidates: RFNode[],
-  ordinals: Map<string, number>
-): RFNode[] {
-  const matchByName = (needle: string): RFNode[] => {
-    if (!needle) return []
-    return candidates.filter((node) => {
-      const step = toAssistantStepFromNode(node)
-      return step ? matchesStepName(step, needle) : false
-    })
-  }
-
-  const { name, ordinal } = parseNodeTargetName(target)
-  if (ordinal === null) return matchByName(name)
-
-  const numbered = matchByName(name).filter((node) => Number(ordinals.get(String(node.id)) ?? 0) === ordinal)
-  if (numbered.length > 0) return numbered
-
-  // "Room #3" 처럼 이름 자체에 # 이 들어간 콘텐츠일 수 있다.
-  return matchByName(String(target ?? '').trim())
-}
-
 function buildStartConnectedNodeSet(currentNodes: RFNode[], currentEdges: RFEdge[]): Set<string> {
   const hasStartNode = currentNodes.some((node) => String(node.id) === 'start')
   if (!hasStartNode) {
@@ -806,44 +648,6 @@ function buildStartConnectedNodeSet(currentNodes: RFNode[], currentEdges: RFEdge
   return reachable
 }
 
-// 서버가 기존 노드를 이름으로 지목할 수 있도록 start 에서 도달 가능한 노드만 요약한다.
-function buildAiCurrentGraph(currentNodes: RFNode[], currentEdges: RFEdge[]) {
-  const activeNodeIds = buildStartConnectedNodeSet(currentNodes, currentEdges)
-  // 번호는 화면 배지와 같은 기준이어야 하므로 전체 노드로 계산한다.
-  const ordinals = buildNodeOrdinalMap(currentNodes, currentEdges)
-
-  const graphNodes = currentNodes
-    .filter((node) => String(node.id) !== 'start' && activeNodeIds.has(String(node.id)))
-    .map((node) => {
-      const step = toAssistantStepFromNode(node)
-      if (!step) return null
-      const ordinal = ordinals.get(String(node.id)) ?? null
-      return {
-        id: String(node.id),
-        label: step.label,
-        taskName: step.taskName,
-        contentName: step.contentName,
-        taskType: step.taskType,
-        ordinal,
-        displayName: formatNodeTargetName(step.label, ordinal)
-      }
-    })
-    .filter((node): node is NonNullable<typeof node> => Boolean(node))
-
-  const graphNodeIds = new Set(graphNodes.map((node) => node.id))
-
-  return {
-    nodes: graphNodes,
-    edges: currentEdges
-      .filter((edge) => graphNodeIds.has(String(edge.target)))
-      .map((edge) => ({
-        source: String(edge.source),
-        target: String(edge.target),
-        branch: String(edge.sourceHandle ?? '') === 'left'
-      }))
-  }
-}
-
 function resolveTailNodeNames(currentNodes: RFNode[], currentEdges: RFEdge[]): string[] {
   const activeNodeIds = buildStartConnectedNodeSet(currentNodes, currentEdges)
   const nodes = currentNodes.filter((node) => {
@@ -852,7 +656,6 @@ function resolveTailNodeNames(currentNodes: RFNode[], currentEdges: RFEdge[]): s
   })
   if (nodes.length === 0) return []
 
-  const ordinals = buildNodeOrdinalMap(currentNodes, currentEdges)
   const outgoing = new Map<string, number>()
   for (const node of nodes) {
     outgoing.set(String(node.id), 0)
@@ -861,24 +664,24 @@ function resolveTailNodeNames(currentNodes: RFNode[], currentEdges: RFEdge[]): s
   for (const edge of currentEdges) {
     const source = String(edge?.source ?? '')
     if (!activeNodeIds.has(source)) continue
+    // 자식(왼쪽 핸들) 엣지는 순차 흐름이 아니다. 제어 노드에 자식이 있어도 그 노드는 흐름의 꼬리일 수 있다.
+    if (isBranchEdge(edge)) continue
     outgoing.set(source, Number(outgoing.get(source) ?? 0) + 1)
   }
 
   const tailNames = nodes
     .filter((node) => Number(outgoing.get(String(node.id)) ?? 0) === 0)
-    .map((node) => {
-      const label = toAssistantStepFromNode(node)?.label
-      return label ? formatNodeTargetName(label, ordinals.get(String(node.id)) ?? null) : null
-    })
+    .map((node) => toAssistantStepFromNode(node)?.label)
     .filter((label): label is string => Boolean(label && String(label).trim()))
 
   return [...new Set(tailNames.map((label) => label.trim()))]
 }
 
-// 꼬리가 여러 갈래여도 되묻지 않고 그 중 하나(첫 번째)에만 이어붙인다.
-function resolveSingleTailNodeName(currentNodes: RFNode[], currentEdges: RFEdge[]): string | null {
+function resolveTailNodeName(currentNodes: RFNode[], currentEdges: RFEdge[]): string | null | 'ambiguous' {
   const tailNames = resolveTailNodeNames(currentNodes, currentEdges)
-  return tailNames.length > 0 ? tailNames[0] : null
+  if (tailNames.length === 0) return null
+  if (tailNames.length !== 1) return 'ambiguous'
+  return tailNames[0]
 }
 
 function buildDraftEdge(
@@ -921,6 +724,70 @@ function buildDraftEdge(
   }
 }
 
+/** 노드가 실제로 달라졌는지 볼 때 쓰는 지문. 교체는 id 가 그대로라 data 를 봐야 한다. */
+/** "Love #2" 처럼 지목한 이름으로 캔버스 노드를 찾는다.
+ * 이름만 오면 같은 이름 전부, 순번이 붙어 있으면 흐름 순서 N 번째 하나만 돌려준다.
+ * 순번 표기는 서버(edit_taskflow draft)만 만든다. 화면에는 번호를 표시하지 않는다.
+ */
+function findDraftTargetNodes(
+  target: unknown,
+  currentNodes: RFNode[],
+  currentEdges: RFEdge[]
+): { name: string; nodes: RFNode[] } {
+  const parsed = parseFlowTarget(String(target ?? '').trim())
+  const candidates = currentNodes.filter((node) => {
+    if (String(node.id) === 'start') return false
+    const step = toAssistantStepFromNode(node)
+    return step ? matchesStepName(step, parsed.name) : false
+  })
+
+  if (!parsed.ordinal || candidates.length === 0) return { name: parsed.name, nodes: candidates }
+
+  const picked = pickByFlowOrdinal(candidates, parsed.ordinal, currentNodes, currentEdges)
+  return { name: parsed.name, nodes: picked ? [picked] : candidates }
+}
+
+function nodeDataSignature(node: any): string {
+  const data = (node?.data ?? {}) as Record<string, unknown>
+  return JSON.stringify({
+    label: String(data.label ?? ''),
+    taskName: String(data.taskName ?? ''),
+    contentName: String(data.contentName ?? ''),
+    contentId: String(data.contentId ?? ''),
+    taskType: String(data.taskType ?? ''),
+    properties: data.properties ?? {}
+  })
+}
+
+/** draft 적용 결과를 사용자에게 알릴 요약. 추가만 세면 교체/삭제가 실패로 보인다. */
+function summarizeFlowChange(currentNodes: RFNode[], currentEdges: RFEdge[], next: any) {
+  const nextNodes: any[] = Array.isArray(next?.nodes) ? next.nodes : []
+  const nextEdges: any[] = Array.isArray(next?.edges) ? next.edges : []
+  const currentById = new Map(currentNodes.map((node) => [String(node.id), node]))
+  const nextIds = new Set(nextNodes.map((node) => String(node?.id ?? '')))
+
+  const addedIds = nextNodes.map((node) => String(node?.id ?? '')).filter((id) => id && !currentById.has(id))
+  const removedCount = currentNodes.filter((node) => !nextIds.has(String(node.id))).length
+  const changedCount = nextNodes.filter((node) => {
+    const before = currentById.get(String(node?.id ?? ''))
+    return before ? nodeDataSignature(before) !== nodeDataSignature(node) : false
+  }).length
+  const edgeChanged = nextEdges.length !== currentEdges.length
+
+  const parts: string[] = []
+  if (addedIds.length > 0) parts.push(`${addedIds.length}개 노드를 추가했습니다.`)
+  if (changedCount > 0) parts.push(`${changedCount}개 노드를 교체했습니다.`)
+  if (removedCount > 0) parts.push(`${removedCount}개 노드를 삭제했습니다.`)
+  const didApply = addedIds.length > 0 || changedCount > 0 || removedCount > 0 || edgeChanged
+  if (parts.length === 0 && edgeChanged) parts.push('연결을 변경했습니다.')
+
+  return {
+    addedIds,
+    didApply,
+    message: didApply ? parts.join(' ') : '요청을 받았지만 실제 반영은 실패했습니다.'
+  }
+}
+
 export function applyEditDraftToFlowDefinition(
   draft: AssistantDraft,
   currentNodes: RFNode[],
@@ -931,7 +798,7 @@ export function applyEditDraftToFlowDefinition(
   const initialNodeIds = new Set(currentNodes.map((node) => String(node.id)))
   const initialEdgeIds = new Set(currentEdges.map((edge) => String(edge.id)))
 
-  let nextNodes: RFNode[] = currentNodes.map((node) => ({
+  const nextNodes: RFNode[] = currentNodes.map((node) => ({
     ...node,
     data: { ...(node.data ?? {}) }
   }))
@@ -942,8 +809,6 @@ export function applyEditDraftToFlowDefinition(
   const rejectedLabels: string[] = []
 
   const activeNodeIds = buildStartConnectedNodeSet(nextNodes, nextEdges)
-  // 번호는 draft 를 적용하기 전 상태 기준으로 고정한다. 중간에 노드가 늘면 지목이 틀어진다.
-  const nodeOrdinals = buildNodeOrdinalMap(nextNodes, nextEdges)
 
   const findNodeByName = (name: string): RFNode | null => {
     const target = String(name ?? '').trim()
@@ -962,14 +827,26 @@ export function applyEditDraftToFlowDefinition(
       .filter((item) => item.kind === 'contentNode')
       .map((item) => item.content.name)
       .filter(Boolean)
-    const matches = selectNodesByTargetName(
-      target,
-      nextNodes.filter((node) => {
-        const id = String(node.id)
-        return id !== 'start' && activeNodeIds.has(id)
-      }),
-      nodeOrdinals
-    )
+    // "Parallel #2" 처럼 순번이 붙은 요청. 순번은 Start 로부터의 흐름 순서다(좌표나 생성 순서가 아니다).
+    const parsedTarget = parseFlowTarget(target)
+    const matches = nextNodes.filter((node) => {
+      const id = String(node.id)
+      if (id === 'start' || !activeNodeIds.has(id)) return false
+      const step = toAssistantStepFromNode(node)
+      return step ? matchesStepName(step, parsedTarget.name) : false
+    })
+
+    if (parsedTarget.ordinal && matches.length > 0) {
+      const picked = pickByFlowOrdinal(matches, parsedTarget.ordinal, nextNodes, nextEdges)
+      console.log('[ai-trace] 8.pick-by-flow-order', {
+        target,
+        name: parsedTarget.name,
+        ordinal: parsedTarget.ordinal,
+        candidates: matches.length,
+        picked: picked ? String((picked.data as any)?.label ?? picked.id) : null
+      })
+      if (picked) return picked
+    }
     if (matches.length === 0) {
       console.log('[AI_TASKFLOW][COMPARE_NODE_LIST]', {
         target,
@@ -1016,6 +893,18 @@ export function applyEditDraftToFlowDefinition(
   const insertSpecs = Array.isArray(draft.insertAfter) ? draft.insertAfter : []
   const unresolvedInsertLabels = []
   const draftCreatedNodesByLabel = new Map<string, RFNode>()
+  // afterCreatedIndex 로 지목한 기준 노드. 이름이 겹쳐도 어느 노드의 자식인지 잃지 않는다.
+  const draftCreatedNodesByIndex = new Map<number, RFNode>()
+  // 이번 draft 에서 만든 노드(순서 유지). 기준을 안 적은 insert 의 대체 기준으로 쓴다.
+  const draftCreatedNodes: DraftCreatedNode[] = []
+  const rememberCreatedNode = (node: RFNode) => {
+    const data = (node.data ?? {}) as Record<string, unknown>
+    draftCreatedNodes.push({
+      id: String(node.id),
+      label: String(data.label ?? data.contentName ?? data.taskName ?? '').trim(),
+      isControl: String(data.taskType ?? '').toUpperCase() === 'CONTROL'
+    })
+  }
   for (const insert of insertSpecs) {
     const normalized = normalizeStepInput(insert?.step as string | AssistantStep)
     if (!normalized) continue
@@ -1049,12 +938,6 @@ export function applyEditDraftToFlowDefinition(
   if (unresolvedInsertLabels.length > 0) {
     const missingLabels = Array.from(new Set(unresolvedInsertLabels.filter(Boolean)))
     const quotedLabels = missingLabels.map((label) => `"${label}"`).join(',')
-    console.warn('[AI_TASKFLOW][PALETTE_MISS]', {
-      missingLabels,
-      paletteSize: palette.length,
-      contentNames: palette.filter((item) => item.kind === 'contentNode').map((item) => item.label),
-      taskOnlyNames: palette.filter((item) => item.kind === 'controlTaskNode').map((item) => item.label)
-    })
     return {
       next: null,
       clarification:
@@ -1065,11 +948,13 @@ export function applyEditDraftToFlowDefinition(
   }
 
   for (const name of removeNames) {
-    const targets = selectNodesByTargetName(
-      name,
-      nextNodes.filter((node) => String(node.id) !== 'start'),
-      nodeOrdinals
-    )
+    const removeTarget = findDraftTargetNodes(name, nextNodes, nextEdges)
+    const targets = removeTarget.nodes
+
+    if (targets.length === 0) {
+      rejectedLabels.push(removeTarget.name)
+      continue
+    }
 
     for (const targetNode of targets) {
       const targetId = String(targetNode.id)
@@ -1095,14 +980,117 @@ export function applyEditDraftToFlowDefinition(
     }
   }
 
-  for (const replaceSpec of replaceNames) {
-    const matchingNodes = selectNodesByTargetName(
-      replaceSpec.target,
-      nextNodes.filter((node) => String(node.id) !== 'start'),
-      nodeOrdinals
-    )
+  // 속성만 바꾸는 작업. 노드 구성은 건드리지 않고 값만 덮어쓴다.
+  const propertyUpdates = Array.isArray(draft.updateProperties)
+    ? draft.updateProperties
+        .map((entry) => ({
+          target: String(entry?.target ?? '').trim(),
+          properties:
+            entry?.properties && typeof entry.properties === 'object' && !Array.isArray(entry.properties)
+              ? (entry.properties as Record<string, unknown>)
+              : {}
+        }))
+        .filter((entry) => Boolean(entry.target) && Object.keys(entry.properties).length > 0)
+    : []
 
-    if (matchingNodes.length === 0) continue
+  for (const update of propertyUpdates) {
+    const updateTarget = findDraftTargetNodes(update.target, nextNodes, nextEdges)
+    const updateTargets = updateTarget.nodes
+
+    if (updateTargets.length === 0) {
+      rejectedLabels.push(updateTarget.name)
+      continue
+    }
+
+    for (const targetNode of updateTargets) {
+      const index = nextNodes.findIndex((node) => String(node.id) === String(targetNode.id))
+      if (index < 0) continue
+      const data = (nextNodes[index].data ?? {}) as Record<string, unknown>
+      nextNodes[index] = {
+        ...nextNodes[index],
+        data: {
+          ...data,
+          properties: { ...((data.properties as Record<string, unknown>) ?? {}), ...update.properties }
+        }
+      }
+    }
+  }
+
+  // 제어 노드가 자식에게 주는 역할. Parallel 은 main_nodes, IfThenElse 는 ifthenelse_branch_roles 로 저장한다.
+  const roleAssignments = Array.isArray(draft.setRoles)
+    ? draft.setRoles
+        .map((entry) => ({
+          target: String(entry?.target ?? '').trim(),
+          child: String(entry?.child ?? '').trim(),
+          role: String(entry?.role ?? '').trim().toLowerCase()
+        }))
+        .filter((entry) => Boolean(entry.target) && Boolean(entry.child) && Boolean(entry.role))
+    : []
+
+  for (const assignment of roleAssignments) {
+    const parentTarget = findDraftTargetNodes(assignment.target, nextNodes, nextEdges)
+    // 같은 이름이 여러 개면 가장 최근에 추가된 노드를 쓴다(다른 draft 경로와 같은 규칙).
+    const parentNode = parentTarget.nodes[parentTarget.nodes.length - 1]
+
+    if (!parentNode) {
+      rejectedLabels.push(parentTarget.name)
+      continue
+    }
+
+    // 역할을 줄 수 있는 대상은 그 노드의 자식(왼쪽 핸들로 이어진 노드)뿐이다.
+    const childIds = nextEdges
+      .filter((edge) => String(edge.source) === String(parentNode.id) && isBranchEdge(edge))
+      .map((edge) => String(edge.target))
+    const childNode = nextNodes.find((node) => {
+      if (!childIds.includes(String(node.id))) return false
+      const step = toAssistantStepFromNode(node)
+      return step ? matchesStepName(step, assignment.child) : false
+    })
+
+    if (!childNode) {
+      rejectedLabels.push(assignment.child)
+      continue
+    }
+
+    const parentIndex = nextNodes.findIndex((node) => String(node.id) === String(parentNode.id))
+    if (parentIndex < 0) continue
+
+    const parentData = (nextNodes[parentIndex].data ?? {}) as Record<string, unknown>
+    const properties = { ...((parentData.properties as Record<string, unknown>) ?? {}) }
+
+    if (assignment.role === 'main') {
+      const current = Array.isArray(properties.main_nodes) ? properties.main_nodes.map((id: unknown) => String(id)) : []
+      if (!current.includes(String(childNode.id))) {
+        // 속성 패널의 토글과 같은 규칙으로 카운트도 함께 올린다.
+        properties.main_nodes = [...current, String(childNode.id)]
+        properties.success_count = Math.max(0, Number(properties.success_count ?? 0) + 1)
+        properties.failure_count = Math.max(0, Number(properties.failure_count ?? 0) + 1)
+      }
+    } else {
+      const currentRoles = { ...((properties.ifthenelse_branch_roles as Record<string, string>) ?? {}) }
+      // 같은 역할을 다른 자식이 갖고 있으면 넘겨받는다. 역할은 자식마다 하나씩만 있어야 한다.
+      for (const [id, role] of Object.entries(currentRoles)) {
+        if (role === assignment.role) delete currentRoles[id]
+      }
+      currentRoles[String(childNode.id)] = assignment.role
+      properties.ifthenelse_branch_roles = currentRoles
+    }
+
+    nextNodes[parentIndex] = {
+      ...nextNodes[parentIndex],
+      data: { ...parentData, properties }
+    }
+  }
+
+  for (const replaceSpec of replaceNames) {
+    const replaceTarget = findDraftTargetNodes(replaceSpec.target, nextNodes, nextEdges)
+    const matchingNodes = replaceTarget.nodes
+
+    if (matchingNodes.length === 0) {
+      // 무엇을 못 찾았는지 남겨야 사용자가 이름을 고쳐 다시 요청할 수 있다.
+      rejectedLabels.push(replaceTarget.name)
+      continue
+    }
 
     if (!replaceSpec.step) continue
     const item = resolvePaletteItem(replaceSpec.step, palette)
@@ -1117,28 +1105,7 @@ export function applyEditDraftToFlowDefinition(
         ...targetNode,
         data: {
           ...(targetNode.data ?? {}),
-          label: item.kind === 'contentNode' ? item.content.name : item.task.name,
-          taskId: item.task.id,
-          taskName: item.task.name,
-          taskType: item.task.taskType,
-          contentId: item.kind === 'contentNode' ? item.content.id : undefined,
-          contentName: item.kind === 'contentNode' ? item.content.name : undefined,
-          contentTypeId: item.kind === 'contentNode' ? item.content.contentTypeId : undefined,
-          contentTypeName: item.kind === 'contentNode' ? item.content.contentTypeName : undefined,
-          contentValue: item.kind === 'contentNode' ? item.content.contentValue : undefined,
-          contentVersion: item.kind === 'contentNode' ? item.content.contentVersion : undefined,
-          groupId: item.kind === 'contentNode' ? item.content.groupId : undefined,
-          siteId: item.kind === 'contentNode' ? item.content.siteId : undefined,
-          propertySchema: item.task.propertySchema,
-          properties: {
-            ...(item.kind === 'contentNode'
-              ? buildDefaultPropertiesFromSchema(
-                  item.task.propertySchema,
-                  Number(item.content.id),
-                  String(item.content.contentTypeName ?? '')
-                )
-              : buildDefaultPropertiesFromSchema(item.task.propertySchema))
-          }
+          ...buildNodeDataFromPaletteItem(item, replaceSpec.step?.properties)
         }
       }
 
@@ -1152,8 +1119,6 @@ export function applyEditDraftToFlowDefinition(
   const inserts = Array.isArray(draft.insertAfter) ? draft.insertAfter : []
   const hasExistingNonStartNodes = nextNodes.some((node) => String(node.id) !== 'start')
   const tailNames = resolveTailNodeNames(nextNodes, nextEdges)
-  // insert 순서별로 만들어진 노드. 같은 이름을 여러 개 만들어도 섞이지 않게 하는 기준이다.
-  const createdByInsertIndex: Array<RFNode | null> = []
 
   for (let insertIndex = 0; insertIndex < inserts.length; insertIndex += 1) {
     const insert = inserts[insertIndex]
@@ -1161,11 +1126,11 @@ export function applyEditDraftToFlowDefinition(
     const normalized = normalizeStepInput(insert?.step as string | AssistantStep)
     if (!normalized) continue
 
-    const afterCreatedIndexRaw = Number(insert?.afterCreatedIndex)
-    const createdAnchor =
-      Number.isInteger(afterCreatedIndexRaw) && afterCreatedIndexRaw >= 0
-        ? (createdByInsertIndex[afterCreatedIndexRaw] ?? null)
-        : null
+    const createdAnchorIndex = Number.isInteger(insert?.afterCreatedIndex)
+      ? Number(insert?.afterCreatedIndex)
+      : undefined
+    const pinnedAnchor =
+      createdAnchorIndex !== undefined ? (draftCreatedNodesByIndex.get(createdAnchorIndex) ?? null) : null
 
     const sourceHandle =
       insert?.sourceHandle === 'left'
@@ -1189,8 +1154,10 @@ export function applyEditDraftToFlowDefinition(
               : 'left'
     const reverseDirection = Boolean(insert?.reverseDirection)
     const appendOnly = Boolean(insert?.appendOnly)
+    // 제어 노드의 자식(= "~아래에 추가"). 왼쪽 핸들에서 나가고 기준 노드 바로 아래에 놓인다.
+    const isChildAppend = isChildAppendInsert({ appendOnly, sourceHandle, targetHandle } as any)
     let isolated = Boolean((insert as any)?.isolated)
-    const isStartLikeAnchor = !createdAnchor && ['', 'start', '시작', 'start node'].includes(after.toLowerCase())
+    const isStartLikeAnchor = ['', 'start', '시작', 'start node'].includes(after.toLowerCase())
     const startConnectedNodeIds = buildStartConnectedNodeSet(nextNodes, nextEdges)
     const hasActiveFlowNode = nextNodes.some(
       (node) => String(node.id) !== 'start' && startConnectedNodeIds.has(String(node.id))
@@ -1200,6 +1167,7 @@ export function applyEditDraftToFlowDefinition(
       !isolated &&
       appendOnly &&
       !reverseDirection &&
+      !pinnedAnchor &&
       !hasActiveFlowNode &&
       isStartLikeAnchor &&
       sourceHandle === 'left' &&
@@ -1212,6 +1180,7 @@ export function applyEditDraftToFlowDefinition(
       !isolated &&
       !appendOnly &&
       !reverseDirection &&
+      !pinnedAnchor &&
       hasExistingNonStartNodes &&
       insertIndex === 0 &&
       inserts.length > 1 &&
@@ -1220,11 +1189,61 @@ export function applyEditDraftToFlowDefinition(
       isolated = true
     }
 
-    // 요청한 노드는 우선 만들고, start 의 흐름에는 갈래가 여러 개여도 하나에만 이어붙인다(팬아웃 금지).
-    if (!createdAnchor && appendOnly && (!after || isStartLikeAnchor) && tailNames.length > 1) {
-      after = tailNames[0]
+    const fanoutTailAnchors =
+      appendOnly && !pinnedAnchor && (!after || isStartLikeAnchor) && tailNames.length > 1 ? tailNames : []
+
+    if (fanoutTailAnchors.length > 0) {
+      for (const tailName of fanoutTailAnchors) {
+        const fanoutInsert = { ...insert, after: tailName }
+        const fanoutAfter = String(tailName ?? '').trim()
+        const fanoutNormalized = normalizeStepInput(fanoutInsert?.step as string | AssistantStep)
+        if (!fanoutAfter || !fanoutNormalized) continue
+
+        const fanoutAnchor = findNodeByName(fanoutAfter)
+        if (!fanoutAnchor) continue
+
+        const fanoutItem = resolvePaletteItem(fanoutNormalized, palette)
+        if (!fanoutItem) {
+          rejectedLabels.push(String(fanoutNormalized.label ?? '').trim())
+          continue
+        }
+
+
+        const fanoutNodeId = `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        const fanoutAnchorX = Number(fanoutAnchor.position?.x ?? 0)
+        const fanoutAnchorY = Number(fanoutAnchor.position?.y ?? 0)
+        const fanoutOutgoing = nextEdges.filter((edge) => String(edge.source) === String(fanoutAnchor.id))
+        const fanoutNextTargetId = String(fanoutOutgoing[0]?.target ?? '')
+
+        const newFanoutNode: RFNode = {
+          id: fanoutNodeId,
+          type: 'taskNode',
+          position: {
+            x: fanoutAnchorX + NODE_HORIZONTAL_GAP,
+            y: fanoutAnchorY
+          },
+          data: buildNodeDataFromPaletteItem(fanoutItem, fanoutNormalized.properties)
+        }
+
+        nextNodes.push(newFanoutNode)
+        nextEdges = nextEdges.filter((edge) => String(edge.id) !== String(fanoutOutgoing[0]?.id ?? ''))
+        nextEdges.push(
+          buildDraftEdge(
+            String(fanoutAnchor.id),
+            fanoutNodeId,
+            `${Date.now()}-fanout-${fanoutNodeId}`,
+            sourceHandle,
+            targetHandle
+          )
+        )
+        if (fanoutNextTargetId) {
+          nextEdges.push(buildDraftEdge(fanoutNodeId, fanoutNextTargetId, `${Date.now()}-fanout-next-${fanoutNodeId}`))
+        }
+      }
+      continue
     }
 
+    // isolated: 기존 플로우와 무관하게 빈 공간에 노드만 배치한다.
     if (isolated) {
       const item = resolvePaletteItem(normalized, palette)
       console.log('[AI_TASKFLOW][ISOLATED]', {
@@ -1240,14 +1259,6 @@ export function applyEditDraftToFlowDefinition(
         rejectedLabels.push(String(normalized.label ?? '').trim())
         continue
       }
-      const defaults =
-        item.kind === 'contentNode'
-          ? buildDefaultPropertiesFromSchema(
-              item.task.propertySchema,
-              Number(item.content.id),
-              String(item.content.contentTypeName ?? '')
-            )
-          : buildDefaultPropertiesFromSchema(item.task.propertySchema)
 
       const maxY = nextNodes.reduce((acc, n) => Math.max(acc, Number(n.position?.y ?? 0)), 0)
       const firstX = Number(nextNodes[0]?.position?.x ?? 200)
@@ -1261,30 +1272,15 @@ export function applyEditDraftToFlowDefinition(
             Math.abs(Number(n.position?.x ?? 0) - x) < OCCUPY_X && Math.abs(Number(n.position?.y ?? 0) - y) < OCCUPY_Y
         )
       for (let lvl = 0; isOccupiedIsolated(posX, posY) && lvl < 8; lvl += 1) {
-        posX += 140
+        posX += NODE_HORIZONTAL_GAP
       }
 
-      const newNodeId = generateNodeId()
+      const newNodeId = `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
       const isolatedNode: RFNode = {
         id: newNodeId,
         type: 'taskNode',
         position: { x: posX, y: posY },
-        data: {
-          label: item.kind === 'contentNode' ? item.content.name : item.task.name,
-          taskId: item.task.id,
-          taskName: item.task.name,
-          taskType: item.task.taskType,
-          contentId: item.kind === 'contentNode' ? item.content.id : undefined,
-          contentName: item.kind === 'contentNode' ? item.content.name : undefined,
-          contentTypeId: item.kind === 'contentNode' ? item.content.contentTypeId : undefined,
-          contentTypeName: item.kind === 'contentNode' ? item.content.contentTypeName : undefined,
-          contentValue: item.kind === 'contentNode' ? item.content.contentValue : undefined,
-          contentVersion: item.kind === 'contentNode' ? item.content.contentVersion : undefined,
-          groupId: item.kind === 'contentNode' ? item.content.groupId : undefined,
-          siteId: item.kind === 'contentNode' ? item.content.siteId : undefined,
-          propertySchema: item.task.propertySchema,
-          properties: { ...defaults, ...(normalized.properties ?? {}) }
-        }
+        data: buildNodeDataFromPaletteItem(item, normalized.properties)
       }
       nextNodes.push(isolatedNode)
 
@@ -1294,49 +1290,71 @@ export function applyEditDraftToFlowDefinition(
       if (isolatedLabelKey) {
         draftCreatedNodesByLabel.set(isolatedLabelKey, isolatedNode)
       }
-      createdByInsertIndex[insertIndex] = isolatedNode
+      draftCreatedNodesByIndex.set(insertIndex, isolatedNode)
+      rememberCreatedNode(isolatedNode)
       continue
     }
 
-    // 전체 복제처럼 우측 끝에 붙이는 삽입은 흐름 꼬리가 여러 갈래라 애매해도 되묻지 않는다.
-    // 화면에서 가장 오른쪽에 있는 노드 뒤에 무조건 잇는다.
-    if (!after && !createdAnchor && insert?.placement === 'right-of-all') {
-      const rightmostNode = nextNodes
-        .filter((node) => String(node.id) !== 'start')
-        .reduce<RFNode | null>((best, node) => {
-          const x = Number(node.position?.x ?? Number.NEGATIVE_INFINITY)
-          const bestX = best ? Number(best.position?.x ?? Number.NEGATIVE_INFINITY) : Number.NEGATIVE_INFINITY
-          return x > bestX ? node : best
-        }, null)
-      if (rightmostNode) {
-        after = String(toAssistantStepFromNode(rightmostNode)?.label ?? '').trim()
+    // 같은 draft 안에서 방금 만든 노드를 기준으로 지목한 경우. 꼬리 노드 추정으로 넘어가지 않는다.
+    if (pinnedAnchor) {
+      after = String(
+        (pinnedAnchor.data as any)?.label ??
+          (pinnedAnchor.data as any)?.contentName ??
+          (pinnedAnchor.data as any)?.taskName ??
+          pinnedAnchor.id
+      ).trim()
+    }
+
+    // 기준을 안 적었으면 이번 draft 에서 방금 만든 노드를 먼저 본다.
+    // 그래야 "제어 노드 + 자식" 을 한 번에 만들 때 꼬리가 갈려 중단되지 않는다.
+    let fallbackAnchorNode: RFNode | null = null
+    if (!pinnedAnchor && !after) {
+      const fallback = pickFallbackAnchor(draftCreatedNodes, isChildAppend)
+      fallbackAnchorNode = fallback
+        ? nextNodes.find((node) => String(node.id) === fallback.id) ?? null
+        : null
+      if (fallbackAnchorNode) {
+        after = String(
+          (fallbackAnchorNode.data as any)?.label ??
+            (fallbackAnchorNode.data as any)?.contentName ??
+            (fallbackAnchorNode.data as any)?.taskName ??
+            fallbackAnchorNode.id
+        ).trim()
       }
     }
 
     if (
-      !after ||
+      !pinnedAnchor &&
+      !fallbackAnchorNode &&
+      (!after ||
       (hasExistingNonStartNodes &&
         !isolated &&
         !appendOnly &&
         !reverseDirection &&
-        (after === 'start' || after === '시작' || after === 'start node'))
+        (after === 'start' || after === '시작' || after === 'start node')))
     ) {
-      if (!createdAnchor) {
-        // 꼬리가 여러 갈래여도 되묻지 않고 그 중 하나에 이어붙인다.
-        after = String(resolveSingleTailNodeName(nextNodes, nextEdges) ?? 'start').trim()
+      const tailNodeName = resolveTailNodeName(nextNodes, nextEdges)
+      if (tailNodeName === 'ambiguous') {
+        // 어디에 붙일지 정하지 못했다. 왜 안 됐는지는 알려 주고, 이미 만든 노드는 살린다.
+        return {
+          next: null,
+          clarification: '흐름의 끝이 여러 갈래라 어디에 붙일지 정하지 못했습니다. 기준 노드 이름을 함께 말씀해 주세요.'
+        }
       }
+      after = String(tailNodeName ?? 'start').trim()
     }
 
-    if (!createdAnchor && !after) continue
+    if (!after) continue
 
     const labelKey = normalizeNameKey(after)
-    let anchorNode = createdAnchor ?? (labelKey ? (draftCreatedNodesByLabel.get(labelKey) ?? null) : null)
+    let anchorNode =
+      pinnedAnchor ?? fallbackAnchorNode ?? (labelKey ? (draftCreatedNodesByLabel.get(labelKey) ?? null) : null)
     if (!anchorNode) {
       anchorNode = findNodeByName(after)
     }
     if (!anchorNode) {
-      const fallbackTailName = resolveSingleTailNodeName(nextNodes, nextEdges)
-      if (fallbackTailName) {
+      const fallbackTailName = resolveTailNodeName(nextNodes, nextEdges)
+      if (fallbackTailName && fallbackTailName !== 'ambiguous') {
         const fallbackAnchor = findNodeByName(String(fallbackTailName))
         if (fallbackAnchor) {
           anchorNode = fallbackAnchor
@@ -1375,31 +1393,31 @@ export function applyEditDraftToFlowDefinition(
       paletteSize: palette.length
     })
     if (!item) {
-      console.warn('[AI_TASKFLOW][PALETTE_MISS]', {
+      console.warn('[ai-trace] 8.palette-miss', {
+        requested: {
+          label: normalized.label,
+          taskName: normalized.taskName,
+          contentName: normalized.contentName,
+          taskType: normalized.taskType,
+          contentId: normalized.contentId
+        },
         after,
-        label: normalized.label,
-        taskName: normalized.taskName,
-        taskType: normalized.taskType,
-        contentId: normalized.contentId,
-        controlNodes: palette.filter((p) => p.kind === 'controlTaskNode').map((p) => p.task.name)
+        paletteSize: palette.length,
+        palette: describePalette(palette),
+        hint: '요청 이름이 위 목록에 없으면 팔레트(taskList)에서 그 노드가 빠진 것이다'
       })
       rejectedLabels.push(String(normalized.label ?? '').trim())
       continue
     }
 
-    const defaults =
-      item.kind === 'contentNode'
-        ? buildDefaultPropertiesFromSchema(
-            item.task.propertySchema,
-            Number(item.content.id),
-            String(item.content.contentTypeName ?? '')
-          )
-        : buildDefaultPropertiesFromSchema(item.task.propertySchema)
 
-    const newNodeId = generateNodeId()
+    const newNodeId = `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const anchorX = Number(anchorNode.position?.x ?? 0)
     const anchorY = Number(anchorNode.position?.y ?? 0)
-    const outgoing = nextEdges.filter((edge) => String(edge.source) === String(anchorNode.id))
+    // 순차 삽입에서 기준 노드의 자식 엣지를 건드리면 자식이 새 노드 뒤로 끌려간다.
+    const outgoing = nextEdges.filter(
+      (edge) => String(edge.source) === String(anchorNode.id) && (isChildAppend || !isBranchEdge(edge)),
+    )
     if (!reverseDirection && !appendOnly && outgoing.length > 1) {
       return {
         next: null,
@@ -1410,27 +1428,15 @@ export function applyEditDraftToFlowDefinition(
     const nextTargetId = String(outgoing[0]?.target ?? '')
     const nextTargetNode = nextNodes.find((node) => String(node.id) === nextTargetId)
 
-    const HORIZONTAL_GAP = 100
-    const VERTICAL_GAP = 80
-
-    // 전체 복제처럼 기존 레이아웃과 겹치면 안 되는 삽입은, 새로 생기는 묶음의 첫 노드만 캔버스 전체 우측 끝으로 보낸다.
-    // 자식들은 그 복제 본 노드를 기준으로 이어지므로 따로 밀어낼 필요가 없다.
-    const isRightOfAllPlacement = insert?.placement === 'right-of-all' && !createdAnchor
-    const rightOfAllX = isRightOfAllPlacement
-      ? Math.max(anchorX, ...nextNodes.map((node) => Number(node.position?.x ?? 0))) + HORIZONTAL_GAP * 3
-      : null
+    const HORIZONTAL_GAP = NODE_HORIZONTAL_GAP
+    const VERTICAL_GAP = NODE_VERTICAL_GAP
 
     const isVerticalAppend =
       appendOnly &&
       sourceHandle === targetHandle &&
       (sourceHandle === 'left' || sourceHandle === 'right' || sourceHandle === 'top' || sourceHandle === 'bottom')
 
-    // 기준 노드의 자식으로 매다는 추가. 주 흐름 append 와 배선 규칙이 다르다.
-    const isBranchAppend = appendOnly && sourceHandle === 'left' && targetHandle === 'left'
-
-    const basePosX = isRightOfAllPlacement
-      ? rightOfAllX!
-      : reverseDirection
+    const basePosX = reverseDirection
       ? sourceHandle === 'left'
         ? anchorX - HORIZONTAL_GAP
         : sourceHandle === 'right'
@@ -1452,9 +1458,7 @@ export function applyEditDraftToFlowDefinition(
               : anchorX + HORIZONTAL_GAP
             : anchorX
 
-    const basePosY = isRightOfAllPlacement
-      ? anchorY
-      : reverseDirection
+    const basePosY = reverseDirection
       ? anchorY
       : appendOnly
         ? isVerticalAppend
@@ -1515,7 +1519,7 @@ export function applyEditDraftToFlowDefinition(
       return { x: desiredX, y: desiredY }
     }
 
-    const preferVerticalOffset = isBranchAppend
+    const preferVerticalOffset = appendOnly && sourceHandle === 'left' && targetHandle === 'left'
     const resolvedPos = findNonOverlappingPosition(basePosX, basePosY, preferVerticalOffset)
 
     const newNode: RFNode = {
@@ -1523,23 +1527,7 @@ export function applyEditDraftToFlowDefinition(
       type: 'taskNode',
       position: { x: resolvedPos.x, y: resolvedPos.y },
       data: {
-        label: item.kind === 'contentNode' ? item.content.name : item.task.name,
-        taskId: item.task.id,
-        taskName: item.task.name,
-        taskType: item.task.taskType,
-        contentId: item.kind === 'contentNode' ? item.content.id : undefined,
-        contentName: item.kind === 'contentNode' ? item.content.name : undefined,
-        contentTypeId: item.kind === 'contentNode' ? item.content.contentTypeId : undefined,
-        contentTypeName: item.kind === 'contentNode' ? item.content.contentTypeName : undefined,
-        contentValue: item.kind === 'contentNode' ? item.content.contentValue : undefined,
-        contentVersion: item.kind === 'contentNode' ? item.content.contentVersion : undefined,
-        groupId: item.kind === 'contentNode' ? item.content.groupId : undefined,
-        siteId: item.kind === 'contentNode' ? item.content.siteId : undefined,
-        propertySchema: item.task.propertySchema,
-        properties: {
-          ...defaults,
-          ...(normalized.properties ?? {})
-        }
+        ...buildNodeDataFromPaletteItem(item, normalized.properties)
       }
     }
 
@@ -1547,7 +1535,8 @@ export function applyEditDraftToFlowDefinition(
     if (createdLabelKey) {
       draftCreatedNodesByLabel.set(createdLabelKey, newNode)
     }
-    createdByInsertIndex[insertIndex] = newNode
+    draftCreatedNodesByIndex.set(insertIndex, newNode)
+    rememberCreatedNode(newNode)
 
     console.log('[AI_TASKFLOW][NODE_CREATE]', {
       message: String((draft as any)?.message ?? ''),
@@ -1572,37 +1561,38 @@ export function applyEditDraftToFlowDefinition(
       }
     })
 
-    if (appendOnly) {
-      // 자식으로 매다는 분기 추가는 기준 노드의 기존 연결을 건드리지 않아야 형제가 형제로 남는다.
-      if (isBranchAppend) {
-        nextEdges.push(
-          buildDraftEdge(
-            String(anchorNode.id),
-            newNodeId,
-            `${Date.now()}-branch-${newNodeId}`,
-            sourceHandle,
-            targetHandle
-          )
+    if (appendOnly && isChildAppend) {
+      // 자식으로 매달기(왼쪽 핸들). 기준 노드의 다음 노드를 가로채면 안 된다.
+      // 가로채면 "Parallel 아래에 X 추가" 가 Parallel -> X -> 기존다음 순서로 바뀌고,
+      // 자식이 여러 개일 때도 자식끼리 사슬로 이어져 버린다.
+      nextEdges.push(
+        buildDraftEdge(
+          String(anchorNode.id),
+          newNodeId,
+          `${Date.now()}-child-${newNodeId}`,
+          sourceHandle,
+          targetHandle
         )
-      } else {
-        const existingOutgoing = nextEdges.filter(
-          (edge) =>
-            String(edge.source) === String(anchorNode.id) && String(edge.sourceHandle ?? '') !== 'left'
+      )
+    } else if (appendOnly) {
+      // 순서대로 잇기. 기준 노드의 다음 노드가 있으면 새 노드를 그 사이에 끼운다.
+      // 자식 엣지는 제외한다. "Parallel 우측에 Pause" 가 Parallel 의 첫 자식을 Pause 뒤로 옮기면 안 된다.
+      const existingOutgoing = nextEdges.filter(
+        (edge) => String(edge.source) === String(anchorNode.id) && !isBranchEdge(edge),
+      )
+      const existingTargetId = String(existingOutgoing[0]?.target ?? '')
+      nextEdges = nextEdges.filter((edge) => String(edge.id) !== String(existingOutgoing[0]?.id ?? ''))
+      nextEdges.push(
+        buildDraftEdge(
+          String(anchorNode.id),
+          newNodeId,
+          `${Date.now()}-append-${newNodeId}`,
+          sourceHandle,
+          targetHandle
         )
-        const existingTargetId = String(existingOutgoing[0]?.target ?? '')
-        nextEdges = nextEdges.filter((edge) => String(edge.id) !== String(existingOutgoing[0]?.id ?? ''))
-        nextEdges.push(
-          buildDraftEdge(
-            String(anchorNode.id),
-            newNodeId,
-            `${Date.now()}-append-${newNodeId}`,
-            sourceHandle,
-            targetHandle
-          )
-        )
-        if (existingTargetId && existingTargetId !== newNodeId) {
-          nextEdges.push(buildDraftEdge(newNodeId, existingTargetId, `${Date.now()}-append-next-${newNodeId}`))
-        }
+      )
+      if (existingTargetId && existingTargetId !== newNodeId) {
+        nextEdges.push(buildDraftEdge(newNodeId, existingTargetId, `${Date.now()}-append-next-${newNodeId}`))
       }
     } else if (reverseDirection) {
       const incoming = nextEdges.filter((edge) => String(edge.target) === String(anchorNode.id))
@@ -1639,26 +1629,6 @@ export function applyEditDraftToFlowDefinition(
     nextNodes.push(newNode)
   }
 
-  // AI 가 만든 IfThenElse 자식도 사용자가 직접 연결할 때와 같은 기준(위치 순서)으로 condition/success/failure 를 정한다.
-  const ifThenElseFlowMode = draft.flowMode === 'tree' ? 'tree' : 'default'
-  nextNodes = nextNodes.map((node) => {
-    if (!isIfThenElseTaskNode(node)) return node
-
-    const roles = syncIfThenElseBranchRoles(String(node.id), nextNodes, nextEdges, ifThenElseFlowMode)
-    if (!roles) return node
-
-    return {
-      ...node,
-      data: {
-        ...(node.data ?? {}),
-        properties: {
-          ...((node.data as any)?.properties ?? {}),
-          ifthenelse_branch_roles: roles
-        }
-      }
-    }
-  })
-
   const next = {
     nodes: nextNodes,
     edges: nextEdges,
@@ -1681,6 +1651,8 @@ export function applyEditDraftToFlowDefinition(
         taskName: String((node as any)?.data?.taskName ?? ''),
         contentName: String((node as any)?.data?.contentName ?? ''),
         taskType: String((node as any)?.data?.taskType ?? ''),
+        // 속성만 바뀐 요청(delay_msec 등)도 변경으로 봐야 한다.
+        properties: (node as any)?.data?.properties ?? {},
         position: node.position
       })
       return [id, state]
@@ -1694,6 +1666,8 @@ export function applyEditDraftToFlowDefinition(
         taskName: String((node as any)?.data?.taskName ?? ''),
         contentName: String((node as any)?.data?.contentName ?? ''),
         taskType: String((node as any)?.data?.taskType ?? ''),
+        // 속성만 바뀐 요청(delay_msec 등)도 변경으로 봐야 한다.
+        properties: (node as any)?.data?.properties ?? {},
         position: node.position
       })
       return [id, state]
@@ -1865,6 +1839,10 @@ export default function TaskFlowCanvasPage() {
         draft.assistantMessageId = assistantMessageId
       }
 
+      console.log('[ai-trace] 8.palette(matching list)', {
+        paletteSize: palette.length,
+        items: describePalette(palette)
+      })
       console.log('[AI_TASKFLOW][DRAFT_RECEIVED]', {
         mode: String(draft.mode ?? ''),
         hasNodes: Array.isArray(draft.nodes),
@@ -1921,11 +1899,6 @@ export default function TaskFlowCanvasPage() {
         nextPreview: next ? JSON.stringify(next) : null
       })
 
-      const rejectedLabels = Array.isArray((next as any)?.rejectedLabels)
-        ? ((next as any).rejectedLabels as string[]).filter(Boolean)
-        : []
-      const rejectedNotice = rejectedLabels.length > 0 ? ` 팔레트에서 찾지 못한 항목은 제외했습니다: ${rejectedLabels.join(', ')}` : ''
-
       if (!next || !Array.isArray((next as any).nodes) || (next as any).nodes.length === 0) {
         window.dispatchEvent(
           new CustomEvent(AI_TASKFLOW_CANVAS_RESULT_EVENT, {
@@ -1935,43 +1908,24 @@ export default function TaskFlowCanvasPage() {
               success: false,
               didApply: false,
               insertedNodeCount: 0,
-              rejectedLabels,
-              message: rejectedLabels.length > 0
-                ? `요청하신 항목을 팔레트에서 찾지 못했습니다: ${rejectedLabels.join(', ')}`
-                : '요청을 받았지만 실제 반영은 실패했습니다.'
+              message: '요청을 받았지만 실제 반영은 실패했습니다.'
             }
           })
         )
         return false
       }
 
+      // 수동으로 엣지를 이을 때(onConnect)와 같은 규칙으로 IfThenElse 자식 역할을 채운다.
+      // 자연어로 만든 흐름은 onConnect 를 거치지 않아 condition/success/failure 가 비어 있다.
+      withIfThenElseRoles(next)
+
       logAppliedAiNodes(next as Record<string, unknown>, String(sourceMessage ?? (draft as any)?.message ?? ''))
       applyFlowDefinitionWithHistory(next as Record<string, unknown>)
 
-      const currentIds = new Set(nodes.map((n) => String(n.id)))
-      const newNodeIds = ((next as any).nodes as any[])
-        .map((n: any) => String(n?.id ?? ''))
-        .filter((id) => id && !currentIds.has(id))
-      const nextIds = new Set(((next as any).nodes as any[]).map((n: any) => String(n?.id ?? '')))
-      const removedNodeIds = nodes.map((n) => String(n.id)).filter((id) => !nextIds.has(id))
-      const replaceCount = Array.isArray(draft.replaceByName) ? draft.replaceByName.length : 0
-      // 삭제/교체만 있는 draft 는 새 노드가 없어도 반영된 것이다.
-      const didApply = newNodeIds.length > 0 || removedNodeIds.length > 0 || replaceCount > 0
-
-      console.log('[AI_TASKFLOW][APPLIED]', {
-        message: String(sourceMessage ?? (draft as any)?.message ?? ''),
-        didApply,
-        addedNodeIds: newNodeIds,
-        removedNodeIds,
-        replaceCount,
-        nodeCount: (next as any).nodes.length,
-        edgeCount: Array.isArray((next as any).edges) ? (next as any).edges.length : 0,
-        rejectedLabels
-      })
-
-      if (newNodeIds.length > 0) {
+      const changeSummary = summarizeFlowChange(nodes, edges, next)
+      if (changeSummary.addedIds.length > 0) {
         requestAnimationFrame(() => {
-          ;(window as any).__AI_TASKFLOW_FIT_NODES__?.(newNodeIds)
+          ;(window as any).__AI_TASKFLOW_FIT_NODES__?.(changeSummary.addedIds)
         })
       }
 
@@ -1980,14 +1934,10 @@ export default function TaskFlowCanvasPage() {
           detail: {
             kind: 'draft',
             assistantMessageId: draft.assistantMessageId,
-            success: didApply,
-            didApply,
-            insertedNodeCount: newNodeIds.length,
-            removedNodeCount: removedNodeIds.length,
-            rejectedLabels,
-            message: didApply
-              ? `${newNodeIds.length}개 노드를 새 공간에 추가했습니다.${rejectedNotice}`
-              : '요청을 받았지만 실제 반영은 실패했습니다.'
+            success: changeSummary.didApply,
+            didApply: changeSummary.didApply,
+            insertedNodeCount: changeSummary.addedIds.length,
+            message: changeSummary.message
           }
         })
       )
@@ -2093,26 +2043,22 @@ export default function TaskFlowCanvasPage() {
       return
     }
 
+    withIfThenElseRoles(next)
+
     logAppliedAiNodes(next as Record<string, unknown>, String((pending as any)?.message ?? ''))
     applyFlowDefinitionWithHistory(next as Record<string, unknown>)
 
-    const currentIds = new Set(nodes.map((n) => String(n.id)))
-    const newNodeIds = ((next as any).nodes as any[])
-      .map((n: any) => String(n?.id ?? ''))
-      .filter((id) => id && !currentIds.has(id))
+    const changeSummary = summarizeFlowChange(nodes, edges, next)
 
     window.dispatchEvent(
       new CustomEvent(AI_TASKFLOW_CANVAS_RESULT_EVENT, {
         detail: {
           kind: 'draft',
           assistantMessageId: pending.assistantMessageId,
-          success: newNodeIds.length > 0,
-          didApply: newNodeIds.length > 0,
-          insertedNodeCount: newNodeIds.length,
-          message:
-            newNodeIds.length > 0
-              ? `${newNodeIds.length}개 노드를 새 공간에 추가했습니다.`
-              : '요청을 받았지만 실제 반영은 실패했습니다.'
+          success: changeSummary.didApply,
+          didApply: changeSummary.didApply,
+          insertedNodeCount: changeSummary.addedIds.length,
+          message: changeSummary.message
         }
       })
     )
@@ -2179,6 +2125,53 @@ export default function TaskFlowCanvasPage() {
       })
     }
 
+    // 채팅 서버가 그대로 읽는 모양(context.taskflow). 이 값이 없으면 서버는 팔레트와 캔버스를
+    // 빈 것으로 보고 "Parallel 아래에 실행할 동작이 없습니다" 처럼 자식 노드를 전부 버린다.
+    const nodeLabelOf = (node: RFNode) => {
+      const data = (node.data ?? {}) as Record<string, unknown>
+      return String(data.label ?? data.contentName ?? data.taskName ?? '').trim()
+    }
+    // "두 번째 Parallel" 은 Start 로부터의 흐름 순서다. 좌표나 노드가 만들어진 순서가 아니다.
+    const flowOrdinals = buildFlowOrdinals(nodes, edges, nodeLabelOf)
+    const graphNodes = nodes
+      .filter((node) => String(node.id) !== 'start')
+      .map((node) => {
+        const data = (node.data ?? {}) as Record<string, unknown>
+
+        return {
+          id: String(node.id),
+          label: nodeLabelOf(node),
+          taskName: String(data.taskName ?? '').trim() || undefined,
+          contentName: String(data.contentName ?? '').trim() || undefined,
+          taskType: String(data.taskType ?? '').trim() || undefined,
+          // 이름이 겹치는 노드에만 순번이 붙는다(buildFlowOrdinals).
+          ordinal: flowOrdinals.get(String(node.id))
+        }
+      })
+      .filter((node) => Boolean(node.label))
+
+    const chatContext = {
+      currentGraph: {
+        nodes: graphNodes,
+        edges: edges
+          .filter((edge) => String(edge.source) !== 'start')
+          .map((edge) => ({
+            source: String(edge.source),
+            target: String(edge.target),
+            // 왼쪽 핸들에서 나가는 연결이 제어 노드의 자식(분기)이다.
+            branch: String((edge as any).sourceHandle ?? '') === 'left'
+          }))
+      },
+      taskContents: taskContents
+        .filter((item) => Boolean(item.contentName) && Number.isFinite(Number(item.contentId)))
+        .map((item) => ({
+          taskId: item.taskId,
+          taskName: item.taskName,
+          contentName: String(item.contentName),
+          contentId: Number(item.contentId)
+        }))
+    }
+
     window.__AI_TASKFLOW_CONTEXT__ = {
       taskFlowId: numericFlowId,
       nodes,
@@ -2188,7 +2181,7 @@ export default function TaskFlowCanvasPage() {
       addableNodes,
       taskList: Array.from(taskListMap.values()),
       taskContents,
-      currentGraph: buildAiCurrentGraph(nodes, edges),
+      chatContext,
       updatedAt: Date.now()
     }
 

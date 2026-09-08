@@ -34,7 +34,9 @@ import type { ChatPipelineConfig } from './pipeline.config'
 import { getPromptStore } from '../features/chat/service/prompt-store.service'
 import { CHAT_PROMPT_TYPE } from '../features/chat/prompt-types'
 import { getChatSettingService } from '../features/chat-settings/service/chat-setting.service'
-import { renderPromptTemplate } from './prompt-template.util'
+import { renderMessage } from './message-bundle.util'
+import { trace } from './trace.util'
+import { TASKFLOW_MESSAGE_KEY } from './tools/taskflow-message'
 import { logLlmPromptMeta } from '../utils/utils'
 import { buildToolContextFromBody } from './tool-context.util'
 
@@ -71,42 +73,31 @@ type FallbackIntentConfig = {
   actionScreenTasks: ScreenTask[]
 }
 
-const DEFAULT_FALLBACK_ACTION_KEYWORDS = [
-  '실행', '수행', '처리', '조치', '액션', '이동', '열어', 'navigate', 'action', 'run',
-  '추가', '생성', '수정', '변경', '삭제', '제거', '편집', '노드', '태스크플로우', '태스크플로', '태스크 플로우', '태스크 플로', 'taskflow',
-  '저장', '임시저장', '정렬', '가로모드', '세로모드', '컨트롤', 'control', '예시',
-  'or', 'parallel', 'ifthenelse', 'ifthen', 'repeat', '병렬', '반복',
-]
+/** 프론트에서 실행할 clientAction 이 응답 안에 있는지. 도구 결과가 한 겹 더 들어오는 경우도 본다. */
+function hasClientAction(param: unknown): boolean {
+  if (!param || typeof param !== 'object') return false
 
-const DEFAULT_FALLBACK_ACTION_SCREEN_TASKS: ScreenTask[] = ['create', 'update', 'delete', 'run_action', 'recommend_action']
-const TASKFLOW_RULE_FIRST_INTENT_CONFIDENCE = 0.97
+  const row = param as Record<string, any>
+  if (row.clientAction && typeof row.clientAction === 'object') return true
 
-const DEFAULT_CLASSIFIER_RULES = {
-  explanationBlockKeywords: ['설명', '어떻게 쓰는지', '예시', '사용법'],
-  nodeEditDeletePrefixes: ['삭제', '제거', '지우기', 'remove', 'delete'],
-  arrowChainSeparators: ['->', '→', '=>', 'then', 'then->', 'and'],
-  composeMoveHintKeywords: ['구성', '생성', '추가', '연결', '배치', '배열', '정렬', '다음', '이동', '연결해', '설계', '틀', '노드'],
-  editSubjectKeywords: ['노드', 'taskflow', '태스크플로', '태스크 플로우', '플로우', '경로', '워크플로', '워크 플로우', 'flow'],
-  editVerbKeywords: ['구성', '생성', '추가', '수정', '변경', '삭제', '제거', '연결', '배치', '정렬', '설정', '편집', '만들', '고치', '바꾸', '바꿔', '교체', '지워', '없애', '넣어', '빼줘', '빼고', '붙여', '이어'],
+  return hasClientAction(row.toolResult)
+}
+
+// 규칙은 전부 rule 테이블에서 온다. 행이 없으면 비교 대상이 없어 그 규칙은 매칭되지 않는다.
+const EMPTY_CLASSIFIER_RULES: TaskflowClassifierRules = {
+  explanationKeywords: [],
+  composeRequestKeywords: [],
+  composeMoveHintKeywords: [],
+  editSubjectKeywords: [],
+  editVerbKeywords: [],
+  explanationBlockKeywords: [],
   arrowSequenceEnabled: false,
-  explanationKeywords: ['설명', '예시', '사용법', '어떻게', '가이드'],
-  composeRequestKeywords: ['구성해', '구성해줘', '만들어', '만들어줘', '작성해', '작성해줘', '설계해', '설계해줘', '추가해', '추가해줘', '연결해', '연결해줘'],
   explanationImageMinScore: 0,
   explanationImageMinScoreAlways: 0,
-} as TaskflowClassifierRules
-
-// 설정 로더가 빈 배열을 주면 비교 대상이 사라져 분류가 전부 false 가 된다. 항목별로 기본값을 채운다.
-function mergeClassifierRules(rules?: TaskflowClassifierRules): TaskflowClassifierRules {
-  if (!rules) return DEFAULT_CLASSIFIER_RULES
-
-  const merged = { ...DEFAULT_CLASSIFIER_RULES, ...rules } as Record<string, unknown>
-  for (const [key, value] of Object.entries(DEFAULT_CLASSIFIER_RULES)) {
-    if (Array.isArray(value) && (!Array.isArray(merged[key]) || (merged[key] as unknown[]).length === 0)) {
-      merged[key] = value
-    }
-  }
-
-  return merged as TaskflowClassifierRules
+  nodeEditDeletePrefixes: [],
+  arrowChainSeparators: [],
+  concurrentHintKeywords: [],
+  actionRequestKeywords: [],
 }
 
 export class ChatOrchestrator {
@@ -252,10 +243,9 @@ export class ChatOrchestrator {
   private async resolveFallbackIntentConfig(screenKey: string): Promise<FallbackIntentConfig> {
     const settings = getChatSettingService()
     if (!settings) {
-      return {
-        actionKeywords: DEFAULT_FALLBACK_ACTION_KEYWORDS,
-        actionScreenTasks: DEFAULT_FALLBACK_ACTION_SCREEN_TASKS,
-      }
+      // 설정 서비스가 없으면 보정 근거가 없다. 코드 기본값을 두지 않아 설정 누락이 드러나게 한다.
+      console.warn('[intent-fallback] chat setting service unavailable. intentFallback.* 설정을 읽지 못했다.')
+      return { actionKeywords: [], actionScreenTasks: [] }
     }
 
     const routeKey = String(screenKey ?? '').trim()
@@ -275,16 +265,8 @@ export class ChatOrchestrator {
     const globalTasks = this.normalizeActionScreenTasks(globalTasksRaw)
 
     return {
-      actionKeywords: screenKeywords.length > 0
-        ? screenKeywords
-        : globalKeywords.length > 0
-          ? globalKeywords
-          : DEFAULT_FALLBACK_ACTION_KEYWORDS,
-      actionScreenTasks: screenTasks.length > 0
-        ? screenTasks
-        : globalTasks.length > 0
-          ? globalTasks
-          : DEFAULT_FALLBACK_ACTION_SCREEN_TASKS,
+      actionKeywords: screenKeywords.length > 0 ? screenKeywords : globalKeywords,
+      actionScreenTasks: screenTasks.length > 0 ? screenTasks : globalTasks,
     }
   }
 
@@ -613,6 +595,16 @@ export class ChatOrchestrator {
       `================= [2-6단계:최종의도_확정_추적] [reqId=${reqId}] confidence=${pipelineIntentResult.confidence} classifierReason=${pipelineIntentResult.reason} infoRagCollections=${infoRagCollections.join(',')}`,
     )
 
+    trace(reqId, '2.intent', {
+      route: screen.key,
+      message: effectiveMessage,
+      intent: pipelineIntent,
+      confidence: pipelineIntentResult.confidence,
+      forcedByRule: shouldForceTaskflowAction,
+      actionTools: screen.actionTools.map((tool) => tool.declaration.name),
+      canvasNodes: canvasNodeNames.length,
+    })
+
     const toolCtx = this.buildToolCtx(body, effectiveMessage)
 
     let output: OrchestrationOutput
@@ -702,19 +694,22 @@ export class ChatOrchestrator {
 
     const chatAction = String(output?.reply?.chat_action ?? '-')
     const hasParam = Boolean(output?.reply?.chat_action_param)
-    const hasDraft = Boolean(
-      output?.reply?.chat_action_param &&
-      typeof output.reply.chat_action_param === 'object' &&
-      (
-        Boolean((output.reply.chat_action_param as any)?.canvasDraft) ||
-        Boolean((output.reply.chat_action_param as any)?.toolResult?.canvasDraft)
-      ),
-    )
+    const hasDraft = hasClientAction(output?.reply?.chat_action_param)
     this.stageLog(
       '6단계:최종반환_요약',
       reqId,
       `status=returned reason=handled=${Boolean(output?.handled)} chatAction=${chatAction} hasParam=${hasParam} hasDraft=${hasDraft}`,
     )
+    trace(reqId, '6.reply', {
+      chatAction,
+      hasParam,
+      hasClientAction: hasDraft,
+      clientAction: (output?.reply?.chat_action_param as any)?.clientAction?.name
+        ?? (output?.reply?.chat_action_param as any)?.toolResult?.clientAction?.name
+        ?? '-',
+      text: output?.reply?.text,
+      fallbackTextUsed: output?.meta?.fallbackTextUsed,
+    })
 
     return output
   }
@@ -823,7 +818,7 @@ export class ChatOrchestrator {
     const text = String(message ?? '').trim()
     if (!text) return false
 
-    const safeRules = mergeClassifierRules(rules)
+    const safeRules = rules ?? EMPTY_CLASSIFIER_RULES
 
     if (this.hasClassifierPhrase(text, safeRules.explanationBlockKeywords ?? [])) {
       return false
@@ -858,7 +853,13 @@ export class ChatOrchestrator {
       if (!this.mentionsCanvasNode(text, canvasNodeNames)) return false
     }
 
-    return this.hasClassifierPhrase(text, safeRules.editVerbKeywords ?? [])
+    if (this.hasClassifierPhrase(text, safeRules.editVerbKeywords ?? [])) return true
+
+    // "A 로 이동하면서 B 재생하고 C 표시되게 해줘" 처럼 편집 동사 없이 동작만 나열한 요청.
+    // 이런 문장을 놓치면 info(RAG) 로 새 나가 "구성했습니다" 라고만 답하고 캔버스는 그대로 남는다.
+    const hasConcurrentHint = this.hasClassifierPhrase(text, safeRules.concurrentHintKeywords ?? [])
+    const hasActionRequest = this.hasClassifierPhrase(text, safeRules.actionRequestKeywords ?? [])
+    return hasConcurrentHint && hasActionRequest
   }
 
   private mentionsCanvasNode(message: string, canvasNodeNames: string[]): boolean {
@@ -903,7 +904,7 @@ export class ChatOrchestrator {
     if (screenTask === 'guide' || this.isGuideLikeInfoQuery(text, orchestratorRules)) {
       return {
         intent: 'info',
-        confidence: TASKFLOW_RULE_FIRST_INTENT_CONFIDENCE,
+        confidence: Number(orchestratorRules.ruleFirstIntentConfidence) || 0,
         reason: 'rule-first: guide/info cue matched',
       }
     }
@@ -911,7 +912,7 @@ export class ChatOrchestrator {
     if (this.looksLikeTaskflowEditMessage(text, classifierRules, canvasNodeNames)) {
       return {
         intent: 'action',
-        confidence: TASKFLOW_RULE_FIRST_INTENT_CONFIDENCE,
+        confidence: Number(orchestratorRules.ruleFirstIntentConfidence) || 0,
         reason: 'rule-first: taskflow edit pattern matched',
       }
     }
@@ -934,7 +935,7 @@ export class ChatOrchestrator {
       if (!result || typeof result !== 'object') return undefined
 
       const objectResult = result as Record<string, unknown>
-      const hasCanvasDraft = Boolean(objectResult.canvasDraft && typeof objectResult.canvasDraft === 'object')
+      const hasCanvasDraft = hasClientAction(objectResult)
       const hasClarification = String(objectResult.clarification ?? '').trim().length > 0
 
       if (!hasCanvasDraft && !hasClarification) return undefined
@@ -944,7 +945,7 @@ export class ChatOrchestrator {
         this.stageLog(
           '4단계:결정적드래프트_적용',
           this.resolveReqId((toolCtx as any)?.body),
-          'status=applied reason=compose_linear_taskflow 결과에 canvasDraft가 포함되어 우선 적용',
+          'status=applied reason=compose_linear_taskflow 결과에 clientAction이 포함되어 우선 적용',
         )
       } else {
         this.stageLog(
@@ -1273,6 +1274,15 @@ export class ChatOrchestrator {
 
       // 조회 tool 만 돌고 끝나면 모델이 "추가했습니다" 처럼 하지 않은 일을 말한다. 그 문장은 버린다.
       const claimedWithoutAction = !hasSiteAction && !resolvedFilters && executionCalls.length > 0
+      if (!hasSiteAction) {
+        // 캔버스가 안 바뀌는 대표 원인: 도구 미호출 / 도구가 clientAction 을 못 만듦 / clarification.
+        trace(reqId, '3-4.no-site-action', {
+          source,
+          calls: executionCalls.map((call) => `${call.name}${call.error ? '(error)' : ''}`),
+          clarification: clarificationText || '-',
+          discardedModelText: executionText?.trim() || '-',
+        })
+      }
       if (claimedWithoutAction) {
         this.stageLog(
           '3-2단계:ACTION_미실행응답차단',
@@ -1475,7 +1485,7 @@ export class ChatOrchestrator {
       // intent-classifier 와 같은 common -> app -> screen 병합 규칙을 따른다.
       const policyBlocks = this.uniqueCollections([COMMON_COLLECTION, screen.appKey, screen.key])
         .map((scopeKey) =>
-          renderPromptTemplate(scopeKey, CHAT_PROMPT_TYPE.actionToolPolicy, {
+          renderMessage(scopeKey, CHAT_PROMPT_TYPE.actionTools, TASKFLOW_MESSAGE_KEY.policy, {
             mutatingTools: mutatingToolNames.join(', '),
           }),
         )

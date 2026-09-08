@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>태스크플로우 목록 · OPCON 사용 가이드</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    body { font-family: 'Inter', 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; background-color: #eae8e2; }
+    .display-serif { font-family: Georgia, 'Times New Roman', serif; font-weight: 400; letter-spacing: -0.5px; }
+    .btn-primary { background: #736e63; color: #ffffff; transition: all 0.15s ease; }
+    .btn-primary:hover { background: #6b655a; }
+    .btn-primary:active { background: #59544b; }
+    .badge-pill { background: #f4f3f0; color: #111111; border-radius: 9999px; padding: 4px 12px; font-size: 13px; font-weight: 500; }
+    .badge-accent { background: #b91c4c; color: #ffffff; border-radius: 9999px; padding: 4px 12px; font-size: 12px; font-weight: 500; letter-spacing: 1.5px; text-transform: uppercase; }
+    .hairline-border { border: 1px solid rgba(140, 134, 120, 0.22); }
+    .sidebar-link { transition: all 0.15s ease; }
+    .sidebar-link:hover { background: rgba(255, 255, 255, 0.5); }
+    .sidebar-link.active { background: #f4f3f0; color: #111111; font-weight: 600; }
+    .browser-dots span { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+  </style>
+</head>
+<body class="min-h-screen">
+  <div class="flex min-h-screen">
+    <!-- Sidebar -->
+    <aside class="w-64 bg-[#d3cfc4] border-r hairline-border fixed h-screen overflow-y-auto">
+      <div class="p-4 border-b hairline-border">
+        <a href="index.html" class="flex items-center gap-2">
+          <i data-lucide="bot" class="w-6 h-6 text-[#736e63]"></i>
+          <span class="font-bold text-[#111111]">OPCON 가이드</span>
+        </a>
+      </div>
+      <nav class="p-3 space-y-1">
+        <p class="px-3 pt-3 pb-1 text-xs font-semibold text-[#757575] uppercase">시작하기</p>
+        <a href="getting-started.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="rocket" class="w-4 h-4"></i> 시작하기
+        </a>
+        <a href="ai-assistant.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="sparkles" class="w-4 h-4"></i> AI 어시스턴트
+        </a>
+
+        <p class="px-3 pt-4 pb-1 text-xs font-semibold text-[#757575] uppercase">Robot</p>
+        <a href="robot-dashboard.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="bot" class="w-4 h-4"></i> 로봇 대시보드
+        </a>
+        <a href="robot-management.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="settings" class="w-4 h-4"></i> 로봇 관리
+        </a>
+        <a href="robot-detail.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="info" class="w-4 h-4"></i> 로봇 상세
+        </a>
+
+        <p class="px-3 pt-4 pb-1 text-xs font-semibold text-[#757575] uppercase">OTA</p>
+        <a href="ota-campaign.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="cloud-upload" class="w-4 h-4"></i> OTA 캠페인
+        </a>
+
+        <p class="px-3 pt-4 pb-1 text-xs font-semibold text-[#757575] uppercase">CMS</p>
+        <a href="cms-content.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="file-text" class="w-4 h-4"></i> 콘텐츠 관리
+        </a>
+
+        <p class="px-3 pt-4 pb-1 text-xs font-semibold text-[#757575] uppercase">TMS</p>
+        <a href="tms-taskflow-list.html" class="sidebar-link active flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="workflow" class="w-4 h-4"></i> 태스크플로우 목록
+        </a>
+        <a href="tms-canvas.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="pen-tool" class="w-4 h-4"></i> 캔버스 에디터
+        </a>
+        <a href="tms-robots.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="cpu" class="w-4 h-4"></i> TMS 로봇 관리
+        </a>
+
+        <p class="px-3 pt-4 pb-1 text-xs font-semibold text-[#757575] uppercase">Learn</p>
+        <a href="learn-overview.html" class="sidebar-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[#111111]">
+          <i data-lucide="graduation-cap" class="w-4 h-4"></i> 러닝 개요
+        </a>
+      </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 ml-64">
+      <!-- Header -->
+      <header class="bg-[#8c8678] sticky top-0 z-10">
+        <div class="px-8 py-4 flex items-center justify-between">
+          <div>
+            <h1 class="text-xl display-serif text-white">태스크플로우 목록</h1>
+            <p class="text-sm text-white/70">태스크플로우 검색, 생성, 관리</p>
+          </div>
+          <div class="flex items-center gap-2 text-sm text-white/70">
+            <i data-lucide="home" class="w-4 h-4"></i>
+            <span>/</span>
+            <span>TMS</span>
+            <span>/</span>
+            <span>태스크플로우 목록</span>
+          </div>
+        </div>
+      </header>
+
+      <div class="px-8 py-8 max-w-5xl">
+        <!-- Overview -->
+        <section class="mb-10">
+          <h2 class="text-2xl display-serif text-[#111111] mb-4">태스크플로우 목록 개요</h2>
+          <p class="text-[#555555] mb-6">
+            태스크플로우 목록 페이지에서는 생성된 모든 태스크플로우를 검색, 정렬, 필터링할 수 있습니다.
+            태스크플로우를 복사, 활성화/비활성화, 삭제할 수 있으며, 새 태스크플로우를 생성할 수 있습니다.
+          </p>
+
+          <!-- UI Mockup -->
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border overflow-hidden mb-6">
+            <div class="bg-[#d3cfc4] px-4 py-2 flex items-center gap-2 border-b hairline-border">
+              <div class="browser-dots">
+                <span class="bg-red-400"></span>
+                <span class="bg-yellow-400"></span>
+                <span class="bg-green-400"></span>
+              </div>
+              <div class="flex-1 bg-white rounded-md px-3 py-1 text-xs text-[#8f8f8f] mx-4">https://hcrsp.com/...</div>
+            </div>
+            <div class="p-6">
+              <!-- Search & Filter Bar -->
+              <div class="flex flex-wrap items-center gap-2 mb-4">
+                <div class="flex-1 min-w-[200px] bg-white border hairline-border rounded-lg px-3 py-2 text-sm text-[#8f8f8f] flex items-center gap-2">
+                  <i data-lucide="search" class="w-4 h-4"></i>
+                  태스크플로우 이름 검색
+                </div>
+                <div class="bg-white border hairline-border rounded-lg px-3 py-2 text-sm text-[#757575]">상태: 전체</div>
+                <div class="bg-white border hairline-border rounded-lg px-3 py-2 text-sm text-[#757575]">정렬: 최신순</div>
+                <div class="bg-[#736e63] text-white rounded-lg px-4 py-2 text-sm font-medium">+ 새 태스크플로우</div>
+              </div>
+
+              <!-- Taskflow Table -->
+              <div class="border hairline-border rounded-xl overflow-hidden">
+                <table class="w-full text-sm">
+                  <thead class="bg-[#eae8e2] text-[#757575]">
+                    <tr>
+                      <th class="text-left px-4 py-3 font-medium">
+                        <div class="flex items-center gap-1">
+                          <input type="checkbox" class="rounded hairline-border" />
+                        </div>
+                      </th>
+                      <th class="text-left px-4 py-3 font-medium">이름</th>
+                      <th class="text-left px-4 py-3 font-medium">버전</th>
+                      <th class="text-left px-4 py-3 font-medium">상태</th>
+                      <th class="text-left px-4 py-3 font-medium">수정일</th>
+                      <th class="text-left px-4 py-3 font-medium">작업</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-[rgba(140,134,120,0.12)]">
+                    <tr class="hover:bg-[#eae8e2]">
+                      <td class="px-4 py-3"><input type="checkbox" class="rounded hairline-border" /></td>
+                      <td class="px-4 py-3 font-medium text-[#111111]">순찰 태스크</td>
+                      <td class="px-4 py-3 text-[#757575]">v2.1</td>
+                      <td class="px-4 py-3"><span class="bg-[#f4f3f0] text-[#736e63] text-xs px-2 py-1 rounded-full">활성</span></td>
+                      <td class="px-4 py-3 text-[#757575]">2026-08-20</td>
+                      <td class="px-4 py-3">
+                        <div class="flex items-center gap-2 text-[#8f8f8f]">
+                          <i data-lucide="copy" class="w-4 h-4"></i>
+                          <i data-lucide="edit" class="w-4 h-4"></i>
+                          <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr class="hover:bg-[#eae8e2]">
+                      <td class="px-4 py-3"><input type="checkbox" class="rounded hairline-border" /></td>
+                      <td class="px-4 py-3 font-medium text-[#111111]">안내 태스크</td>
+                      <td class="px-4 py-3 text-[#757575]">v1.0</td>
+                      <td class="px-4 py-3"><span class="bg-[#d3cfc4] text-[#555555] text-xs px-2 py-1 rounded-full">비활성</span></td>
+                      <td class="px-4 py-3 text-[#757575]">2026-07-15</td>
+                      <td class="px-4 py-3">
+                        <div class="flex items-center gap-2 text-[#8f8f8f]">
+                          <i data-lucide="copy" class="w-4 h-4"></i>
+                          <i data-lucide="edit" class="w-4 h-4"></i>
+                          <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr class="hover:bg-[#eae8e2]">
+                      <td class="px-4 py-3"><input type="checkbox" class="rounded hairline-border" /></td>
+                      <td class="px-4 py-3 font-medium text-[#111111]">배송 태스크</td>
+                      <td class="px-4 py-3 text-[#757575]">v3.0</td>
+                      <td class="px-4 py-3"><span class="bg-[#f4f3f0] text-[#736e63] text-xs px-2 py-1 rounded-full">활성</span></td>
+                      <td class="px-4 py-3 text-[#757575]">2026-08-25</td>
+                      <td class="px-4 py-3">
+                        <div class="flex items-center gap-2 text-[#8f8f8f]">
+                          <i data-lucide="copy" class="w-4 h-4"></i>
+                          <i data-lucide="edit" class="w-4 h-4"></i>
+                          <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Taskflow Creation -->
+        <section class="mb-12">
+          <h2 class="text-2xl display-serif text-[#111111] mb-4">태스크플로우 생성</h2>
+          <p class="text-[#555555] mb-6">"새 태스크플로우" 버튼을 클릭하여 태스크플로우를 생성합니다.</p>
+
+          <h3 class="text-lg font-semibold text-[#111111] mb-3">태스크플로우 생성 절차</h3>
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border p-6 mb-6">
+            <ol class="space-y-4">
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">1</div>
+                <div>
+                  <p class="font-medium text-[#111111]">새 태스크플로우 버튼 클릭</p>
+                  <p class="text-sm text-[#757575]">목록 상단의 "새 태스크플로우" 버튼을 클릭합니다.</p>
+                </div>
+              </li>
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">2</div>
+                <div>
+                  <p class="font-medium text-[#111111]">이름 입력</p>
+                  <p class="text-sm text-[#757575]">태스크플로우 이름을 입력합니다.</p>
+                </div>
+              </li>
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">3</div>
+                <div>
+                  <p class="font-medium text-[#111111]">캔버스 에디터에서 작업 설계</p>
+                  <p class="text-sm text-[#757575]">캔버스 에디터에서 태스크 노드를 배치하고 연결합니다.</p>
+                </div>
+              </li>
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">4</div>
+                <div>
+                  <p class="font-medium text-[#111111]">저장</p>
+                  <p class="text-sm text-[#757575]">임시 저장 또는 최종 저장을 선택합니다.</p>
+                </div>
+              </li>
+            </ol>
+          </div>
+
+          <h3 class="text-lg font-semibold text-[#111111] mb-3">태스크플로우 생성 입력 규칙</h3>
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border overflow-hidden">
+            <table class="w-full text-sm">
+              <thead class="bg-[#eae8e2] text-[#757575]">
+                <tr>
+                  <th class="text-left px-4 py-3 font-medium">항목</th>
+                  <th class="text-left px-4 py-3 font-medium">규칙</th>
+                  <th class="text-left px-4 py-3 font-medium">비고</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[rgba(140,134,120,0.12)]">
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">이름</td>
+                  <td class="px-4 py-3 text-[#757575]">필수 입력</td>
+                  <td class="px-4 py-3 text-[#757575]">중복 불가</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">버전</td>
+                  <td class="px-4 py-3 text-[#757575]">자동 생성</td>
+                  <td class="px-4 py-3 text-[#757575]">저장 시 자동 증가</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Search & Filter -->
+        <section class="mb-12">
+          <h2 class="text-2xl display-serif text-[#111111] mb-4">검색 및 필터</h2>
+          <p class="text-[#555555] mb-6">태스크플로우를 효율적으로 찾기 위한 검색 및 필터 기능을 제공합니다.</p>
+
+          <h3 class="text-lg font-semibold text-[#111111] mb-3">검색 및 필터 기능</h3>
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border overflow-hidden">
+            <table class="w-full text-sm">
+              <thead class="bg-[#eae8e2] text-[#757575]">
+                <tr>
+                  <th class="text-left px-4 py-3 font-medium">기능</th>
+                  <th class="text-left px-4 py-3 font-medium">설명</th>
+                  <th class="text-left px-4 py-3 font-medium">사용 방법</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[rgba(140,134,120,0.12)]">
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">이름 검색</td>
+                  <td class="px-4 py-3 text-[#757575]">태스크플로우 이름으로 검색합니다.</td>
+                  <td class="px-4 py-3 text-[#757575]">검색창에 이름 입력</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">상태 필터</td>
+                  <td class="px-4 py-3 text-[#757575]">활성/비활성 상태로 필터링합니다.</td>
+                  <td class="px-4 py-3 text-[#757575]">상태 드롭다운에서 선택</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 font-medium text-[#333333]">정렬</td>
+                  <td class="px-4 py-3 text-[#757575]">최신순, 오래된순, 이름순으로 정렬합니다.</td>
+                  <td class="px-4 py-3 text-[#757575]">정렬 드롭다운에서 선택</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Bulk Actions -->
+        <section class="mb-12">
+          <h2 class="text-2xl display-serif text-[#111111] mb-4">일괄 작업</h2>
+          <p class="text-[#555555] mb-6">여러 태스크플로우를 선택하여 일괄 복사하거나 삭제할 수 있습니다.</p>
+
+          <h3 class="text-lg font-semibold text-[#111111] mb-3">일괄 복사 절차</h3>
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border p-6 mb-6">
+            <ol class="space-y-4">
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">1</div>
+                <div>
+                  <p class="font-medium text-[#111111]">태스크플로우 선택</p>
+                  <p class="text-sm text-[#757575]">복사할 태스크플로우의 체크박스를 선택합니다.</p>
+                </div>
+              </li>
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">2</div>
+                <div>
+                  <p class="font-medium text-[#111111]">일괄 복사 클릭</p>
+                  <p class="text-sm text-[#757575]">상단의 "일괄 복사" 버튼을 클릭합니다.</p>
+                </div>
+              </li>
+              <li class="flex gap-3">
+                <div class="w-8 h-8 bg-[#f4f3f0] text-[#736e63] rounded-full flex items-center justify-center font-bold text-sm shrink-0">3</div>
+                <div>
+                  <p class="font-medium text-[#111111]">복사 완료</p>
+                  <p class="text-sm text-[#757575]">선택한 태스크플로우가 복사되어 목록에 추가됩니다.</p>
+                </div>
+              </li>
+            </ol>
+          </div>
+        </section>
+
+        <!-- Troubleshooting -->
+        <section class="mb-12">
+          <h2 class="text-2xl display-serif text-[#111111] mb-4">문제 해결</h2>
+          <div class="bg-[#f4f3f0] rounded-xl hairline-border overflow-hidden">
+            <table class="w-full text-sm">
+              <thead class="bg-[#eae8e2] text-[#757575]">
+                <tr>
+                  <th class="text-left px-4 py-3 font-medium">문제</th>
+                  <th class="text-left px-4 py-3 font-medium">원인</th>
+                  <th class="text-left px-4 py-3 font-medium">해결 방법</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[rgba(140,134,120,0.12)]">
+                <tr>
+                  <td class="px-4 py-3 text-[#333333]">태스크플로우 생성 실패</td>
+                  <td class="px-4 py-3 text-[#757575]">이름 미입력 또는 중복</td>
+                  <td class="px-4 py-3 text-[#757575]">고유한 이름을 입력</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 text-[#333333]">태스크플로우 삭제 불가</td>
+                  <td class="px-4 py-3 text-[#757575]">로봇에 배포된 상태</td>
+                  <td class="px-4 py-3 text-[#757575]">배포를 해제한 후 삭제</td>
+                </tr>
+                <tr>
+                  <td class="px-4 py-3 text-[#333333]">검색 결과 없음</td>
+                  <td class="px-4 py-3 text-[#757575]">검색어와 일치하는 태스크플로우 없음</td>
+                  <td class="px-4 py-3 text-[#757575]">검색어를 변경하거나 필터 해제</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    lucide.createIcons();
+  </script>
+</body>
+</html>

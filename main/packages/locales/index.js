@@ -10,9 +10,12 @@ import jaLogin from './src/ja-JP/login.json'
 import koSemantic from './src/ko-KR/semantic.json'
 import enSemantic from './src/en-US/semantic.json'
 import jaSemantic from './src/ja-JP/semantic.json'
+import koMyProfile from './src/ko-KR/myProfile.json'
+import enMyProfile from './src/en-US/myProfile.json'
+import jaMyProfile from './src/ja-JP/myProfile.json'
 
 export const translations = {
-  'ko-KR': { common: koCommon, layout: koLayout, login: koLogin, semantic: koSemantic },
-  'en-US': { common: enCommon, layout: enLayout, login: enLogin, semantic: enSemantic },
-  'ja-JP': { common: jaCommon, layout: jaLayout, login: jaLogin, semantic: jaSemantic }
+  'ko-KR': { common: koCommon, layout: koLayout, login: koLogin, semantic: koSemantic, myProfile: koMyProfile },
+  'en-US': { common: enCommon, layout: enLayout, login: enLogin, semantic: enSemantic, myProfile: enMyProfile },
+  'ja-JP': { common: jaCommon, layout: jaLayout, login: jaLogin, semantic: jaSemantic, myProfile: jaMyProfile }
 }

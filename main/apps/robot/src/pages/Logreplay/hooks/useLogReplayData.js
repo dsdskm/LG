@@ -146,8 +146,6 @@ export default function useLogReplayData({
   deviceId,
   // ✅ [ADD] 플레이바 현재 재생 위치(초)를 가져오는 콜백 (0 ~ durationSec)
   getPlayTimeSec,
-  // ✅ [ADD] 실제 재생 중 여부 — seek/재생 판정을 추측이 아닌 상태로 하기 위함
-  getIsPlaying,
   // ✅ [ADD] 사용자 seek 카운터 getter — 변화 감지 시 pose 누적 캐시 리셋(연속 재생은 누적 유지)
   getSeekEpoch
 }) {
@@ -163,6 +161,10 @@ export default function useLogReplayData({
   const requestPoseWindowRef = useRef(null)
   const activePoseWindowRef = useRef({ startSec: null, endSec: null })
   const poseInflightRef = useRef(false) // pose 윈도우 로드 in-flight 가드(중복/파일업 방지 — finally에서 반드시 해제)
+  // ✅ latest-wins: 로드 중에 들어온 요청을 버리지 않고 "가장 최신 것 하나"만 남겨뒀다가 완료 직후 실행한다.
+  //    (과거: in-flight면 새 요청을 그냥 버렸다 → 러프하게 드래그하면 요청 104건 중 3건만 화면에 반영되고
+  //     나머지는 사라져, 마우스를 놓은 최종 위치가 반영되지 않는 문제. 계측으로 확인 후 수정.)
+  const pendingPoseReqRef = useRef(null) // { centerSec, reason } | null
   const poseTopicUnavailableRef = useRef(false) // ✅ 이 mcap엔 pose 토픽이 없음(또는 메시지 0개)이 확정되면 true — 이후 requestPoseWindow 호출 자체를 차단
   // ✅ grid가 크기 제한 초과로 폐기됨이 확정되면 true — 지도 위에 그릴 배경이 없으므로 그 위에 렌더링되는
   //    토픽(경로선/costmap/planned path/goal, 모두 requestPoseWindow 편승분)도 더 이상 요청하지 않음.
@@ -356,8 +358,8 @@ export default function useLogReplayData({
 
   // ✅ tick의 정상 재생 step(초) EMA
   const stepEmaRef = useRef(0)
-  // ✅ tick wall-clock 간격 추정(옵션: 디버깅/안정화)
-  const lastTickWallMsRef = useRef(0)
+  // ✅ tick()의 "마지막으로 관찰한 seekEpoch" — RAF 루프(overlay 리셋용)와는 별개로 자체 추적
+  const lastSeekEpochForTickRef = useRef(0)
 
   const [isLoadingTar] = useState(false)
   const [tarError] = useState(null)
@@ -498,53 +500,18 @@ export default function useLogReplayData({
         return
       }
 
-      // ✅ 실제 재생 여부 (추측 금지). 재생 중이 아닌데 playhead가 움직였다면 = 사용자 seek
-      let playing = true
-      try {
-        if (typeof getIsPlaying === 'function') playing = !!getIsPlaying()
-      } catch {}
+      // ✅ seek 판정(핵심): 추측하지 않고 seekEpochRef(사용자 명시적 조작) 신호만 본다.
+      //   player2D가 진행바 드래그/프레임 스텝/재시작에서만 증가시키는 카운터라, 연속 재생 중엔
+      //   절대 안 바뀐다 — diffSec/getIsPlaying 추측과 달리 타이밍 우연으로 오탐할 수 없다.
+      const curSeekEpoch = typeof getSeekEpoch === 'function' ? Number(getSeekEpoch()) || 0 : 0
+      const isSeek = curSeekEpoch !== lastSeekEpochForTickRef.current
+      lastSeekEpochForTickRef.current = curSeekEpoch
 
-      // ✅ 2) tick wall-clock (옵션) — 브라우저 타이머 지연 상황을 EMA에 자연 반영
-      const nowMs = performance.now()
-      const lastMs = lastTickWallMsRef.current || nowMs
-      const dtWallSec = Math.max(0.001, (nowMs - lastMs) / 1000)
-      lastTickWallMsRef.current = nowMs
-
-      // ✅ 3) 정상 재생 step(초) EMA 업데이트 (forward 이동 + 실제 재생 중일 때만)
-      // - 고배속에서는 diffSec 자체가 커지므로 typicalStep도 같이 커짐
-      // - ⚠️ seek 점프(재생 아님)는 EMA에 반영하지 않는다 → 임계가 부풀어 seek를 재생으로 오판하는 피드백 루프 차단
-      if (playing && Number.isFinite(diffSec) && diffSec > 0.01 && diffSec < 60) {
+      // ✅ 정상 재생 step(초) EMA — backJitterThresh(위쪽)에서만 사용. seek 틱은 반영 안 함(이전과 동일한 보호).
+      if (!isSeek && Number.isFinite(diffSec) && diffSec > 0.01 && diffSec < 60) {
         const prev = stepEmaRef.current || diffSec
-        // tick이 밀린 경우도 포함해 현실적인 step을 따라가게 (완만하게)
-        const next = prev * 0.8 + diffSec * 0.2
-        stepEmaRef.current = next
+        stepEmaRef.current = prev * 0.8 + diffSec * 0.2
       }
-      const typicalStep = stepEmaRef.current || Math.max(0.25, dtWallSec) // fallback
-
-      // ✅ 4) wrapped(끝→0) 예외 (loop 모드일 경우 seek 오탐 방지)
-      const wrapped =
-        Number.isFinite(last) &&
-        exp > 0 &&
-        last > exp - Math.max(0.5, typicalStep * 0.5) &&
-        centerAdj < Math.max(0.5, typicalStep * 0.5)
-
-      // ✅ 5) seek 판정(핵심):
-      // - 재생 중 forward 점프는 "아무리 커도" 정상 고속재생 → seek 아님(playhead/누적).
-      //   (과거: forward diffSec가 임계 초과면 seek으로 봤는데, 10배속의 큰 step을 seek으로
-      //    오판해 캐시가 ±2s window로 REPLACE되며 누적 경로가 끊기고 로봇이 점프했다.)
-      // - 사용자의 forward 드래그 seek은 handleProgressPointerDown이 isPlaying=false로 만들어
-      //   아래 `!playing` 분기가 잡으므로, 재생 중 forward-seek 휴리스틱은 불필요.
-      // - 재생 중에도 backward 점프는 loop/수동 이동 신호로 유지.
-      const backwardSeekThreshold = Math.max(1.5, typicalStep * 6)
-
-      const heuristicSeek = !wrapped && Number.isFinite(last) && diffSec < -backwardSeekThreshold
-
-      // ✅ 일시정지(!playing) 상태에서도 "실제 점프"만 seek으로 본다.
-      //    멈춤 직후 남는 마지막 1스텝(≈typicalStep)을 seek으로 오판하면 pose 캐시를
-      //    ±2s window로 REPLACE해 누적 궤적("지나온 경로")이 사라진다(사용자 신고 현상).
-      //    사용자 드래그/프레임점프 같은 큰 이동만 seek으로 처리한다.
-      const pausedSeekJump = Math.max(1.0, typicalStep * 3)
-      const isSeek = !playing ? Number.isFinite(last) && Math.abs(diffSec) > pausedSeekJump : heuristicSeek
 
       // pose window는 재생 중에도 계속 호출(커버되면 loader가 skip)
       // overlay(costmap/path/goal)는 pose 스캔에 편승해 함께 로드되므로 개별 요청 불필요.
@@ -587,7 +554,7 @@ export default function useLogReplayData({
 
     const id = setInterval(tick, 250)
     return () => clearInterval(id)
-  }, [getPlayTimeSec, getIsPlaying])
+  }, [getPlayTimeSec, getSeekEpoch])
 
   const queryWindow = useCallback(
     async ({ levels, keyword = '', fromMs, toMs, limit = 5000 } = {}) => {
@@ -1169,7 +1136,10 @@ export default function useLogReplayData({
       //   ⚠️ 과거 버그: activePoseWindowRef "예약 구간"으로 스킵했는데, 로드가 seq 불일치로
       //      폐기되거나 느려도 예약 구간이 롤백되지 않아 영구 커버리지 홀이 생기고 로봇이 고정됐다.
       //      in-flight 플래그는 finally에서 반드시 해제되므로 홀이 생기지 않는다.
+      // ✅ latest-wins: 로드 중이면 버리지 않고 "최신 요청 하나"로 갈아끼운다.
+      //    드래그처럼 초당 수십 개가 쏟아져도 마지막 위치는 반드시 실행된다.
       if (poseInflightRef.current) {
+        pendingPoseReqRef.current = { centerSec, reason }
         return
       }
 
@@ -1311,6 +1281,15 @@ export default function useLogReplayData({
         console.warn('[Logreplay] pose 윈도우 로드 실패:', e)
       } finally {
         poseInflightRef.current = false
+        // ✅ latest-wins: 대기 중인 최신 요청이 있으면 이어서 실행한다.
+        //    setTimeout(0)으로 넘겨 콜스택이 쌓이지 않게 하고, 그 사이 메인스레드에 양보한다.
+        const next = pendingPoseReqRef.current
+        if (next) {
+          pendingPoseReqRef.current = null
+          setTimeout(() => {
+            requestPoseWindowRef.current?.(next.centerSec, next.reason)
+          }, 0)
+        }
       }
     }
 

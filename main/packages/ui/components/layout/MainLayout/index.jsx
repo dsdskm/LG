@@ -20,6 +20,7 @@ const MainLayout = ({
   notificationSlot,
   aiGreetingExtra,
   aiAssistantCommandAdapter,
+  multiSelectComponentMap = null,
   useAiAssistant = true,
   crossAppLinks = true
 }) => {
@@ -103,6 +104,7 @@ const MainLayout = ({
           className="aiAssistantPanel"
           greetingExtra={aiGreetingExtra}
           commandAdapter={aiAssistantCommandAdapter}
+          multiSelectComponentMap={multiSelectComponentMap}
         />
       )}
     </StyledLayout>

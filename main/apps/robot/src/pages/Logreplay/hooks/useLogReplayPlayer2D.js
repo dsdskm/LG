@@ -570,6 +570,44 @@ export default function useLogReplayPlayer2D({
 
   // 스크럽(플레이바 드래그) — 실시간 렌더 보장
   const progressBarRef = useRef(null)
+
+  // ✅ 드래그 중 상태 커밋은 "프레임당 1회"로 접는다.
+  //   원인: 메인스레드가 길게 막히면(개발 빌드에서 수 초 관측) 그동안 pointermove가 큐에 쌓이고,
+  //   막힘이 풀릴 때 수십 건이 한 태스크에서 몰려 처리된다. 각 건이 setState를 3번씩 하므로
+  //   React가 "Maximum update depth exceeded"를 던졌다.
+  //   화면은 ref(playTimeSecRef) + renderNow()로 그리므로, 상태 커밋을 늦춰도 체감 반응성은 그대로다.
+  //
+  // ⚠️ 커밋 스케줄링에 requestAnimationFrame을 쓰면 안 된다(2026-09-08 확인):
+  //    rAF 콜백에서 낸 업데이트는 React의 중첩 업데이트 카운터를 초기화하지 못해
+  //    드래그를 오래 하면 "Maximum update depth exceeded"가 발생했다.
+  //    setTimeout(매크로태스크)은 태스크 경계를 만들어 카운터가 초기화된다.
+  //    주기는 이 파일의 재생 루프와 동일하게 20Hz(50ms)로 맞춘다.
+  const SCRUB_COMMIT_MS = 50
+  const scrubCommitTimerRef = useRef(0)
+  const scrubPendingRef = useRef(null)
+  const scrubLastCommitMsRef = useRef(0)
+
+  const commitScrubState = useCallback(() => {
+    scrubCommitTimerRef.current = 0
+    const p = scrubPendingRef.current
+    scrubPendingRef.current = null
+    if (!p) return
+
+    setPlayTimeSec(p.timeSec)
+    if (p.emitIndex) setPlayIndex(p.idx)
+    setFillStartSec(p.timeSec)
+    scrubLastCommitMsRef.current = performance.now()
+  }, [])
+
+  // 언마운트 시 대기 중인 커밋 취소(언마운트 후 setState 경고 방지)
+  useEffect(() => {
+    return () => {
+      if (scrubCommitTimerRef.current) clearTimeout(scrubCommitTimerRef.current)
+      scrubCommitTimerRef.current = 0
+      scrubPendingRef.current = null
+    }
+  }, [])
+
   const setPlayHeadByRatio = useCallback(
     (r, { emitIndex = true } = {}) => {
       const dur =
@@ -585,21 +623,30 @@ export default function useLogReplayPlayer2D({
 
       const nextTime = Math.max(0, Math.min(dur, r * dur))
 
+      // ref는 즉시 갱신(렌더러가 읽는 값) — 반응성은 여기서 보장된다.
       playTimeSecRef.current = nextTime
-      setPlayTimeSec(nextTime)
-      if (emitIndex) {
-        const idx = Math.max(0, Math.min(499, Math.round((dur > 0 ? nextTime / dur : 0) * 499)))
-        playIndexRef.current = idx
-        setPlayIndex(idx)
-      }
-
+      const idx = Math.max(0, Math.min(499, Math.round((dur > 0 ? nextTime / dur : 0) * 499)))
+      if (emitIndex) playIndexRef.current = idx
       // ✅ seek 즉시 fill 시작점을 현재 위치로 리셋(동기) → 진행바 잔상/누적 제거
       fillStartSecRef.current = nextTime
-      setFillStartSec(nextTime)
+
+      // 상태 커밋은 프레임당 1회로 접는다(이벤트 폭주 방어). 항상 "가장 최신 값"만 남긴다.
+      const prev = scrubPendingRef.current
+      scrubPendingRef.current = {
+        timeSec: nextTime,
+        idx,
+        emitIndex: emitIndex || !!prev?.emitIndex
+      }
+      if (!scrubCommitTimerRef.current) {
+        // 마지막 커밋 이후 남은 시간만큼만 기다린다(첫 이벤트는 거의 즉시 반영).
+        const since = performance.now() - scrubLastCommitMsRef.current
+        const delay = Math.max(0, SCRUB_COMMIT_MS - since)
+        scrubCommitTimerRef.current = setTimeout(commitScrubState, delay)
+      }
 
       renderNow() // ← 실시간 반영
     },
-    [renderNow, timelineMs]
+    [renderNow, timelineMs, commitScrubState]
   )
 
   const handleProgressPointerDown = useCallback(

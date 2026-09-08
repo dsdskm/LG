@@ -17,6 +17,7 @@ const UserList = () => {
   const { t } = useTranslation('robot')
   const { t: tCommon } = useTranslation('common')
   const { session } = useUserStore()
+  const isSystemAdmin = session.userLevel === getUserLevelByuserRole('SYSTEM_ADMIN')
 
   const [filterStatus, setFilterStatus] = useState('all')
   const [filterRole, setFilterRole] = useState('all')
@@ -60,7 +61,6 @@ const UserList = () => {
       }
 
       setUsers(allContent)
-      setTableList(allContent)
     } catch (err) {
       console.error('Error useCallback:', err)
     }
@@ -147,10 +147,10 @@ const UserList = () => {
 
   useEffect(() => {
     filterTableList()
-  }, [filterStatus, filterRole, searchQuery])
+  }, [users, filterStatus, filterRole, searchQuery])
 
-  function filterTableList() {
-    const filteredList = users.filter((r) => {
+  function filterTableList(sourceList = users) {
+    const filteredList = sourceList.filter((r) => {
       const matchRole = !filterRole ? true : filterRole === ALLVALUE ? true : r.userRole === filterRole
       const matchStatus = !filterStatus ? true : filterStatus === ALLVALUE ? true : r.userStatus === filterStatus
       const matchSearchEmail =
@@ -227,9 +227,15 @@ const UserList = () => {
             <EditButton type="button" disabled={isEditDisable} onClick={handleEditClick}>
               {t('modify')}
             </EditButton>
-            <DeleteButton type="button" onClick={() => openModalDeleteUser(row.userId, row.userEmail)}>
-              {t('delete')}
-            </DeleteButton>
+            {isSystemAdmin && (
+              <DeleteButton
+                type="button"
+                disabled={row.userStatus === 'WITHDRAWAL'}
+                onClick={() => openModalDeleteUser(row.userId, row.userEmail)}
+              >
+                {t('delete')}
+              </DeleteButton>
+            )}
           </ManageActions>
         )
       },

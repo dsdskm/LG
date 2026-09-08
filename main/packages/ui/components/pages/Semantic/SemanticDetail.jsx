@@ -37,6 +37,9 @@ const poseFieldsFrom = (robotPose) => {
  *   주입한 쪽이 프레임을 확인해서 넘긴다(init-setup 은 map 프레임일 때만 넘긴다).
  *   있으면 Position 에 '현재 위치로 설정' 버튼이 열리고, 새 POI 는 이 좌표로 시작한다.
  */
+/** 이름 입력 칸들 — 기본 / 영문 / 한글. 하나라도 채워져야 저장할 수 있다(아래 hasAnyName). */
+const NAME_LANGS = ['default', 'en-US', 'ko-KR']
+
 const SemanticDetail = ({ row, readOnly = false, robotPose = null, onPoiCreated, onPoiEdited, onPoiCancel }) => {
   // POI 타입은 BE 에 저장되는 값이므로 번역하지 않는다(표시 문자열이 곧 저장 값이다).
   const POI_TYPES = ['GENERAL', 'CHARGING']
@@ -207,6 +210,11 @@ const SemanticDetail = ({ row, readOnly = false, robotPose = null, onPoiCreated,
     setLoading(true)
   }, [])
 
+  // 이름 세 칸이 모두 비어 있으면 저장을 막는다 — 목록과 지도 말풍선에서 POI 를 가리키는 것은
+  // 이름뿐이라(SemanticTable / init-setup 의 poiLabel), 이름 없이 저장하면 어느 지점인지 구분할 수
+  // 없는 POI 가 남는다. 공백만 넣은 경우도 비어 있는 것으로 본다.
+  const hasAnyName = NAME_LANGS.some((lang) => String(workObj?.name?.[lang] ?? '').trim() !== '')
+
   return (
     loading && (
       <Section>
@@ -376,13 +384,27 @@ const SemanticDetail = ({ row, readOnly = false, robotPose = null, onPoiCreated,
               </Button>
             ) : (
               <>
+                {/* 이름이 하나도 없으면 둘 다 잠근다(hasAnyName) — 비활성 버튼은 이유를 말하지 못하므로
+                    title 로 무엇을 채워야 하는지 알려 준다.
+                    새 POI 의 버튼은 '생성' 이 아니라 '저장' 이다 — 목록의 생성 버튼(SemanticTable)이
+                    이 폼을 여는 동작이고, 여기서 누르는 것은 채운 내용을 확정하는 것이다. */}
                 {row ? (
-                  <Button size="md" onClick={handlePoiEdit}>
+                  <Button
+                    size="md"
+                    onClick={handlePoiEdit}
+                    disabled={!hasAnyName}
+                    title={hasAnyName ? undefined : t('nameRequired')}
+                  >
                     {t('edit')}
                   </Button>
                 ) : (
-                  <Button size="md" onClick={handlePoiCreate}>
-                    {t('create')}
+                  <Button
+                    size="md"
+                    onClick={handlePoiCreate}
+                    disabled={!hasAnyName}
+                    title={hasAnyName ? undefined : t('nameRequired')}
+                  >
+                    {t('save')}
                   </Button>
                 )}
                 <Button size="md" theme="tertiary" onClick={onPoiCancel}>

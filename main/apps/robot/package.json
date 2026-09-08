@@ -58,6 +58,7 @@
     "three": "^0.182.0",
     "uplot": "^1.6.32",
     "urdf-loader": "^0.12.7",
+    "zstddec": "^0.3.1",
     "zustand": "^5.0.10"
   },
   "devDependencies": {

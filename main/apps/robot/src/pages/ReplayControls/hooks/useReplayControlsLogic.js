@@ -306,7 +306,14 @@ function mergeSamplesByTSec(baseArr, patchArr) {
  * - 날짜/파일목록/선택/조회/다운로드 등 "ReplayControls"에서 쓸 기능을 계속 흡수할 수 있도록 구성
  */
 
-export default function useReplayControlsLogic({ deviceId, currentTime = 0, isPlaying = false } = {}) {
+export default function useReplayControlsLogic({
+  deviceId,
+  currentTime = 0,
+  isPlaying = false,
+  // ✅ 사용자 명시적 점프 카운터 getter(index.jsx의 seekEpochRef). 재생 전진에는 증가하지 않는다.
+  //    미전달이면 rosout 로더가 "점프 신호 없음"으로 보고 뒤처짐 처리(누적 유지)로만 동작한다.
+  getSeekEpoch = null
+} = {}) {
   const { t } = useTranslation('robot')
   // ─────────────────────────────────────────────
   // 상태
@@ -365,6 +372,13 @@ export default function useReplayControlsLogic({ deviceId, currentTime = 0, isPl
   const accEndCoveredRef = useRef(null)
   const rosoutWindowSeqRef = useRef(0)
   const rosoutLoadingRef = useRef(false) // 동시 로드 방지(이게 없으면 매 틱 로드→폐기 루프)
+  // ✅ seek 신호 기반 판정용. lastSeekEpoch=마지막으로 관측한 카운터, pendingSeek=아직 반영 못한 점프.
+  const getSeekEpochRef = useRef(null)
+  const lastSeekEpochRef = useRef(0)
+  const pendingSeekRef = useRef(false)
+  // 고배속 재생으로 건너뛴 미로드 구간 [{ startSec, endSec }] — 로그 패널에 "여기 빠졌다"고 표시하기 위함.
+  const [logGaps, setLogGaps] = useState(null)
+  const logGapsRef = useRef([])
   // interval 로더가 최신 값을 읽기 위한 미러 ref (React 렌더와 디커플링)
   const currentTimeRef = useRef(0)
   const mcapTopicsRef = useRef([])
@@ -746,6 +760,11 @@ export default function useReplayControlsLogic({ deviceId, currentTime = 0, isPl
     accEndCoveredRef.current = null
     rosoutWindowSeqRef.current++ // 진행 중인 rosout 로드 폐기(interval 로더의 seq 가드)
     rosoutLoadingRef.current = false // in-flight 가드 해제
+    // seek 신호/미로드 구간도 파일 전환 시 초기화(이전 파일의 판정 상태가 새 파일로 새지 않게)
+    lastSeekEpochRef.current = typeof getSeekEpochRef.current === 'function' ? Number(getSeekEpochRef.current()) || 0 : 0
+    pendingSeekRef.current = false
+    logGapsRef.current = []
+    setLogGaps(null)
     setSystemStateSamples(null) // 파일 전환 시 system_state 샘플 무효화(메인스캔/차트 편승 시 다시 채움)
     setMcapTimeRange(null) // 파일 전환 시 이전 timeRange 무효화 (playhead effect 오작동 방지)
     setIsInitialReady(false) // 파일 전환 시 다시 초기 로딩 단계로
@@ -1125,6 +1144,10 @@ export default function useReplayControlsLogic({ deviceId, currentTime = 0, isPl
   useEffect(() => {
     mcapTimeRangeRef.current = mcapTimeRange
   }, [mcapTimeRange])
+  // mount-once interval 로더가 최신 getter를 쓰도록 미러링(getter 교체에도 재구독 불필요)
+  useEffect(() => {
+    getSeekEpochRef.current = typeof getSeekEpoch === 'function' ? getSeekEpoch : null
+  }, [getSeekEpoch])
 
   // ─────────────────────────────────────────────
   // Step3': rosout(Text 로그) lazy load — Logreplay 컨셉(폴링 interval + forward 누적)
@@ -1155,6 +1178,37 @@ export default function useReplayControlsLogic({ deviceId, currentTime = 0, isPl
       return out
     }
 
+    // 빈 구간 기록 유틸 ─────────────────────────────
+    const GAP_EPS = 0.05 // 초. 부동소수 오차/무의미하게 좁은 조각 무시
+    // 맞닿은(또는 겹친) 구간만 하나로 합친다.
+    // ⚠️ 떨어져 있는 구간은 절대 합치지 않는다 — 사이에 실제로 받아둔 로그가 있으므로,
+    //    합치면 있는 데이터를 "미로드"라고 잘못 표시하게 된다.
+    const mergeGapRecords = (list) => {
+      const arr = (Array.isArray(list) ? list : [])
+        .filter((g) => Number.isFinite(g?.startSec) && Number.isFinite(g?.endSec) && g.endSec - g.startSec > GAP_EPS)
+        .sort((a, b) => a.startSec - b.startSec)
+      const out = []
+      for (const g of arr) {
+        const last = out[out.length - 1]
+        if (last && g.startSec - last.endSec <= GAP_EPS) last.endSec = Math.max(last.endSec, g.endSec)
+        else out.push({ startSec: g.startSec, endSec: g.endSec })
+      }
+      return out
+    }
+    // 실제로 받아온 범위 [s,e]를 빈 구간 기록에서 빼낸다(부분만 겹치면 앞/뒤 잔여 구간으로 분할).
+    const subtractGapRange = (list, s, e) => {
+      const out = []
+      for (const g of Array.isArray(list) ? list : []) {
+        if (e <= g.startSec || s >= g.endSec) {
+          out.push(g)
+          continue
+        }
+        if (g.startSec < s - GAP_EPS) out.push({ startSec: g.startSec, endSec: Math.min(s, g.endSec) })
+        if (g.endSec > e + GAP_EPS) out.push({ startSec: Math.max(e, g.startSec), endSec: g.endSec })
+      }
+      return out
+    }
+
     const tick = async () => {
       if (stopped || rosoutLoadingRef.current) return
 
@@ -1172,28 +1226,101 @@ export default function useReplayControlsLogic({ deviceId, currentTime = 0, isPl
       const trEnd = Number(tr.endSec || 0)
       const PLAY_HALF = 12 // forward 확장 시 현재보다 얼마나 앞까지 미리 로드할지
       const SEEK_HALF = 10 // seek 시 center 주변 폭
-      const FWD_GAP = 20 // 이 이내로 앞서가면 forward 누적, 초과하면 seek로 간주
+      // 재생이 로딩을 앞질렀을 때 한 번에 이어붙일 최대 폭(초).
+      // 이보다 더 벌어지면 중간을 건너뛰고 현재 위치 주변만 받는다(누적은 유지 = 과거 로그를 버리지 않음).
+      // ⚠️ 이 값은 "사용자가 점프했는지" 판정과 무관하다(그건 아래 에폭 신호가 담당). 순수 백프레셔 한계값.
+      const MAX_CATCHUP_SPAN = 20
+
+      // ✅ 사용자 점프 신호 소비: 추측하지 않고 index.jsx의 seekEpoch 변화만 본다.
+      //    재생 타이머는 onPlayTick으로 분리돼 에폭을 올리지 않으므로, 고배속 재생이 점프로 오판될 수 없다.
+      const getEpoch = getSeekEpochRef.current
+      if (typeof getEpoch === 'function') {
+        let cur = lastSeekEpochRef.current
+        try {
+          cur = Number(getEpoch()) || 0
+        } catch {
+          /* getter 실패는 무해: 이전 값 유지 = 점프 없음으로 취급 */
+        }
+        if (cur !== lastSeekEpochRef.current) {
+          lastSeekEpochRef.current = cur
+          pendingSeekRef.current = true
+        }
+      }
 
       const covStart = coveredStartRef.current
       const covEnd = accEndCoveredRef.current
       const hasCov = Number.isFinite(covStart) && Number.isFinite(covEnd)
 
       // 현재 시점이 이미 커버된 구간 안이면 로드 불필요(콘솔은 캐시에서 표시).
-      if (hasCov && center >= covStart && center <= covEnd) return
+      // 이 경우 점프였더라도 이미 필요한 데이터가 있으므로 신호를 여기서 해소한다.
+      // (해소하지 않으면 나중에 재생으로 커버 끝을 넘을 때 낡은 신호가 seek으로 오작동함)
+      // 단, 커버 구간 안이라도 "건너뛴 빈 구간"이면 실제 데이터가 없으므로 그 구간을 채운다(mode='fill').
+      // 교체가 아니라 채우기여야 쌓아둔 로그가 날아가지 않는다.
+      const insideCoverage = hasCov && center >= covStart && center <= covEnd
+      const validGaps = logGapsRef.current.filter(
+        (g) => Number.isFinite(g?.startSec) && Number.isFinite(g?.endSec) && g.endSec > g.startSec
+      )
+      // 재생 위치가 빈 구간 안에 들어왔을 때만 채운다(그 시각을 실제로 보고 있으므로 필요).
+      // ⚠️ 백그라운드 선행 채우기(백필)는 일부러 넣지 않는다:
+      //    - 사용자가 보지도 않는 구간을 배경에서 받아오면, line 836-837에서 의도적으로 피한
+      //      "rosout 전체 다운로드"를 조용히 다시 하게 된다.
+      //    - 대신 그 시각으로 이동(또는 그 위치를 재생)하면 그때 채워진다.
+      const gapToFill = validGaps.find((g) => center >= g.startSec && center <= g.endSec) || null
+      if (insideCoverage && !gapToFill) {
+        pendingSeekRef.current = false
+        return
+      }
+
+      // 커버 구간 밖이다. 여기서 "의도"와 "정책"을 분리해 판단한다.
+      // - 의도: pendingSeek(사용자 점프)인지 재생 전진인지 → 위 에폭 신호로 이미 확정.
+      // - 정책: 앞으로 벗어난 폭이 이어붙일 만한지(MAX_CATCHUP_SPAN) → 아래 거리 비교.
+      const aheadSec = hasCov ? center - covEnd : Number.NaN
+      const fillableForward = Number.isFinite(aheadSec) && aheadSec > 0 && aheadSec <= MAX_CATCHUP_SPAN
 
       let startSec
       let endSec
       let mode
-      if (hasCov && center > covEnd && center - covEnd <= FWD_GAP) {
-        // 재생/소폭 전진 → 커버 끝부터 앞으로 확장(누적)
-        mode = 'forward'
-        startSec = covEnd
-        endSec = Math.min(trEnd, center + PLAY_HALF)
-      } else {
-        // 최초/역방향/큰 점프 → seek 교체
+      let skippedGap = null
+      if (gapToFill) {
+        // 빈 구간 채우기(누적 유지). ⚠️ 반드시 "구간 전체"를 한 번에 받는다.
+        //   재생 위치 주변만 조금씩 받으면, 고배속에서 playhead가 한 틱에 (0.1초 × 배속)만큼 튀므로
+        //   구간을 연속으로 덮지 못하고 조각만 남긴다. 그 조각은 playhead가 이미 지나가서 다시 못 채운다.
+        //   rosout은 희소 토픽(수 Hz)이라 구간 전체를 받아도 한 번의 로드로 충분하다.
+        mode = 'fill'
+        const MAX_FILL_SPAN = 60 // 병리적으로 넓은 구간만 방어(남으면 다음 기회에 이어서 채움)
+        const gapSpan = gapToFill.endSec - gapToFill.startSec
+        if (gapSpan <= MAX_FILL_SPAN) {
+          startSec = gapToFill.startSec
+          endSec = gapToFill.endSec
+        } else {
+          // 구간이 상한보다 넓다 → 재생 위치를 중심으로 창을 잡아 "보고 있는 지점"을 먼저 덮는다.
+          // (앞쪽부터 받으면 정작 사용자가 보고 있는 시각이 이번 로드에 안 들어올 수 있다)
+          const half = MAX_FILL_SPAN / 2
+          startSec = Math.min(Math.max(gapToFill.startSec, center - half), gapToFill.endSec - MAX_FILL_SPAN)
+          endSec = startSec + MAX_FILL_SPAN
+        }
+      } else if (!hasCov || center < covStart || (pendingSeekRef.current && !fillableForward)) {
+        // 최초 로드 / 뒤로 점프 / 멀리 앞으로 점프 → center 주변으로 교체(과거 누적은 맥락이 끊겼으므로 폐기)
         mode = 'seek'
         startSec = Math.max(0, center - SEEK_HALF)
         endSec = Math.min(trEnd, center + SEEK_HALF)
+      } else {
+        // 여기 오는 경우는 둘.
+        // (a) 가까운 앞으로 점프 → 빈 구간을 채우며 누적 유지(기존 동작 보존)
+        // (b) 재생이 커버 끝을 앞질렀다(뒤처짐) → 누적 유지. 이게 이번 수정의 핵심:
+        //     예전에는 20초 넘게 벌어지면 "점프"로 오판해 모아둔 로그를 통째로 버렸다.
+        mode = 'forward'
+        const behindSec = aheadSec
+        if (behindSec > MAX_CATCHUP_SPAN) {
+          // 너무 벌어졌다 → 중간을 건너뛰고 현재 위치 주변만 받는다.
+          // 한 번에 거대한 구간을 요청하면 maxMessages 상한에 걸려 오래된 쪽만 채워지고
+          // 현재 위치 로그가 계속 늦게 도착하므로(패널이 영구히 뒤처짐) 범위를 제한한다.
+          startSec = Math.max(covEnd, center - SEEK_HALF)
+          if (startSec > covEnd) skippedGap = { startSec: covEnd, endSec: startSec }
+        } else {
+          startSec = covEnd
+        }
+        endSec = Math.min(trEnd, center + PLAY_HALF)
       }
       if (!(endSec > startSec)) return
 
@@ -1216,15 +1343,41 @@ export default function useReplayControlsLogic({ deviceId, currentTime = 0, isPl
 
         const windowSamples = res?.samples || []
 
-        if (mode === 'forward') {
+        if (mode === 'fill') {
+          // 커버 구간은 이미 이 범위를 포함하므로 건드리지 않는다. 샘플만 병합(누적 유지).
+          if (windowSamples.length) setRosoutSamples((prev) => mergeForward(prev, windowSamples))
+          // 실제로 받은 범위를 기록에서 빼낸다(여러 구간에 걸쳐 있어도 정확히 처리됨).
+          const rest = mergeGapRecords(subtractGapRange(logGapsRef.current, startSec, endSec))
+          logGapsRef.current = rest
+          setLogGaps(rest.length ? rest : null)
+          pendingSeekRef.current = false
+        } else if (mode === 'forward') {
           // 빈 구간이어도 커버는 전진(같은 구간 재요청 방지)
           accEndCoveredRef.current = endSec
+          // 뒤처짐으로 건너뛴 구간이 있으면 기록 → 로그 패널이 "여기 빠졌다"고 표시할 수 있게 한다.
+          // (조용한 빈 구간은 "그 시간엔 로그가 없었다"는 오해를 만들어 디버깅에 위험)
+          if (skippedGap) {
+            const MAX_GAPS = 20
+            // 연속으로 건너뛴 구간은 맞닿으므로 병합된다 → 기록 개수 절약 + 구분선도 한 줄로 깔끔해짐
+            const next = mergeGapRecords([...logGapsRef.current, skippedGap]).slice(-MAX_GAPS)
+            logGapsRef.current = next
+            setLogGaps(next.length ? next : null)
+          }
           if (windowSamples.length) setRosoutSamples((prev) => mergeForward(prev, windowSamples))
+          // 가까운 앞으로 점프를 누적으로 흡수한 경우도 요청은 반영됐으므로 신호 해소
+          pendingSeekRef.current = false
         } else {
           // seek: 교체 + 커버 리셋
           coveredStartRef.current = startSec
           accEndCoveredRef.current = endSec
           setRosoutSamples(windowSamples.length ? mergeForward([], windowSamples) : null)
+          // 누적을 버렸으므로 이전 미로드 구간 표시도 무의미해진다.
+          if (logGapsRef.current.length) {
+            logGapsRef.current = []
+            setLogGaps(null)
+          }
+          // 점프 요청을 실제로 반영했으므로 신호 해소(실패 시엔 남겨둬 다음 틱에서 재시도)
+          pendingSeekRef.current = false
         }
       } catch (e) {
         console.warn('[ReplayControls] rosout 로드 실패:', e?.message || String(e))
@@ -1267,6 +1420,7 @@ export default function useReplayControlsLogic({ deviceId, currentTime = 0, isPl
       diagnosticEvents, // ✅ 추가: index.jsx에서 받도록
       systemEvents, // ✅ System/Event 로그(diagnostic + system_state 전이)
       textEntries, // ✅ Text 로그 탭용 rosout 데이터
+      logGaps, // ✅ 고배속 재생으로 건너뛴 rosout 미로드 구간 [{ startSec, endSec }]
       replayIssues, // ✅ 플레이바 이슈 마커용 실데이터(클러스터)
       replayIssuePoints, // ✅ 이전/다음 이슈 네비게이션용 개별 발생 전수
       issueCounts, // ✅ 플레이바 카운트 라벨용 실제 총계
@@ -1311,6 +1465,7 @@ export default function useReplayControlsLogic({ deviceId, currentTime = 0, isPl
       diagnosticEvents,
       systemEvents,
       textEntries,
+      logGaps,
       replayIssues,
       replayIssuePoints,
       issueCounts,
